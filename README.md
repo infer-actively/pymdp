@@ -1,8 +1,8 @@
 # Active Inference for Markov Decision Processes 
 
-An implementation of active inference for Markov Decision Processes, based off the `SPM` implementation.
+An implementation of active inference for Markov Decision Processes, based on the `SPM` implementation.
 
-`authors: Conor Heins, Alexander Tschantz, Brennan Klein`
+Authors: Conor Heins, Alexander Tschantz, Brennan Klein
 
 ## Usage
 
