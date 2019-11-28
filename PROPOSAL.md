@@ -36,7 +36,6 @@ Some other considerations/ thoughts:
 - Do not automatically normalize, as there may be some cases where this is not desired
 - When passing dimensions, initialize as zero rather than randomly (this will allow users to first construct the distribution, then place non-zero values where they see fit)
 
-
 ## Inference
 
 Suggestion of an `update_posterior` function with the following `API`:
@@ -66,3 +65,22 @@ Some considerations:
 - Is it possible to take observations as indexes as well as row vectors?
 - Will this work with single factors?
 - Should we keep calculation of prior separate
+
+## Conor's notes regarding implementing the Categorical class
+
+- indexing: what's the best way to get the gth modality and/or nth factor of a given (multi-factor, multi-modality) Categorical()? Possibilities:
+    1. Make indexing a method of the `Categorical()` class itself:
+        - e.g. `A[0]` returns the values (i.e. the matrix) of the first outcome modality's likelihood mapping.
+    2. Index the `.values` themselves:
+        - e.g. so if it's an `AoA`, you would do `A.values()[0]` to get the first outcome modality likelihood mapping
+- spm_dot as a method of Categorical() AND a standalone function
+    - if this is the case, we need to make sure that when you call it as a method, you specify the modality you're dotting as well as the hidden state factors you're dotting it with (and the 'dims2omit' list as usual)
+    - Example: If our Categorical() is called `A_gp`, and we're dotting one of its modalities (**i.e. we're dotting one of the various likelihoods mappings stored within it**) with some hidden states `Qs`, we need to do something like:
+        ```
+        A_gp.dot(g, Qs, dims2omit)
+        ```
+        where `g` indexes a particular modality
+- Some notes on doing `spm_norm` and `spm_wnorm` on different kinds of `Categorical()` instances:
+    - just make sure the `np.sum(ndarray, axis = 0)` works in the intended way on row vectors (1d nd-arrays), and sums across the row, even though those are technically 'columns'
+
+
