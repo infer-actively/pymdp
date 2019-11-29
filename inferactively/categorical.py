@@ -45,7 +45,7 @@ class Categorical(object):
 
         Parameters
         ----------
-        dims: list of int
+        dims: list of int OR list of lists (where each list is a list of ints)
             Specify the number and size of dimensions
             This will initialize the parameters with zero values
         values: np.ndarray
@@ -104,7 +104,21 @@ class Categorical(object):
                 raise ValueError(":dims: must be either :list: or :int:")
 
     def normalize(self):
-        pass
+        """
+        Normalization Categorical distribution of set of Categorical distributions so that they are probability distributions (integrate to 1.0)
+        In the case of ndarrays with ndims >= 2, normalization is performed along the columns of the respective array or set of arrays.
+        """
+        if self.IS_AOA:
+            for i in range(len(self.values)):
+                array_i = self.values[i]
+                column_sums = np.sum(array_i, axis=0)
+                array_i = np.divide(array_i, column_sums)
+                array_i[np.isnan] = np.divide(1.0,array_i.shape[0])
+                self.values[i] = array_i
+        else:
+            column_sums = np.sum(self.values, axis=0)
+            self.values = np.divide(self.values, column_sums)
+            self.values[np.isnan] = np.divide(1.0, self.values.shape[0])
 
     def is_normalized(self):
         pass
