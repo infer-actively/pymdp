@@ -109,7 +109,7 @@ class Categorical(object):
         which dimensions will not be summed out during the dot product. 
         """
 
-        
+
 
     def normalize(self):
         """
@@ -143,7 +143,7 @@ class Categorical(object):
                 array_isNormed[i] =  (error < 0.0001).all()
             return array_isNormed.all()
         else:
-            error = np.abs(1 - np.sum(self.values), axis=0)
+            error = np.abs(1 - np.sum(self.values, axis=0))
             return (error < 0.0001).all()
 
     def remove_zeros(self):
