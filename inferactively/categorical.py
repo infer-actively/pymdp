@@ -108,8 +108,7 @@ class Categorical(object):
         Dot product of the Categorical distribution with a vector of set of vectors x, with optional argument 'dims2omit,' which specifies
         which dimensions will not be summed out during the dot product. 
         """
-
-
+        pass
 
     def normalize(self):
         """
@@ -124,12 +123,12 @@ class Categorical(object):
                 array_i = self.values[i]
                 column_sums = np.sum(array_i, axis=0)
                 array_i = np.divide(array_i, column_sums)
-                array_i[np.isnan] = np.divide(1.0,array_i.shape[0])
+                array_i[np.isnan(array_i)] = np.divide(1.0,array_i.shape[0])
                 self.values[i] = array_i
         else:
             column_sums = np.sum(self.values, axis=0)
             self.values = np.divide(self.values, column_sums)
-            self.values[np.isnan] = np.divide(1.0, self.values.shape[0])
+            self.values[np.isnan(self.values)] = np.divide(1.0, self.values.shape[0])
 
     def is_normalized(self):
         """
@@ -198,7 +197,8 @@ class Categorical(object):
         if isinstance(values, np.ndarray):
             if values.ndim == 1:
                 values = values[:, np.newaxis]
-            return Categorical(values=values)
+            # return Categorical(values=values)
+            return values
         else:
             return values
 
