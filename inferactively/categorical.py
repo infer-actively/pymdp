@@ -103,11 +103,22 @@ class Categorical(object):
             else:
                 raise ValueError(":dims: must be either :list: or :int:")
 
+    def dot(self,x,dims2omit):
+        """
+        Dot product of the Categorical distribution with a vector of set of vectors x, with optional argument 'dims2omit,' which specifies
+        which dimensions will not be summed out during the dot product. 
+        """
+
+        
+
     def normalize(self):
         """
         Normalization Categorical distribution of set of Categorical distributions so that they are probability distributions (integrate to 1.0)
         In the case of ndarrays with ndims >= 2, normalization is performed along the columns of the respective array or set of arrays.
         """
+        if self.is_normalized():
+            print('This array is already normalized!')
+            return
         if self.IS_AOA:
             for i in range(len(self.values)):
                 array_i = self.values[i]
@@ -121,7 +132,19 @@ class Categorical(object):
             self.values[np.isnan] = np.divide(1.0, self.values.shape[0])
 
     def is_normalized(self):
-        pass
+        """
+        Checks if a Cateogrical distribution or set of such distributions are normalized, 
+        and returns True if this is satisfied for all such distributions, and False if any distribution is not normalized.
+        """
+        if self.IS_AOA:
+            array_isNormed = np.zeros(len(self.values),dtype=bool)
+            for i in range(len(self.values)):
+                error = np.abs(1 - np.sum(self.values[i], axis=0))
+                array_isNormed[i] =  (error < 0.0001).all()
+            return array_isNormed.all()
+        else:
+            error = np.abs(1 - np.sum(self.values), axis=0)
+            return (error < 0.0001).all()
 
     def remove_zeros(self):
         pass
