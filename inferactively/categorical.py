@@ -136,10 +136,10 @@ class Categorical(object):
         """
 
         if self.IS_AOA:
-            y = np.empty(len(self), dtype=object)
-            for g in range(len(self)):
-                y = self[g]
-                y[g] = y.dot(x, dims_to_omit, return_numpy=True)
+            y = np.empty(len(self.values), dtype=object)
+            for g in range(len(self.values)):
+                X = self[g]
+                y[g] = X.dot(x, dims_to_omit, return_numpy=True)
             if return_numpy:
                 return y
             else:
@@ -150,11 +150,16 @@ class Categorical(object):
             if x.dtype == object:
                 dims = (np.arange(0, len(x)) + self.ndim - len(x)).astype(int)
             else:
-                dims = np.array([0], dtype=int)
+                # this is the case when the first dimension of your x is likely the same as the first dimension of your A 
+                # e.g. inverting the generative model using observations - equivalent to something like self.values[np.where(x),:]
+                if x.shape[0] != self.shape[1]: 
+                    dims = np.array([0], dtype = int)
+                else: # otherwise, this is the case when what the dotting lines up with the lagging dimensions of self.values
+                    dims = np.array([1], dtype = int)
                 x_new = np.empty(1, dtype=object)
-                x_new[0] = x
+                x_new[0] = x.squeeze()
                 x = x_new
-
+            
             if dims_to_omit is not None:
                 if not isinstance(dims_to_omit, list):
                     raise ValueError("dims_to_omit must be a :list:")

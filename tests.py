@@ -165,6 +165,20 @@ class TestCategorical(unittest.TestCase):
         result_3_py = A.dot(states, dims_to_omit=[0], return_numpy=True)
         self.assertTrue(np.isclose(result_3, result_3_py).all())
 
+        # now try by putting obs and states into Categoricals themselves
+        obs = Categorical(values = mat_contents["o"])
+        states = Categorical(values = mat_contents["s"][0])
+
+        result_1_py_cat = A.dot(obs, return_numpy=True)
+        self.assertTrue(np.isclose(result_1,result_1_py_cat).all())
+
+        result_2_py_cat = A.dot(states, return_numpy=True)
+        result_2_py_cat = result_2_py_cat.astype("float64")[:, np.newaxis]
+        self.assertTrue(np.isclose(result_2, result_2_py_cat).all())
+
+        result_3_py_cat = A.dot(states, dims_to_omit=[0], return_numpy=True)
+        self.assertTrue(np.isclose(result_3_py_cat, result_3_py).all())
+
     def test_dot_function_b(self):
         """ continuous states and outcomes """
         array_path = os.path.join(os.getcwd(), "tests/data/dot_b.mat")
