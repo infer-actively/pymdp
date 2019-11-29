@@ -162,7 +162,7 @@ class TestCategorical(unittest.TestCase):
         result_2_py = result_2_py.astype("float64")[:, np.newaxis]
         self.assertTrue(np.isclose(result_2, result_2_py).all())
 
-        result_3_py = A.dot(states, dims_to_omit=[1], return_numpy=True)
+        result_3_py = A.dot(states, dims_to_omit=[0], return_numpy=True)
         self.assertTrue(np.isclose(result_3, result_3_py).all())
 
     def test_dot_function_b(self):
@@ -170,20 +170,106 @@ class TestCategorical(unittest.TestCase):
         array_path = os.path.join(os.getcwd(), "tests/data/dot_b.mat")
         mat_contents = loadmat(file_name=array_path)
 
+        A = mat_contents["A"]
+        obs = mat_contents["o"]
+        states = mat_contents["s"]
+        states = np.array(states, dtype=object)
+
+        result_1 = mat_contents["result1"]
+        result_2 = mat_contents["result2"]
+        result_3 = mat_contents["result3"]
+
+        A = Categorical(values=A)
+        result_1_py = A.dot(obs, return_numpy=True)
+        self.assertTrue(np.isclose(result_1, result_1_py).all())
+
+        result_2_py = A.dot(states, return_numpy=True)
+        result_2_py = result_2_py.astype("float64")[:, np.newaxis]
+        self.assertTrue(np.isclose(result_2, result_2_py).all())
+
+        result_3_py = A.dot(states, dims_to_omit=[0], return_numpy=True)
+        self.assertTrue(np.isclose(result_3, result_3_py).all())
+
     def test_dot_function_c(self):
-        """ discrete states and outcomes, but also a third hidden state factor """
+        """ DISCRETE states and outcomes, but also a third hidden state factor """
         array_path = os.path.join(os.getcwd(), "tests/data/dot_c.mat")
         mat_contents = loadmat(file_name=array_path)
 
+        A = mat_contents["A"]
+        obs = mat_contents["o"]
+        states = mat_contents["s"]
+        states_array_version = np.empty(states.shape[1],dtype=object)
+        for i in range(states.shape[1]):
+            states_array_version[i] = states[0][i][0]
+
+        result_1 = mat_contents["result1"]
+        result_2 = mat_contents["result2"]
+        result_3 = mat_contents["result3"]
+
+        A = Categorical(values=A)
+        result_1_py = A.dot(obs, return_numpy=True)
+        self.assertTrue(np.isclose(result_1, result_1_py).all())
+
+        result_2_py = A.dot(states_array_version, return_numpy=True)
+        result_2_py = result_2_py.astype("float64")[:, np.newaxis]
+        self.assertTrue(np.isclose(result_2, result_2_py).all())
+
+        result_3_py = A.dot(states_array_version, dims_to_omit=[0], return_numpy=True)
+        self.assertTrue(np.isclose(result_3, result_3_py).all())
+
     def test_dot_function_d(self):
-        """ continuous states and outcomes, but also a third hidden state factor """
+        """ CONTINUOUS states and outcomes, but also a third hidden state factor """
         array_path = os.path.join(os.getcwd(), "tests/data/dot_d.mat")
         mat_contents = loadmat(file_name=array_path)
 
+        A = mat_contents["A"]
+        obs = mat_contents["o"]
+        states = mat_contents["s"]
+        states_array_version = np.empty(states.shape[1],dtype=object)
+        for i in range(states.shape[1]):
+            states_array_version[i] = states[0][i][0]
+
+        result_1 = mat_contents["result1"]
+        result_2 = mat_contents["result2"]
+        result_3 = mat_contents["result3"]
+
+        A = Categorical(values=A)
+        result_1_py = A.dot(obs, return_numpy=True)
+        self.assertTrue(np.isclose(result_1, result_1_py).all())
+
+        result_2_py = A.dot(states_array_version, return_numpy=True)
+        result_2_py = result_2_py.astype("float64")[:, np.newaxis]
+        self.assertTrue(np.isclose(result_2, result_2_py).all())
+
+        result_3_py = A.dot(states_array_version, dims_to_omit=[0], return_numpy=True)
+        self.assertTrue(np.isclose(result_3, result_3_py).all())
+
     def test_dot_function_e(self):
-        """ continuous states and outcomes, but also a fourth hidden state factor """
+        """ CONTINUOUS states and outcomes, but add a final (fourth) hidden state factor """
         array_path = os.path.join(os.getcwd(), "tests/data/dot_e.mat")
         mat_contents = loadmat(file_name=array_path)
+
+        A = mat_contents["A"]
+        obs = mat_contents["o"]
+        states = mat_contents["s"]
+        states_array_version = np.empty(states.shape[1],dtype=object)
+        for i in range(states.shape[1]):
+            states_array_version[i] = states[0][i][0]
+
+        result_1 = mat_contents["result1"]
+        result_2 = mat_contents["result2"]
+        result_3 = mat_contents["result3"]
+
+        A = Categorical(values=A)
+        result_1_py = A.dot(obs, return_numpy=True)
+        self.assertTrue(np.isclose(result_1, result_1_py).all())
+
+        result_2_py = A.dot(states_array_version, return_numpy=True)
+        result_2_py = result_2_py.astype("float64")[:, np.newaxis]
+        self.assertTrue(np.isclose(result_2, result_2_py).all())
+
+        result_3_py = A.dot(states_array_version, dims_to_omit=[0], return_numpy=True)
+        self.assertTrue(np.isclose(result_3, result_3_py).all())
 
 
 if __name__ == "__main__":
