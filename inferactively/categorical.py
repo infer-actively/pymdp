@@ -125,17 +125,58 @@ class Categorical(object):
     def dot(self, x, dims_to_omit=None, return_numpy=False):
         """ Dot product of a Categorical distribution with `x`
 
-        The dimensions in `dims_to_omit` will not be summed during the dot product
+        The dimensions in `dims_to_omit` will not be summed across during the dot product
 
         Parameters
         ----------
-        x: numpy.ndarray or Categorical
+        x: 1d numpy.ndarray or Categorical
             The alternative array to perform the dot product with
         dims_to_omit: list (optional)
             a list of `ints` specifying which dimensions to omit
-
         """
-        pass
+        
+        if self.IS_AOA:
+            X = np.empty(len(self), dtype = object)
+            for g in range(len(self)):
+                X = self[g]
+                X[g] = X.dot(x, dims_2_omit, return_numpy=True)
+            if return_numpy:
+                return X
+            else:
+                return Categorical(values=X)
+        else:
+            if isinstance(x,Categorical):
+                x = x.values
+            if x.dtype == object:
+                DIM = (np.arange(0,len(x)) + self.ndim() - len(x)).astype(int)
+            else:
+                DIM = np.array([0], dtype = int)
+                x_new = np.empty(1, dtype = object)
+                x_new[0] = x
+                x = x_new
+            
+            if dims_to_omit is not None:
+                if not isinstance(dims_to_omit,list):
+                    raise ValueError("dims2omit must be a list!")
+                DIM = np.delete(DIM,dims_to_omit)
+                if len(x) == 1:
+                    x = np.empty([0],dtype=object) # because of stupid stuff regarding deleting dimensions from numpy arrays-of-arrays
+                else:
+                    x = np.delete(x,dims_to_omit)  
+
+            X = self.values
+            # inner product using recursive summation and implicit expansion ('broadcasting' in numpy lingo)
+            for d in range(len(x)):
+                s         = np.ones(np.ndim(X), dtype=int)
+                s[DIM[d]] = np.shape(x[d])[0]
+                X         = X * x[d].reshape(tuple(s))
+                X         = np.sum(X,axis=DIM[d],keepdims=True)
+            X = np.squeeze(X)
+
+            if return_numpy:
+                return X
+            else:
+                return Categorical(values=X)
 
     def normalize(self):
         """ Normalize distribution
