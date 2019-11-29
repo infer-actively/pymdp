@@ -59,8 +59,8 @@ if __name__ == "__main__":
     A = Categorical(values=values)
     A.normalize()
     print(
-        "Normalization test for AoAs: sum of first array A (A[0]) gives {} and sum of second array (A[1]) gives {}".format(
-            np.sum(A[0], axis = 0), np.sum(A[1], axis = 0)
+        "Normalization Aoa: sum of (A[0]) gives {} and sum of (A[1]) gives {}".format(
+            np.sum(A[0], axis=0), np.sum(A[1], axis=0)
         )
     )
 
@@ -69,6 +69,6 @@ if __name__ == "__main__":
     A.normalize()
     print(
         "Normalization test for single factor arrays: sum of A gives {}".format(
-            np.sum(A.values, axis = 0)
+            np.sum(A.values, axis=0)
         )
     )
