@@ -134,7 +134,7 @@ class Categorical(object):
         dims_to_omit: list (optional)
             a list of `ints` specifying which dimensions to omit
         """
-        
+
         if self.IS_AOA:
             X = np.empty(len(self), dtype = object)
             for g in range(len(self)):
@@ -148,7 +148,7 @@ class Categorical(object):
             if isinstance(x,Categorical):
                 x = x.values
             if x.dtype == object:
-                DIM = (np.arange(0,len(x)) + self.ndim() - len(x)).astype(int)
+                DIM = (np.arange(0,len(x)) + self.ndim - len(x)).astype(int)
             else:
                 DIM = np.array([0], dtype = int)
                 x_new = np.empty(1, dtype = object)
