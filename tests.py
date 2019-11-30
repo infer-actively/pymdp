@@ -356,7 +356,134 @@ class TestCategorical(unittest.TestCase):
 
         result_3_py = A.dot(states_array_version, dims_to_omit=[0], return_numpy=True)
         self.assertTrue(np.isclose(result_3, result_3_py).all())
+    
+    def test_cross_function_a(self):
+        """Test case a: passing in a single-factor hidden state vector - under both options of Categorical: where self.AOA is True or False """
+        array_path = os.path.join(os.getcwd(), "tests/data/cross_a.mat")
+        mat_contents = loadmat(file_name=array_path)
+        result_1 = mat_contents["result1"]
+        result_2 = mat_contents["result2"]
 
+        states= np.empty(1, dtype=object)
+        states[0] = mat_contents['s'][0,0].squeeze()
+        states = Categorical(values = states) # this would create a 1-dimensional array of arrays (namely, self.IS_AOA == True)
+        result_1_py = states.cross()
+        self.assertTrue(np.isclose(result_1,result_1_py).all())
+
+        states = Categorical(values = mat_contents['s'][0,0].squeeze()) # this creates a simple single-factor Categorical (namely, self.IS_AOA == False)
+        result_2_py = states.cross()
+        self.assertTrue(np.isclose(result_2,result_2_py).all())
+    
+    def test_cross_function_b(self):
+        """Test case b: outer-producting two vectors together:
+        Options: 
+        - both vectors are stored in single Categorical (with two entries, where self.AoA == True)
+        - first vector is a Categorical (self.AoA = False) and second array is a numpy ndarray (non-object array)
+        - first vector is a Categorical, second vector is also Categorical
+        """
+        array_path = os.path.join(os.getcwd(), "tests/data/cross_b.mat")
+        mat_contents = loadmat(file_name=array_path)
+        result_1 = mat_contents["result1"]
+        result_2 = mat_contents["result2"]
+
+        # first way, where both arrays as stored as two entries in a single AoA Categorical
+        states = Categorical(values = mat_contents['s'][0])
+        result_1_py = states.cross()
+        self.assertTrue(np.isclose(result_1,result_1_py).all())
+
+        # second way (type 1), where first array is a Categorical, second array is a straight numpy array 
+        states_firstFactor = Categorical(values = mat_contents['s'][0][0])
+        states_secondFactor = mat_contents['s'][0][1]
+        result_2a_py = states_firstFactor.cross(states_secondFactor)
+        self.assertTrue(np.isclose(result_2,result_2a_py).all())
+
+        # second way (type 2), where first array is a Categorical, second array is another Categorical
+        states_firstFactor = Categorical(values = mat_contents['s'][0][0])
+        states_secondFactor = Categorical(values = mat_contents['s'][0][1])
+        result_2b_py = states_firstFactor.cross(states_secondFactor)
+        self.assertTrue(np.isclose(result_2,result_2b_py).all())
+
+    def test_cross_function_c(self):
+        """Test case c: outer-producting a vector and a matrix together:
+        Options:
+        - first vector is a Categorical, and the matrix argument is a numpy ndarray (non-object array)
+        - first vector is a Categorical, and the matrix argument is also a Categorical
+        """
+        array_path = os.path.join(os.getcwd(), "tests/data/cross_c.mat")
+        mat_contents = loadmat(file_name=array_path)
+        result_1 = mat_contents["result1"]
+        random_vec = Categorical(values = mat_contents['random_vec'])
+
+        # first way, where first array is a Categorical, second array is a numpy ndarray
+        random_matrix = mat_contents['random_matrix']
+        result_1a_py = random_vec.cross(random_matrix)
+        self.assertTrue(np.isclose(result_1,result_1a_py).all())
+
+        # second way, where first array is a Categorical, second array is a Categorical
+        random_matrix = Categorical(values = mat_contents['random_matrix'])
+        result_1b_py = random_vec.cross(random_matrix)
+        self.assertTrue(np.isclose(result_1,result_1b_py).all())
+
+    def test_cross_function_d(self):
+        """Test case d: outer-producting a vector and a sequence of vectors:
+        Options:
+        - first vector is a Categorical, second sequence of vectors is a numpy ndarray (dtype = object
+        - first vector is a Categorical, second sequence of vectors is a Categorical (where self.IS_AOA = True))
+        """
+        array_path = os.path.join(os.getcwd(), "tests/data/cross_d.mat")
+        mat_contents = loadmat(file_name=array_path)
+        result_1 = mat_contents["result1"]
+        random_vec = Categorical(values = mat_contents['random_vec'])
+        states = mat_contents['s']
+        for i in range(len(states)):
+            states[i] = states[i].squeeze()
+
+        # first way, where first array is a Categorical, second array is a numpy ndarray (dtype = object)
+        result_1a_py = random_vec.cross(states)
+        self.assertTrue(np.isclose(result_1,result_1a_py).all())
+
+        # second way, where first array is a Categorical, second array is a Categorical (where self.IS_AOA = True)
+        states = Categorical(values = states[0])
+        result_1b_py = random_vec.cross(states)
+        self.assertTrue(np.isclose(result_1,result_1b_py).all())
+
+    def test_cross_function_e(self):
+        """Test case e: outer-producting two sequences of vectors:
+        Options:
+        - First sequence is an AoA Categorical, second sequence is a numpy ndarray (dtype = object)
+        - First sequence is NOT an AoA Categorical, second sequence is a numpy ndarray (dtype = object)
+        - First sequence is an AoA Categorical, second sequence is an AoA Categorical  
+        - First sequence is NOT an AoA Categorical, second sqeuence is an AoA Categorical
+        """
+        array_path = os.path.join(os.getcwd(), "tests/data/cross_e.mat")
+        mat_contents = loadmat(file_name=array_path)
+        result_1 = mat_contents['result1']
+
+        s2 = mat_contents['s2']
+        s2_new = np.empty(s2.shape[1],dtype=object)
+        for i in range(len(s2_new)):
+            s2_new[i] = s2[0][i].squeeze()
+
+        # first way (type 1), first sequence is a Categorical (self.AOA = True) and second sequence is a numpy ndarray (dtype = object)
+        s1 = Categorical(values = mat_contents['s1'][0])
+        result_1aa_py = s1.cross(s2_new)
+        self.assertTrue(np.isclose(result_1,result_1aa_py).all())
+
+        # first way (type 2), first sequence is a Categorical (self.AOA = False) and second sequence is a numpy ndarray (dtype = object)
+        s1 = Categorical(values = mat_contents['s1'][0][0])
+        result_1ab_py = s1.cross(s2_new)
+        self.assertTrue(np.isclose(result_1,result_1ab_py).all())
+
+        s2_new = Categorical(values = mat_contents['s2'][0])
+        # second way (type 1), first sequence is a Categorical (self.AOA = True) and second sequence is a Categorical
+        s1 = Categorical(values = mat_contents['s1'][0])
+        result_2aa_py = s1.cross(s2_new)
+        self.assertTrue(np.isclose(result_1,result_2aa_py).all())
+
+        # second way (type 2), first sequence is a Categorical (self.AOA = False) and second sequence is a Categorical
+        s1 = Categorical(values = mat_contents['s1'][0][0])
+        result_2ab_py = s1.cross(s2_new)
+        self.assertTrue(np.isclose(result_1,result_2ab_py).all())
 
 if __name__ == "__main__":
     unittest.main()

@@ -133,6 +133,8 @@ class Categorical(object):
             The alternative array to perform the dot product with
         dims_to_omit: list (optional)
             a list of `ints` specifying which dimensions to omit
+        return_numpy: Boolean (optional)
+            a flag to indicate whether the output array will be a numpy ndarray (if True) or a Categorical (if False)
         """
 
         if self.IS_AOA:
@@ -181,6 +183,79 @@ class Categorical(object):
                 return y
             else:
                 return Categorical(values=y)
+    
+    def cross(self, x = None, *args):
+        """ Equivalent of spm_cross -- multidimensional outer product
+        Parameters
+        ----------
+        x : numpy ndarray (including arrays-of-arrays), Categorical, or None (default):
+            If None, the function simply returns the "auto-outer product" of self (i.e. self.cross(self.values))
+            Otherwise (i.e. if x is an numpy ndarray or Categorical), the function will recursively take the outer product of the initial entry
+            of x with self until it has depleted the possible entries of x (which become the next (x, *args) for future function calls) that it can outer-product.
+        args : numpy ndarray (including arrays-of-arrays), Categorical or None:
+            If an numpy ndarray (including dtype = object) or Categorical is passed into the function, it will
+            take the outer product of the ndarray or the first entry of the array-object (and the corresponding values of respectively-constructed Categoricals)
+            with self. Otherwise, if this is None, then the result will simply be self.cross(x)
+        Returns
+        ________
+        Y: always returns a numpy ndarray
+        """
+
+        if len(args) == 0 and x is None:
+            
+            if self.IS_AOA: # in case that the Categorical is an AoA, take the first array in the AoA and cross it against the remaining elements in the AoA 
+                # two options (ask Alec his opinion): 
+                # 1: the remaining elements of the AoA are passed in as AoA (numpy arrays with dtype == object). This would lead to be x being the first of the arrays in the AoAs, and *args would be the following ones
+                Y = self[0].cross(*list(self.values[1:]))
+                # 2: the remaining elements of the AoA are passed in as an AoA Categorical. This would lead to x being a single Categorical variable in the second call to cross, and *args would be empty)
+                # Y = self[0].cross(self[1:])
+            elif np.issubdtype(self.values.dtype, np.number):
+                Y = self.values
+            
+            return Y
+        
+        if self.IS_AOA:
+            # two options (ask Alec his opinion):  
+            # 1: the remaining elements of the AoA are passed in as AoA (numpy arrays with dtype == object). This would lead to be x being the first of the arrays in the AoAs, and *args would be the following ones
+            X = self[0].cross(*list(self.values[1:]))
+            # 2: the remaining elements of the AoA are passed in as an AoA Categorical. This would lead to x being a single Categorical variable in the second call to cross, and *args would be empty)
+            # X = self[0].cross(self[1:])
+        else:
+            X = self.values
+            
+        if x is not None:
+            if isinstance(x, np.ndarray):
+                if x.dtype == 'object':
+                    x_first = Categorical(values = x[0])
+                    x = x_first.cross(*list(x[1:]))
+            elif isinstance(x, Categorical):
+                if x.IS_AOA:
+                    # two options (ask Alec his opinion): 
+                    # 1: the remaining elements of the AoA are passed in as AoA (numpy arrays with dtype == object). This would lead to be x being the first of the arrays in the AoAs, and *args would be the following ones
+                    x = x[0].cross(*list(x.values[1:]))
+                    # 2: the remaining elements of the AoA are passed in as an AoA Categorical. This would lead to x being a single Categorical variable in the second call to cross, and *args would be empty)
+                    # x = x[0].cross(x[1:])
+                else:
+                    x = x.values
+
+        reshape_dims = tuple(list(X.shape) + list(np.ones(x.ndim, dtype=int)))
+        A = X.reshape(reshape_dims)
+        
+        reshape_dims = tuple(list(np.ones(X.ndim, dtype=int)) + list(x.shape))
+        B = x.reshape(reshape_dims)
+
+        Y = np.squeeze(A * B)
+
+        Y = Categorical(values = Y)
+        for x in args:
+            Y = Y.cross(x)
+        
+        if isinstance(Y, Categorical):
+            Y = Y.values
+            return Y
+        else:
+            return Y
+
 
     def normalize(self):
         """ Normalize distribution
