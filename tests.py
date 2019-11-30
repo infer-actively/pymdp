@@ -142,6 +142,7 @@ class TestCategorical(unittest.TestCase):
 
     def test_dot_function_a(self):
         """ test with vectors and matrices, discrete state / outcomes """
+
         array_path = os.path.join(os.getcwd(), "tests/data/dot_a.mat")
         mat_contents = loadmat(file_name=array_path)
 
@@ -163,21 +164,33 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(np.isclose(result_2, result_2_py).all())
 
         result_3_py = A.dot(states, dims_to_omit=[0], return_numpy=True)
-        self.assertTrue(np.isclose(result_3, result_3_py).all())
+        self.assertTrue(np.isclose(result_3, result_3_py).all())  
 
-        # now try by putting obs and states into Categoricals themselves
+    def test_dot_function_a_Cat(self):
+        """ test with vectors and matrices, discrete state / outcomes
+        Now, when arguments themselves are instances of Categorical
+        """
+
+        array_path = os.path.join(os.getcwd(), "tests/data/dot_a.mat")
+        mat_contents = loadmat(file_name=array_path)
+
+        A = mat_contents["A"]
         obs = Categorical(values = mat_contents["o"])
         states = Categorical(values = mat_contents["s"][0])
+        result_1 = mat_contents["result1"]
+        result_2 = mat_contents["result2"]
+        result_3 = mat_contents["result3"]
 
-        result_1_py_cat = A.dot(obs, return_numpy=True)
-        self.assertTrue(np.isclose(result_1,result_1_py_cat).all())
+        A = Categorical(values = A)
+        result_1_py = A.dot(obs, return_numpy=True)
+        self.assertTrue(np.isclose(result_1,result_1_py).all())
 
-        result_2_py_cat = A.dot(states, return_numpy=True)
-        result_2_py_cat = result_2_py_cat.astype("float64")[:, np.newaxis]
-        self.assertTrue(np.isclose(result_2, result_2_py_cat).all())
+        result_2_py = A.dot(states, return_numpy=True)
+        result_2_py = result_2_py.astype("float64")[:, np.newaxis]
+        self.assertTrue(np.isclose(result_2, result_2_py).all())
 
-        result_3_py_cat = A.dot(states, dims_to_omit=[0], return_numpy=True)
-        self.assertTrue(np.isclose(result_3_py_cat, result_3_py).all())
+        result_3_py = A.dot(states, dims_to_omit=[0], return_numpy=True)
+        self.assertTrue(np.isclose(result_3, result_3_py).all())
 
     def test_dot_function_b(self):
         """ continuous states and outcomes """
@@ -230,6 +243,36 @@ class TestCategorical(unittest.TestCase):
 
         result_3_py = A.dot(states_array_version, dims_to_omit=[0], return_numpy=True)
         self.assertTrue(np.isclose(result_3, result_3_py).all())
+    
+    def test_dot_function_c_Cat(self):
+        """ test with vectors and matrices, discrete state / outcomes but with a third hidden state factor
+        Now, when arguments themselves are instances of Categorical
+        """
+
+        array_path = os.path.join(os.getcwd(), "tests/data/dot_c.mat")
+        mat_contents = loadmat(file_name=array_path)
+
+        A = mat_contents["A"]
+        obs = Categorical(values = mat_contents["o"])
+        states = mat_contents["s"]
+        states_array_version = np.empty(states.shape[1],dtype=object)
+        for i in range(states.shape[1]):
+            states_array_version[i] = states[0][i][0]
+        states_array_version = Categorical(values = states_array_version)
+        result_1 = mat_contents["result1"]
+        result_2 = mat_contents["result2"]
+        result_3 = mat_contents["result3"]
+
+        A = Categorical(values = A)
+        result_1_py = A.dot(obs, return_numpy=True)
+        self.assertTrue(np.isclose(result_1,result_1_py).all())
+
+        result_2_py = A.dot(states_array_version, return_numpy=True)
+        result_2_py = result_2_py.astype("float64")[:, np.newaxis]
+        self.assertTrue(np.isclose(result_2, result_2_py).all())
+
+        result_3_py = A.dot(states_array_version, dims_to_omit=[0], return_numpy=True)
+        self.assertTrue(np.isclose(result_3, result_3_py).all())
 
     def test_dot_function_d(self):
         """ CONTINUOUS states and outcomes, but also a third hidden state factor """
@@ -269,6 +312,35 @@ class TestCategorical(unittest.TestCase):
         states_array_version = np.empty(states.shape[1],dtype=object)
         for i in range(states.shape[1]):
             states_array_version[i] = states[0][i][0]
+
+        result_1 = mat_contents["result1"]
+        result_2 = mat_contents["result2"]
+        result_3 = mat_contents["result3"]
+
+        A = Categorical(values=A)
+        result_1_py = A.dot(obs, return_numpy=True)
+        self.assertTrue(np.isclose(result_1, result_1_py).all())
+
+        result_2_py = A.dot(states_array_version, return_numpy=True)
+        result_2_py = result_2_py.astype("float64")[:, np.newaxis]
+        self.assertTrue(np.isclose(result_2, result_2_py).all())
+
+        result_3_py = A.dot(states_array_version, dims_to_omit=[0], return_numpy=True)
+        self.assertTrue(np.isclose(result_3, result_3_py).all())
+    
+    def test_dot_function_e_Cat(self):
+        """ CONTINUOUS states and outcomes, but add a final (fourth) hidden state factor
+        Now, when arguments themselves are instances of Categorical """
+        array_path = os.path.join(os.getcwd(), "tests/data/dot_e.mat")
+        mat_contents = loadmat(file_name=array_path)
+
+        A = mat_contents["A"]
+        obs = Categorical(values = mat_contents["o"])
+        states = mat_contents["s"]
+        states_array_version = np.empty(states.shape[1],dtype=object)
+        for i in range(states.shape[1]):
+            states_array_version[i] = states[0][i][0]
+        states_array_version = Categorical(values = states_array_version)
 
         result_1 = mat_contents["result1"]
         result_2 = mat_contents["result2"]

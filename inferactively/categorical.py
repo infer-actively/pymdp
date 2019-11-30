@@ -149,12 +149,12 @@ class Categorical(object):
                 x = x.values
             if x.dtype == object:
                 dims = (np.arange(0, len(x)) + self.ndim - len(x)).astype(int)
-            else:
+            else: # this else handles cases when x is just a straight up numpy ndarray, whether after first being extracted from a Categorical or passed in initially as such
                 # this is the case when the first dimension of your x is likely the same as the first dimension of your A 
-                # e.g. inverting the generative model using observations - equivalent to something like self.values[np.where(x),:]
+                # e.g. inverting the generative model using observations - equivalent to something like self.values[np.where(x),:] when x is a discrete 'one-hot' observation vector
                 if x.shape[0] != self.shape[1]: 
                     dims = np.array([0], dtype = int)
-                else: # otherwise, this is the case when what the dotting lines up with the lagging dimensions of self.values
+                else: # otherwise, this is the case when x's leading dimension matches the lagging dimensions of self.values (e.g. a more 'classical' dot product of a likelihood with hidden states)
                     dims = np.array([1], dtype = int)
                 x_new = np.empty(1, dtype=object)
                 x_new[0] = x.squeeze()
