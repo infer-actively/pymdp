@@ -7,6 +7,14 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 """
 
+import numpy as np
+from . import Categorical
 
-def test_function():
-    print("Hello *cruel world!")
+
+def softmax(values):
+    if isinstance(values, Categorical):
+        values = np.copy(values.values)
+    values = values - values.max()
+    values = np.exp(values)
+    values = values / np.sum(values)
+    return Categorical(values=values)

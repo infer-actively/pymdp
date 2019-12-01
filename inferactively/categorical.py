@@ -422,6 +422,14 @@ class Categorical(object):
             The log of the parameters
         """
 
+        if self.contains_zeros():
+            self.remove_zeros()
+            self.normalize()
+            warnings.warn(
+                "You have called :log: on a Categorical that contains zeros. \
+                     We have removed zeros and normalized."
+            )
+
         if not self.IS_AOA:
             values = np.copy(self.values)
             log_values = np.log(values)
