@@ -73,4 +73,3 @@ class Dirichlet(object):
 
     def __repr__(self):
         return "-"
-
