@@ -14,7 +14,8 @@ import unittest
 import numpy as np
 from scipy.io import loadmat
 
-from inferactively import Categorical
+sys.path.append(".")
+from inferactively import Categorical  # nopep8
 
 
 class TestCategorical(unittest.TestCase):
