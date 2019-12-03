@@ -1,6 +1,6 @@
 # inferactively
 
-*Borrowed below list from [here](https://github.com/netsiphds/netrd):*
+*Borrowed below list from [here](https://github.com/netsiphds/netrd)*
 
 Welcome to `inferactively` and thanks for your interest in contributing!
 During development please make sure to keep the following checklists handy.

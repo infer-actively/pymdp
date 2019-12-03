@@ -462,6 +462,18 @@ class Categorical(object):
             string = [str(el.shape) for el in self.values]
             print("Shape: {} {}".format(self.values.shape, string))
 
+    def sample(self):
+        """ Draws a sample from the distribution. Assumes a [n x 1] vector
+
+        TODO: make this work with multi-dimension arrays
+        """
+        if self.ndim != 2 or self.shape[1] != 1:
+            raise ValueError("can only currently sample from [n x 1] distribution")
+        self.normalize()
+        values = np.copy(self.values)
+        samples = np.random.multinomial(1, values.squeeze())
+        return np.where(samples == 1)[0][0]
+
     @property
     def ndim(self):
         return self.values.ndim
