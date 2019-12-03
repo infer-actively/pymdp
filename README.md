@@ -16,6 +16,8 @@ This package is under active development and is currently not suited for use. If
 In order to use this code, download the `inferactively` folder into your project
 folder. You can now use all classes and functions via `import inferactively`
 
+To see some examples, refer to the [examples folder](examples/)
+
 ## Requirements  <a name="requirements"/>
 
 This code is written in [Python 3.x](https://www.python.org) and uses 
