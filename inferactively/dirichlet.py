@@ -10,6 +10,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import numpy as np
 import warnings
 
+
 class Dirichlet(object):
     def __init__(self, dims=None, values=None):
         """Initialize a Dirichlet distribution
@@ -100,7 +101,7 @@ class Dirichlet(object):
         else:
             raise ValueError(":dims: must be either :list: or :int:")
 
-    def normalize():
+    def normalize(self):
         """ Normalize distribution
 
         This function will ensure the distribution(s) integrate to 1.0
@@ -108,7 +109,7 @@ class Dirichlet(object):
 
         """
         if self.IS_AOA:
-            normed = np.empty(len(self.values), dtype = object)
+            normed = np.empty(len(self.values), dtype=object)
             for i in range(len(self.values)):
                 array_i = self.values[i]
                 column_sums = np.sum(array_i, axis=0)
@@ -131,43 +132,43 @@ class Dirichlet(object):
         """
         self.values += np.exp(-16)
 
-    def wnorm(self, return_numpy = True):
-        """ Expectation of a (log) Categorical distribution parameterized 
-        with a Dirichlet prior over its parameters (or a set of such Categorical distributions, e.g. a multi-dimensional likelihood)
-            """ 
-        
+    def wnorm(self, return_numpy=True):
+        """ Expectation of a (log) Categorical distribution parameterized
+        with a Dirichlet prior over its parameters (or a set of such Categorical distributions,
+        e.g. a multi-dimensional likelihood)
+        """
+
         if self.IS_AOA:
-            wA = np.empty(len(self.values), dtype = object)
+            wA = np.empty(len(self.values), dtype=object)
             for i in len(self.values):
-                A = Dirichlet(values = self[i].values)
+                A = Dirichlet(values=self[i].values)
                 A.remove_zeros()
                 A = A.values
-                norm = np.divide(1.0, np.sum(A,axis=0))
+                norm = np.divide(1.0, np.sum(A, axis=0))
                 avg = np.divide(1.0, A)
                 wA[i] = norm - avg
             if return_numpy:
                 return wA
             else:
-                return Dirichlet(values = wA)
+                return Dirichlet(values=wA)
         else:
-            A = Dirichlet(values = self.values)
+            A = Dirichlet(values=self.values)
             A.remove_zeros()
             A = A.values
-            norm = np.divide(1.0, np.sum(A,axis=0))
+            norm = np.divide(1.0, np.sum(A, axis=0))
             avg = np.divide(1.0, A)
             wA = norm - avg
             if return_numpy:
                 return wA
             else:
-                return Dirichlet(values = wA)
+                return Dirichlet(values=wA)
 
-        
-        norm = np.divide(1.0, np.sum(A,axis=0))
-        
+        norm = np.divide(1.0, np.sum(A, axis=0))
+
         avg = np.divide(1.0, A)
-        
+
         wA = norm - avg
-    
+
         return wA
 
     def contains_zeros(self):

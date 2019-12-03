@@ -1,9 +1,13 @@
 # Active Inference for Markov Decision Processes 
 
-An python-based implementation of active inference for Markov Decision Processes,
-based on the `SPM` [implementation](https://www.fil.ion.ucl.ac.uk/spm/doc/)
+An Python-based implementation of `active inference` for Markov Decision Processes,
+based on functions from the `SPM` [implementation](https://www.fil.ion.ucl.ac.uk/spm/doc/)
 
-- - - -
+----
+
+## Status
+
+This package is under active development and is currently not suited for use. If you would like to contribute, please refer to [this file](CONTRIBUTING.md)
 
 ## Installation and Usage
 
