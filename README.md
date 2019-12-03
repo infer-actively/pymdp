@@ -5,8 +5,6 @@
 An Python-based implementation of `active inference` for Markov Decision Processes,
 based on functions from the `SPM` [implementation](https://www.fil.ion.ucl.ac.uk/spm/doc/)
 
-----
-
 ## Status
 
 ![status](https://img.shields.io/badge/status-development-orange)
