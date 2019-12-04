@@ -163,14 +163,6 @@ class Dirichlet(object):
             else:
                 return Dirichlet(values=wA)
 
-        norm = np.divide(1.0, np.sum(A, axis=0))
-
-        avg = np.divide(1.0, A)
-
-        wA = norm - avg
-
-        return wA
-
     def contains_zeros(self):
         """ Checks if any values are zero
 
