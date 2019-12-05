@@ -140,7 +140,7 @@ class Dirichlet(object):
 
         if self.IS_AOA:
             wA = np.empty(len(self.values), dtype=object)
-            for i in len(self.values):
+            for i in range(len(self.values)):
                 A = Dirichlet(values=self[i].values)
                 A.remove_zeros()
                 A = A.values
