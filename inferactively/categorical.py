@@ -9,7 +9,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 import warnings
-from .functions import spm_dot, spm_cross
+import inferactively.functions as F
 
 class Categorical(object):
     """ A Categorical distribution
@@ -144,10 +144,10 @@ class Categorical(object):
             y = np.empty(len(self.values), dtype=object)
             for g in range(len(self.values)):
                 X = self[g].values
-                y[g] = spm_dot(X, x, dims_to_omit)
+                y[g] = F.spm_dot(X, x, dims_to_omit)
         else:
             X = self.values
-            y = spm_dot(X, x, dims_to_omit)
+            y = F.spm_dot(X, x, dims_to_omit)
 
         if return_numpy:
             return y

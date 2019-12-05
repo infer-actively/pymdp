@@ -4,4 +4,5 @@ import numpy as np
 from scipy.io import loadmat
 
 sys.path.append(".")
-from inferactively import Categorical  # nopep8
+from inferactively.categorical import Categorical  # nopep8
+x = Categorical()

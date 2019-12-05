@@ -9,7 +9,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import itertools
 import numpy as np
-from .categorical import Categorical
+import inferactively.categorical as C
 
 def softmax(values, return_numpy=False):
     """ Computes the softmax function on a set of values
@@ -17,7 +17,7 @@ def softmax(values, return_numpy=False):
     TODO: make this work for multi-dimensional arrays
 
     """
-    if isinstance(values, Categorical):
+    if isinstance(values, C.Categorical):
         values = np.copy(values.values)
     values = values - values.max()
     values = np.exp(values)
@@ -25,7 +25,7 @@ def softmax(values, return_numpy=False):
     if return_numpy:
         return values
     else:
-        return Categorical(values=values)
+        return C.Categorical(values=values)
 
 
 def generate_policies(n_actions, policy_len):
@@ -46,8 +46,8 @@ def kl_divergence(q, p):
     """
     TODO: make this work for multi-dimensional arrays
     """
-    if not isinstance(type(q), type(Categorical)) or not isinstance(
-        type(p), type(Categorical)
+    if not isinstance(type(q), type(C.Categorical)) or not isinstance(
+        type(p), type(C.Categorical)
     ):
         raise ValueError("[kl_divergence] function takes [Categorical] objects")
     q.remove_zeros()

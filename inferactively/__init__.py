@@ -1,3 +1,3 @@
-from .categorical import Categorical
-from .dirichlet import Dirichlet
-from .functions import *
+from . import functions
+from . import categorical
+from . import dirichlet
