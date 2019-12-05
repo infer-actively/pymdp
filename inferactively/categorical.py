@@ -255,8 +255,38 @@ class Categorical(object):
         Y: always returns a numpy ndarray
         """
 
-        ## IMPLEMENT HERE: Basically it should just check for the AoA status of self, the AoA status of x, and then call
-        # the 'original' spm_cross from F.spm_cross on numpy.ndarrays
+        X = self.values
+
+        if isinstance(x,Categorical):
+            x = x.values
+        if x is not None and len(args) > 0 and isinstance(args[0],Categorical):
+            args_arrays = [] 
+            for i in args:
+                args_arrays.append(i.values)
+            Y = F.spm_cross(X,x,*args_arrays)
+        else:
+            Y = F.spm_cross(X,x,*args)
+
+        return Y
+
+        # if len(args) == 0 and x is None:
+           
+        #     if self.IS_AOA:
+        #         """
+        #         In the case that the Categorical is an AoA, unzip all the entries of the AoA and pass them to spm_cross
+        #         """
+        #         Y = F.spm_cross(*list(self.values))
+
+        #     elif np.issubdtype(self.values.dtype, np.number):
+        #         Y = self.values
+            
+        #     return Y
+        
+        # if self.IS_AOA:
+        #     X = self.values
+        #     Y = spm_cross(X,x,*args)
+
+
     
     # def cross_old(self, x=None, *args):
     #     """ Equivalent of spm_cross -- multidimensional outer product
