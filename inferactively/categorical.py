@@ -9,7 +9,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 import warnings
-
+from .functions import spm_dot, spm_cross
 
 class Categorical(object):
     """ A Categorical distribution
@@ -121,7 +121,7 @@ class Categorical(object):
             self.values = np.zeros([dims, 1])
         else:
             raise ValueError(":dims: must be either :list: or :int:")
-
+    
     def dot(self, x, dims_to_omit=None, return_numpy=False):
         """ Dot product of a Categorical distribution with `x`
 
@@ -137,67 +137,100 @@ class Categorical(object):
             whether the output will be a numpy `ndarray` or a `Categorical`
         """
 
+        if isinstance(x, Categorical):
+            x = x.values
+
         if self.IS_AOA:
             y = np.empty(len(self.values), dtype=object)
             for g in range(len(self.values)):
-                X = self[g]
-                y[g] = X.dot(x, dims_to_omit, return_numpy=True)
-            if return_numpy:
-                return y
-            else:
-                return Categorical(values=y)
+                X = self[g].values
+                y[g] = spm_dot(X, x, dims_to_omit)
         else:
-            if isinstance(x, Categorical):
-                x = x.values
-            if x.dtype == object:
-                dims = (np.arange(0, len(x)) + self.ndim - len(x)).astype(int)
-            else:
+            X = self.values
+            y = spm_dot(X, x, dims_to_omit)
 
-                """
-                This else handles cases when `x` is a numpy `ndarray`
-                After first being extracted from a Categorical or as passed in initially
-                The first dimension of `x` is likely the same as the first dimension of `A`
-                E.g. inverting the generative model using observations
-                Equivalent to something like self.values[np.where(x),:]
-                When `x` is a discrete 'one-hot' observation vector
-                """
+        if return_numpy:
+            return y
+        else:
+            return Categorical(values=y)
 
-                if x.shape[0] != self.shape[1]:
-                    dims = np.array([0], dtype=int)
-                else:
 
-                    """
-                    Case when `x` leading dimension matches the lagging dimension of `values`
-                    E.g. a more 'classical' dot product of a likelihood with hidden states
+    # def dot_old(self, x, dims_to_omit=None, return_numpy=False):
+    #     """ Dot product of a Categorical distribution with `x`
 
-                    """
+    #     The dimensions in `dims_to_omit` will not be summed across during the dot product
 
-                    dims = np.array([1], dtype=int)
-                x_new = np.empty(1, dtype=object)
-                x_new[0] = x.squeeze()
-                x = x_new
+    #     Parameters
+    #     ----------
+    #     x: 1d numpy.ndarray or Categorical (either single-factor or AoA)
+    #         The alternative array to perform the dot product with
+    #     dims_to_omit: list (optional)
+    #         a list of `ints` specifying which dimensions to omit
+    #     return_numpy: Boolean (optional)
+    #         whether the output will be a numpy `ndarray` or a `Categorical`
+    #     """
 
-            if dims_to_omit is not None:
-                if not isinstance(dims_to_omit, list):
-                    raise ValueError("dims_to_omit must be a :list:")
-                dims = np.delete(dims, dims_to_omit)
-                if len(x) == 1:
-                    x = np.empty([0], dtype=object)
-                else:
-                    x = np.delete(x, dims_to_omit)
+    #     if self.IS_AOA:
+    #         y = np.empty(len(self.values), dtype=object)
+    #         for g in range(len(self.values)):
+    #             X = self[g]
+    #             y[g] = X.dot(x, dims_to_omit, return_numpy=True)
+    #         if return_numpy:
+    #             return y
+    #         else:
+    #             return Categorical(values=y)
+    #     else:
+    #         if isinstance(x, Categorical):
+    #             x = x.values
+    #         if x.dtype == object:
+    #             dims = (np.arange(0, len(x)) + self.ndim - len(x)).astype(int)
+    #         else:
 
-            y = self.values
-            for d in range(len(x)):
-                s = np.ones(np.ndim(y), dtype=int)
-                s[dims[d]] = np.shape(x[d])[0]
-                y = y * x[d].reshape(tuple(s))
-                y = np.sum(y, axis=dims[d], keepdims=True)
-            y = np.squeeze(y)
+    #             """
+    #             This else handles cases when `x` is a numpy `ndarray`
+    #             After first being extracted from a Categorical or as passed in initially
+    #             The first dimension of `x` is likely the same as the first dimension of `A`
+    #             E.g. inverting the generative model using observations
+    #             Equivalent to something like self.values[np.where(x),:]
+    #             When `x` is a discrete 'one-hot' observation vector
+    #             """
 
-            if return_numpy:
-                return y
-            else:
-                return Categorical(values=y)
+    #             if x.shape[0] != self.shape[1]:
+    #                 dims = np.array([0], dtype=int)
+    #             else:
+
+    #                 """
+    #                 Case when `x` leading dimension matches the lagging dimension of `values`
+    #                 E.g. a more 'classical' dot product of a likelihood with hidden states
+
+    #                 """
+
+    #                 dims = np.array([1], dtype=int)
+    #             x_new = np.empty(1, dtype=object)
+    #             x_new[0] = x.squeeze()
+    #             x = x_new
+
+    #         if dims_to_omit is not None:
+    #             if not isinstance(dims_to_omit, list):
+    #                 raise ValueError("dims_to_omit must be a :list:")
+    #             dims = np.delete(dims, dims_to_omit)
+    #             if len(x) == 1:
+    #                 x = np.empty([0], dtype=object)
+    #             else:
+    #                 x = np.delete(x, dims_to_omit)
+
+    #         y = self.values
+    #         for d in range(len(x)):
+    #             s = np.ones(np.ndim(y), dtype=int)
+    #             s[dims[d]] = np.shape(x[d])[0]
+    #             y = y * x[d].reshape(tuple(s))
+    #             y = np.sum(y, axis=dims[d], keepdims=True)
+    #         y = np.squeeze(y)
+
+    #         if return_numpy:
+    #             return y
+    #         else:
+    #             return Categorical(values=y)
 
     def cross(self, x=None, *args):
         """ Equivalent of spm_cross -- multidimensional outer product
