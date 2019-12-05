@@ -113,3 +113,54 @@ def spm_dot(X, x, dims_to_omit):
     Y = np.squeeze(Y)
     
     return Y
+
+def spm_cross(X, x=None, *args):
+    """ Equivalent of spm_cross -- multidimensional outer product
+
+    Parameters
+    ----------
+    x : numpy ndarray (including arrays-of-arrays) or None (default):
+        If None, the function simply returns the "auto-outer product" of X
+        (i.e. spm_crosscross(X))
+        Otherwise (i.e. if x is an numpy ndarray), the function will recursively
+        take the outer product of the initial entry
+        of x with X until it has depleted the possible entries of x
+        (which become the next (x, *args) for future function calls) that it can outer-product.
+    args : numpy ndarray (including arrays-of-arrays), Categorical or None:
+        If an numpy ndarray (including dtype = object) or Categorical is passed
+        into the function, it will take the outer product of the ndarray
+        or the first entry of the array-object (and the corresponding values of
+        respectively-constructed Categorical) with self. Otherwise,
+        if this is None, then the result will simply be self.cross(x)
+    Returns
+    ----------
+    Y: a numpy ndarray, result of the outer product
+    """
+    
+    if len(args) == 0 and x is None:  
+        if X.dtype == 'object':
+            Y = spm_cross(*list(X))
+            
+        elif np.issubdtype(X.dtype, np.number):
+            Y = X
+            
+        return Y
+
+    if X.dtype == 'object':
+        X = spm_cross(*list(X))
+        
+    if x is not None and x.dtype == 'object':
+        x = spm_cross(*list(x))
+
+    reshape_dims = tuple(list(X.shape) + list(np.ones(x.ndim, dtype=int)))
+    A = X.reshape(reshape_dims)
+    
+    reshape_dims = tuple(list(np.ones(X.ndim, dtype=int)) + list(x.shape))
+    B = x.reshape(reshape_dims)
+
+    Y = np.squeeze(A * B)
+
+    for x in args:
+        Y = spm_cross(Y, x)
+
+    return Y
