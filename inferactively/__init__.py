@@ -1,3 +1,3 @@
 from . import functions
-from . import categorical
-from . import dirichlet
+from . import distributions
+from .distributions import Categorical, Dirichlet

@@ -15,8 +15,7 @@ import numpy as np
 from scipy.io import loadmat
 
 sys.path.append(".")
-from inferactively.categorical import Categorical  # nopep8
-from inferactively.dirichlet import Dirichlet
+from inferactively import Categorical, Dirichlet  # nopep8
 
 
 class TestCategorical(unittest.TestCase):
@@ -331,7 +330,7 @@ class TestCategorical(unittest.TestCase):
         result_3_py = A.dot(states_array_version, dims_to_omit=[0], return_numpy=True)
         self.assertTrue(np.isclose(result_3, result_3_py).all())
 
-    def test_dot_function_e_Cat(self):
+    def test_dot_function_e_cat(self):
         """ CONTINUOUS states and outcomes, but add a final (fourth) hidden state factor
         Now, when arguments themselves are instances of Categorical """
         array_path = os.path.join(os.getcwd(), "tests/data/dot_e.mat")
@@ -373,13 +372,13 @@ class TestCategorical(unittest.TestCase):
         states = Categorical(
             values=states
         )  # this would create a 1-dimensional array of arrays (namely, self.IS_AOA == True)
-        result_1_py = states.cross()
+        result_1_py = states.cross(return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         states = Categorical(
             values=mat_contents["s"][0, 0].squeeze()
         )  # this creates a simple single-factor Categorical (namely, self.IS_AOA == False)
-        result_2_py = states.cross()
+        result_2_py = states.cross(return_numpy=True)
         self.assertTrue(np.isclose(result_2, result_2_py).all())
 
     def test_cross_function_b(self):
@@ -397,21 +396,21 @@ class TestCategorical(unittest.TestCase):
 
         # first way, where both arrays as stored as two entries in a single AoA Categorical
         states = Categorical(values=mat_contents["s"][0])
-        result_1_py = states.cross()
+        result_1_py = states.cross(return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         # second way (type 1), where first array is a Categorical, second array is a
         # straight numpy array
-        states_firstFactor = Categorical(values=mat_contents["s"][0][0])
-        states_secondFactor = mat_contents["s"][0][1]
-        result_2a_py = states_firstFactor.cross(states_secondFactor)
+        states_first_factor = Categorical(values=mat_contents["s"][0][0])
+        states_second_factor = mat_contents["s"][0][1]
+        result_2a_py = states_first_factor.cross(states_second_factor, return_numpy=True)
         self.assertTrue(np.isclose(result_2, result_2a_py).all())
 
         # second way (type 2), where first array is a Categorical, second array
         # is another Categorical
-        states_firstFactor = Categorical(values=mat_contents["s"][0][0])
-        states_secondFactor = Categorical(values=mat_contents["s"][0][1])
-        result_2b_py = states_firstFactor.cross(states_secondFactor)
+        states_first_factor = Categorical(values=mat_contents["s"][0][0])
+        states_second_factor = Categorical(values=mat_contents["s"][0][1])
+        result_2b_py = states_first_factor.cross(states_second_factor, return_numpy=True)
         self.assertTrue(np.isclose(result_2, result_2b_py).all())
 
     def test_cross_function_c(self):
@@ -428,12 +427,12 @@ class TestCategorical(unittest.TestCase):
 
         # first way, where first array is a Categorical, second array is a numpy ndarray
         random_matrix = mat_contents["random_matrix"]
-        result_1a_py = random_vec.cross(random_matrix)
+        result_1a_py = random_vec.cross(random_matrix, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1a_py).all())
 
         # second way, where first array is a Categorical, second array is a Categorical
         random_matrix = Categorical(values=mat_contents["random_matrix"])
-        result_1b_py = random_vec.cross(random_matrix)
+        result_1b_py = random_vec.cross(random_matrix, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1b_py).all())
 
     def test_cross_function_d(self):
@@ -454,13 +453,13 @@ class TestCategorical(unittest.TestCase):
 
         # first way, where first array is a Categorical, second array is a numpy ndarray
         # (dtype = object)
-        result_1a_py = random_vec.cross(states)
+        result_1a_py = random_vec.cross(states, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1a_py).all())
 
         # second way, where first array is a Categorical, second array is a Categorical
         # (where self.IS_AOA = True)
         states = Categorical(values=states[0])
-        result_1b_py = random_vec.cross(states)
+        result_1b_py = random_vec.cross(states, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1b_py).all())
 
     def test_cross_function_e(self):
@@ -485,27 +484,28 @@ class TestCategorical(unittest.TestCase):
         # first way (type 1), first sequence is a Categorical (self.AOA = True) and
         # second sequence is a numpy ndarray (dtype = object)
         s1 = Categorical(values=mat_contents["s1"][0])
-        result_1aa_py = s1.cross(s2_new)
+        result_1aa_py = s1.cross(s2_new, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1aa_py).all())
 
         # first way (type 2), first sequence is a Categorical (self.AOA = False) and
         # second sequence is a numpy ndarray (dtype = object)
         s1 = Categorical(values=mat_contents["s1"][0][0])
-        result_1ab_py = s1.cross(s2_new)
+        result_1ab_py = s1.cross(s2_new, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1ab_py).all())
 
         s2_new = Categorical(values=mat_contents["s2"][0])
         # second way (type 1), first sequence is a Categorical (self.AOA = True)
         # and second sequence is a Categorical
         s1 = Categorical(values=mat_contents["s1"][0])
-        result_2aa_py = s1.cross(s2_new)
+        result_2aa_py = s1.cross(s2_new, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_2aa_py).all())
 
         # second way (type 2), first sequence is a Categorical (self.AOA = False)
         # and second sequence is a Categorical
         s1 = Categorical(values=mat_contents["s1"][0][0])
-        result_2ab_py = s1.cross(s2_new)
+        result_2ab_py = s1.cross(s2_new, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_2ab_py).all())
+
 
 class TestDirichlet(unittest.TestCase):
     def test_init_empty(self):
@@ -560,7 +560,7 @@ class TestDirichlet(unittest.TestCase):
         values_2 = np.random.rand(4, 3)
         values = np.array([values_1, values_2])
         d = Dirichlet(values=values)
-        normed = Categorical(values = d.normalize())
+        normed = Categorical(values=d.normalize())
         self.assertTrue(normed.is_normalized())
 
     def test_normalize_single_dim(self):
@@ -619,16 +619,16 @@ class TestDirichlet(unittest.TestCase):
         values = np.random.rand(3, 2)
         d = Dirichlet(values=values)
         self.assertEqual(d.shape, (3, 2))
-    
+
     def test_wnorm_single_factor(self):
         """ tests implementation of wnorm method against matlab version (single factor)
         """
 
         array_path = os.path.join(os.getcwd(), "tests/data/wnorm_a.mat")
         mat_contents = loadmat(file_name=array_path)
-        result = mat_contents['result']
+        result = mat_contents["result"]
 
-        d = Dirichlet(values = mat_contents['A'])
+        d = Dirichlet(values=mat_contents["A"])
         result_py = d.wnorm(return_numpy=True)
 
         self.assertTrue(np.isclose(result, result_py).all())
@@ -639,13 +639,16 @@ class TestDirichlet(unittest.TestCase):
 
         array_path = os.path.join(os.getcwd(), "tests/data/wnorm_b.mat")
         mat_contents = loadmat(file_name=array_path)
-        result_1 = mat_contents['result_1']
-        result_2 = mat_contents['result_2']
+        result_1 = mat_contents["result_1"]
+        result_2 = mat_contents["result_2"]
 
-        d = Dirichlet(values = mat_contents['A'][0])
+        d = Dirichlet(values=mat_contents["A"][0])
         result_py = d.wnorm(return_numpy=True)
 
-        self.assertTrue(np.isclose(result_1, result_py[0]).all() and np.isclose(result_2, result_py[1]).all())
+        self.assertTrue(
+            np.isclose(result_1, result_py[0]).all()
+            and np.isclose(result_2, result_py[1]).all()
+        )
 
 
 if __name__ == "__main__":
