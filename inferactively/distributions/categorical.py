@@ -143,7 +143,7 @@ class Categorical(object):
             y = F.spm_dot(X, x, dims_to_omit)
 
 
-        # perfrom check to see if `y` is a number
+        # perform check to see if `y` is a number
         if np.prod(y.shape) <= 1.0:
             y = np.asscalar(y)
             y = np.array([y]).astype("float64")
@@ -164,7 +164,7 @@ class Categorical(object):
         Parameters
         ----------
         `x` [np.ndarray] || [Categorical] (optional)
-            The values to perfrom the outer-product with
+            The values to perform the outer-product with
         `args` [np.ndarray] || [Categorical] (optional)
             Perform the outer product of the `args` with self
        
