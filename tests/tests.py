@@ -359,6 +359,27 @@ class TestCategorical(unittest.TestCase):
         result_3_py = A.dot(states_array_version, dims_to_omit=[0], return_numpy=True)
         self.assertTrue(np.isclose(result_3, result_3_py).all())
 
+    def test_dot_function_f(self):
+        """ Test for when the outcome modality is a trivially one-dimensional vector, meaning
+        the return of spm_dot is a scalar - this tests that the spm_dot function
+        succcessfully wraps such scalar returns into an array """
+
+        states = np.empty(2,dtype=object)
+        states[0] = np.array([0.75,0.25])
+        states[1] = np.array([0.5,0.5]) 
+        No = 1
+        A = Categorical(values = np.ones([No] + list(states.shape)))
+        A.normalize()
+
+        # return the result as a Categorical
+        result_cat = A.dot(states,return_numpy=False)
+        self.assertTrue(np.prod(result_cat.shape) == 1)
+
+        # return the result as a numpy array
+        result_np = A.dot(states,return_numpy=True)
+        self.assertTrue(np.prod(result_np.shape) == 1)
+    
+
     def test_cross_function_a(self):
         """Test case a: passing in a single-factor hidden state vector -
         under both options of Categorical: where self.AOA is True or False """

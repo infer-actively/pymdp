@@ -112,6 +112,11 @@ def spm_dot(X, x, dims_to_omit):
         Y = np.sum(Y, axis=dims[d], keepdims=True)
     Y = np.squeeze(Y)
 
+    # perform check to see if `y` is a number
+    if np.prod(Y.shape) <= 1.0:
+        Y = np.asscalar(Y)
+        Y = np.array([Y]).astype("float64")
+
     return Y
 
 

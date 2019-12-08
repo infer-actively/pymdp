@@ -142,12 +142,6 @@ class Categorical(object):
             X = self.values
             y = F.spm_dot(X, x, dims_to_omit)
 
-
-        # perform check to see if `y` is a number
-        if np.prod(y.shape) <= 1.0:
-            y = np.asscalar(y)
-            y = np.array([y]).astype("float64")
-
         if return_numpy:
             return y
         else:
