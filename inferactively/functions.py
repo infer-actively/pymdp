@@ -59,19 +59,17 @@ def kl_divergence(q, p):
     return kl
 
 
-def spm_dot(X, x, dims_to_omit):
-    """ Dot product of a Categorical distribution with `x`
+def spm_dot(X, x, dims_to_omit=None):
+    """ Dot product of a multidimensional array with `x`
 
     The dimensions in `dims_to_omit` will not be summed across during the dot product
 
     Parameters
     ----------
-    `x` [1D numpy.ndarray] || [Categorical]
+    `x` [1D numpy.ndarray] - either vector or array of arrays
         The alternative array to perform the dot product with
     `dims_to_omit` [list :: int] (optional)
         Which dimensions to omit
-    `return_numpy` [bool] (optional)
-        Whether to return `np.ndarray` or `Categorical`
     """
 
     if x.dtype == object:
