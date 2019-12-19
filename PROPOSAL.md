@@ -39,7 +39,7 @@ def __init__(self, dims=None, values=None):
 *Note*: This function is a wrapper for `F.spm_dot`, which contains the core implementation.
 
 ```python
-def __init__(self, dims=None, values=None):
+def dot(self, dims=None, values=None):
     """ Dot product of a Categorical distribution with `x`
 
     The dimensions in `dims_to_omit` will not be summed across during the dot product
@@ -61,7 +61,7 @@ def __init__(self, dims=None, values=None):
 *Note*: This function is a wrapper for `F.spm_cross`, which contains the core implementation.
 
 ```python
-def __init__(self, dims=None, values=None):
+def cross(self, dims=None, values=None):
     """ Multi-dimensional outer product
 
     If no `x` argument is passed, the function returns the "auto-outer product" of self
