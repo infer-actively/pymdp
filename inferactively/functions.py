@@ -9,6 +9,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import itertools
 import numpy as np
+import scipy as sp
 from inferactively.distributions import Categorical
 
 
@@ -170,3 +171,16 @@ def spm_cross(X, x=None, *args):
         Y = spm_cross(Y, x)
 
     return Y
+
+def spm_betaln(z):
+    """
+    Returns the log of the multivariate beta function of a vector.
+    FORMAT y = spm_betaln(z)
+     y = spm_betaln(z) computes the natural logarithm of the beta function
+     for corresponding elements of the vector z. if concerned is a matrix,
+     the logarithm is taken over the columns of the matrix z.
+    """
+
+    y     = np.sum(sp.special.gammaln(z),axis=0) - sp.special.gammaln(np.sum(z,axis=0))
+
+    return y

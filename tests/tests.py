@@ -669,8 +669,8 @@ class TestDirichlet(unittest.TestCase):
         d = Dirichlet(values=values)
         self.assertEqual(d.shape, (3, 2))
 
-    def test_wnorm_single_factor(self):
-        """ tests implementation of wnorm method against matlab version (single factor)
+    def test_expectation_single_factor(self):
+        """ tests implementation of expect_log method against matlab version (single factor)
         """
 
         array_path = os.path.join(os.getcwd(), "tests/data/wnorm_a.mat")
@@ -678,12 +678,12 @@ class TestDirichlet(unittest.TestCase):
         result = mat_contents["result"]
 
         d = Dirichlet(values=mat_contents["A"])
-        result_py = d.wnorm(return_numpy=True)
+        result_py = d.expect_log(return_numpy=True)
 
         self.assertTrue(np.isclose(result, result_py).all())
 
-    def test_wnorm_multi_factor(self):
-        """ tests implementation of wnorm method against matlab version (multi factor)
+    def test_expectation_multi_factor(self):
+        """ tests implementation of expect_log method against matlab version (multi factor)
         """
 
         array_path = os.path.join(os.getcwd(), "tests/data/wnorm_b.mat")
@@ -692,13 +692,12 @@ class TestDirichlet(unittest.TestCase):
         result_2 = mat_contents["result_2"]
 
         d = Dirichlet(values=mat_contents["A"][0])
-        result_py = d.wnorm(return_numpy=True)
+        result_py = d.expect_log(return_numpy=True)
 
         self.assertTrue(
             np.isclose(result_1, result_py[0]).all()
             and np.isclose(result_2, result_py[1]).all()
         )
-
 
 if __name__ == "__main__":
     unittest.main()
