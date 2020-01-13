@@ -12,21 +12,24 @@ import numpy as np
 from inferactively.distributions import Categorical
 
 
-def softmax(values, return_numpy=False):
+def softmax(distrib, return_numpy=False):
     """ Computes the softmax function on a set of values
-
-    TODO: make this work for multi-dimensional arrays
-
     """
-    if isinstance(values, Categorical):
-        values = np.copy(values.values)
-    values = values - values.max()
-    values = np.exp(values)
-    values = values / np.sum(values)
+    if isinstance(distrib, Categorical):
+        if distrib.IS_AOA:
+            output = Categorical(dims = [list(el.shape) for el in distrib])
+            for i in range(len(distrib.values)):
+                output[i] = softmax(distrib.values[i],return_numpy=True)
+            return output
+        else:
+            distrib = np.copy(distrib.values)
+    output = distrib - distrib.max(axis=0)
+    output = np.exp(output)
+    output = output / np.sum(output,axis=0)
     if return_numpy:
-        return values
+        return output
     else:
-        return Categorical(values=values)
+        return Categorical(values=output)
 
 
 def generate_policies(n_actions, policy_len):
