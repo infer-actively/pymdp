@@ -340,16 +340,27 @@ class Categorical(object):
             print("Shape: {} {}".format(self.values.shape, string))
 
     def sample(self):
-        """ Draws a sample from the distribution. Assumes a [n x 1] vector
-
-        TODO: make this work with multi-dimension arrays
+        """ Draws a sample from a Categorical distribution or set of samples from a set of distributions (in case that self.IS_AOA is True)
         """
-        if self.ndim != 2 or self.shape[1] != 1:
-            raise ValueError("can only currently sample from [n x 1] distribution")
-        self.normalize()
-        values = np.copy(self.values)
-        samples = np.random.multinomial(1, values.squeeze())
-        return np.where(samples == 1)[0][0]
+
+        if not self.is_normalized():
+            self.normalize()
+        
+        if self.IS_AOA:
+            # QUESTION/COMMENT: In case of self.IS_AOA, how should we store a multinomial sample - a list, an array of arrays, a simple 1D array...?
+            # Here, I just use a 1-D numpy array, but I'm open to revision on this.
+            sample_array = np.zeros(len(self.values))
+            for i in range(len(self.values)):
+                probabilities = np.copy(self.values[i])
+                sample_onehot = np.random.multinomial(1,probabilities.squeeze())
+                sample_array[i] = np.where(sample_onehot == 1)[0][0]
+            return sample_array
+        else:
+            if self.ndim != 2 or self.shape[1] != 1:
+                raise ValueError("can only currently sample from [n x 1] distribution")
+            probabilities = np.copy(self.values)
+            sample_onehot = np.random.multinomial(1, probabilities.squeeze())
+            return np.where(sample_onehot == 1)[0][0]
 
     @property
     def ndim(self):
