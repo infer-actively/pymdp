@@ -140,6 +140,34 @@ class TestCategorical(unittest.TestCase):
         values = np.random.rand(3, 2)
         c = Categorical(values=values)
         self.assertEqual(c.shape, (3, 2))
+    
+    def test_sample_single(self):
+
+        # values are already normalized
+        values = np.array([1.0, 0.0])
+        c = Categorical(values=values)
+        self.assertEqual(0, c.sample())
+
+        # values are not normalized
+        values = np.array([0, 10.0])
+        c = Categorical(values=values)
+        self.assertEqual(1,c.sample())
+
+    def test_sample_AoA(self):
+
+        # values are already normalized
+        values_1 = np.array([1.0, 0.0])
+        values_2 = np.array([0.0, 1.0, 0.0])
+        values = np.array([values_1,values_2])
+        c = Categorical(values=values)
+        self.assertTrue(np.isclose(np.array([0, 1]), c.sample()).all())
+
+        # values are not normalized
+        values_1 = np.array([10.0, 0.0])
+        values_2 = np.array([0.0, 10.0, 0.0])
+        values = np.array([values_1,values_2])
+        c = Categorical(values=values)
+        self.assertTrue(np.isclose(np.array([0, 1]), c.sample()).all())
 
     def test_dot_function_a(self):
         """ test with vectors and matrices, discrete state / outcomes """
