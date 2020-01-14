@@ -9,7 +9,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import itertools
 import numpy as np
-import scipy as sp
+from scipy import special
 from inferactively.distributions import Categorical
 
 
@@ -181,6 +181,6 @@ def spm_betaln(z):
      the logarithm is taken over the columns of the matrix z.
     """
 
-    y     = np.sum(sp.special.gammaln(z),axis=0) - sp.special.gammaln(np.sum(z,axis=0))
+    y     = np.sum(special.gammaln(z),axis=0) - special.gammaln(np.sum(z,axis=0))
 
     return y

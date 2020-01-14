@@ -8,7 +8,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
 import numpy as np
-import scipy as sp
+from scipy import special
 import warnings
 import inferactively.functions as F
 
@@ -186,19 +186,19 @@ class Dirichlet(object):
 
         if not self.IS_AOA:
             values = np.copy(self.values)
-            if values.ndim > 1
+            if values.ndim > 1:
                 output = np.zeros(values.shape[1])
                 for col_i in range(values.shape[1]):
                     first_term = F.spm_betaln(values[:,col_i])
                     a0 = values[:,col_i].sum(axis=0)
-                    second_term = (a0 - values.shape[0]) * sp.special.digamma(a0)
-                    third_term = -np.sum( (values[:,col_i] - 1)*sp.special.digamma(values[:,col_i]), axis = 0)
+                    second_term = (a0 - values.shape[0]) * special.digamma(a0)
+                    third_term = -np.sum( (values[:,col_i] - 1)*special.digamma(values[:,col_i]), axis = 0)
                     output[col_i] = first_term + second_term + third_term
             else:
                 first_term = F.spm_betaln(values)
                 a0 = values.sum(axis=0)
-                second_term = (a0 - values.shape[0]) * sp.special.digamma(a0)
-                third_term = -np.sum( (values - 1)*sp.special.digamma(values), axis = 0)
+                second_term = (a0 - values.shape[0]) * special.digamma(a0)
+                third_term = -np.sum( (values - 1)*special.digamma(values), axis = 0)
                 output = first_term + second_term + third_term
 
         else:
