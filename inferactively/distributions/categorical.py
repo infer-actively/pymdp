@@ -354,7 +354,8 @@ class Categorical(object):
                 probabilities = np.copy(self.values[i])
                 sample_onehot = np.random.multinomial(1,probabilities.squeeze())
                 sample_array[i] = np.where(sample_onehot == 1)[0][0]
-            return sample_array
+            # returning a tuple of indices is good in the case when you're sampling observations - consistent with update_posterior function
+            return tuple(sample_array.astype(int))
         else:
             if self.ndim != 2 or self.shape[1] != 1:
                 raise ValueError("can only currently sample from [n x 1] distribution")

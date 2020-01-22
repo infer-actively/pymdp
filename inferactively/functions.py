@@ -220,7 +220,7 @@ def update_posterior(A, observation, prior, return_numpy = True, method = 'FPI',
 
     if isinstance(A, Categorical):
         A = A.values
-    
+
     if A.dtype == "object":
         Nf = A[0].ndim - 1
         Ns = list(A[0].shape[1:])
@@ -232,13 +232,18 @@ def update_posterior(A, observation, prior, return_numpy = True, method = 'FPI',
         Nf = A.ndim - 1
         Ns = list(A.shape[1:])
         Ng = 1
-        No = A.shape[0]
+        No = [A.shape[0]]
     
     if isinstance(observation, Categorical):
-        observation = observation.values.squeeze()
+        observation = observation.values
+        if Ng == 1:
+            observation = observation.squeeze()
+        else:
+            for g in range(Ng):
+                observation[g] = observation[g].squeeze()
 
     if isinstance(observation, int):
-        observation = np.eye(No)[observation]
+        observation = np.eye(No[0])[observation]
     
     if isinstance(observation, tuple):
         observation_AoA = np.empty(Ng, dtype = object)
@@ -248,7 +253,22 @@ def update_posterior(A, observation, prior, return_numpy = True, method = 'FPI',
         observation = observation_AoA
 
     if isinstance(prior, Categorical):
-        prior = prior.values.squeeze()
+
+        prior_new = np.empty(Nf, dtype = object)
+
+        if prior.IS_AOA:
+            for f in range(Nf):
+                prior_new[f] = prior[f].values.squeeze()
+        else:
+            prior_new[0] = prior.values.squeeze()
+        
+        prior = prior_new
+        
+    elif prior.dtype != "object":
+
+        prior_new = np.empty(Nf, dtype = object)
+        prior_new[0] = prior
+        prior = prior_new
 
     if method == 'FPI':
         qx = run_FPI(A, observation, prior, No, Ns, numIter=kwargs['numIter'], dF=kwargs['dF'], dF_tol=kwargs['dF_tol'])
@@ -302,10 +322,7 @@ def run_FPI(A, observation, prior, No, Ns, numIter=10, dF=1.0, dF_tol=0.001):
     #       [DO ITERATIONS]
     # until then, use the following code:
 
-    if isinstance(No, int):
-        Ng = 1
-    else:
-        Ng = len(No)
+    Ng = len(No)
     Nf = len(Ns)
 
     L = np.ones(tuple(Ns))
@@ -326,7 +343,7 @@ def run_FPI(A, observation, prior, No, Ns, numIter=10, dF=1.0, dF_tol=0.001):
     # in the trivial case of one hidden state factor, inference doesn't require FPI
     if Nf == 1:
         qL = spm_dot(L, qx, [0])
-        qx[0] = softmax(np.log(qL + 1e-16) + np.log(prior + 1e-16))
+        qx[0] = softmax(np.log(qL + 1e-16) + np.log(prior[0] + 1e-16))
         return qx[0]
 
     else:
