@@ -12,14 +12,14 @@ from scipy import special
 from inferactively.distributions import Categorical
 
 
-def softmax(distrib, return_numpy=False):
+def softmax(distrib, return_numpy=True):
     """ Computes the softmax function on a set of values
     """
     if isinstance(distrib, Categorical):
         if distrib.IS_AOA:
             output = Categorical(dims=[list(el.shape) for el in distrib])
             for i in range(len(distrib.values)):
-                output[i] = softmax(distrib.values[i], return_numpy=False)
+                output[i] = softmax(distrib.values[i], return_numpy=True)
             return output
         else:
             distrib = np.copy(distrib.values)
@@ -264,14 +264,7 @@ def update_posterior(A, observation, prior, return_numpy=True, method="FPI", **k
         prior = prior_new
 
     if method == "FPI":
-        qx = run_FPI(
-            A,
-            observation,
-            prior,
-            No,
-            Ns,
-            **kwargs,
-        )
+        qx = run_FPI(A, observation, prior, No, Ns, **kwargs)
     if method == "VMP":
         raise NotImplementedError("VMP is not implemented")
     if method == "MMP":

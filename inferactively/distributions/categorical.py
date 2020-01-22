@@ -319,7 +319,7 @@ class Categorical(object):
 
         if self.IS_AOA:
             """ @TODO: In case of self.IS_AOA, how should we store a multinomial sample - a list, an array of arrays, a simple 1D array...?
-                Here, I just use a 1-D numpy array, but I'm open to revision on this. """
+                Here, we decided to use a tuple of integers. This can be revised, however."""
             sample_array = np.zeros(len(self.values))
             for i in range(len(self.values)):
                 probabilities = np.copy(self.values[i])
