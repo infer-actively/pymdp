@@ -178,7 +178,7 @@ def spm_betaln(z):
     return y
 
 
-def update_posterior(A, observation, prior, return_numpy=True, method="FPI", **kwargs):
+def update_posterior_states(A, observation, prior, return_numpy=True, method="FPI", **kwargs):
     """ 
     Update marginal posterior qx using variational inference, with optional selection of a message-passing algorithm
     Parameters
@@ -296,7 +296,7 @@ def run_FPI(A, observation, prior, No, Ns, num_iter=10, dF=1.0, dF_tol=0.001):
         If multi-modality, this can be an array of arrays (whose entries are 1D one-hot vectors).
     'prior' [numpy 1D array, array of arrays (with 1D numpy array entries)]:
         Prior beliefs of the agent, to be integrated with the marginal likelihood to obtain posterior
-    'numIter' [int]:
+    'num_iter' [int]:
         Number of variational fixed-point iterations to run.
     'dF' [float]:
         Starting free energy gradient (dF/dQx) before updating in the course of gradient descent.
@@ -357,16 +357,15 @@ def run_FPI(A, observation, prior, No, Ns, num_iter=10, dF=1.0, dF_tol=0.001):
 
                 # @TODO:
                 # Do we log-add the prior *within* each variational iteration? Or afterwards, when the iterations have ended?
+                
+                # 1. This is the version where we log-add the prior WITHIN each iteration, AND WITHIN each pass over hidden state factors
+                qx[f] = softmax(np.log(qL + 1e-16) + np.log(prior[f] + 1e-16))
 
                 """
-                1. This is the version where we log-add the prior WITHIN each iteration, AND WITHIN each pass over hidden state factors
-                > qx[f] = softmax(np.log(qL + 1e-16) + np.log(prior[f] + 1e-16))
-                """
-
-                # 2. This is the version where don't add the prior
-                # (and it gets log-added at the end, outside both the factor and the iteration loop)
+                2. This is the version where don't add the prior until the end
+                (and it gets log-added at the end, outside both the factor and the iteration loop)
                 qx[f] = softmax(np.log(qL + 1e-16))
-
+                """
             """ 
             3. Log-add the prior WITHIN each iteration, but outside the 1st loop over factors
             > for f in range(Nf):
@@ -375,19 +374,119 @@ def run_FPI(A, observation, prior, No, Ns, num_iter=10, dF=1.0, dF_tol=0.001):
 
             iter_i += 1
 
-        for f in range(Nf):
-            # CONSISTENT WITH OPTION [2] ABOVE: integrate the prior by log-adding and softmax-ing
-            qx[f] = softmax(np.log(qx[f] + 1e-16) + np.log(prior[f] + 1e-16))
+        # for f in range(Nf):
+        #     # CONSISTENT WITH OPTION [2] ABOVE: integrate the prior by log-adding and softmax-ing
+        #     qx[f] = softmax(np.log(qx[f] + 1e-16) + np.log(prior[f] + 1e-16))
 
         return qx
 
+def update_posterior_policies(Qs, A, pA, B, pB, C, possiblePolicies, gamma = 16.0, return_numpy=True):
+    '''
+    Parameters
+    ----------
+    Qs [1D numpy array, array-of-arrays, or Categorical (either single- or multi-factor)]:
+        current marginal beliefs about hidden state factors
+    A [numpy ndarray, array-of-arrays (in case of multiple modalities), or Categorical (both single and multi-modality)]:
+        Observation likelihood model (beliefs about the likelihood mapping entertained by the agent)
+    pA [numpy ndarray, array-of-arrays (in case of multiple modalities), or Dirichlet (both single and multi-modality)]:
+        Prior dirichlet parameters for A
+    B [numpy ndarray, array-of-arrays (in case of multiple hidden state factors), or Categorical (both single and multi-factor)]:
+        Transition likelihood model (beliefs about the likelihood mapping entertained by the agent)
+    pB [numpy ndarray, array-of-arrays (in case of multiple hidden state factors), or Dirichlet (both single and multi-factor)]:
+        Prior dirichlet parameters for B
+    C [numpy 1D-array, array-of-arrays (in case of multiple modalities), or Categorical (both single and multi-modality)]:
+        Prior beliefs about outcomes (prior preferences)
+    possiblePolicies [list of tuples]:
+        a list of all the possible policies, each expressed as a tuple of indices, where a given index corresponds to an action on a particular hidden state factor
+        e.g. possiblePolicies[1][2] yields the index of the action under Policy 1 that affects Hidden State Factor 2
+    gamma [float]:
+        precision over policies, used as the inverse temperature parameter of a softmax transformation of the expected free energies of each policy
+    return_numpy [Boolean]:
+        True/False flag to determine whether output of function is a numpy array or a Categorical
+    
+    Returns
+    --------
+    p_i [1D numpy array or Categorical]:
+        posterior beliefs about policies, defined here as a softmax function of the expected free energies of policies
+    EFE [1D numpy array or Categorical]:
+        the expected free energies of policies
+    '''
+
+    if not isinstance(C,Categorical):
+        C = Categorical(values = C)
+    
+    C = softmax(C.log())
+
+    Np = len(possiblePolicies)
+
+    EFE = Categorical(dims=Np)
+    p_i = Categorical(dims=Np)
+
+    for p_i, policy in enumerate(possiblePolicies):
+
+        Qs_pi = get_expected_states(Qs, B, policy)
+
+        Qo_pi = get_expected_obs(A, Qs_pi)
+
+        utility = calculate_expected_utility(Qo_pi,C)
+        EFE[p_i] += utility
+
+        surprise_states = calculate_expected_surprise(A, Qs_pi)
+        EFE[p_i] += surprise_states
+
+        infogain_pA = calculate_infogain_pA(pA, Qo_pi, Qs_pi)
+        EFE[p_i] += infogain_pA
+
+        infogain_pB = calculate_infogain_pB(pA, Qs_pi, Qs, policy)
+        EFE[p_i] += infogain_pB
+    
+    p_i = softmax(EFE * gamma)
+
+    return p_i, EFE
+
+def get_expected_states(Qs, B, policy):
+    '''
+    @TODO:
+    '''
+    return
+
+def get_expected_obs(A, Qs_pi):
+    '''
+    @TODO:
+    '''
+    return
+
+def calculate_expected_utility(Qo_pi,C):
+    '''
+    @TODO:
+    '''
+    return
+
+def calculate_expected_surprise(A, Qs_pi):
+    '''
+    @TODO:
+    This function will spm_MDP_G within it to do the heavy lifting,
+    but the wrapper is needed for arguments-handling etc. (e.g. in case that arguments are Categoricals, 
+    need to pull out values/possible squeeze() them if they're column vectors)
+    '''
+    return
+
+def calculate_infogain_pA(pA, Qo_pi, Qs_pi):
+    '''
+    '''
+    return
+
+def calculate_infogain_pB(pA, Qs_pi, Qs, policy):
+    '''
+    '''
+    return
 
 def spm_MDP_G(A, x):
     """
     Calculates the Bayesian surprise in the same way as spm_MDP_G.m does in 
     the original matlab code.
     
-    Arguments
+    Parameters
     ----------
     A (numpy ndarray or array-object):
         array assigning likelihoods of observations/outcomes under the various hidden state configurations
@@ -444,7 +543,6 @@ def spm_MDP_G(A, x):
     G = G - qo.dot(np.log(qo + np.exp(-16)))
 
     return G
-
 
 def cross_product_beta(dist_a, dist_b):
     """
