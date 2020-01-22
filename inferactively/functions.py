@@ -273,15 +273,15 @@ def update_posterior(A, observation, prior, return_numpy = True, method = 'FPI',
     if method == 'FPI':
         qx = run_FPI(A, observation, prior, No, Ns, numIter=kwargs['numIter'], dF=kwargs['dF'], dF_tol=kwargs['dF_tol'])
     if method == 'VMP':
-        posterior = run_VMP(A, observation, prior, **kwargs)
+        qx = run_VMP(A, observation, prior, **kwargs)
     if method == 'MMP':
-        posterior = run_MMP(A, observation, prior, **kwargs)
+        qx = run_MMP(A, observation, prior, **kwargs)
     if method == 'BP':
-        posterior = run_MMP(A, observation, prior, **kwargs)
+        qx = run_MMP(A, observation, prior, **kwargs)
     if method == 'EP':
-        posterior = run_MMP(A, observation, prior, **kwargs)
+        qx = run_MMP(A, observation, prior, **kwargs)
     if method == 'CV':
-        posterior = run_MMP(A, observation, prior, **kwargs)
+        qx = run_MMP(A, observation, prior, **kwargs)
 
     if return_numpy:
         return qx
@@ -383,6 +383,76 @@ def run_FPI(A, observation, prior, No, Ns, numIter=10, dF=1.0, dF_tol=0.001):
 
         return qx
 
+def spm_MDP_G(A, x):
+    """
+    Calculates the Bayesian surprise in the same way as spm_MDP_G.m does in 
+    the original matlab code.
+    
+    Arguments
+    ----------
+    A (numpy ndarray or array-object):
+        array assigning likelihoods of observations/outcomes under the various hidden state configurations
+    
+    x (numpy ndarray or array-object):
+        Categorical distribution presenting probabilities of hidden states (this can also be interpreted as the 
+        predictive density over hidden states/causes if you're calculating the 
+        expected Bayesian surprise)
+        
+    Returns
+    -------
+    G (float):
+        the (expected or not) Bayesian surprise under the density specified by x --
+        namely, this scores how much an expected observation would update beliefs about hidden states
+        x, were it to be observed. 
+    """
+    
+    if A.dtype == "object":
+        Ng = len(A)
+        AOA_flag = True
+    else:
+        Ng = 1
+        AOA_flag = False
+
+    # probability distribution over the hidden causes: i.e., Q(x)
+    qx = spm_cross(x)
+    G = 0
+    qo = 0
+    idx = np.array(np.where(qx > np.exp(-16))).T
+
+    if AOA_flag:
+        # accumulate expectation of entropy: i.e., E[lnP(o|x)]
+        for i in idx:
+
+            # probability over outcomes for this combination of causes
+            po = np.ones(1)
+
+            for g in range(Ng):
+                index_vector = [slice(0, A[g].shape[0])] + list(i)
+                po = spm_cross(po, A[g][tuple(index_vector)])
+
+            po = po.ravel()
+
+            qo += qx[tuple(i)] * po
+
+            G += qx[tuple(i)] * po.dot(np.log(po + np.exp(-16)))
+    else:
+        for i in idx:
+
+            po = np.ones(1)
+
+            index_vector = [slice(0, A.shape[0])] + list(i)
+            po = spm_cross(po, A[tuple(index_vector)])
+
+            po = po.ravel()
+
+            qo += qx[tuple(i)] * po
+
+            G += qx[tuple(i)] * po.dot(np.log(po + np.exp(-16))) 
+
+    # subtract negative entropy of expectations: i.e., E[lnQ(o)]
+    G  = G - qo.dot(np.log(qo + np.exp(-16)))
+
+    return G
     
 
 
