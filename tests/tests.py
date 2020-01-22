@@ -2,9 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """ Unit Tests
-
 __author__: Conor Heins, Alexander Tschantz, Brennan Klein
-
 """
 
 import os
@@ -140,6 +138,34 @@ class TestCategorical(unittest.TestCase):
         values = np.random.rand(3, 2)
         c = Categorical(values=values)
         self.assertEqual(c.shape, (3, 2))
+    
+    def test_sample_single(self):
+
+        # values are already normalized
+        values = np.array([1.0, 0.0])
+        c = Categorical(values=values)
+        self.assertEqual(0, c.sample())
+
+        # values are not normalized
+        values = np.array([0, 10.0])
+        c = Categorical(values=values)
+        self.assertEqual(1,c.sample())
+
+    def test_sample_AoA(self):
+
+        # values are already normalized
+        values_1 = np.array([1.0, 0.0])
+        values_2 = np.array([0.0, 1.0, 0.0])
+        values = np.array([values_1,values_2])
+        c = Categorical(values=values)
+        self.assertTrue(np.isclose(np.array([0, 1]), c.sample()).all())
+
+        # values are not normalized
+        values_1 = np.array([10.0, 0.0])
+        values_2 = np.array([0.0, 10.0, 0.0])
+        values = np.array([values_1,values_2])
+        c = Categorical(values=values)
+        self.assertTrue(np.isclose(np.array([0, 1]), c.sample()).all())
 
     def test_dot_function_a(self):
         """ test with vectors and matrices, discrete state / outcomes """
@@ -362,7 +388,7 @@ class TestCategorical(unittest.TestCase):
     def test_dot_function_f(self):
         """ Test for when the outcome modality is a trivially one-dimensional vector, meaning
         the return of spm_dot is a scalar - this tests that the spm_dot function
-        succcessfully wraps such scalar returns into an array """
+        successfully wraps such scalar returns into an array """
 
         states = np.empty(2,dtype=object)
         states[0] = np.array([0.75,0.25])
@@ -611,11 +637,13 @@ class TestDirichlet(unittest.TestCase):
         d = Dirichlet(values=values)
         self.assertFalse(d.contains_zeros())
 
-    # def test_entropy(self):
-    #     values = np.random.rand(3, 2)
-    #     entropy = -np.sum(values * np.log(values), 0) # this needs to be changed, not necessarily equation for entropy of a Dirichlet distribution
-    #     d = Dirichlet(values=values)
-    #     self.assertTrue(np.array_equal(d.entropy(return_numpy=True), entropy))
+    """
+    def test_entropy(self):
+        values = np.random.rand(3, 2)
+        entropy = -np.sum(values * np.log(values), 0) 
+        d = Dirichlet(values=values)
+        self.assertTrue(np.array_equal(d.entropy(return_numpy=True), entropy))
+    """
 
     def test_log(self):
         values = np.random.rand(3, 2)
@@ -641,8 +669,8 @@ class TestDirichlet(unittest.TestCase):
         d = Dirichlet(values=values)
         self.assertEqual(d.shape, (3, 2))
 
-    def test_wnorm_single_factor(self):
-        """ tests implementation of wnorm method against matlab version (single factor)
+    def test_expectation_single_factor(self):
+        """ tests implementation of expect_log method against matlab version (single factor)
         """
 
         array_path = os.path.join(os.getcwd(), "tests/data/wnorm_a.mat")
@@ -650,12 +678,12 @@ class TestDirichlet(unittest.TestCase):
         result = mat_contents["result"]
 
         d = Dirichlet(values=mat_contents["A"])
-        result_py = d.wnorm(return_numpy=True)
+        result_py = d.expectation_of_log(return_numpy=True)
 
         self.assertTrue(np.isclose(result, result_py).all())
 
-    def test_wnorm_multi_factor(self):
-        """ tests implementation of wnorm method against matlab version (multi factor)
+    def test_expectation_multi_factor(self):
+        """ tests implementation of expect_log method against matlab version (multi factor)
         """
 
         array_path = os.path.join(os.getcwd(), "tests/data/wnorm_b.mat")
@@ -664,13 +692,14 @@ class TestDirichlet(unittest.TestCase):
         result_2 = mat_contents["result_2"]
 
         d = Dirichlet(values=mat_contents["A"][0])
-        result_py = d.wnorm(return_numpy=True)
+        result_py = d.expectation_of_log(return_numpy=True)
 
         self.assertTrue(
             np.isclose(result_1, result_py[0]).all()
             and np.isclose(result_2, result_py[1]).all()
         )
 
-
 if __name__ == "__main__":
     unittest.main()
+
+ 

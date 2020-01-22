@@ -8,7 +8,9 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
 import numpy as np
+from scipy import special
 import warnings
+import inferactively.functions as F
 
 
 class Dirichlet(object):
@@ -132,8 +134,8 @@ class Dirichlet(object):
         """
         self.values += np.exp(-16)
 
-    def wnorm(self, return_numpy=True):
-        """ Expectation of a (log) Categorical distribution parameterized
+    def expectation_of_log(self, return_numpy=True):
+        """ Expectation of a (log) Dirichlet distribution parameterized
         with a Dirichlet prior over its parameters (or a set of such Categorical distributions,
         e.g. a multi-dimensional likelihood)
         """
@@ -180,8 +182,55 @@ class Dirichlet(object):
                     return True
             return False
 
-    def entropy(self, return_numpy=False):
-        pass
+    def entropy(self):
+
+        if not self.IS_AOA:
+            values = np.copy(self.values)
+            if values.ndim > 1:
+                output = np.zeros(values.shape[1])
+                for col_i in range(values.shape[1]):
+                    first_term = F.spm_betaln(values[:, col_i])
+                    a0 = values[:, col_i].sum(axis=0)
+                    second_term = (a0 - values.shape[0]) * special.digamma(a0)
+                    third_term = -np.sum(
+                        (values[:, col_i] - 1) * special.digamma(values[:, col_i]),
+                        axis=0,
+                    )
+                    output[col_i] = first_term + second_term + third_term
+            else:
+                first_term = F.spm_betaln(values)
+                a0 = values.sum(axis=0)
+                second_term = (a0 - values.shape[0]) * special.digamma(a0)
+                third_term = -np.sum((values - 1) * special.digamma(values), axis=0)
+                output = first_term + second_term + third_term
+
+        else:
+            output = np.zeros(len(self.values))
+            for i in range(len(self.values)):
+                output[i] = self.values[i].entropy()
+        return output
+
+    def variance(self, return_numpy=False):
+
+        if not self.IS_AOA:
+            values = np.copy(self.values)
+            a_mean = values / values.sum(axis=0)
+            a_0 = values.sum(axis=0)
+            numerator = a_mean * (1.0 - a_mean)
+            denominator = a_0 + 1.0
+            if a_mean.shape[0] > 1:
+                output = numerator / np.tile(denominator, (a_mean.shape[0], 1))
+            else:
+                output = numerator / denominator
+            if return_numpy:
+                return output
+            else:
+                return Dirichlet(values=output)
+        else:
+            result_array = Dirichlet(dims=[list(el.shape) for el in self.values])
+            for i in range(len(self.values)):
+                result_array[i] = self.values[i].variance(return_numpy=True)
+            return result_array
 
     def log(self, return_numpy=False):
         """ Return the log of the parameters
