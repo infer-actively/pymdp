@@ -11,6 +11,7 @@ import numpy as np
 from scipy import special
 import warnings
 import inferactively.functions as F
+from .categorical import Categorical
 
 
 class Dirichlet(object):
@@ -103,7 +104,7 @@ class Dirichlet(object):
         else:
             raise ValueError(":dims: must be either :list: or :int:")
 
-    def normalize(self):
+    def mean(self, return_numpy=False):
         """ Normalize distribution
 
         This function will ensure the distribution(s) integrate to 1.0
@@ -123,7 +124,11 @@ class Dirichlet(object):
             column_sums = np.sum(self.values, axis=0)
             normed = np.divide(self.values, column_sums)
             normed[np.isnan(normed)] = np.divide(1.0, normed.shape[0])
-        return normed
+
+        if return_numpy:
+            return normed
+        else:
+            return Categorical(values=normed)
 
     def remove_zeros(self):
         """ Remove zeros by adding a small number

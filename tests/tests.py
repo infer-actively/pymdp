@@ -607,20 +607,20 @@ class TestDirichlet(unittest.TestCase):
         values_2 = np.random.rand(4, 3)
         values = np.array([values_1, values_2])
         d = Dirichlet(values=values)
-        normed = Categorical(values=d.normalize())
+        normed = Categorical(values=d.mean(return_numpy=True))
         self.assertTrue(normed.is_normalized())
 
     def test_normalize_single_dim(self):
         values = np.array([1.0, 1.0])
         d = Dirichlet(values=values)
         expected_values = np.array([[0.5], [0.5]])
-        self.assertTrue(np.array_equal(d.normalize(), expected_values))
+        self.assertTrue(np.array_equal(d.mean(return_numpy=True), expected_values))
 
     def test_normalize_two_dim(self):
         values = np.array([[1.0, 1.0], [1.0, 1.0]])
         d = Dirichlet(values=values)
         expected_values = np.array([[0.5, 0.5], [0.5, 0.5]])
-        self.assertTrue(np.array_equal(d.normalize(), expected_values))
+        self.assertTrue(np.array_equal(d.mean(return_numpy=True), expected_values))
 
     def test_remove_zeros(self):
         values = np.array([[1.0, 0.0], [1.0, 1.0]])

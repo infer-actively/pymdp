@@ -12,14 +12,14 @@ from scipy import special
 from inferactively.distributions import Categorical
 
 
-def softmax(distrib, return_numpy=True):
+def softmax(distrib, return_numpy=False):
     """ Computes the softmax function on a set of values
     """
     if isinstance(distrib, Categorical):
         if distrib.IS_AOA:
             output = Categorical(dims=[list(el.shape) for el in distrib])
             for i in range(len(distrib.values)):
-                output[i] = softmax(distrib.values[i], return_numpy=True)
+                output[i] = softmax(distrib.values[i], return_numpy=False)
             return output
         else:
             distrib = np.copy(distrib.values)
@@ -111,7 +111,7 @@ def spm_dot(X, x, dims_to_omit=None):
 
     # perform check to see if `y` is a number
     if np.prod(Y.shape) <= 1.0:
-        Y = np.asscalar(Y)
+        Y = Y.item()
         Y = np.array([Y]).astype("float64")
 
     return Y
@@ -270,9 +270,7 @@ def update_posterior(A, observation, prior, return_numpy=True, method="FPI", **k
             prior,
             No,
             Ns,
-            num_iter=kwargs["num_iter"],
-            dF=kwargs["dF"],
-            dF_tol=kwargs["dF_tol"],
+            **kwargs,
         )
     if method == "VMP":
         raise NotImplementedError("VMP is not implemented")
@@ -453,3 +451,18 @@ def spm_MDP_G(A, x):
     G = G - qo.dot(np.log(qo + np.exp(-16)))
 
     return G
+
+
+def cross_product_beta(dist_a, dist_b):
+    """
+    @TODO: needs to be replaced by spm_cross
+    """
+    if not isinstance(type(dist_a), type(Categorical)) or not isinstance(type(dist_b), type(Categorical)):
+        raise ValueError(
+            '[cross_product] function takes [Categorical] objects')
+    values_a = np.copy(dist_a.values)
+    values_b = np.copy(dist_b.values)
+    a = np.reshape(values_a, (values_a.shape[0], values_a.shape[1], 1, 1))
+    b = np.reshape(values_b, (1, 1, values_b.shape[0], values_b.shape[1]))
+    values = np.squeeze(a * b)
+    return values
