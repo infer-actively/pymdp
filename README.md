@@ -11,6 +11,16 @@ based on functions from the `SPM` [implementation](https://www.fil.ion.ucl.ac.uk
 
 This package is under active development and is currently not suited for use. If you would like to contribute, please refer to [this file](CONTRIBUTING.md)
 
+## Roadmap
+
+- Get alternative inference schemes working (variational message passing, belief propagation, expectation propagation, marginal message passing.
+- Finish testing implementations for information gain (states & parameters) with multiple modalities.
+- Implement `Agent` API, wrapping inference, learning and policy selection into a single class.
+- Implement canonical environments from SPM (T-maze, sentence comprehension)
+- Implement hierarchical generative models and seperation of time scales
+- Implement Bayesian model reduction and comparison
+- Implement parameter fitting routines
+
 ## Installation and Usage
 
 In order to use this code, download the `inferactively` folder into your project
