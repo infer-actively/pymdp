@@ -444,10 +444,80 @@ def update_posterior_policies(Qs, A, pA, B, pB, C, possiblePolicies, gamma = 16.
 
     return p_i, EFE
 
-def get_expected_states(Qs, B, policy):
+def get_expected_states(Qs, B, policy, return_numpy = True):
     '''
-    @TODO:
+    Given a posterior density Qs, a transition likelihood model B, and a policy, 
+    get the state distribution expected under that policy's pursuit.
+
+    Parameters
+    ----------
+    Qs [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+        Current posterior beliefs about hidden states
+    B [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Categorical (either single-factor of AoA)]:
+        Transition likelihood mapping from states at t to states at t + 1, with different actions (per factor) stored along the lagging dimension
+    policy [tuple of ints]:
+        Tuple storing indices of actions along each hidden state factor. E.g. policy[1] gives the index of the action occurring on Hidden State Factor 1
+    return_numpy [Boolean]:
+        True/False flag to determine whether output of function is a numpy array or a Categorical
+    Returns
+    -------
+    Qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+        Expected states under the given policy - also known as the 'posterior predictive density'
     '''
+
+    if isinstance(B, Categorical):
+
+        if B.IS_AOA:
+            Qs_pi = Categorical( values = [B[f][:,:,a].dot(Qs[f], return_numpy=True) for f, a in enumerate(policy)])
+        else:
+            Qs_pi = B[:,:,policy[0]].dot(Qs)
+    
+    elif B.dtype == 'object':
+
+        Nf = len(B)
+
+        Qs_pi = np.empty(Nf, dtype = object)
+
+        for f in range(Nf):
+            Qs_pi[f] = spm_dot(B[f][:,:,policy[f]], Qs[f])
+    
+    else:
+
+        Qs_pi = spm_dot(B[:,:,policy[0]], Qs)
+
+        
+            
+
+    # if isinstance(B, Categorical):
+    #     B = B.values
+
+    # if B.dtype == "object":
+    #     Ns = [B_i.shape[0] for B_i in B]
+    #     Nf = len(Ns)
+    # else:
+    #     Ns = B.shape[0]
+    #     Nf = 1
+
+    # if isinstance(Qs, Categorical):
+
+    #     Qs_new = np.empty(Nf, dtype=object)
+
+    #     if Qs.IS_AOA:
+    #         for f in range(Nf):
+    #             Qs_new[f] = Qs[f].values.squeeze()
+    #     else:
+    #         Qs_new[0] = Qs.values.squeeze()
+
+    #     Qs = Qs_new
+
+
+
+
+
+
+
+
+
     return
 
 def get_expected_obs(A, Qs_pi):
