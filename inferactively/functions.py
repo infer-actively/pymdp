@@ -444,7 +444,7 @@ def update_posterior_policies(Qs, A, pA, B, pB, C, possiblePolicies, gamma = 16.
 
     return p_i, EFE
 
-def get_expected_states(Qs, B, policy, return_numpy = True):
+def get_expected_states(Qs, B, policy, return_numpy = False):
     '''
     Given a posterior density Qs, a transition likelihood model B, and a policy, 
     get the state distribution expected under that policy's pursuit.
@@ -468,22 +468,41 @@ def get_expected_states(Qs, B, policy, return_numpy = True):
     if isinstance(B, Categorical):
 
         if B.IS_AOA:
-            Qs_pi = Categorical( values = [B[f][:,:,a].dot(Qs[f], return_numpy=True) for f, a in enumerate(policy)])
+            Qs_pi = Categorical( values = np.array([B[f][:,:,a].dot(Qs[f], return_numpy=True)[:,np.newaxis] for f, a in enumerate(policy)], dtype = object) )
         else:
             Qs_pi = B[:,:,policy[0]].dot(Qs)
+        
+        if return_numpy and Qs_pi.IS_AOA:
+            Qs_pi_flattened = np.empty(len(Qs_pi.values), dtype = object)
+            for f in range(len(Qs_pi.values)):
+                Qs_pi_flattened[f] = Qs_pi[f].values.flatten()
+            return Qs_pi_flattened
+        elif return_numpy and not Qs_pi.IS_AOA:
+            return Qs_pi.values.flatten()
+        else:
+            return Qs_pi
     
     elif B.dtype == 'object':
 
         Nf = len(B)
 
         Qs_pi = np.empty(Nf, dtype = object)
-
         for f in range(Nf):
             Qs_pi[f] = spm_dot(B[f][:,:,policy[f]], Qs[f])
-    
+
     else:
 
         Qs_pi = spm_dot(B[:,:,policy[0]], Qs)
+    
+    if not return_numpy:
+        Qs_pi = Categorical(values = Qs_pi)
+        return Qs_pi
+    else:
+        return Qs_pi
+
+        
+
+
 
         
             
