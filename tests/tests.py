@@ -679,6 +679,7 @@ class TestDirichlet(unittest.TestCase):
 
         d = Dirichlet(values=mat_contents["A"])
         result_py = d.expectation_of_log(return_numpy=True)
+        result_py = d.expect_log(return_numpy=True)
 
         self.assertTrue(np.isclose(result, result_py).all())
 
@@ -693,6 +694,7 @@ class TestDirichlet(unittest.TestCase):
 
         d = Dirichlet(values=mat_contents["A"][0])
         result_py = d.expectation_of_log(return_numpy=True)
+        result_py = d.expect_log(return_numpy=True)
 
         self.assertTrue(
             np.isclose(result_1, result_py[0]).all()
