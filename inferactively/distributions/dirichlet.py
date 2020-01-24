@@ -214,7 +214,6 @@ class Dirichlet(object):
             for i in range(len(self.values)):
                 output[i] = self.values[i].entropy()
         return output
-
     def variance(self, return_numpy=False):
 
         if not self.IS_AOA:
