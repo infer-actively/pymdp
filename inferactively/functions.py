@@ -490,10 +490,18 @@ def get_expected_states(Qs, B, policy, return_numpy = False):
         Nf = len(B)
 
         Qs_pi = np.empty(Nf, dtype = object)
+
+        if isinstance(Qs, Categorical):
+            Qs = Qs.values
+            for f in range(Nf):
+                Qs[f] = Qs[f].flatten()
         for f in range(Nf):
             Qs_pi[f] = spm_dot(B[f][:,:,policy[f]], Qs[f])
 
     else:
+
+        if isinstance(Qs, Categorical):
+            Qs = Qs.values.flatten()
 
         Qs_pi = spm_dot(B[:,:,policy[0]], Qs)
     
@@ -504,9 +512,25 @@ def get_expected_states(Qs, B, policy, return_numpy = False):
         return Qs_pi
 
 
-def get_expected_obs(A, Qs_pi):
+def get_expected_obs(Qs_pi, return_numpy = False):
     '''
-    @TODO:
+    Given a posterior predictive density Qs_pi and an observation likelihood model A,
+    get the expected observations given the predictive posterior.
+
+    Parameters
+    ----------
+    Qs [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+        Current posterior beliefs about hidden states
+    B [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Categorical (either single-factor of AoA)]:
+        Transition likelihood mapping from states at t to states at t + 1, with different actions (per factor) stored along the lagging dimension
+    policy [tuple of ints]:
+        Tuple storing indices of actions along each hidden state factor. E.g. policy[1] gives the index of the action occurring on Hidden State Factor 1
+    return_numpy [Boolean]:
+        True/False flag to determine whether output of function is a numpy array or a Categorical
+    Returns
+    -------
+    Qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+        Expected states under the given policy - also known as the 'posterior predictive density'
     '''
     return
 
