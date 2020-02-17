@@ -358,28 +358,9 @@ def run_FPI(A, observation, prior, No, Ns, num_iter=10, dF=1.0, dF_tol=0.001):
                 # lnP = spm_dot(A_gm[g1,g2],O)
                 # dF += np.sum(np.log(qL + 1e-16)-np.log(prior + 1e-16) + spm_dot(lnL, Qs, [f]))
 
-                # @TODO:
-                # Do we log-add the prior *within* each variational iteration? Or afterwards, when the iterations have ended?
-                
-                # 1. This is the version where we log-add the prior WITHIN each iteration, AND WITHIN each pass over hidden state factors
                 qx[f] = softmax(np.log(qL + 1e-16) + np.log(prior[f] + 1e-16))
 
-                """
-                2. This is the version where don't add the prior until the end
-                (and it gets log-added at the end, outside both the factor and the iteration loop)
-                qx[f] = softmax(np.log(qL + 1e-16))
-                """
-            """ 
-            3. Log-add the prior WITHIN each iteration, but outside the 1st loop over factors
-            > for f in range(Nf):
-            >     qx[f] = softmax(np.log(qx[f] + 1e-16) + np.log(prior[f] + 1e-16))
-            """
-
             iter_i += 1
-
-        # for f in range(Nf):
-        #     # CONSISTENT WITH OPTION [2] ABOVE: integrate the prior by log-adding and softmax-ing
-        #     qx[f] = softmax(np.log(qx[f] + 1e-16) + np.log(prior[f] + 1e-16))
 
         return qx
 
@@ -512,7 +493,7 @@ def get_expected_states(Qs, B, policy, return_numpy = False):
         return Qs_pi
 
 
-def get_expected_obs(Qs_pi, return_numpy = False):
+def get_expected_obs(Qs_pi, A, return_numpy = False):
     '''
     Given a posterior predictive density Qs_pi and an observation likelihood model A,
     get the expected observations given the predictive posterior.
@@ -521,18 +502,55 @@ def get_expected_obs(Qs_pi, return_numpy = False):
     ----------
     Qs [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
         Current posterior beliefs about hidden states
-    B [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Categorical (either single-factor of AoA)]:
-        Transition likelihood mapping from states at t to states at t + 1, with different actions (per factor) stored along the lagging dimension
-    policy [tuple of ints]:
-        Tuple storing indices of actions along each hidden state factor. E.g. policy[1] gives the index of the action occurring on Hidden State Factor 1
+    A [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Categorical (either single-factor of AoA)]:
+        Observation likelihood mapping from hidden states to observations, with different modalities (if there are multiple) stored in different arrays
     return_numpy [Boolean]:
         True/False flag to determine whether output of function is a numpy array or a Categorical
     Returns
     -------
-    Qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
-        Expected states under the given policy - also known as the 'posterior predictive density'
+    Qo_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+        Expected observations under the given policy 
     '''
-    return
+    if isinstance(A, Categorical):
+        
+        if not return_numpy:   
+            Qo_pi = A.dot(Qs_pi)
+            return Qo_pi
+        else:
+            Qo_pi = A.dot(Qs_pi,return_numpy=True)
+            if Qo_pi.dtype == 'object':
+                Qo_pi_flattened = np.empty(len(Qo_pi),dtype=object)
+                for g in range(len(Qo_pi)):
+                    Qo_pi_flattened[g] = Qo_pi[g].flatten()
+                return Qo_pi_flattened
+            else:
+                return Qo_pi.flatten()
+    
+    elif A.dtype == 'object':
+
+        Ng = len(A)
+
+        Qo_pi = np.empty(Ng, dtype = object)
+
+        if isinstance(Qs_pi, Categorical):
+            Qs_pi = Qs_pi.values
+            for f in range(len(Qs_pi)):
+                Qs_pi[f] = Qs_pi[f].flatten()
+        for g in range(Ng):
+            Qo_pi[g] = spm_dot(A[g],Qs_pi)
+
+    else:
+
+        if isinstance(Qs_pi, Categorical):
+            Qs_pi = Qs_pi.values
+
+        Qo_pi = spm_dot(A, Qs_pi)
+    
+    if not return_numpy:
+        Qo_pi = Categorical(values = Qo_pi)
+        return Qo_pi
+    else:
+        return Qo_pi
 
 def calculate_expected_utility(Qo_pi,C):
     '''
