@@ -14,7 +14,6 @@ This package is under active development and is currently not suited for use. If
 ## Roadmap
 
 - Get alternative inference schemes working (variational message passing, belief propagation, expectation propagation, marginal message passing)
-- Finish testing implementations for information gain (states & parameters) with multiple modalities
 - Implement `Agent` API, wrapping inference, learning and policy selection into a single class
 - Implement canonical environments from SPM (T-maze, sentence comprehension)
 - Implement hierarchical generative models and seperation of time scales
