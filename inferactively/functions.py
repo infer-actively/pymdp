@@ -9,7 +9,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import itertools
 import numpy as np
 from scipy import special
-from inferactively.distributions import Categorical
+from inferactively.distributions import Categorical, Dirichlet
 
 
 def softmax(distrib, return_numpy = True):
@@ -162,6 +162,21 @@ def spm_cross(X, x=None, *args):
         Y = spm_cross(Y, x)
 
     return Y
+
+def spm_wnorm(A):
+    """
+    Normalization of a prior over Dirichlet parameters, used in updates for information gain
+    """
+    
+    A = A + 1e-16
+    
+    norm = np.divide(1.0, np.sum(A,axis=0))
+    
+    avg = np.divide(1.0, A)
+    
+    wA = norm - avg
+   
+    return wA
 
 
 def spm_betaln(z):
@@ -500,8 +515,8 @@ def get_expected_obs(Qs_pi, A, return_numpy = False):
 
     Parameters
     ----------
-    Qs [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
-        Current posterior beliefs about hidden states
+    Qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+        Posterior predictive density over hidden states
     A [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Categorical (either single-factor of AoA)]:
         Observation likelihood mapping from hidden states to observations, with different modalities (if there are multiple) stored in different arrays
     return_numpy [Boolean]:
@@ -554,23 +569,144 @@ def get_expected_obs(Qs_pi, A, return_numpy = False):
 
 def calculate_expected_utility(Qo_pi,C):
     '''
-    @TODO:
+    Given expected observations under a policy Qo_pi and a prior over observations C
+    compute the expected utility of the policy.
+
+    Parameters
+    ----------
+    Qo_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+        Posterior predictive density over outcomes
+    C [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array):
+        Prior beliefs over outcomes, expressed in terms of relative log probabilities
+    Returns
+    -------
+    expected_util [scalar]:
+        Utility (reward) expected under the policy in question
     '''
-    return
+
+    if isinstance(Qo_pi,Categorical):
+        Qo_pi = Qo_pi.values
+    
+    if Qo_pi.dtype == 'object':
+        for g in range(len(Qo_pi)):
+            Qo_pi[g] = Qo_pi[g].flatten()
+
+    if C.dtype == 'object':
+        
+        expected_util = 0
+        
+        Ng = len(C)
+        for g in range(Ng):
+            lnC = np.log(softmax(C[g][:,np.newaxis])+1e-16)
+            expected_util += Qo_pi[g].flatten().dot(lnC)
+
+    else:
+
+        lnC = np.log(softmax(C[:,np.newaxis]) + 1e-16)
+        expected_util = Qo_pi.flatten().dot(lnC)
+    
+    return expected_util
 
 def calculate_expected_surprise(A, Qs_pi):
     '''
-    @TODO:
-    This function will spm_MDP_G within it to do the heavy lifting,
-    but the wrapper is needed for arguments-handling etc. (e.g. in case that arguments are Categoricals, 
-    need to pull out values/possible squeeze() them if they're column vectors)
+    Given a likelihood mapping A and a posterior predictive density over states Qs_pi,
+    compute the Bayesian surprise (about states) expected under that policy
+
+    Parameters
+    ----------
+    A [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Categorical (either single-factor of AoA)]:
+        Observation likelihood mapping from hidden states to observations, with different modalities (if there are multiple) stored in different arrays
+    Qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+        Posterior predictive density over hidden states
+    Returns
+    -------
+    states_surprise [scalar]:
+        Surprise (about states) expected under the policy in question
     '''
-    return
+
+    if isinstance(A, Categorical):
+        A = A.values
+
+    if isinstance(Qs_pi, Categorical):
+        Qs_pi = Qs_pi.values
+    
+    if Qs_pi.dtype == 'object':
+        for f in range(len(Qs_pi)):
+            Qs_pi[f] = Qs_pi[f].flatten()
+    else:
+        Qs_pi = Qs_pi.flatten()
+    
+    states_surprise = spm_MDP_G(A,Qs_pi)
+
+    return states_surprise
 
 def calculate_infogain_pA(pA, Qo_pi, Qs_pi):
     '''
+    Compute expected Dirichlet information gain about parameters pA under a policy
+    Parameters
+    ----------
+    pA [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Dirichlet (either single-factor of AoA)]:
+        Prior dirichlet parameters parameterizing beliefs about the likelihood mapping from hidden states to observations, 
+        with different modalities (if there are multiple) stored in different arrays.
+    Qo_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+        Posterior predictive density over observations, given hidden states expected under a policy
+    Qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+        Posterior predictive density over hidden states
+    Returns
+    -------
+    params_surprise [scalar]:
+        Surprise (about dirichlet parameters) expected under the policy in question
     '''
-    return
+
+
+    if isinstance(pA,Dirichlet):
+        if pA.IS_AOA:
+            Ng = pA.shape[0]
+        else:
+            Ng = 1
+        wA = pA.expectation_of_log(return_numpy=True)
+        pA = pA.values
+    elif pA.dtype == 'object':
+        Ng = len(pA)
+        wA = np.empty(Ng,dtype=object)
+        for g in range(Ng):
+            wA[g] = spm_wnorm(pA[g])
+    else:
+        Ng = 1
+        wA = spm_wnorm(pA)
+
+    if isinstance(Qo_pi,Categorical):
+        Qo_pi = Qo_pi.values
+        
+    if Qo_pi.dtype == 'object':
+        for g in range(len(Qo_pi)):
+            Qo_pi[g] = Qo_pi[g].flatten()
+    else:
+        Qo_pi = Qo_pi.flatten()
+    
+    if isinstance(Qs_pi,Categorical):
+        Qs_pi = Qs_pi.values
+    
+    if Qs_pi.dtype == 'object':
+        for f in range(len(Qs_pi)):
+            Qs_pi[f] = Qs_pi[f].flatten()
+    else:
+        Qs_pi = Qs_pi.flatten()
+    
+    if Ng > 1:
+
+        infogain_pA = 0
+
+        for g in range(Ng):
+            wA_g= wA[g] * (pA[g] > 0).astype('float')
+            infogain_pA -= Qo_pi[g].dot(spm_dot(wA_g,Qs_pi)[:,np.newaxis])
+    
+    else:
+
+        wA = wA * (pA > 0).astype('float')
+        infogain_pA = -Qo_pi.dot(spm_dot(wA,Qs_pi)[:,np.newaxis])
+    
+    return infogain_pA
 
 def calculate_infogain_pB(pA, Qs_pi, Qs, policy):
     '''

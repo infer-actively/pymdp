@@ -137,7 +137,7 @@ class Dirichlet(object):
         exp(-16) is used as the minimum value
 
         """
-        self.values += np.exp(-16)
+        self.values += 1e-16
 
     def expectation_of_log(self, return_numpy=True):
         """ Expectation of a (log) Dirichlet distribution parameterized
