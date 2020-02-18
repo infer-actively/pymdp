@@ -32,16 +32,54 @@ def softmax(distrib, return_numpy = True):
         return Categorical(values=output)
 
 
-def generate_policies(n_actions, policy_len):
-    """ Generate of possible combinations of N actions for policy length T
-    Returns
-    -------
-    `policies` [list]
-        A list of tuples, each specifying a list of actions [int]
-    """
+# def generate_policies(n_actions, policy_len):
+#     """ Generate of possible combinations of N actions for policy length T
+#     Returns
+#     -------
+#     `policies` [list]
+#         A list of tuples, each specifying a list of actions [int]
+#     """
 
-    x = [n_actions] * policy_len
-    return list(itertools.product(*[list(range(i)) for i in x]))
+#     x = [n_actions] * policy_len
+#     return list(itertools.product(*[list(range(i)) for i in x]))
+
+
+def constructNu(Ns,Nf,cntrl_fac_idx,policy_len):
+    '''Generate list of possible combinations of Ns[f_i] actions for Nf hidden state factors,
+    where Nu[i] gives the number of actions available along hidden state factor f_i. Assumes that for each controllable hidden
+    state factor, the number of possible actions == Ns[f_i]
+    Arguments:
+    -------
+    Ns: list of dimensionalities of hidden state factors
+    Nf: number of hidden state factors total
+    cntrl_fac_idx: indices of the hidden state factors that are controllable (i.e. those whose Nu[i] > 1)
+    policy_len: length of each policy
+    Returns:
+    -------
+    Nu: list of dimensionalities of actions along each hidden state factor
+    possible_policies: list of arrays, where each array within the list corresponds to a policy, and each row
+                        within a given policy (array) corresponds to a list of actions for each the several hidden state factor
+                        for a given timestep (policy_len x Nf)
+    '''
+
+    Nu = []
+
+    for f_i in range(Nf):
+        if f_i in cntrl_fac_idx:
+            Nu.append(Ns[f_i]) 
+        else:
+            Nu.append(1)
+
+    x = Nu * policy_len
+    
+    possible_policies = list(itertools.product(*[list(range(i)) for i in x]))
+
+    if policy_len > 1:
+        for pol_i in range(len(possible_policies)):
+            possible_policies[pol_i] = np.array(possible_policies[pol_i]).reshape(policy_len,Nf)
+
+    Nu = np.array(Nu).astype(int)
+    return Nu, possible_policies
 
 
 def kl_divergence(q, p):
@@ -654,10 +692,9 @@ def calculate_infogain_pA(pA, Qo_pi, Qs_pi):
         Posterior predictive density over hidden states
     Returns
     -------
-    params_surprise [scalar]:
+    infogain_pA [scalar]:
         Surprise (about dirichlet parameters) expected under the policy in question
     '''
-
 
     if isinstance(pA,Dirichlet):
         if pA.IS_AOA:
@@ -708,10 +745,73 @@ def calculate_infogain_pA(pA, Qo_pi, Qs_pi):
     
     return infogain_pA
 
-def calculate_infogain_pB(pA, Qs_pi, Qs, policy):
+def calculate_infogain_pB(pB, Qs_next, Qs_previous, policy):
     '''
+    Compute expected Dirichlet information gain about parameters pB under a given policy
+    Parameters
+    ----------
+    pB [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Dirichlet (either single-factor of AoA)]:
+        Prior dirichlet parameters parameterizing beliefs about the likelihood describing transitions bewteen hidden states,
+        with different factors (if there are multiple) stored in different arrays.
+    Qs_next [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+        Posterior predictive density over hidden states under some policy
+    Qs_previous [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+        Posterior predictive density over hidden states (prior to observations)
+    Returns
+    -------
+    infogain_pB [scalar]:
+        Surprise (about dirichlet parameters) expected under the policy in question
     '''
-    return
+    if isinstance(pB,Dirichlet):
+        if pB.IS_AOA:
+            Nf = pB.shape[0]
+        else:
+            Nf = 1
+        wB = pB.expectation_of_log(return_numpy=True)
+        pB = pB.values
+    elif pB.dtype == 'object':
+        Nf = len(pB)
+        wB = np.empty(Nf,dtype=object)
+        for f in range(Nf):
+            wB[f] = spm_wnorm(pB[f])
+    else:
+        Nf = 1
+        wB = spm_wnorm(pB)
+
+    if isinstance(Qs_next,Categorical):
+        Qs_next = Qs_next.values
+        
+    if Qs_next.dtype == 'object':
+        for f in range(Nf):
+            Qs_next[f] = Qs_next[f].flatten()
+    else:
+        Qs_next = Qs_next.flatten()
+    
+    if isinstance(Qs_previous,Categorical):
+        Qs_previous = Qs_previous.values
+    
+    if Qs_previous.dtype == 'object':
+        for f in range(Nf):
+            Qs_previous[f] = Qs_previous[f].flatten()
+    else:
+        Qs_previous = Qs_previous.flatten()
+    
+    if Nf > 1:
+
+        infogain_pB = 0
+
+        for f_i, a_i in enumerate(policy):
+            wB_action = wB[f_i][:,:,a_i] * (pB[f_i][:,:,a_i]  > 0).astype('float')
+            infogain_pB -= Qs_next[f_i].dot(wB_action.dot(Qs_previous[f_i]))     
+    
+    else:
+
+        a_i = policy[0]
+        
+        wB = wB[:,:,a_i] * (pB[:,:,a_i] > 0).astype('float')
+        infogain_pB = -Qs_next.dot(wB.dot(Qs_previous))
+    
+    return infogain_pB
 
 def spm_MDP_G(A, x):
     """
