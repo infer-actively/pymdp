@@ -8,6 +8,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import itertools
 import numpy as np
+import torch
 from scipy import special
 from inferactively.distributions import Categorical, Dirichlet
 
@@ -151,6 +152,66 @@ def spm_dot(X, x, dims_to_omit=None):
     if np.prod(Y.shape) <= 1.0:
         Y = Y.item()
         Y = np.array([Y]).astype("float64")
+
+    return Y
+
+def spm_dot_torch(X, x, dims_to_omit=None):
+    """ Dot product of a multidimensional array with `x` -- Pytorch version, using Tensor instances
+    @TODO: Instead of a separate function, this should be integrated with spm_dot so that it can either take torch.Tensors or nd.arrays
+
+    The dimensions in `dims_to_omit` will not be summed across during the dot product
+
+    Parameters
+    ----------
+    'X' [torch.Tensor]
+    `x` [1D torch.Tensor or nnumpy object array containing 1D torch.Tensors]
+        The array(s) to dot X with
+    `dims_to_omit` [list :: int] (optional)
+        Which dimensions to omit from summing across
+    """
+
+    if x.dtype == object:
+        dims = (np.arange(0, len(x)) + X.ndim - len(x)).astype(int)
+    else:
+        if x.shape[0] != X.shape[1]:
+            """
+            Case when the first dimension of `x` is likely the same as the first dimension of `A`
+            e.g. inverting the generative model using observations.
+            Equivalent to something like self.values[np.where(x),:]
+            when `x` is a discrete 'one-hot' observation vector
+            """
+            dims = np.array([0], dtype=int)
+        else:
+            """
+            Case when `x` leading dimension matches the lagging dimension of `values`
+            E.g. a more 'classical' dot product of a likelihood with hidden states
+            """
+            dims = np.array([1], dtype=int)
+        x_new = np.empty(1, dtype=object)
+        x_new[0] = x.squeeze()
+        x = x_new
+
+    if dims_to_omit is not None:
+        if not isinstance(dims_to_omit, list):
+            raise ValueError("dims_to_omit must be a `list`")
+        dims = np.delete(dims, dims_to_omit)
+        if len(x) == 1:
+            x = np.empty([0], dtype=object)
+        else:
+            x = np.delete(x, dims_to_omit)
+
+    Y = X
+    for d in range(len(x)):
+        s = np.ones(Y.ndim, dtype=int)
+        s[dims[d]] = max(x[d].shape)
+        Y = Y * x[d].view(tuple(s))
+        Y = Y.sum(dim=int(dims[d]), keepdim=True)
+    Y = Y.squeeze()
+
+    # perform check to see if `y` is a number
+    if Y.numel() <= 1:
+        Y = np.asscalar(Y)
+        Y = torch.Tensor([Y])
 
     return Y
 
@@ -419,6 +480,8 @@ def run_FPI(A, observation, prior, No, Ns, num_iter=10, dF=1.0, dF_tol=0.001):
 
 def update_posterior_policies(Qs, A, pA, B, pB, C, possiblePolicies, gamma = 16.0, return_numpy=True):
     '''
+    Updates the posterior beliefs about policies using the expected free energy approach (where belief in a policy is proportional to the free energy expected under its pursuit)
+    @TODO: Needs to be amended for use with multi-step policies (where possiblePolicies is a list of np.arrays, not a list of tuples)
     Parameters
     ----------
     Qs [1D numpy array, array-of-arrays, or Categorical (either single- or multi-factor)]:
@@ -456,8 +519,8 @@ def update_posterior_policies(Qs, A, pA, B, pB, C, possiblePolicies, gamma = 16.
 
     Np = len(possiblePolicies)
 
-    EFE = Categorical(dims=Np)
-    p_i = Categorical(dims=Np)
+    EFE = np.zeros(Np)
+    p_i = np.zeros((Np,1))
 
     for p_i, policy in enumerate(possiblePolicies):
 
@@ -478,6 +541,12 @@ def update_posterior_policies(Qs, A, pA, B, pB, C, possiblePolicies, gamma = 16.
         EFE[p_i] += infogain_pB
     
     p_i = softmax(EFE * gamma)
+    
+    if return_numpy:
+        p_i = p_i/p_i.sum(axis=0)
+    else:
+        p_i = Categorical(values = p_i)
+        p_i.normalize()
 
     return p_i, EFE
 
@@ -486,6 +555,7 @@ def get_expected_states(Qs, B, policy, return_numpy = False):
     Given a posterior density Qs, a transition likelihood model B, and a policy, 
     get the state distribution expected under that policy's pursuit.
 
+    @TODO: Needs to be amended for use with multi-step policies (where possiblePolicies is a list of np.arrays, not a list of tuples)
     Parameters
     ----------
     Qs [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
@@ -551,6 +621,7 @@ def get_expected_obs(Qs_pi, A, return_numpy = False):
     Given a posterior predictive density Qs_pi and an observation likelihood model A,
     get the expected observations given the predictive posterior.
 
+    @TODO: Needs to be amended for use with multi-step policies (where possiblePolicies is a list of np.arrays, not a list of tuples)
     Parameters
     ----------
     Qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
@@ -610,6 +681,7 @@ def calculate_expected_utility(Qo_pi,C):
     Given expected observations under a policy Qo_pi and a prior over observations C
     compute the expected utility of the policy.
 
+    @TODO: Needs to be amended for use with multi-step policies (where possiblePolicies is a list of np.arrays, not a list of tuples)
     Parameters
     ----------
     Qo_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
@@ -650,6 +722,7 @@ def calculate_expected_surprise(A, Qs_pi):
     Given a likelihood mapping A and a posterior predictive density over states Qs_pi,
     compute the Bayesian surprise (about states) expected under that policy
 
+    @TODO: Needs to be amended for use with multi-step policies (where possiblePolicies is a list of np.arrays, not a list of tuples)
     Parameters
     ----------
     A [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Categorical (either single-factor of AoA)]:
@@ -812,6 +885,56 @@ def calculate_infogain_pB(pB, Qs_next, Qs_previous, policy):
         infogain_pB = -Qs_next.dot(wB.dot(Qs_previous))
     
     return infogain_pB
+
+def sample_action(p_i, possiblePolicies, Nu, sampling_type = 'marginal_action'):
+    '''
+    Samples action from posterior over policies, using one of two methods. 
+    @TODO: Needs to be amended for use with multi-step policies (where possiblePolicies is a list of np.arrays (nStep x nFactor), not just a list of tuples as it is now)
+    Parameters
+    ----------
+    p_i [1D numpy.ndarray or Categorical]:
+        Variational posterior over policies.
+    possiblePolicies [list of tuples]:
+        List of tuples that indicate the possible policies under consideration. Each tuple stores the actions taken upon the separate hidden state factors. 
+        Same length as p_i.
+    Nu [list of integers]:
+        List of the dimensionalities of the different (controllable)) hidden states
+    sampling_type [string, 'marginal_action' or 'posterior_sample']:
+        Indicates whether the sampled action for a given hidden state factor is given by the evidence for that action, marginalized across different policies ('marginal_action')
+        or simply the action entailed by the policy sampled from the posterior. 
+    Returns
+    ----------
+    selectedPolicy [tuple]:
+        tuple containing the list of actions selected by the agent
+    '''
+ 
+    numActions = len(Nu)
+
+    if sampling_type == 'marginal_action':
+        action_marginals = np.empty(numActions, dtype=object)
+        for nu_i in range(numActions):
+            action_marginals[nu_i] = np.zeros(Nu[nu_i])
+
+        # Weight each action according to the posterior probability it gets across policies
+        for nu_i in range(numActions):
+            for pol_i, policy in enumerate(possiblePolicies):
+                for a_i in policy:
+                    action_marginals[nu_i][a_i] += p_i[pol_i]
+        
+        action_marginals = Categorical(values = action_marginals)
+        action_marginals.normalize()
+        selectedPolicy = action_marginals.sample()
+
+    elif sampling_type == 'posterior_sample':
+        if isinstance(p_i,Categorical):
+            policy_index = p_i.sample()
+            selectedPolicy = possiblePolicies[policy_index]
+        else:
+            sample_onehot = np.random.multinomial(1, p_i.squeeze())
+            policy_index = np.where(sample_onehot == 1)[0][0]
+            selectedPolicy = possiblePolicies[policy_index]
+    
+    return selectedPolicy
 
 def spm_MDP_G(A, x):
     """
