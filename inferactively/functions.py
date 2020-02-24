@@ -352,7 +352,7 @@ def update_posterior_states(A, observation, prior, return_numpy=True, method="FP
             for g in range(Ng):
                 observation[g] = observation[g].squeeze()
 
-    if isinstance(observation, int):
+    if isinstance(observation, (int, np.integer)):
         observation = np.eye(No[0])[observation]
 
     if isinstance(observation, tuple):
@@ -512,10 +512,10 @@ def update_posterior_policies(Qs, A, pA, B, pB, C, possiblePolicies, gamma = 16.
         the expected free energies of policies
     '''
 
-    if not isinstance(C,Categorical):
-        C = Categorical(values = C)
+    # if not isinstance(C,Categorical):
+    #     C = Categorical(values = C)
     
-    C = softmax(C.log())
+    # C = softmax(C.log())
 
     Np = len(possiblePolicies)
 
@@ -526,7 +526,7 @@ def update_posterior_policies(Qs, A, pA, B, pB, C, possiblePolicies, gamma = 16.
 
         Qs_pi = get_expected_states(Qs, B, policy)
 
-        Qo_pi = get_expected_obs(A, Qs_pi)
+        Qo_pi = get_expected_obs(Qs_pi, A)
 
         utility = calculate_expected_utility(Qo_pi,C)
         EFE[p_i] += utility
@@ -537,7 +537,7 @@ def update_posterior_policies(Qs, A, pA, B, pB, C, possiblePolicies, gamma = 16.
         infogain_pA = calculate_infogain_pA(pA, Qo_pi, Qs_pi)
         EFE[p_i] += infogain_pA
 
-        infogain_pB = calculate_infogain_pB(pA, Qs_pi, Qs, policy)
+        infogain_pB = calculate_infogain_pB(pB, Qs_pi, Qs, policy)
         EFE[p_i] += infogain_pB
     
     p_i = softmax(EFE * gamma)
@@ -908,17 +908,16 @@ def sample_action(p_i, possiblePolicies, Nu, sampling_type = 'marginal_action'):
         tuple containing the list of actions selected by the agent
     '''
  
-    numActions = len(Nu)
+    numControls = len(Nu)
 
     if sampling_type == 'marginal_action':
-        action_marginals = np.empty(numActions, dtype=object)
-        for nu_i in range(numActions):
+        action_marginals = np.empty(numControls, dtype=object)
+        for nu_i in range(numControls):
             action_marginals[nu_i] = np.zeros(Nu[nu_i])
 
         # Weight each action according to the posterior probability it gets across policies
-        for nu_i in range(numActions):
-            for pol_i, policy in enumerate(possiblePolicies):
-                for a_i in policy:
+        for pol_i, policy in enumerate(possiblePolicies):
+                for nu_i, a_i in enumerate(policy):
                     action_marginals[nu_i][a_i] += p_i[pol_i]
         
         action_marginals = Categorical(values = action_marginals)
@@ -935,6 +934,83 @@ def sample_action(p_i, possiblePolicies, Nu, sampling_type = 'marginal_action'):
             selectedPolicy = possiblePolicies[policy_index]
     
     return selectedPolicy
+
+def update_dirichletA(pA, A, obs, Qs, eta = 1.0, return_numpy = True, which_modalities = 'all'):
+    """
+    Update Dirichlet parameters that parameterize the observation model of the generative model (describing the probabilistic mapping from hidden states to observations).
+    Parameters
+    -----------
+    pA [numpy nd.array, array-of-arrays (with np.ndarray entries), or Dirichlet (either single-modality or AoA)]:
+        The prior Dirichlet parameters of the generative model, parameterizing the agent's beliefs about the observation likelihood. 
+    A [numpy nd.array, object-like array of arrays, or Categorical (either single-modality or AoA)]:
+        The observation likelihood of the generative model. 
+    obs [numpy 1D array, array-of-arrays (with 1D numpy array entries), int or tuple]:
+        A discrete observation used in the update equation
+    Qs [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+        Current marginal posterior beliefs about hidden state factors
+    eta [float, optional]:
+        Learning rate.
+    return_numpy [bool, optional]:
+        Logical flag to determine whether output is a numpy array or a Dirichlet
+    which_modalities [list, optional]:
+        Indices (in terms of range(Ng)) of the observation modalities to include in learning.
+        Defaults to 'all, meaning that observation likelihood matrices for all modalities
+        are updated as a function of observations in the different modalities.
+    """
+
+    if isinstance(pA,Dirichlet):
+        if pA.IS_AOA:
+            Ng = len(pA)
+            No = [pA[g].shape[0] for g in range(Ng)]
+        else:
+            Ng = 1
+            No = [pA.shape[0]]
+        if return_numpy:
+            pA_new = pA.values.copy()
+        else:
+            pA_new = Dirichlet(values = pA.values.copy())
+    
+    else:
+        if pA.dtype == object:
+            Ng = len(pA)
+            No = [pA[g].shape[0] for g in range(Ng)]    
+        else:
+            Ng = 1
+            No = [pA.shape[0]]
+        if return_numpy:
+            pA_new = pA.copy()
+        else:
+            pA_new = Dirichlet(values = pA.copy())
+    
+    if isinstance(A, Categorical):
+        A = A.values
+
+    if isinstance(obs, (int, np.integer)):
+        obs = np.eye(A.shape[0])[obs]
+    
+    elif isinstance(obs, tuple):
+        obs = np.array( [ np.eye(No[g])[obs[g]] for g in range(Ng) ], dtype = object )
+    
+    obs = Categorical(values = obs) # convert to Categorical to make the cross product easier
+
+    if which_modalities == 'all':
+        if Ng == 1:
+            da = obs.cross(Qs, return_numpy = True)
+            da = da * (A > 0).astype('float')
+            pA_new = pA_new + (eta * da)
+        elif Ng > 1:
+            for g in range(Ng):
+                da = obs[g].cross(Qs,return_numpy=True)
+                da = da * (A[g] > 0).astype('float')
+                pA_new[g] = pA_new[g] + eta * da
+    else:
+        for g_idx in which_modalities:
+            da = obs[g_idx].cross(Qs, return_numpy = True)
+            da = da * (A[g_idx] > 0).astype('float')
+            pA_new[g_idx] = pA_new[g_idx] + eta * da
+    
+    return pA_new
+    
 
 def spm_MDP_G(A, x):
     """

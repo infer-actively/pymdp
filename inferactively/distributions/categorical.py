@@ -207,8 +207,9 @@ class Categorical(object):
         This function avoids division by zero
         exp(-16) is used as the minimum value
         """
-        self.values += np.exp(-16)
-
+        # self.values += np.exp(-16)
+        self.values += 1e-16
+        
     def contains_zeros(self):
         """ Checks if any values are zero
         Returns
@@ -272,10 +273,14 @@ class Categorical(object):
 
         if self.contains_zeros():
             self.remove_zeros()
-            self.normalize()
+            # self.normalize()
+            # warnings.warn(
+            #     "You have called :log: on a Categorical that contains zeros. \
+            #          We have removed zeros and normalized."
+            # )
             warnings.warn(
                 "You have called :log: on a Categorical that contains zeros. \
-                     We have removed zeros and normalized."
+                     We have removed zeros by adding a small non-negative scalar to each value."
             )
 
         if not self.IS_AOA:

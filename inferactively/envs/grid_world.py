@@ -10,7 +10,6 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import numpy as np
 import sys
 
-
 class GridWorldEnv(object):
     UP = 0
     RIGHT = 1
@@ -139,6 +138,15 @@ class GridWorldEnv(object):
                 ns = int(self.P[s][a])
                 B[a, ns, s] = 1
         return B
+
+    # def get_transition_matrix(self):
+    #     # storing actions in the third dimension - makes things easier with the way other functions work
+    #     B = np.zeros([self.n_states, self.n_states, self.n_actions])
+    #     for s in range(self.n_states):
+    #         for a in range(self.n_actions):
+    #             ns = int(self.P[s][a])
+    #             B[ns, s, a] = 1
+    #     return B
 
     def get_likelihood_matrix(self):
         A = np.eye(self.n_observations, self.n_states)
