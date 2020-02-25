@@ -8,7 +8,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
 from inferactively.envs import Env
-
+from inferactively.distributions import Categorical
 
 class GridWorldEnv(Env):
     action_space = None
