@@ -10,7 +10,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 from inferactively.envs import Env
 
 
-class GridWorldEnv(object):
+class GridWorldEnv(Env):
     action_space = None
     observation_space = None
 
