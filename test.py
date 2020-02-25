@@ -1,5 +1,5 @@
 import inferactively
-from inferactively.distributions.categorical import Categorical
-from inferactively.distributions.dirichlet import Dirichlet
+from inferactively.distributions import Categorical
+from inferactively.distributions import Dirichlet
 import inferactively.core.functions as F 
-from inferactively.envs.grid_world_env import GridWorldEnv
+from inferactively.envs import GridWorldEnv

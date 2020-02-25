@@ -10,8 +10,8 @@ import itertools
 import numpy as np
 import torch
 from scipy import special
-from inferactively.distributions.categorical import Categorical
-from inferactively.distributions.dirichlet import Dirichlet
+from inferactively.distributions import Categorical
+from inferactively.distributions import Dirichlet
 
 
 def softmax(distrib, return_numpy = True):

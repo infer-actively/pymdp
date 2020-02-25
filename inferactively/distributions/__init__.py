@@ -1,2 +1,2 @@
-from . import categorical
-from . import dirichlet
+from .categorical import Categorical
+from .dirichlet import Dirichlet

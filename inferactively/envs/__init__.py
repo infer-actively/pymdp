@@ -1,1 +1,2 @@
-from . import grid_world_env 
+from .env import Env
+from .grid_world import GridWorldEnv
