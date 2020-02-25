@@ -327,7 +327,10 @@ class Categorical(object):
             sample_array = np.zeros(len(self.values))
             for i in range(len(self.values)):
                 probabilities = np.copy(self.values[i])
-                sample_onehot = np.random.multinomial(1, probabilities.squeeze())
+                try:
+                    sample_onehot = np.random.multinomial(1, probabilities.squeeze())
+                except:
+                    sample_onehot = np.random.multinomial(1, probabilities[0])
                 sample_array[i] = np.where(sample_onehot == 1)[0][0]
             # returning a tuple of indices is good in the case when you're sampling observations - consistent with update_posterior_states function
             return tuple(sample_array.astype(int))
