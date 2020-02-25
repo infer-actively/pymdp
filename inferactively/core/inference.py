@@ -51,7 +51,7 @@ def constructNu(Ns, Nf, cntrl_fac_idx, policy_len):
                 policy_len, Nf
             )
 
-    Nu = np.array(Nu).astype(int)
+    Nu = list(np.array(Nu).astype(int))
     return Nu, possible_policies
 
 
@@ -245,7 +245,7 @@ def run_FPI(A, observation, prior, No, Ns, num_iter=10, dF=1.0, dF_tol=0.001):
 
 
 def update_posterior_policies(
-    Qs, A, pA, B, pB, C, possiblePolicies, gamma=16.0, return_numpy=True
+    Qs, A, B, C, possiblePolicies, pA = None, pB = None, gamma=16.0, return_numpy=True
 ):
     """
     Updates the posterior beliefs about policies using the expected free energy approach (where belief in a policy is proportional to the free energy expected under its pursuit)
@@ -256,18 +256,18 @@ def update_posterior_policies(
         current marginal beliefs about hidden state factors
     A [numpy ndarray, array-of-arrays (in case of multiple modalities), or Categorical (both single and multi-modality)]:
         Observation likelihood model (beliefs about the likelihood mapping entertained by the agent)
-    pA [numpy ndarray, array-of-arrays (in case of multiple modalities), or Dirichlet (both single and multi-modality)]:
-        Prior dirichlet parameters for A
     B [numpy ndarray, array-of-arrays (in case of multiple hidden state factors), or Categorical (both single and multi-factor)]:
         Transition likelihood model (beliefs about the likelihood mapping entertained by the agent)
-    pB [numpy ndarray, array-of-arrays (in case of multiple hidden state factors), or Dirichlet (both single and multi-factor)]:
-        Prior dirichlet parameters for B
     C [numpy 1D-array, array-of-arrays (in case of multiple modalities), or Categorical (both single and multi-modality)]:
         Prior beliefs about outcomes (prior preferences)
     possiblePolicies [list of tuples]:
         a list of all the possible policies, each expressed as a tuple of indices, where a given index corresponds to an action on a particular hidden state factor
         e.g. possiblePolicies[1][2] yields the index of the action under Policy 1 that affects Hidden State Factor 2
-    gamma [float]:
+    pA [numpy ndarray, array-of-arrays (in case of multiple modalities), or Dirichlet (both single and multi-modality)]:
+        Prior dirichlet parameters for A. Defaults to none, in which case info gain w.r.t. Dirichlet parameters over A is skipped.
+    pB [numpy ndarray, array-of-arrays (in case of multiple hidden state factors), or Dirichlet (both single and multi-factor)]:
+        Prior dirichlet parameters for B. Defaults to none, in which case info gain w.r.t. Dirichlet parameters over A is skipped.
+    gamma [float, defaults to 16.0]:
         precision over policies, used as the inverse temperature parameter of a softmax transformation of the expected free energies of each policy
     return_numpy [Boolean]:
         True/False flag to determine whether output of function is a numpy array or a Categorical
@@ -279,11 +279,6 @@ def update_posterior_policies(
     EFE [1D numpy array or Categorical]:
         the expected free energies of policies
     """
-
-    # if not isinstance(C,Categorical):
-    #     C = Categorical(values = C)
-
-    # C = softmax(C.log())
 
     Np = len(possiblePolicies)
 
@@ -301,12 +296,12 @@ def update_posterior_policies(
 
         surprise_states = calculate_expected_surprise(A, Qs_pi)
         EFE[p_i] += surprise_states
-
-        infogain_pA = calculate_infogain_pA(pA, Qo_pi, Qs_pi)
-        EFE[p_i] += infogain_pA
-
-        infogain_pB = calculate_infogain_pB(pB, Qs_pi, Qs, policy)
-        EFE[p_i] += infogain_pB
+        if pA is not None:
+            infogain_pA = calculate_infogain_pA(pA, Qo_pi, Qs_pi)
+            EFE[p_i] += infogain_pA
+        if pB is not None:
+            infogain_pB = calculate_infogain_pB(pB, Qs_pi, Qs, policy)
+            EFE[p_i] += infogain_pB
 
     p_i = softmax(EFE * gamma)
 

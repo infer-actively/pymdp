@@ -20,6 +20,8 @@ class VisualForagingEnv(Env):
     def __init__(self, scenes=None, n_features=2):
         if scenes is None:
             self.scenes = self._construct_default_scenes()
+        else:
+            self.scenes = scenes
 
         self.n_scenes = len(self.scenes)
         self.n_features = n_features + 1
