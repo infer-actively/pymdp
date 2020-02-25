@@ -69,10 +69,10 @@ class VisualForagingEnv(Env):
         return [np.random.randint(self.n_control[i]) for i in range(self.n_factors)]
 
     def get_likelihood_dist(self):
-        return self._likelihood_dist
+        return self._likelihood_dist.copy()
 
     def get_transition_dist(self):
-        return self._transition_dist
+        return self._transition_dist.copy()
 
     def get_uniform_posterior(self):
         values = np.array(
