@@ -1,3 +1,13 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+""" Environment Base Class
+
+__author__: Conor Heins, Alexander Tschantz, Brennan Klein
+
+"""
+
+
 class Env(object):
     action_space = None
     observation_space = None
