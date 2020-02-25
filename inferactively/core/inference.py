@@ -12,42 +12,11 @@ import torch
 from scipy import special
 from inferactively.distributions import Categorical
 from inferactively.distributions import Dirichlet
+from inferactively.core import softmax, spm_dot, spm_wnorm, spm_cross
 
 
-def softmax(distrib, return_numpy = True):
-    """ Computes the softmax function on a set of values
-    """
-    if isinstance(distrib, Categorical):
-        if distrib.IS_AOA:
-            output = Categorical(dims=[list(el.shape) for el in distrib])
-            for i in range(len(distrib.values)):
-                output[i] = softmax(distrib.values[i], return_numpy=True)
-            output = Categorical(dims = [list(el.shape) for el in distrib])
-        else:
-            distrib = np.copy(distrib.values)
-    output = distrib - distrib.max(axis=0)
-    output = np.exp(output)
-    output = output / np.sum(output, axis=0)
-    if return_numpy:
-        return output
-    else:
-        return Categorical(values=output)
-
-
-# def generate_policies(n_actions, policy_len):
-#     """ Generate of possible combinations of N actions for policy length T
-#     Returns
-#     -------
-#     `policies` [list]
-#         A list of tuples, each specifying a list of actions [int]
-#     """
-
-#     x = [n_actions] * policy_len
-#     return list(itertools.product(*[list(range(i)) for i in x]))
-
-
-def constructNu(Ns,Nf,cntrl_fac_idx,policy_len):
-    '''Generate list of possible combinations of Ns[f_i] actions for Nf hidden state factors,
+def constructNu(Ns, Nf, cntrl_fac_idx, policy_len):
+    """Generate list of possible combinations of Ns[f_i] actions for Nf hidden state factors,
     where Nu[i] gives the number of actions available along hidden state factor f_i. Assumes that for each controllable hidden
     state factor, the number of possible actions == Ns[f_i]
     Arguments:
@@ -62,238 +31,33 @@ def constructNu(Ns,Nf,cntrl_fac_idx,policy_len):
     possible_policies: list of arrays, where each array within the list corresponds to a policy, and each row
                         within a given policy (array) corresponds to a list of actions for each the several hidden state factor
                         for a given timestep (policy_len x Nf)
-    '''
+    """
 
     Nu = []
 
     for f_i in range(Nf):
         if f_i in cntrl_fac_idx:
-            Nu.append(Ns[f_i]) 
+            Nu.append(Ns[f_i])
         else:
             Nu.append(1)
 
     x = Nu * policy_len
-    
+
     possible_policies = list(itertools.product(*[list(range(i)) for i in x]))
 
     if policy_len > 1:
         for pol_i in range(len(possible_policies)):
-            possible_policies[pol_i] = np.array(possible_policies[pol_i]).reshape(policy_len,Nf)
+            possible_policies[pol_i] = np.array(possible_policies[pol_i]).reshape(
+                policy_len, Nf
+            )
 
     Nu = np.array(Nu).astype(int)
     return Nu, possible_policies
 
 
-def kl_divergence(q, p):
-    """
-    TODO: make this work for multi-dimensional arrays
-    """
-    if not isinstance(type(q), type(Categorical)) or not isinstance(
-        type(p), type(Categorical)
-    ):
-        raise ValueError("`kl_divergence` function takes `Categorical` objects")
-    q.remove_zeros()
-    p.remove_zeros()
-    q = np.copy(q.values)
-    p = np.copy(p.values)
-    kl = np.sum(q * np.log(q / p), axis=0)[0]
-    return kl
-
-
-def spm_dot(X, x, dims_to_omit=None):
-    """ Dot product of a multidimensional array with `x`
-    The dimensions in `dims_to_omit` will not be summed across during the dot product
-    Parameters
-    ----------
-    `x` [1D numpy.ndarray] - either vector or array of arrays
-        The alternative array to perform the dot product with
-    `dims_to_omit` [list :: int] (optional)
-        Which dimensions to omit
-    """
-
-    if x.dtype == object:
-        dims = (np.arange(0, len(x)) + X.ndim - len(x)).astype(int)
-    else:
-        if x.shape[0] != X.shape[1]:
-            """
-            Case when the first dimension of `x` is likely the same as the first dimension of `A`
-            e.g. inverting the generative model using observations.
-            Equivalent to something like self.values[np.where(x),:]
-            when `x` is a discrete 'one-hot' observation vector
-            """
-            dims = np.array([0], dtype=int)
-        else:
-            """
-            Case when `x` leading dimension matches the lagging dimension of `values`
-            E.g. a more 'classical' dot product of a likelihood with hidden states
-            """
-            dims = np.array([1], dtype=int)
-        x_new = np.empty(1, dtype=object)
-        x_new[0] = x.squeeze()
-        x = x_new
-
-    if dims_to_omit is not None:
-        if not isinstance(dims_to_omit, list):
-            raise ValueError("dims_to_omit must be a `list`")
-        dims = np.delete(dims, dims_to_omit)
-        if len(x) == 1:
-            x = np.empty([0], dtype=object)
-        else:
-            x = np.delete(x, dims_to_omit)
-
-    Y = X
-    for d in range(len(x)):
-        s = np.ones(np.ndim(Y), dtype=int)
-        s[dims[d]] = np.shape(x[d])[0]
-        Y = Y * x[d].reshape(tuple(s))
-        Y = np.sum(Y, axis=dims[d], keepdims=True)
-    Y = np.squeeze(Y)
-
-    # perform check to see if `y` is a number
-    if np.prod(Y.shape) <= 1.0:
-        Y = Y.item()
-        Y = np.array([Y]).astype("float64")
-
-    return Y
-
-def spm_dot_torch(X, x, dims_to_omit=None):
-    """ Dot product of a multidimensional array with `x` -- Pytorch version, using Tensor instances
-    @TODO: Instead of a separate function, this should be integrated with spm_dot so that it can either take torch.Tensors or nd.arrays
-
-    The dimensions in `dims_to_omit` will not be summed across during the dot product
-
-    Parameters
-    ----------
-    'X' [torch.Tensor]
-    `x` [1D torch.Tensor or nnumpy object array containing 1D torch.Tensors]
-        The array(s) to dot X with
-    `dims_to_omit` [list :: int] (optional)
-        Which dimensions to omit from summing across
-    """
-
-    if x.dtype == object:
-        dims = (np.arange(0, len(x)) + X.ndim - len(x)).astype(int)
-    else:
-        if x.shape[0] != X.shape[1]:
-            """
-            Case when the first dimension of `x` is likely the same as the first dimension of `A`
-            e.g. inverting the generative model using observations.
-            Equivalent to something like self.values[np.where(x),:]
-            when `x` is a discrete 'one-hot' observation vector
-            """
-            dims = np.array([0], dtype=int)
-        else:
-            """
-            Case when `x` leading dimension matches the lagging dimension of `values`
-            E.g. a more 'classical' dot product of a likelihood with hidden states
-            """
-            dims = np.array([1], dtype=int)
-        x_new = np.empty(1, dtype=object)
-        x_new[0] = x.squeeze()
-        x = x_new
-
-    if dims_to_omit is not None:
-        if not isinstance(dims_to_omit, list):
-            raise ValueError("dims_to_omit must be a `list`")
-        dims = np.delete(dims, dims_to_omit)
-        if len(x) == 1:
-            x = np.empty([0], dtype=object)
-        else:
-            x = np.delete(x, dims_to_omit)
-
-    Y = X
-    for d in range(len(x)):
-        s = np.ones(Y.ndim, dtype=int)
-        s[dims[d]] = max(x[d].shape)
-        Y = Y * x[d].view(tuple(s))
-        Y = Y.sum(dim=int(dims[d]), keepdim=True)
-    Y = Y.squeeze()
-
-    # perform check to see if `y` is a number
-    if Y.numel() <= 1:
-        Y = np.asscalar(Y)
-        Y = torch.Tensor([Y])
-
-    return Y
-
-
-def spm_cross(X, x=None, *args):
-    """ Multi-dimensional outer product
-    If no `x` argument is passed, the function returns the "auto-outer product" of self
-    Otherwise, the function will recursively take the outer product of the initial entry
-    of `x` with `self` until it has depleted the possible entries of `x` that it can outer-product
-    Parameters
-    ----------
-    `x` [np.ndarray] || [Categorical] (optional)
-        The values to perfrom the outer-product with
-    `args` [np.ndarray] || [Categorical] (optional)
-        Perform the outer product of the `args` with self
-    
-    Returns
-    -------
-    `y` [np.ndarray] || [Categorical]
-        The result of the outer-product
-    """
-
-    if len(args) == 0 and x is None:
-        if X.dtype == "object":
-            Y = spm_cross(*list(X))
-
-        elif np.issubdtype(X.dtype, np.number):
-            Y = X
-
-        return Y
-
-    if X.dtype == "object":
-        X = spm_cross(*list(X))
-
-    if x is not None and x.dtype == "object":
-        x = spm_cross(*list(x))
-
-    reshape_dims = tuple(list(X.shape) + list(np.ones(x.ndim, dtype=int)))
-    A = X.reshape(reshape_dims)
-
-    reshape_dims = tuple(list(np.ones(X.ndim, dtype=int)) + list(x.shape))
-    B = x.reshape(reshape_dims)
-
-    Y = np.squeeze(A * B)
-
-    for x in args:
-        Y = spm_cross(Y, x)
-
-    return Y
-
-def spm_wnorm(A):
-    """
-    Normalization of a prior over Dirichlet parameters, used in updates for information gain
-    """
-    
-    A = A + 1e-16
-    
-    norm = np.divide(1.0, np.sum(A,axis=0))
-    
-    avg = np.divide(1.0, A)
-    
-    wA = norm - avg
-   
-    return wA
-
-
-def spm_betaln(z):
-    """
-    Returns the log of the multivariate beta function of a vector.
-    FORMAT y = spm_betaln(z)
-     y = spm_betaln(z) computes the natural logarithm of the beta function
-     for corresponding elements of the vector z. if concerned is a matrix,
-     the logarithm is taken over the columns of the matrix z.
-    """
-
-    y = np.sum(special.gammaln(z), axis=0) - special.gammaln(np.sum(z, axis=0))
-
-    return y
-
-
-def update_posterior_states(A, observation, prior, return_numpy=True, method="FPI", **kwargs):
+def update_posterior_states(
+    A, observation, prior, return_numpy=True, method="FPI", **kwargs
+):
     """ 
     Update marginal posterior qx using variational inference, with optional selection of a message-passing algorithm
     Parameters
@@ -360,13 +124,13 @@ def update_posterior_states(A, observation, prior, return_numpy=True, method="FP
         observation_AoA = np.empty(Ng, dtype=object)
         for g in range(Ng):
             observation_AoA[g] = np.eye(No[g])[observation[g]]
-        
+
         observation = observation_AoA
 
     if isinstance(prior, Categorical):
 
         prior_new = np.empty(Nf, dtype=object)
-        
+
         if prior.IS_AOA:
             for f in range(Nf):
                 prior_new[f] = prior[f].values.squeeze()
@@ -479,8 +243,11 @@ def run_FPI(A, observation, prior, No, Ns, num_iter=10, dF=1.0, dF_tol=0.001):
 
         return qx
 
-def update_posterior_policies(Qs, A, pA, B, pB, C, possiblePolicies, gamma = 16.0, return_numpy=True):
-    '''
+
+def update_posterior_policies(
+    Qs, A, pA, B, pB, C, possiblePolicies, gamma=16.0, return_numpy=True
+):
+    """
     Updates the posterior beliefs about policies using the expected free energy approach (where belief in a policy is proportional to the free energy expected under its pursuit)
     @TODO: Needs to be amended for use with multi-step policies (where possiblePolicies is a list of np.arrays, not a list of tuples)
     Parameters
@@ -511,17 +278,17 @@ def update_posterior_policies(Qs, A, pA, B, pB, C, possiblePolicies, gamma = 16.
         posterior beliefs about policies, defined here as a softmax function of the expected free energies of policies
     EFE [1D numpy array or Categorical]:
         the expected free energies of policies
-    '''
+    """
 
     # if not isinstance(C,Categorical):
     #     C = Categorical(values = C)
-    
+
     # C = softmax(C.log())
 
     Np = len(possiblePolicies)
 
     EFE = np.zeros(Np)
-    p_i = np.zeros((Np,1))
+    p_i = np.zeros((Np, 1))
 
     for p_i, policy in enumerate(possiblePolicies):
 
@@ -529,7 +296,7 @@ def update_posterior_policies(Qs, A, pA, B, pB, C, possiblePolicies, gamma = 16.
 
         Qo_pi = get_expected_obs(Qs_pi, A)
 
-        utility = calculate_expected_utility(Qo_pi,C)
+        utility = calculate_expected_utility(Qo_pi, C)
         EFE[p_i] += utility
 
         surprise_states = calculate_expected_surprise(A, Qs_pi)
@@ -540,19 +307,20 @@ def update_posterior_policies(Qs, A, pA, B, pB, C, possiblePolicies, gamma = 16.
 
         infogain_pB = calculate_infogain_pB(pB, Qs_pi, Qs, policy)
         EFE[p_i] += infogain_pB
-    
+
     p_i = softmax(EFE * gamma)
-    
+
     if return_numpy:
-        p_i = p_i/p_i.sum(axis=0)
+        p_i = p_i / p_i.sum(axis=0)
     else:
-        p_i = Categorical(values = p_i)
+        p_i = Categorical(values=p_i)
         p_i.normalize()
 
     return p_i, EFE
 
-def get_expected_states(Qs, B, policy, return_numpy = False):
-    '''
+
+def get_expected_states(Qs, B, policy, return_numpy=False):
+    """
     Given a posterior density Qs, a transition likelihood model B, and a policy, 
     get the state distribution expected under that policy's pursuit.
 
@@ -571,17 +339,25 @@ def get_expected_states(Qs, B, policy, return_numpy = False):
     -------
     Qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
         Expected states under the given policy - also known as the 'posterior predictive density'
-    '''
+    """
 
     if isinstance(B, Categorical):
 
         if B.IS_AOA:
-            Qs_pi = Categorical( values = np.array([B[f][:,:,a].dot(Qs[f], return_numpy=True)[:,np.newaxis] for f, a in enumerate(policy)], dtype = object) )
+            Qs_pi = Categorical(
+                values=np.array(
+                    [
+                        B[f][:, :, a].dot(Qs[f], return_numpy=True)[:, np.newaxis]
+                        for f, a in enumerate(policy)
+                    ],
+                    dtype=object,
+                )
+            )
         else:
-            Qs_pi = B[:,:,policy[0]].dot(Qs)
-        
+            Qs_pi = B[:, :, policy[0]].dot(Qs)
+
         if return_numpy and Qs_pi.IS_AOA:
-            Qs_pi_flattened = np.empty(len(Qs_pi.values), dtype = object)
+            Qs_pi_flattened = np.empty(len(Qs_pi.values), dtype=object)
             for f in range(len(Qs_pi.values)):
                 Qs_pi_flattened[f] = Qs_pi[f].values.flatten()
             return Qs_pi_flattened
@@ -589,36 +365,36 @@ def get_expected_states(Qs, B, policy, return_numpy = False):
             return Qs_pi.values.flatten()
         else:
             return Qs_pi
-    
-    elif B.dtype == 'object':
+
+    elif B.dtype == "object":
 
         Nf = len(B)
 
-        Qs_pi = np.empty(Nf, dtype = object)
+        Qs_pi = np.empty(Nf, dtype=object)
 
         if isinstance(Qs, Categorical):
             Qs = Qs.values
             for f in range(Nf):
                 Qs[f] = Qs[f].flatten()
         for f in range(Nf):
-            Qs_pi[f] = spm_dot(B[f][:,:,policy[f]], Qs[f])
+            Qs_pi[f] = spm_dot(B[f][:, :, policy[f]], Qs[f])
 
     else:
 
         if isinstance(Qs, Categorical):
             Qs = Qs.values.flatten()
 
-        Qs_pi = spm_dot(B[:,:,policy[0]], Qs)
-    
+        Qs_pi = spm_dot(B[:, :, policy[0]], Qs)
+
     if not return_numpy:
-        Qs_pi = Categorical(values = Qs_pi)
+        Qs_pi = Categorical(values=Qs_pi)
         return Qs_pi
     else:
         return Qs_pi
 
 
-def get_expected_obs(Qs_pi, A, return_numpy = False):
-    '''
+def get_expected_obs(Qs_pi, A, return_numpy=False):
+    """
     Given a posterior predictive density Qs_pi and an observation likelihood model A,
     get the expected observations given the predictive posterior.
 
@@ -635,34 +411,34 @@ def get_expected_obs(Qs_pi, A, return_numpy = False):
     -------
     Qo_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
         Expected observations under the given policy 
-    '''
+    """
     if isinstance(A, Categorical):
-        
-        if not return_numpy:   
+
+        if not return_numpy:
             Qo_pi = A.dot(Qs_pi)
             return Qo_pi
         else:
-            Qo_pi = A.dot(Qs_pi,return_numpy=True)
-            if Qo_pi.dtype == 'object':
-                Qo_pi_flattened = np.empty(len(Qo_pi),dtype=object)
+            Qo_pi = A.dot(Qs_pi, return_numpy=True)
+            if Qo_pi.dtype == "object":
+                Qo_pi_flattened = np.empty(len(Qo_pi), dtype=object)
                 for g in range(len(Qo_pi)):
                     Qo_pi_flattened[g] = Qo_pi[g].flatten()
                 return Qo_pi_flattened
             else:
                 return Qo_pi.flatten()
-    
-    elif A.dtype == 'object':
+
+    elif A.dtype == "object":
 
         Ng = len(A)
 
-        Qo_pi = np.empty(Ng, dtype = object)
+        Qo_pi = np.empty(Ng, dtype=object)
 
         if isinstance(Qs_pi, Categorical):
             Qs_pi = Qs_pi.values
             for f in range(len(Qs_pi)):
                 Qs_pi[f] = Qs_pi[f].flatten()
         for g in range(Ng):
-            Qo_pi[g] = spm_dot(A[g],Qs_pi)
+            Qo_pi[g] = spm_dot(A[g], Qs_pi)
 
     else:
 
@@ -670,15 +446,16 @@ def get_expected_obs(Qs_pi, A, return_numpy = False):
             Qs_pi = Qs_pi.values
 
         Qo_pi = spm_dot(A, Qs_pi)
-    
+
     if not return_numpy:
-        Qo_pi = Categorical(values = Qo_pi)
+        Qo_pi = Categorical(values=Qo_pi)
         return Qo_pi
     else:
         return Qo_pi
 
-def calculate_expected_utility(Qo_pi,C):
-    '''
+
+def calculate_expected_utility(Qo_pi, C):
+    """
     Given expected observations under a policy Qo_pi and a prior over observations C
     compute the expected utility of the policy.
 
@@ -693,33 +470,34 @@ def calculate_expected_utility(Qo_pi,C):
     -------
     expected_util [scalar]:
         Utility (reward) expected under the policy in question
-    '''
+    """
 
-    if isinstance(Qo_pi,Categorical):
+    if isinstance(Qo_pi, Categorical):
         Qo_pi = Qo_pi.values
-    
-    if Qo_pi.dtype == 'object':
+
+    if Qo_pi.dtype == "object":
         for g in range(len(Qo_pi)):
             Qo_pi[g] = Qo_pi[g].flatten()
 
-    if C.dtype == 'object':
-        
+    if C.dtype == "object":
+
         expected_util = 0
-        
+
         Ng = len(C)
         for g in range(Ng):
-            lnC = np.log(softmax(C[g][:,np.newaxis])+1e-16)
+            lnC = np.log(softmax(C[g][:, np.newaxis]) + 1e-16)
             expected_util += Qo_pi[g].flatten().dot(lnC)
 
     else:
 
-        lnC = np.log(softmax(C[:,np.newaxis]) + 1e-16)
+        lnC = np.log(softmax(C[:, np.newaxis]) + 1e-16)
         expected_util = Qo_pi.flatten().dot(lnC)
-    
+
     return expected_util
 
+
 def calculate_expected_surprise(A, Qs_pi):
-    '''
+    """
     Given a likelihood mapping A and a posterior predictive density over states Qs_pi,
     compute the Bayesian surprise (about states) expected under that policy
 
@@ -734,26 +512,27 @@ def calculate_expected_surprise(A, Qs_pi):
     -------
     states_surprise [scalar]:
         Surprise (about states) expected under the policy in question
-    '''
+    """
 
     if isinstance(A, Categorical):
         A = A.values
 
     if isinstance(Qs_pi, Categorical):
         Qs_pi = Qs_pi.values
-    
-    if Qs_pi.dtype == 'object':
+
+    if Qs_pi.dtype == "object":
         for f in range(len(Qs_pi)):
             Qs_pi[f] = Qs_pi[f].flatten()
     else:
         Qs_pi = Qs_pi.flatten()
-    
-    states_surprise = spm_MDP_G(A,Qs_pi)
+
+    states_surprise = spm_MDP_G(A, Qs_pi)
 
     return states_surprise
 
+
 def calculate_infogain_pA(pA, Qo_pi, Qs_pi):
-    '''
+    """
     Compute expected Dirichlet information gain about parameters pA under a policy
     Parameters
     ----------
@@ -768,59 +547,60 @@ def calculate_infogain_pA(pA, Qo_pi, Qs_pi):
     -------
     infogain_pA [scalar]:
         Surprise (about dirichlet parameters) expected under the policy in question
-    '''
+    """
 
-    if isinstance(pA,Dirichlet):
+    if isinstance(pA, Dirichlet):
         if pA.IS_AOA:
             Ng = pA.shape[0]
         else:
             Ng = 1
         wA = pA.expectation_of_log(return_numpy=True)
         pA = pA.values
-    elif pA.dtype == 'object':
+    elif pA.dtype == "object":
         Ng = len(pA)
-        wA = np.empty(Ng,dtype=object)
+        wA = np.empty(Ng, dtype=object)
         for g in range(Ng):
             wA[g] = spm_wnorm(pA[g])
     else:
         Ng = 1
         wA = spm_wnorm(pA)
 
-    if isinstance(Qo_pi,Categorical):
+    if isinstance(Qo_pi, Categorical):
         Qo_pi = Qo_pi.values
-        
-    if Qo_pi.dtype == 'object':
+
+    if Qo_pi.dtype == "object":
         for g in range(len(Qo_pi)):
             Qo_pi[g] = Qo_pi[g].flatten()
     else:
         Qo_pi = Qo_pi.flatten()
-    
-    if isinstance(Qs_pi,Categorical):
+
+    if isinstance(Qs_pi, Categorical):
         Qs_pi = Qs_pi.values
-    
-    if Qs_pi.dtype == 'object':
+
+    if Qs_pi.dtype == "object":
         for f in range(len(Qs_pi)):
             Qs_pi[f] = Qs_pi[f].flatten()
     else:
         Qs_pi = Qs_pi.flatten()
-    
+
     if Ng > 1:
 
         infogain_pA = 0
 
         for g in range(Ng):
-            wA_g= wA[g] * (pA[g] > 0).astype('float')
-            infogain_pA -= Qo_pi[g].dot(spm_dot(wA_g,Qs_pi)[:,np.newaxis])
-    
+            wA_g = wA[g] * (pA[g] > 0).astype("float")
+            infogain_pA -= Qo_pi[g].dot(spm_dot(wA_g, Qs_pi)[:, np.newaxis])
+
     else:
 
-        wA = wA * (pA > 0).astype('float')
-        infogain_pA = -Qo_pi.dot(spm_dot(wA,Qs_pi)[:,np.newaxis])
-    
+        wA = wA * (pA > 0).astype("float")
+        infogain_pA = -Qo_pi.dot(spm_dot(wA, Qs_pi)[:, np.newaxis])
+
     return infogain_pA
 
+
 def calculate_infogain_pB(pB, Qs_next, Qs_previous, policy):
-    '''
+    """
     Compute expected Dirichlet information gain about parameters pB under a given policy
     Parameters
     ----------
@@ -835,60 +615,61 @@ def calculate_infogain_pB(pB, Qs_next, Qs_previous, policy):
     -------
     infogain_pB [scalar]:
         Surprise (about dirichlet parameters) expected under the policy in question
-    '''
-    if isinstance(pB,Dirichlet):
+    """
+    if isinstance(pB, Dirichlet):
         if pB.IS_AOA:
             Nf = pB.shape[0]
         else:
             Nf = 1
         wB = pB.expectation_of_log(return_numpy=True)
         pB = pB.values
-    elif pB.dtype == 'object':
+    elif pB.dtype == "object":
         Nf = len(pB)
-        wB = np.empty(Nf,dtype=object)
+        wB = np.empty(Nf, dtype=object)
         for f in range(Nf):
             wB[f] = spm_wnorm(pB[f])
     else:
         Nf = 1
         wB = spm_wnorm(pB)
 
-    if isinstance(Qs_next,Categorical):
+    if isinstance(Qs_next, Categorical):
         Qs_next = Qs_next.values
-        
-    if Qs_next.dtype == 'object':
+
+    if Qs_next.dtype == "object":
         for f in range(Nf):
             Qs_next[f] = Qs_next[f].flatten()
     else:
         Qs_next = Qs_next.flatten()
-    
-    if isinstance(Qs_previous,Categorical):
+
+    if isinstance(Qs_previous, Categorical):
         Qs_previous = Qs_previous.values
-    
-    if Qs_previous.dtype == 'object':
+
+    if Qs_previous.dtype == "object":
         for f in range(Nf):
             Qs_previous[f] = Qs_previous[f].flatten()
     else:
         Qs_previous = Qs_previous.flatten()
-    
+
     if Nf > 1:
 
         infogain_pB = 0
 
         for f_i, a_i in enumerate(policy):
-            wB_action = wB[f_i][:,:,a_i] * (pB[f_i][:,:,a_i]  > 0).astype('float')
-            infogain_pB -= Qs_next[f_i].dot(wB_action.dot(Qs_previous[f_i]))     
-    
+            wB_action = wB[f_i][:, :, a_i] * (pB[f_i][:, :, a_i] > 0).astype("float")
+            infogain_pB -= Qs_next[f_i].dot(wB_action.dot(Qs_previous[f_i]))
+
     else:
 
         a_i = policy[0]
-        
-        wB = wB[:,:,a_i] * (pB[:,:,a_i] > 0).astype('float')
+
+        wB = wB[:, :, a_i] * (pB[:, :, a_i] > 0).astype("float")
         infogain_pB = -Qs_next.dot(wB.dot(Qs_previous))
-    
+
     return infogain_pB
 
-def sample_action(p_i, possiblePolicies, Nu, sampling_type = 'marginal_action'):
-    '''
+
+def sample_action(p_i, possiblePolicies, Nu, sampling_type="marginal_action"):
+    """
     Samples action from posterior over policies, using one of two methods. 
     @TODO: Needs to be amended for use with multi-step policies (where possiblePolicies is a list of np.arrays (nStep x nFactor), not just a list of tuples as it is now)
     Parameters
@@ -907,36 +688,39 @@ def sample_action(p_i, possiblePolicies, Nu, sampling_type = 'marginal_action'):
     ----------
     selectedPolicy [tuple]:
         tuple containing the list of actions selected by the agent
-    '''
- 
+    """
+
     numControls = len(Nu)
 
-    if sampling_type == 'marginal_action':
+    if sampling_type == "marginal_action":
         action_marginals = np.empty(numControls, dtype=object)
         for nu_i in range(numControls):
             action_marginals[nu_i] = np.zeros(Nu[nu_i])
 
         # Weight each action according to the posterior probability it gets across policies
         for pol_i, policy in enumerate(possiblePolicies):
-                for nu_i, a_i in enumerate(policy):
-                    action_marginals[nu_i][a_i] += p_i[pol_i]
-        
-        action_marginals = Categorical(values = action_marginals)
+            for nu_i, a_i in enumerate(policy):
+                action_marginals[nu_i][a_i] += p_i[pol_i]
+
+        action_marginals = Categorical(values=action_marginals)
         action_marginals.normalize()
         selectedPolicy = action_marginals.sample()
 
-    elif sampling_type == 'posterior_sample':
-        if isinstance(p_i,Categorical):
+    elif sampling_type == "posterior_sample":
+        if isinstance(p_i, Categorical):
             policy_index = p_i.sample()
             selectedPolicy = possiblePolicies[policy_index]
         else:
             sample_onehot = np.random.multinomial(1, p_i.squeeze())
             policy_index = np.where(sample_onehot == 1)[0][0]
             selectedPolicy = possiblePolicies[policy_index]
-    
+
     return selectedPolicy
 
-def update_dirichletA(pA, A, obs, Qs, eta = 1.0, return_numpy = True, which_modalities = 'all'):
+
+def update_dirichletA(
+    pA, A, obs, Qs, eta=1.0, return_numpy=True, which_modalities="all"
+):
     """
     Update Dirichlet parameters that parameterize the observation model of the generative model (describing the probabilistic mapping from hidden states to observations).
     Parameters
@@ -959,7 +743,7 @@ def update_dirichletA(pA, A, obs, Qs, eta = 1.0, return_numpy = True, which_moda
         are updated as a function of observations in the different modalities.
     """
 
-    if isinstance(pA,Dirichlet):
+    if isinstance(pA, Dirichlet):
         if pA.IS_AOA:
             Ng = len(pA)
             No = [pA[g].shape[0] for g in range(Ng)]
@@ -969,50 +753,55 @@ def update_dirichletA(pA, A, obs, Qs, eta = 1.0, return_numpy = True, which_moda
         if return_numpy:
             pA_new = pA.values.copy()
         else:
-            pA_new = Dirichlet(values = pA.values.copy())
-    
+            pA_new = Dirichlet(values=pA.values.copy())
+
     else:
         if pA.dtype == object:
             Ng = len(pA)
-            No = [pA[g].shape[0] for g in range(Ng)]    
+            No = [pA[g].shape[0] for g in range(Ng)]
         else:
             Ng = 1
             No = [pA.shape[0]]
         if return_numpy:
             pA_new = pA.copy()
         else:
-            pA_new = Dirichlet(values = pA.copy())
-    
+            pA_new = Dirichlet(values=pA.copy())
+
     if isinstance(A, Categorical):
         A = A.values
 
     if isinstance(obs, (int, np.integer)):
         obs = np.eye(A.shape[0])[obs]
-    
-    elif isinstance(obs, tuple):
-        obs = np.array( [ np.eye(No[g])[obs[g]] for g in range(Ng) ], dtype = object )
-    
-    obs = Categorical(values = obs) # convert to Categorical to make the cross product easier
 
-    if which_modalities == 'all':
+    elif isinstance(obs, tuple):
+        obs = np.array([np.eye(No[g])[obs[g]] for g in range(Ng)], dtype=object)
+
+    obs = Categorical(
+        values=obs
+    )  # convert to Categorical to make the cross product easier
+
+    if which_modalities == "all":
         if Ng == 1:
-            da = obs.cross(Qs, return_numpy = True)
-            da = da * (A > 0).astype('float')
+            da = obs.cross(Qs, return_numpy=True)
+            da = da * (A > 0).astype("float")
             pA_new = pA_new + (eta * da)
         elif Ng > 1:
             for g in range(Ng):
-                da = obs[g].cross(Qs,return_numpy=True)
-                da = da * (A[g] > 0).astype('float')
+                da = obs[g].cross(Qs, return_numpy=True)
+                da = da * (A[g] > 0).astype("float")
                 pA_new[g] = pA_new[g] + (eta * da)
     else:
         for g_idx in which_modalities:
-            da = obs[g_idx].cross(Qs, return_numpy = True)
-            da = da * (A[g_idx] > 0).astype('float')
+            da = obs[g_idx].cross(Qs, return_numpy=True)
+            da = da * (A[g_idx] > 0).astype("float")
             pA_new[g_idx] = pA_new[g_idx] + (eta * da)
-    
+
     return pA_new
 
-def update_dirichletB(pB, B, action, Qs_curr, Qs_prev, eta = 1.0, return_numpy = True, which_factors = 'all'):
+
+def update_dirichletB(
+    pB, B, action, Qs_curr, Qs_prev, eta=1.0, return_numpy=True, which_factors="all"
+):
     """
     Update Dirichlet parameters that parameterize the transition model of the generative model (describing the probabilistic mapping between hidden states over time).
     Parameters
@@ -1047,44 +836,45 @@ def update_dirichletB(pB, B, action, Qs_curr, Qs_prev, eta = 1.0, return_numpy =
         if return_numpy:
             pB_new = pB.values.copy()
         else:
-            pB_new = Dirichlet(values = pB.values.copy())
-    
+            pB_new = Dirichlet(values=pB.values.copy())
+
     else:
         if pB.dtype == object:
             Nf = len(pB)
-            Ns = [pB[f].shape[0] for f in range(Nf)]    
+            Ns = [pB[f].shape[0] for f in range(Nf)]
         else:
             Nf = 1
             Ns = [pB.shape[0]]
         if return_numpy:
             pB_new = pB.copy()
         else:
-            pB_new = Dirichlet(values = pB.copy())
-    
+            pB_new = Dirichlet(values=pB.copy())
+
     if isinstance(B, Categorical):
         B = B.values
-    
+
     if not isinstance(Qs_curr, Categorical):
-        Qs_curr = Categorical(values = Qs_curr)
-    
-    if which_factors == 'all':
+        Qs_curr = Categorical(values=Qs_curr)
+
+    if which_factors == "all":
         if Nf == 1:
-            db = Qs_curr.cross(Qs_prev, return_numpy = True)
-            db = db * (B[:,:,action[0]] > 0).astype('float')
+            db = Qs_curr.cross(Qs_prev, return_numpy=True)
+            db = db * (B[:, :, action[0]] > 0).astype("float")
             pB_new = pB_new + (eta * db)
         elif Nf > 1:
             for f in range(Nf):
-                db = Qs_curr[f].cross(Qs_prev[f],return_numpy=True)
-                db = db * (B[f][:,:,action[f]] > 0).astype('float')
+                db = Qs_curr[f].cross(Qs_prev[f], return_numpy=True)
+                db = db * (B[f][:, :, action[f]] > 0).astype("float")
                 pB_new[f] = pB_new[f] + (eta * db)
     else:
         for f_idx in which_factors:
-            db = Qs_curr[f_idx].cross(Qs_prev[f_idx], return_numpy = True)
-            db = db * (B[f_idx][:,:,action[f_idx]] > 0).astype('float')
+            db = Qs_curr[f_idx].cross(Qs_prev[f_idx], return_numpy=True)
+            db = db * (B[f_idx][:, :, action[f_idx]] > 0).astype("float")
             pB_new[f_idx] = pB_new[f_idx] + (eta * db)
-    
+
     return pB_new
-    
+
+
 def spm_MDP_G(A, x):
     """
     Calculates the Bayesian surprise in the same way as spm_MDP_G.m does in 
@@ -1147,13 +937,15 @@ def spm_MDP_G(A, x):
 
     return G
 
+
 def cross_product_beta(dist_a, dist_b):
     """
     @TODO: needs to be replaced by spm_cross
     """
-    if not isinstance(type(dist_a), type(Categorical)) or not isinstance(type(dist_b), type(Categorical)):
-        raise ValueError(
-            '[cross_product] function takes [Categorical] objects')
+    if not isinstance(type(dist_a), type(Categorical)) or not isinstance(
+        type(dist_b), type(Categorical)
+    ):
+        raise ValueError("[cross_product] function takes [Categorical] objects")
     values_a = np.copy(dist_a.values)
     values_b = np.copy(dist_b.values)
     a = np.reshape(values_a, (values_a.shape[0], values_a.shape[1], 1, 1))

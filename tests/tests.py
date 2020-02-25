@@ -13,7 +13,7 @@ import numpy as np
 from scipy.io import loadmat
 
 sys.path.append(".")
-from inferactively import Categorical, Dirichlet  # nopep8
+from inferactively.distributions import Categorical, Dirichlet  # nopep8
 
 
 class TestCategorical(unittest.TestCase):
