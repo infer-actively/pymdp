@@ -7,7 +7,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 import warnings
-import inferactively.functions as F
+import inferactively.core.functions as F
 
 
 class Categorical(object):

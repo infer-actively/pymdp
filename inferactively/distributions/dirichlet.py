@@ -10,8 +10,8 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import numpy as np
 from scipy import special
 import warnings
-import inferactively.functions as F
-from .categorical import Categorical
+import inferactively.core.functions as F
+from inferactively.distributions.categorical import Categorical
 
 
 class Dirichlet(object):

@@ -1,4 +1,3 @@
-from . import functions
+from . import core
 from . import distributions
 from . import envs
-from .distributions import Categorical, Dirichlet
