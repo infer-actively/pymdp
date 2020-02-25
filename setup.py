@@ -8,5 +8,10 @@ setuptools.setup(
     ),
     license="Apache 2.0",
     url="https://github.com/alec-tschantz/infer-actively",
-    packages=setuptools.find_packages(),
+    packages=[
+        "inferactively",
+        "inferactively.core",
+        "inferactively.distributions",
+        "inferactively.envs",
+    ],
 )
