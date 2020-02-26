@@ -147,7 +147,7 @@ def update_posterior_states(
 
     if method == "FPI":
         # qx = run_FPI(A, observation, prior, No, Ns, **kwargs)
-        qx = run_FPI_faster(A, observation, prior, No, Ns, **kwargs)
+        qx = run_FPI(A, observation, prior, No, Ns, **kwargs)
     if method == "VMP":
         raise NotImplementedError("VMP is not implemented")
     if method == "MMP":
@@ -165,7 +165,7 @@ def update_posterior_states(
         return Categorical(values=qx)
 
 
-def run_FPI(A, observation, prior, No, Ns, num_iter=10, dF=1.0, dF_tol=0.001):
+def run_FPI(A, observation, prior, No, Ns, num_iter=10, dF = 1.0, dF_tol=0.001):
     """
     Update marginal posterior beliefs about hidden states
     using variational fixed point iteration (FPI)
@@ -182,21 +182,15 @@ def run_FPI(A, observation, prior, No, Ns, num_iter=10, dF=1.0, dF_tol=0.001):
     'num_iter' [int]:
         Number of variational fixed-point iterations to run.
     'dF' [float]:
-        Starting free energy gradient (dF/dQx) before updating in the course of gradient descent.
+        Starting free energy gradient (dF/dt) before updating in the course of gradient descent.
     'dF_tol' [float]:
-        Threshold value of the gradient of the variational free energy (dF/dQx), to be checked at each iteration. If 
+        Threshold value of the gradient of the variational free energy (dF/dt), to be checked at each iteration. If 
         dF <= dF_tol, the iterations are halted pre-emptively and the final marginal posterior belief(s) is(are) returned
     Returns
     ----------
     'qx' [numpy 1D array or array of arrays (with 1D numpy array entries):
         Marginal posterior beliefs over hidden states (single- or multi-factor) achieved via variational fixed point iteration (mean-field)
     """
-
-    # Code should be changed to this, once you've defined the gradient of the free energy:
-    # dF = 1
-    # while iterNum < numIter or dF > dF_tol:
-    #       [DO ITERATIONS]
-    # until then, use the following code:
 
     Ng = len(No)
     Nf = len(Ns)
@@ -211,20 +205,41 @@ def run_FPI(A, observation, prior, No, Ns, num_iter=10, dF=1.0, dF_tol=0.001):
         for g in range(Ng):
             L *= spm_dot(A[g], observation[g])
 
+    L = np.log(L + 1e-16)
+
     # initialize posterior to flat distribution
     qx = np.empty(Nf, dtype=object)
     for f in range(Nf):
         qx[f] = np.ones(Ns[f]) / Ns[f]
 
-    # in the trivial case of one hidden state factor, inference doesn't require FPI
+    # F_init = 0
+    # dF_Q_init = 0
+    # for f in range(Nf):
+    #     F_init += -qx[f].dot(np.log(qx[f][:,np.newaxis] + 1e-16)) -qx[f].dot(prior[f][:,np.newaxis])
+    #     sum_log_marginal = np.sum( np.log(qx[f] + 1e-16))
+    #     sum_qL = np.sum(spm_dot(L, qx, [f]))
+    #     sum_prior = np.sum(prior[f])
+    #     dF_Q_init += (sum_log_marginal - sum_qL - sum_prior)
+
+    # print('Initial free energy gradient: %.2f\n'%dF_Q_init)
+    # print('Initial free energy: %.2f\n'%F_init)
+
+    # initialize the 'previous' free energy
+    F_prev = 0
+    for f in range(Nf):
+        F_prev += -qx[f].dot(np.log(qx[f][:,np.newaxis] + 1e-16)) -qx[f].dot(prior[f][:,np.newaxis])
+
     if Nf == 1:
         qL = spm_dot(L, qx, [0])
-        qx[0] = softmax(np.log(qL + 1e-16) + np.log(prior[0] + 1e-16))
+        qx[0] = softmax(qL + prior)
         return qx[0]
 
     else:
         iter_i = 0
         while iter_i < num_iter:
+
+            F = 0
+            # dF_Q = 0
 
             for f in range(Nf):
 
@@ -232,13 +247,38 @@ def run_FPI(A, observation, prior, No, Ns, num_iter=10, dF=1.0, dF_tol=0.001):
                 # other factors (summing them, weighted by their posterior expectation)
                 qL = spm_dot(L, qx, [f])
 
-                # this math is wrong, but anyway in theory we should add this in at
-                # some point -- calculate the free energy and update the derivative
-                # accordingly:
-                # lnP = spm_dot(A_gm[g1,g2],O)
-                # dF += np.sum(np.log(qL + 1e-16)-np.log(prior + 1e-16) + spm_dot(lnL, Qs, [f]))
+                qx[f] = softmax(qL + prior[f])
 
-                qx[f] = softmax(np.log(qL + 1e-16) + np.log(prior[f] + 1e-16))
+                # sum_log_marginal = np.sum( np.log(qx[f] + 1e-16))
+                # sum_qL = np.sum(qL)
+                # sum_prior = np.sum(prior[f])
+                # dF_Q += (sum_log_marginal - sum_qL - sum_prior)
+                # print('Contribution to dF_Q from Marginal %d: %.2f\n'%(f, sum_log_marginal))
+                # print('Contribution to dF_Q from expected log-likelihood %d: %.2f\n'%(f, -sum_qL))
+                # print('Contribution to dF_Q from prior %d: %.2f\n'%(f, -sum_prior))
+                
+                marginal_entropy = -qx[f].dot(np.log(qx[f][:,np.newaxis] + 1e-16))
+                cross_entropy_past = -qx[f].dot(prior[f][:,np.newaxis])
+                F += (marginal_entropy + cross_entropy_past)
+                # print('Contribution to F from entropy of marginal %d: %.2f\n'%(f, marginal_entropy))
+                # print('Contribution to F from cross entropy with prior %d: %.2f\n'%(f, cross_entropy_past))
+            
+            E_Q_lh = spm_dot(L, qx)[0]
+            F -= E_Q_lh
+            # print('Contribution to F from expected log likelihood %d: %.2f\n'%(f, -E_Q_lh))
+
+            # print('Free energy gradient at iteration %d: %.2f\n'%(iter_i,dF_Q))
+            # print('Total free energy at iteration %d: %.5f\n'%(iter_i,F))
+
+            dF = np.abs(F_prev - F)
+            # print('Free energy difference between iterations: %.5f\n'%(dF))
+
+            F_prev = F
+
+            if dF < dF_tol:
+                # print('Stopped updating after iteration %d\n'%iter_i)
+                break
+                # return qx
 
             iter_i += 1
 
@@ -307,6 +347,7 @@ def run_FPI_faster(A, observation, prior, No, Ns, num_iter=10, dF=1.0, dF_tol=0.
         # equivalent to:
         # qL = A[np.where(observation),:]
         qx[0] = softmax(np.log(qL + 1e-16) + np.log(prior[0] + 1e-16))
+        # qx[0] = softmax(np.log(qL + 1e-16))
         return qx[0]
 
     else:
@@ -330,6 +371,7 @@ def run_FPI_faster(A, observation, prior, No, Ns, num_iter=10, dF=1.0, dF_tol=0.
                 qL = np.sum(temp,dims2sum)
 
                 qx[f] = softmax(np.log(qL + 1e-16) + np.log(prior[f] + 1e-16))
+                # qx[f] = softmax(np.log(qL + 1e-16))
 
                 # this math is wrong, but anyway in theory we should add this in at
                 # some point -- calculate the free energy and update the derivative

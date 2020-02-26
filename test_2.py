@@ -52,6 +52,6 @@ for t in range(T):
     msg = """[{}] Action [Saccade to location {}]"""
     print(msg.format(t,action[0]))
 
-    prior = core.get_expected_states(Qs, B, action)
+    prior = core.get_expected_states(Qs, B.log(), action)
 
 
