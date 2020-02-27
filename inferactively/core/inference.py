@@ -15,7 +15,7 @@ from inferactively.distributions import Dirichlet
 from inferactively.core import softmax, spm_dot, spm_wnorm, spm_cross
 
 
-def constructNu(Ns, Nf, cntrl_fac_idx, policy_len):
+def constructNu(Ns, Nf, control_fac_idx, policy_len):
     """Generate list of possible combinations of Ns[f_i] actions for Nf hidden state factors,
     where Nu[i] gives the number of actions available along hidden state factor f_i. Assumes that for each controllable hidden
     state factor, the number of possible actions == Ns[f_i]
@@ -23,7 +23,7 @@ def constructNu(Ns, Nf, cntrl_fac_idx, policy_len):
     -------
     Ns: list of dimensionalities of hidden state factors
     Nf: number of hidden state factors total
-    cntrl_fac_idx: indices of the hidden state factors that are controllable (i.e. those whose Nu[i] > 1)
+    control_fac_idx: indices of the hidden state factors that are controllable (i.e. those whose Nu[i] > 1)
     policy_len: length of each policy
     Returns:
     -------
@@ -36,7 +36,7 @@ def constructNu(Ns, Nf, cntrl_fac_idx, policy_len):
     Nu = []
 
     for f_i in range(Nf):
-        if f_i in cntrl_fac_idx:
+        if f_i in control_fac_idx:
             Nu.append(Ns[f_i])
         else:
             Nu.append(1)
@@ -146,7 +146,6 @@ def update_posterior_states(
         prior = prior_new
 
     if method == "FPI":
-        # qx = run_FPI(A, observation, prior, No, Ns, **kwargs)
         qx = run_FPI(A, observation, prior, No, Ns, **kwargs)
     if method == "VMP":
         raise NotImplementedError("VMP is not implemented")
@@ -200,10 +199,10 @@ def run_FPI(A, observation, prior, No, Ns, num_iter=10, dF = 1.0, dF_tol=0.001):
     # loop over observation modalities and use mean-field assumption to multiply 'induced posterior' onto
     # a single joint likelihood over hidden factors - of size Ns
     if Ng == 1:
-        L *= spm_dot(A, observation)
+        L *= spm_dot(A, observation, obs_mode=True)
     else:
         for g in range(Ng):
-            L *= spm_dot(A[g], observation[g])
+            L *= spm_dot(A[g], observation[g], obs_mode=True)
 
     L = np.log(L + 1e-16)
 
@@ -231,7 +230,7 @@ def run_FPI(A, observation, prior, No, Ns, num_iter=10, dF = 1.0, dF_tol=0.001):
 
     if Nf == 1:
         qL = spm_dot(L, qx, [0])
-        qx[0] = softmax(qL + prior)
+        qx[0] = softmax(qL + prior[0])
         return qx[0]
 
     else:
@@ -331,10 +330,10 @@ def run_FPI_faster(A, observation, prior, No, Ns, num_iter=10, dF=1.0, dF_tol=0.
     # loop over observation modalities and multiply 'induced posteriors' onto
     # a single joint likelihood over hidden factors - of size Ns
     if Ng == 1:
-        L *= spm_dot(A, observation)
+        L *= spm_dot(A, observation, obs_mode=True)
     else:
         for g in range(Ng):
-            L *= spm_dot(A[g], observation[g])
+            L *= spm_dot(A[g], observation[g], obs_mode=True)
 
     # initialize marginal posteriors to flat distribution
     qx = np.empty(Nf, dtype=object)
@@ -827,7 +826,12 @@ def sample_action(p_i, possiblePolicies, Nu, sampling_type="marginal_action"):
 
     numControls = len(Nu)
 
+
     if sampling_type == "marginal_action":
+
+        if isinstance(p_i, Categorical):
+            p_i = p_i.values.squeeze()
+            
         action_marginals = np.empty(numControls, dtype=object)
         for nu_i in range(numControls):
             action_marginals[nu_i] = np.zeros(Nu[nu_i])

@@ -50,7 +50,7 @@ def kl_divergence(q, p):
     return kl
 
 
-def spm_dot(X, x, dims_to_omit=None):
+def spm_dot(X, x, dims_to_omit=None, obs_mode = False):
     """ Dot product of a multidimensional array with `x`
     The dimensions in `dims_to_omit` will not be summed across during the dot product
     Parameters
@@ -64,10 +64,9 @@ def spm_dot(X, x, dims_to_omit=None):
     if x.dtype == object:
         dims = (np.arange(0, len(x)) + X.ndim - len(x)).astype(int)
     else:
-        if x.shape[0] != X.shape[1]:
+        if obs_mode is True:
             """
-            Case when the first dimension of `x` is likely the same as the first dimension of `A`
-            e.g. inverting the generative model using observations.
+            Case when you're getting the likelihood of an observation under the generative model.
             Equivalent to something like self.values[np.where(x),:]
             when `x` is a discrete 'one-hot' observation vector
             """
