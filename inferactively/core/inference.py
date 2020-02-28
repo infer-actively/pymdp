@@ -223,7 +223,7 @@ def run_FPI(A, observation, prior, No, Ns, num_iter=10, dF = 1.0, dF_tol=0.001):
     # print('Initial free energy gradient: %.2f\n'%dF_Q_init)
     # print('Initial free energy: %.2f\n'%F_init)
 
-    # initialize the 'previous' free energy
+    # initialize the 'previous' free energy (here, the initial free energy)
     F_prev = 0
     for f in range(Nf):
         F_prev += -qx[f].dot(np.log(qx[f][:,np.newaxis] + 1e-16)) -qx[f].dot(prior[f][:,np.newaxis])
@@ -237,45 +237,58 @@ def run_FPI(A, observation, prior, No, Ns, num_iter=10, dF = 1.0, dF_tol=0.001):
         iter_i = 0
         while iter_i < num_iter:
 
-            F = 0
+            F = 0 # initialize the variational free energy
             # dF_Q = 0
 
+            # qx_prev = qx.copy()
+
+            for f_loop in range(2):
+                if f_loop == 0:
+                    factor_order = range(Nf)
+                elif f_loop == 1:
+                    factor_order = range((Nf-1),-1,-1)
+                for f in factor_order:
+
+                    # get the marginal for hidden state factor f by marginalizing out
+                    # other factors (summing them, weighted by their posterior expectation)
+                    # qL = spm_dot(L, qx_prev, [f])
+                    qL = spm_dot(L, qx, [f])
+
+                    qx[f] = softmax(qL + prior[f])
+
+                    # sum_log_marginal = np.sum( np.log(qx[f] + 1e-16))
+                    # sum_qL = np.sum(qL)
+                    # sum_prior = np.sum(prior[f])
+                    # dF_Q += (sum_log_marginal - sum_qL - sum_prior)
+                    # print('Contribution to dF_Q from Marginal %d: %.2f\n'%(f, sum_log_marginal))
+                    # print('Contribution to dF_Q from expected log-likelihood %d: %.2f\n'%(f, -sum_qL))
+                    # print('Contribution to dF_Q from prior %d: %.2f\n'%(f, -sum_prior))
+                    
+                    # h_qx= -qx[f].dot(np.log(qx[f][:,np.newaxis] + 1e-16))
+                    # xh_qx_px = -qx[f].dot(prior[f][:,np.newaxis])
+                    # F += (h_qx + xh_qx_px)
+                    # print('Contribution to F from entropy of marginal %d: %.2f\n'%(f, h_qx))
+                    # print('Contribution to F from cross entropy with prior %d: %.2f\n'%(f, xh_qx_px))
+            
             for f in range(Nf):
-
-                # get the marginal for hidden state factor f by marginalizing out
-                # other factors (summing them, weighted by their posterior expectation)
-                qL = spm_dot(L, qx, [f])
-
-                qx[f] = softmax(qL + prior[f])
-
-                # sum_log_marginal = np.sum( np.log(qx[f] + 1e-16))
-                # sum_qL = np.sum(qL)
-                # sum_prior = np.sum(prior[f])
-                # dF_Q += (sum_log_marginal - sum_qL - sum_prior)
-                # print('Contribution to dF_Q from Marginal %d: %.2f\n'%(f, sum_log_marginal))
-                # print('Contribution to dF_Q from expected log-likelihood %d: %.2f\n'%(f, -sum_qL))
-                # print('Contribution to dF_Q from prior %d: %.2f\n'%(f, -sum_prior))
-                
-                marginal_entropy = -qx[f].dot(np.log(qx[f][:,np.newaxis] + 1e-16))
-                cross_entropy_past = -qx[f].dot(prior[f][:,np.newaxis])
-                F += (marginal_entropy + cross_entropy_past)
-                # print('Contribution to F from entropy of marginal %d: %.2f\n'%(f, marginal_entropy))
-                # print('Contribution to F from cross entropy with prior %d: %.2f\n'%(f, cross_entropy_past))
+                h_qx= -qx[f].dot(np.log(qx[f][:,np.newaxis] + 1e-16))
+                xh_qx_px = -qx[f].dot(prior[f][:,np.newaxis])
+                F += (h_qx + xh_qx_px)
             
             E_Q_lh = spm_dot(L, qx)[0]
             F -= E_Q_lh
-            # print('Contribution to F from expected log likelihood %d: %.2f\n'%(f, -E_Q_lh))
+            print('Contribution to F from expected log likelihood %d: %.2f\n'%(f, -E_Q_lh))
 
             # print('Free energy gradient at iteration %d: %.2f\n'%(iter_i,dF_Q))
             # print('Total free energy at iteration %d: %.5f\n'%(iter_i,F))
 
             dF = np.abs(F_prev - F)
-            # print('Free energy difference between iterations: %.5f\n'%(dF))
+            print('Free energy difference between iterations: %.5f\n'%(dF))
 
             F_prev = F
 
             if dF < dF_tol:
-                # print('Stopped updating after iteration %d\n'%iter_i)
+                print('Stopped updating after iteration %d\n'%iter_i)
                 break
                 # return qx
 
@@ -289,10 +302,15 @@ def run_FPI_faster(A, observation, prior, No, Ns, num_iter=10, dF=1.0, dF_tol=0.
     using variational fixed point iteration (FPI). 
     @NOTE (Conor, 26.02.2020):
     This method uses a faster algorithm than the traditional 'spm_dot' approach. Instead of
-    separately computing a conditional joint distributions over hidden states, under the
-    posterior probabilities of a certain marginal, instead all marginals are multiplied into one joint tensor that gives the joint likelihood over all hidden states,
-    that is then sequentially (and *parallelizably*) marginalized out to get each marginal posterior. This method is less RAM-intensive,
-    admits heavily parallelization, and runs faster.
+    separately computing a conditional joint log likelihood of an outcome, under the
+    posterior probabilities of a certain marginal, instead all marginals are multiplied into one joint tensor that gives the joint likelihood of an observation under 
+    all hidden states, that is then sequentially (and *parallelizably*) marginalized out to get each marginal posterior. 
+    This method is less RAM-intensive, admits heavy parallelization, and runs (about 2x) faster.
+    @NOTE (Conor, 28.02.2020):
+    After further testing, discovered interesting differences  between this version and the original verison. It appears that the
+    original version (simple 'run_FPI') shows mean-field biases or 'explaining away' effects, whereas this version spreads probabilities more 'fairly' among possibilities.
+    To summarize: it actually matters what order you do the summing across the joint likelihood tensor. In this verison, all marginals
+    are multiplied into the likelihood tensor before summing out, whereas in the previous version, marginals are recursively multiplied and summed out.
     Parameters
     ----------
     'A' [numpy nd.array (matrix or tensor or array-of-arrays)]:
@@ -316,12 +334,6 @@ def run_FPI_faster(A, observation, prior, No, Ns, num_iter=10, dF=1.0, dF_tol=0.
         Marginal posterior beliefs over hidden states (single- or multi-factor) achieved via variational fixed point iteration (mean-field)
     """
 
-    # Code should be changed to this, once you've defined the gradient of the free energy:
-    # dF = 1
-    # while iterNum < numIter or dF > dF_tol:
-    #       [DO ITERATIONS]
-    # until then, use the following code:
-
     Ng = len(No)
     Nf = len(Ns)
 
@@ -334,49 +346,79 @@ def run_FPI_faster(A, observation, prior, No, Ns, num_iter=10, dF=1.0, dF_tol=0.
     else:
         for g in range(Ng):
             L *= spm_dot(A[g], observation[g], obs_mode=True)
+    
+    L = np.log(L + 1e-16)
 
     # initialize marginal posteriors to flat distribution
     qx = np.empty(Nf, dtype=object)
     for f in range(Nf):
         qx[f] = np.ones(Ns[f]) / Ns[f]
 
+    # initialize the 'previous' free energy (here, the initial free energy)
+    F_prev = 0
+    for f in range(Nf):
+        F_prev += -qx[f].dot(np.log(qx[f][:,np.newaxis] + 1e-16)) -qx[f].dot(prior[f][:,np.newaxis])
+
     # in the trivial case of one hidden state factor, inference doesn't require FPI
     if Nf == 1:
         qL = spm_dot(L, qx, [0])
-        # equivalent to:
-        # qL = A[np.where(observation),:]
-        qx[0] = softmax(np.log(qL + 1e-16) + np.log(prior[0] + 1e-16))
-        # qx[0] = softmax(np.log(qL + 1e-16))
+        qx[0] = softmax(qL + prior[0])
         return qx[0]
 
     else:
         iter_i = 0
         while iter_i < num_iter:
 
-            X = L # reset the marginal likelihood over hidden state factors, given the outcome
+            F = 0 # initialize the variational free energy
+
+            for f_loop in range(2):
+                if f_loop == 0:
+                    factor_order = range(Nf)
+                elif f_loop == 1:
+                    factor_order = range((Nf-1),-1,-1)
+                
+                X = L.copy() # reset the log likelihood
+
+                for f in factor_order:
+                    s = np.ones(np.ndim(X), dtype=int)
+                    s[f] = len(qx[f])
+                    # X *= qx_prev[f].reshape(tuple(s))
+                    X *= qx[f].reshape(tuple(s))          
+                for f in factor_order:
+
+                    s = np.ones(np.ndim(X), dtype=int)
+                    s[f] = len(qx[f])
+                    # temp = X * (1.0/qx_prev[f]).reshape(tuple(s)) # divide out the factor we multiplied into X already
+                    temp = X * (1.0/qx[f]).reshape(tuple(s)) # divide out the factor we multiplied into X already
+                    dims2sum = tuple(np.where(np.arange(Nf) != f)[0])
+                    qL = np.sum(temp,dims2sum)
+
+                    qx[f] = softmax(qL + prior[f])
+
+                    # h_qx= -qx[f].dot(np.log(qx[f][:,np.newaxis] + 1e-16))
+                    # xh_qx_px = -qx[f].dot(prior[f][:,np.newaxis])
+                    # F += (h_qx + xh_qx_px)
 
             for f in range(Nf):
-
-                s = np.ones(np.ndim(X), dtype=int)
-                s[f] = len(qx[f])
-                X = X * qx[f].reshape(tuple(s))
+                h_qx= -qx[f].dot(np.log(qx[f][:,np.newaxis] + 1e-16))
+                xh_qx_px = -qx[f].dot(prior[f][:,np.newaxis])
+                F += (h_qx + xh_qx_px)
             
-            for f in range(Nf):
+            # in the spm_dot version, you essentially multiply each marginal along the log-likelihood L, and then sum out. Since we've already
+            # done the multiplication step above (in the computation of X), all we need to do is sum out the result
+            E_Q_lh = spm_dot(L, qx)[0]
+            # E_Q_lh = X.sum()
+            F -= E_Q_lh
+            print('Contribution to F from expected log likelihood %d: %.2f\n'%(f, -E_Q_lh))
 
-                s = np.ones(np.ndim(X), dtype=int)
-                s[f] = len(qx[f])
-                temp = X * (1.0/qx[f]).reshape(tuple(s)) # divide out the factor we multiplied above
-                dims2sum = tuple(np.where(np.arange(Nf) != f)[0])
-                qL = np.sum(temp,dims2sum)
+            dF = np.abs(F_prev - F)
+            print('Free energy difference between iterations: %.5f\n'%(dF))
 
-                qx[f] = softmax(np.log(qL + 1e-16) + np.log(prior[f] + 1e-16))
-                # qx[f] = softmax(np.log(qL + 1e-16))
+            F_prev = F
 
-                # this math is wrong, but anyway in theory we should add this in at
-                # some point -- calculate the free energy and update the derivative
-                # accordingly:
-                # lnP = spm_dot(A_gm[g1,g2],O)
-                # dF += np.sum(np.log(qL + 1e-16)-np.log(prior + 1e-16) + spm_dot(lnL, Qs, [f]))
+            if dF < dF_tol:
+                print('Stopped updating after iteration %d\n'%iter_i)
+                break
 
             iter_i += 1
 
