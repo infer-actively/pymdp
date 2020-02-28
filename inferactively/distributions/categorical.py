@@ -102,7 +102,7 @@ class Categorical(object):
         else:
             raise ValueError("`dims` must be either `list` or `int`")
 
-    def dot(self, x, dims_to_omit=None, return_numpy=False):
+    def dot(self, x, dims_to_omit=None, return_numpy=False, obs_mode = False):
         """ Dot product of a Categorical distribution with `x`
         The dimensions in `dims_to_omit` will not be summed across during the dot product
         Parameters
@@ -113,6 +113,10 @@ class Categorical(object):
             Which dimensions to omit
         `return_numpy` [bool] (optional)
             Whether to return `np.ndarray` or `Categorical`
+        'obs_mode' [bool] (optional)
+            Whether to perform the inner product of 'x' with the leading dimension of self. 
+            We call this 'obs_mode' because it's often used to get the likelihood of an observation (leading dimension)
+            under different settings of hidden states (lagging dimensions)
         """
 
         if isinstance(x, Categorical):
@@ -123,10 +127,10 @@ class Categorical(object):
             y = np.empty(len(self.values), dtype=object)
             for g in range(len(self.values)):
                 X = self[g].values
-                y[g] = F.spm_dot(X, x, dims_to_omit)
+                y[g] = F.spm_dot(X, x, dims_to_omit, obs_mode)
         else:
             X = self.values
-            y = F.spm_dot(X, x, dims_to_omit)
+            y = F.spm_dot(X, x, dims_to_omit, obs_mode)
 
         if return_numpy:
             return y
