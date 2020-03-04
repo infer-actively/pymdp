@@ -17,20 +17,19 @@ scenes[1][1, 1] = 2
 scenes[1][1, 0] = 3
 
 env = VisualForagingEnv(scenes=scenes, n_features=3)
-
 agent = Agent(A=env.get_likelihood_dist(), B=env.get_transition_dist(), control_fac_idx=[0])
-
-
 T = 10
 
 obs = env.reset()
+msg = """ === Starting experiment === \n True scene: {} Initial observation {} """
+print(msg.format(env.true_scene, obs))
 
 for t in range(T):
-
     qx = agent.infer_states(obs)
-
+    msg = """[{}] Inference [location {} / scene {}] """
+    print(msg.format(t, qx[0].sample(), qx[1].sample(), obs[0], obs[1]))
+    
     q_pi, efe = agent.infer_policies()
-
     action = agent.sample_action()
 
     msg = """[Step {}] Action: [Saccade to location {}]"""

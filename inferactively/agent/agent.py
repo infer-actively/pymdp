@@ -184,7 +184,6 @@ class Agent(object):
         return n_controls, possible_policies
 
     def reset(self, init_qx=None):
-
         if init_qx is None:
             self.qx = self._construct_D_prior()
         else:
@@ -196,7 +195,6 @@ class Agent(object):
         return self.qx
 
     def infer_states(self, observation):
-
         if not hasattr(self, "qx"):
             self.reset()
 
@@ -224,7 +222,6 @@ class Agent(object):
         return qx
 
     def infer_policies(self):
-
         q_pi, efe = core.update_posterior_policies(
             self.qx,
             self.A,
@@ -241,7 +238,6 @@ class Agent(object):
         return q_pi, efe
 
     def sample_action(self):
-
         action = core.sample_action(
             self.q_pi, self.possible_policies, self.n_controls, self.sampling_type
         )
