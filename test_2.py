@@ -9,7 +9,7 @@ T = 10
 print("""Initializing scene configuration with two scenes that share one feature
  in common. Therefore each scene has only one disambiguating feature\n""")
 
-scenes = np.zeros( (2,2,2) )
+scenes = np.zeros((2,2,2))
 scenes[0][0,0] = 1
 scenes[0][1,1] = 2
 scenes[1][1,1] = 2
@@ -27,7 +27,7 @@ C = np.empty(env.n_modalities,dtype=object)
 for g, No in enumerate(env.n_observations):
     C[g] = np.zeros(No)
 
-_,possible_policies = core.constructNu(env.n_states, env.n_factors, [0], 1)
+_,possible_policies = core.construct_policies(env.n_states, env.n_factors, [0], 1)
 
 obs = env.reset()
 
