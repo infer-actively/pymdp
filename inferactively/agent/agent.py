@@ -21,8 +21,6 @@ class Agent(object):
         D=None,
         n_states=None,
         n_observations=None,
-        n_modalities=None,
-        n_factors=None,
         n_controls=None,
         policy_len=1,
         control_fac_idx=None,
@@ -33,73 +31,64 @@ class Agent(object):
         message_passing_params=None,
     ):
 
-        self.policy_len = policy_len
-        self.control_fac_idx = control_fac_idx
-        self.possible_policies = possible_policies
+        if A is not None:
+            if not isinstance(A, Categorical):
+                self.A = Categorical(values=A)
+            else:
+                self.A = A
 
-        self.n_states = n_states
-        self.n_factors = n_factors
-        self.n_observations = n_observations
-        self.n_modalities = n_modalities
-        self.n_controls = n_controls
-
-        if self.n_modalities is not None and self.n_observations is not None:
-            if self.n_modalities != len(self.n_observations):
-                raise ValueError("n_modalities must equal len(n_observations)")
-        if self.n_modalities is None and self.n_observations is not None:
-            self.n_modalities = len(self.n_observations)
-
-        if self.n_factors is not None and self.n_states is not None:
-            if self.n_factors != len(self.n_states):
-                raise ValueError("n_factors must equal len(n_states)")
-        if self.n_factors is None and self.n_states is not None:
-            self.n_factors = len(self.n_states)
-
-        if self.control_fac_idx is None and self.n_factors is not None:
-            self.control_fac_idx = list(range(self.n_factors))
-        if max(self.control_fac_idx) > (self.n_factors - 1):
-            raise ValueError(
-                "Indices of controllable factors greater than number of hidden state factors"
-            )
-
-        if self.n_controls is None:
-            self.n_controls, _ = self._construct_n_controls()
-        if len(self.n_controls) != self.n_factors:
-            raise ValueError("n_controls must equal n_factors")
-
-        if self.possible_policies is None:
-            _, self.possible_policies = self._construct_n_controls()
-
-        self.A = A
-        if self.A is not None:
-            if self.A is not None and self.A is not isinstance(self.A, Categorical):
-                self.A = Categorical(values=self.A)
             if self.A.IS_AOA:
                 self.n_modalities = self.A.shape[0]
                 self.n_observations = [self.A[g].shape[0] for g in range(self.n_modalities)]
             else:
                 self.n_modalities = 1
                 self.n_observations = self.A.shape[0]
+            construct_A_flag = False
         else:
-            self.A = self._construct_A_likelihood()
+            if n_observations is None:
+                raise ValueError(
+                    "Must provide either `A` or `n_observations` to `Agent` constructor"
+                )
+            self.n_observations = n_observations
+            self.n_modalities = len(self.n_observations)
+            construct_A_flag = True
 
-        self.B = B
-        if self.B is not None:
-            if self.B is not None and self.B is not isinstance(self.B, Categorical):
-                self.B = Categorical(values=self.B)
+        if B is not None:
+            if not isinstance(B, Categorical):
+                self.B = Categorical(values=B)
+            else:
+                self.B = B
+
             if self.B.IS_AOA:
                 self.n_factors = self.B.shape[0]
                 self.n_states = [self.B[f].shape[0] for f in range(self.n_factors)]
             else:
                 self.n_factors = 1
                 self.n_states = [self.B.shape[0]]
-
-            if self.control_fac_idx is None:
-                self.control_fac_idx = list(range(self.n_factors))
-            self.n_controls, self.possible_policies = self._construct_n_controls()
+            construct_B_flag = False
         else:
-            self.B = self._construct_B_likelihood()
-            
+            if n_states is None:
+                raise ValueError("Must provide either `B` or `n_states` to `Agent` constructor")
+            self.n_states = n_states
+            self.n_factors = len(self.n_factors)
+            construct_B_flag = True
+
+        if control_fac_idx is None:
+            self.control_fac_idx = list(range(self.n_factors))
+        else:
+            self.control_fac_idx = control_fac_idx
+
+        self.policy_len = policy_len
+
+        if n_controls is None:
+            self.n_controls, _ = self._construct_n_controls()
+        else:
+            self.n_controls = n_controls
+
+        if possible_policies is None:
+            _, self.possible_policies = self._construct_n_controls()
+        else:
+            self.possible_policies = possible_policies
 
         if C is not None:
             if isinstance(C, Categorical):
@@ -117,6 +106,10 @@ class Agent(object):
         else:
             self.D = self._construct_D_prior()
 
+        if construct_A_flag:
+            self.A = self._construct_A_distribution()
+        if construct_B_flag:
+            self.B = self._construct_B_distribution()
 
         self.message_passing_algo = message_passing_algo
         if message_passing_params is None:
@@ -133,16 +126,7 @@ class Agent(object):
         self.pA = None
         self.pB = None
 
-    def _construct_n_controls(self):
-
-        n_controls, possible_policies = core.construct_policies(
-            self.n_states, self.n_factors, self.control_fac_idx, self.policy_len
-        )
-
-        return n_controls, possible_policies
-
-    def _construct_A_likelihood(self):
-
+    def _construct_A_distribution(self):
         if self.n_modalities == 1:
             A = Categorical(values=np.random.rand(*(self.n_observations + self.n_states)))
         else:
@@ -154,8 +138,7 @@ class Agent(object):
         A.normalize()
         return A
 
-    def _construct_B_likelihood(self):
-
+    def _construct_B_distribution(self):
         if self.n_factors == 1:
             B = np.eye(*self.n_states)[:, :, np.newaxis]
             if 0 in self.control_fac_idx:
@@ -177,7 +160,6 @@ class Agent(object):
         return B
 
     def _construct_C_prior(self):
-
         if self.n_modalities == 1:
             C = np.zeros(*self.n_observations)
         else:
@@ -186,7 +168,6 @@ class Agent(object):
         return C
 
     def _construct_D_prior(self):
-
         if self.n_factors == 1:
             D = Categorical(values=np.ones(*self.n_states))
         else:
@@ -194,6 +175,13 @@ class Agent(object):
         D.normalize()
 
         return D
+
+    def _construct_n_controls(self):
+        n_controls, possible_policies = core.construct_policies(
+            self.n_states, self.n_factors, self.control_fac_idx, self.policy_len
+        )
+
+        return n_controls, possible_policies
 
     def reset(self, init_qx=None):
 
@@ -214,16 +202,12 @@ class Agent(object):
 
         if self.message_passing_algo is "FPI":
             if self.action is not None:
-                empirical_prior = core.get_expected_states(
-                    self.qx, self.B.log(), self.action
-                )
+                empirical_prior = core.get_expected_states(self.qx, self.B.log(), self.action)
             else:
                 empirical_prior = self.D.log()
         else:
             if self.action is not None:
-                empirical_prior = core.get_expected_states(
-                    self.qx, self.B.log(), self.action
-                )
+                empirical_prior = core.get_expected_states(self.qx, self.B.log(), self.action)
             else:
                 empirical_prior = self.D
 
