@@ -12,6 +12,7 @@ setuptools.setup(
         "inferactively",
         "inferactively.core",
         "inferactively.distributions",
+        "inferactively.agent",
         "inferactively.envs",
     ],
 )

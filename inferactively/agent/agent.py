@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-""" inferactively Agent Class
+""" Agent Class
 
 __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
