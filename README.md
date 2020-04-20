@@ -1,4 +1,5 @@
-# <img alt="logo" src="https://upload.wikimedia.org/wikipedia/commons/thumb/0/0a/Red_Silhouette_-_Brain.svg/410px-Red_Silhouette_-_Brain.svg.png" height="90"> Active Inference for Markov Decision Processes 
+## <img alt="logo" src="https://pluspng.com/img-png/brain-png-brain-icon-png-image-2536-942.png" height="90"> 
+# Active Inference for Markov Decision Processes 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -23,7 +24,8 @@ To see some examples, refer to the [examples folder](examples/)
 This code is written in [Python 3.x](https://www.python.org) and uses 
 the following packages:
 
-* [Numpy](http://numpy.scipy.org/)
+* [NumPy](http://numpy.scipy.org/)
+* [SciPy](http://numpy.scipy.org/)
 * And for replicating figures, you will need:
     + [matplotlib](https://matplotlib.org)
 
