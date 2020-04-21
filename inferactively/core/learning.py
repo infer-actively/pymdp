@@ -10,88 +10,81 @@ import itertools
 import numpy as np
 import torch
 from scipy import special
-from inferactively.distributions import Categorical, Dirichlet
+from inferactively.core import utils
 
 
-def update_dirichlet_likelihood(pA, A, obs, Qs, eta=1.0, return_numpy=True, which_modalities="all"):
-    """
-    Update Dirichlet parameters that parameterize the observation model of the generative model (describing the probabilistic mapping from hidden states to observations).
+def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, return_numpy=True, modalities="all"):
+    """ Update Dirichlet parameters of the likelihood distribution 
+
     Parameters
     -----------
-    pA [numpy nd.array, array-of-arrays (with np.ndarray entries), or Dirichlet (either single-modality or AoA)]:
+    - pA [numpy nd.array, array-of-arrays (with np.ndarray entries), or Dirichlet (either single-modality or AoA)]:
         The prior Dirichlet parameters of the generative model, parameterizing the agent's beliefs about the observation likelihood. 
-    A [numpy nd.array, object-like array of arrays, or Categorical (either single-modality or AoA)]:
+    - A [numpy nd.array, object-like array of arrays, or Categorical (either single-modality or AoA)]:
         The observation likelihood of the generative model. 
-    obs [numpy 1D array, array-of-arrays (with 1D numpy array entries), int or tuple]:
+    - obs [numpy 1D array, array-of-arrays (with 1D numpy array entries), int or tuple]:
         A discrete observation used in the update equation
-    Qs [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
-        Current marginal posterior beliefs about hidden state factors
-    eta [float, optional]:
-        Learning rate.
-    return_numpy [bool, optional]:
+    - Qx [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+            Current marginal posterior beliefs about hidden state factors
+    - lr [float, optional]:
+            Learning rate.
+    - return_numpy [bool, optional]:
         Logical flag to determine whether output is a numpy array or a Dirichlet
-    which_modalities [list, optional]:
-        Indices (in terms of range(Ng)) of the observation modalities to include in learning.
+    - modalities [list, optional]:
+        Indices (in terms of range(n_modalities)) of the observation modalities to include in learning.
         Defaults to 'all, meaning that observation likelihood matrices for all modalities
         are updated as a function of observations in the different modalities.
     """
 
-    if isinstance(pA, Dirichlet):
-        if pA.IS_AOA:
-            Ng = len(pA)
-            No = [pA[g].shape[0] for g in range(Ng)]
-        else:
-            Ng = 1
-            No = [pA.shape[0]]
-        if return_numpy:
-            pA_new = pA.values.copy()
-        else:
-            pA_new = Dirichlet(values=pA.values.copy())
+    pA = utils.to_numpy(pA)
 
+    if utils.is_arr_of_arr(pA):
+        n_modalities = len(pA)
+        n_observations = [pA[m].shape[0] for m in range(n_modalities)]
     else:
-        if pA.dtype == object:
-            Ng = len(pA)
-            No = [pA[g].shape[0] for g in range(Ng)]
-        else:
-            Ng = 1
-            No = [pA.shape[0]]
-        if return_numpy:
-            pA_new = pA.copy()
-        else:
-            pA_new = Dirichlet(values=pA.copy())
+        n_modalities = 1
+        n_observations = [pA.shape[0]]
 
-    if isinstance(A, Categorical):
-        A = A.values
+    if return_numpy:
+        pA_updated = pA.copy()
+    else:
+        pA_updated = utils.to_dirichlet(pA.copy())
 
+    # observation index
     if isinstance(obs, (int, np.integer)):
         obs = np.eye(A.shape[0])[obs]
 
+    # observation indices
     elif isinstance(obs, tuple):
-        obs = np.array([np.eye(No[g])[obs[g]] for g in range(Ng)], dtype=object)
+        obs = np.array(
+            [np.eye(n_observations[g])[obs[g]] for g in range(n_modalities)], dtype=object
+        )
 
-    obs = Categorical(values=obs)  # convert to Categorical to make the cross product easier
+    # convert to Categorical to make the cross product easier
+    obs = utils.to_categorical(obs)
 
-    if which_modalities == "all":
-        if Ng == 1:
-            da = obs.cross(Qs, return_numpy=True)
+    if modalities == "all":
+        if n_modalities == 1:
+            da = obs.cross(qs, return_numpy=True)
             da = da * (A > 0).astype("float")
-            pA_new = pA_new + (eta * da)
-        elif Ng > 1:
-            for g in range(Ng):
-                da = obs[g].cross(Qs, return_numpy=True)
+            pA_updated = pA_updated + (lr * da)
+
+        elif n_modalities > 1:
+            for g in range(n_modalities):
+                da = obs[g].cross(qs, return_numpy=True)
                 da = da * (A[g] > 0).astype("float")
-                pA_new[g] = pA_new[g] + (eta * da)
+                pA_updated[g] = pA_updated[g] + (lr * da)
     else:
-        for g_idx in which_modalities:
-            da = obs[g_idx].cross(Qs, return_numpy=True)
+        for g_idx in modalities:
+            da = obs[g_idx].cross(qs, return_numpy=True)
             da = da * (A[g_idx] > 0).astype("float")
-            pA_new[g_idx] = pA_new[g_idx] + (eta * da)
+            pA_updated[g_idx] = pA_updated[g_idx] + (lr * da)
 
-    return pA_new
+    return pA_updated
 
 
-def update_dirichlet_transition(
-    pB, B, action, Qs_curr, Qs_prev, eta=1.0, return_numpy=True, which_factors="all"
+def update_transition_dirichlet(
+    pB, B, actions, qs, qs_prev, lr=1.0, return_numpy=True, factors="all"
 ):
     """
     Update Dirichlet parameters that parameterize the transition model of the generative model 
@@ -99,66 +92,56 @@ def update_dirichlet_transition(
 
     Parameters
     -----------
-    pB [numpy nd.array, array-of-arrays (with np.ndarray entries), or Dirichlet (either single-modality or AoA)]:
+   -  pB [numpy nd.array, array-of-arrays (with np.ndarray entries), or Dirichlet (either single-modality or AoA)]:
         The prior Dirichlet parameters of the generative model, parameterizing the agent's beliefs about the transition likelihood. 
-    B [numpy nd.array, object-like array of arrays, or Categorical (either single-modality or AoA)]:
+    - B [numpy nd.array, object-like array of arrays, or Categorical (either single-modality or AoA)]:
         The transition likelihood of the generative model. 
-    action [tuple]:
+    - actions [tuple]:
         A tuple containing the action(s) performed at a given timestep.
-    Qs_curr [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+    - Qs_curr [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
         Current marginal posterior beliefs about hidden state factors
-    Qs_prev [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+    - Qs_prev [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
         Past marginal posterior beliefs about hidden state factors
-    eta [float, optional]:
+    - eta [float, optional]:
         Learning rate.
-    return_numpy [bool, optional]:
+    - return_numpy [bool, optional]:
         Logical flag to determine whether output is a numpy array or a Dirichlet
-    which_factors [list, optional]:
+    - which_factors [list, optional]:
         Indices (in terms of range(Nf)) of the hidden state factors to include in learning.
         Defaults to 'all', meaning that transition likelihood matrices for all hidden state factors
         are updated as a function of transitions in the different control factors (i.e. actions)
     """
 
-    if isinstance(pB, Dirichlet):
-        if pB.IS_AOA:
-            Nf = len(pB)
-        else:
-            Nf = 1
-        if return_numpy:
-            pB_new = pB.values.copy()
-        else:
-            pB_new = Dirichlet(values=pB.values.copy())
+    pB = utils.to_numpy(pB)
 
+    if utils.is_arr_of_arr(pB):
+        n_factors = len(pB)
     else:
-        if pB.dtype == object:
-            Nf = len(pB)
-        else:
-            Nf = 1
-        if return_numpy:
-            pB_new = pB.copy()
-        else:
-            pB_new = Dirichlet(values=pB.copy())
+        n_factors = 1
 
-    if isinstance(B, Categorical):
-        B = B.values
-
-    if not isinstance(Qs_curr, Categorical):
-        Qs_curr = Categorical(values=Qs_curr)
-
-    if which_factors == "all":
-        if Nf == 1:
-            db = Qs_curr.cross(Qs_prev, return_numpy=True)
-            db = db * (B[:, :, action[0]] > 0).astype("float")
-            pB_new = pB_new + (eta * db)
-        elif Nf > 1:
-            for f in range(Nf):
-                db = Qs_curr[f].cross(Qs_prev[f], return_numpy=True)
-                db = db * (B[f][:, :, action[f]] > 0).astype("float")
-                pB_new[f] = pB_new[f] + (eta * db)
+    if return_numpy:
+        pB_updated = pB.copy()
     else:
-        for f_idx in which_factors:
-            db = Qs_curr[f_idx].cross(Qs_prev[f_idx], return_numpy=True)
-            db = db * (B[f_idx][:, :, action[f_idx]] > 0).astype("float")
-            pB_new[f_idx] = pB_new[f_idx] + (eta * db)
+        pB_updated = utils.to_dirichlet(pB.copy())
 
-    return pB_new
+    if not utils.is_distribution(qs):
+        qs = utils.to_categorical(qs)
+
+    if factors == "all":
+        if n_factors == 1:
+            db = qs.cross(qs_prev, return_numpy=True)
+            db = db * (B[:, :, actions[0]] > 0).astype("float")
+            pB_updated = pB_updated + (lr * db)
+
+        elif n_factors > 1:
+            for f in range(n_factors):
+                db = qs[f].cross(qs_prev[f], return_numpy=True)
+                db = db * (B[f][:, :, actions[f]] > 0).astype("float")
+                pB_updated[f] = pB_updated[f] + (lr * db)
+    else:
+        for f_idx in factors:
+            db = qs[f_idx].cross(qs_prev[f_idx], return_numpy=True)
+            db = db * (B[f_idx][:, :, actions[f_idx]] > 0).astype("float")
+            pB_updated[f_idx] = pB_updated[f_idx] + (lr * db)
+
+    return pB_updated

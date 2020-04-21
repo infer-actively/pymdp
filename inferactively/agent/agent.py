@@ -7,12 +7,17 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 """
 
-from inferactively.distributions import Categorical, Dirichlet
-import inferactively.core as core
 import numpy as np
+from inferactively.distributions import Categorical, Dirichlet
+from inferactively.core.algos import FPI
+import inferactively.core
+
 
 
 class Agent(object):
+    """ Agent class """
+
+
     def __init__(
         self,
         A=None,
@@ -26,17 +31,26 @@ class Agent(object):
         control_fac_idx=None,
         possible_policies=None,
         gamma=16.0,
-        sampling_type="marginal_action",
-        message_passing_algo="FPI",
-        message_passing_params=None,
+        action_sampling="marginal_action",
+        inference_algo=FPI,
+        inference_params=None,
     ):
 
+        # Constant parameters
+        self.policy_len = policy_len
+        self.gamma = gamma
+        self.action_sampling = action_sampling
+
+
+        """ Setup A matrices """
         if A is not None:
+            # Create `Categorical`
             if not isinstance(A, Categorical):
                 self.A = Categorical(values=A)
             else:
                 self.A = A
 
+            # Determine number of modalities and observations
             if self.A.IS_AOA:
                 self.n_modalities = self.A.shape[0]
                 self.n_observations = [self.A[g].shape[0] for g in range(self.n_modalities)]
@@ -45,6 +59,8 @@ class Agent(object):
                 self.n_observations = self.A.shape[0]
             construct_A_flag = False
         else:
+            
+            # If A is none, we randomly initialise the matrix. This requires some information
             if n_observations is None:
                 raise ValueError(
                     "Must provide either `A` or `n_observations` to `Agent` constructor"
@@ -53,12 +69,14 @@ class Agent(object):
             self.n_modalities = len(self.n_observations)
             construct_A_flag = True
 
+        """ Setup A matrices """
         if B is not None:
             if not isinstance(B, Categorical):
                 self.B = Categorical(values=B)
             else:
                 self.B = B
 
+            # Same logic as before, but here we need number of factors and states per factor
             if self.B.IS_AOA:
                 self.n_factors = self.B.shape[0]
                 self.n_states = [self.B[f].shape[0] for f in range(self.n_factors)]
@@ -73,23 +91,27 @@ class Agent(object):
             self.n_factors = len(self.n_factors)
             construct_B_flag = True
 
+        # Users have the option to make only certain factors conrollable
         if control_fac_idx is None:
             self.control_fac_idx = list(range(self.n_factors))
         else:
             self.control_fac_idx = control_fac_idx
 
-        self.policy_len = policy_len
-
+        # The user can specify the number of control states
+        # However, given the controllable factors, this can be inferred 
         if n_controls is None:
             self.n_controls, _ = self._construct_n_controls()
         else:
             self.n_controls = n_controls
 
+        # Again, the use can specify possible policies, or
+        # all possible combinatins of policies will be considered
         if possible_policies is None:
             _, self.possible_policies = self._construct_n_controls()
         else:
             self.possible_policies = possible_policies
 
+        # Construct prior preferences (uniform if not specified)
         if C is not None:
             if isinstance(C, Categorical):
                 self.C = C
@@ -97,7 +119,8 @@ class Agent(object):
                 self.C = Categorical(values=C)
         else:
             self.C = self._construct_C_prior()
-
+        
+        # Construct initial beliefs (uniform if not specified)
         if D is not None:
             if isinstance(D, Categorical):
                 self.D = D
@@ -106,23 +129,20 @@ class Agent(object):
         else:
             self.D = self._construct_D_prior()
 
+        # Build model
         if construct_A_flag:
             self.A = self._construct_A_distribution()
         if construct_B_flag:
             self.B = self._construct_B_distribution()
 
-        self.message_passing_algo = message_passing_algo
-        if message_passing_params is None:
-            self.message_passing_params = self._get_default_params()
+        self.inference_algo = inference_algo
+        if inference_algo is None:
+            self.inference_ago = self._get_default_params()
         else:
-            self.message_passing_params = message_passing_params
+            self.inference_params = inference_params
 
-        self.gamma = gamma
-        self.sampling_type = sampling_type
-
-        self.qx = self.D
+        self.qs = self.D
         self.action = None
-
         self.pA = None
         self.pB = None
 
@@ -177,7 +197,7 @@ class Agent(object):
         return D
 
     def _construct_n_controls(self):
-        n_controls, possible_policies = core.construct_policies(
+        n_controls, possible_policies = core.control.construct_policies(
             self.n_states, self.n_factors, self.control_fac_idx, self.policy_len
         )
 

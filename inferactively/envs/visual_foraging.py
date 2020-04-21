@@ -9,7 +9,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 from inferactively.envs import Env
 from inferactively.distributions import Categorical
-from inferactively.core import core
+import inferactively.core as core
 import numpy as np
 
 LOCATION_ID = 0

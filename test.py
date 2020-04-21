@@ -12,7 +12,7 @@ B = env.get_transition_dist()
 
 obs = env.reset()
 
-msg = """ === Starting experiment === \n True scene: {} Initial observation {} """
+msg = """ = == Starting experiment === \n True scene: {} Initial observation {} """
 print(msg.format(env.true_scene, obs))
 prior = env.get_uniform_posterior()
 

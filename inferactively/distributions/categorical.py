@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# pylint: disable=E1136
 
 """ Categorical
 __author__: Conor Heins, Alexander Tschantz, Brennan Klein
@@ -7,26 +8,31 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 import warnings
-import inferactively.core as F
+from inferactively.core import maths
+
 
 class Categorical(object):
     """ A Categorical distribution
-    A discrete probability distribution over K possible events.
-    Parameters are in the range 0 to 1 and sum to 1.
-    This class assumes that columns encode probability distributions.
-    Multiple columns represents a set of distributions.
+    
+    A discrete probability distribution over K possible events    
+    Parameters are in the range 0 to 1 and sum to 1
+        
+    This class assumes that columns encode probability distributions, such that
+    multiple columns represents a set of distributions
     This can be useful for representing conditional distributions.
+
     @TODO: Describe what is happening with `arrays of arrays`
     
     """
 
     def __init__(self, dims=None, values=None):
         """Initialize a Categorical distribution
+
         Parameters
         ----------
-        `dims` [list :: int] || [list :: list] 
+        - `dims` [list :: int] || [list :: list] 
             Specifies the number and size of dimensions
-        `values` [np.ndarray]
+        - `values` [np.ndarray]
             The parameters of the distribution
         """
 
@@ -47,9 +53,10 @@ class Categorical(object):
 
     def construct_values(self, values):
         """Initialize a Categorical distribution with `values` argument
+        
         Parameters
         ----------
-        `values` [np.ndarray]
+        - `values` [np.ndarray]
             The parameters of the distribution
         """
 
@@ -72,7 +79,8 @@ class Categorical(object):
 
     def construct_dims(self, dims):
         """Initialize a Categorical distribution with `dims` argument
-        Note we initialise distributions with zero values
+        @NOTE distributions are initialized with zero values
+        
         Parameters
         ----------
         `dims` [list :: int]
@@ -102,18 +110,21 @@ class Categorical(object):
         else:
             raise ValueError("`dims` must be either `list` or `int`")
 
-    def dot(self, x, dims_to_omit=None, return_numpy=False, obs_mode = False):
+    def dot(self, x, dims_to_omit=None, return_numpy=False, obs_mode=False):
         """ Dot product of a Categorical distribution with `x`
+        @NOTE see `spm_dot` in core.maths
+            
         The dimensions in `dims_to_omit` will not be summed across during the dot product
+        
         Parameters
         ----------
-        `x` [1D numpy.ndarray] || [Categorical]
+        - `x` [1D numpy.ndarray] || [Categorical]
             The alternative array to perform the dot product with
-        `dims_to_omit` [list :: int] (optional)
+        - `dims_to_omit` [list :: int] (optional)
             Which dimensions to omit
-        `return_numpy` [bool] (optional)
+        - `return_numpy` [bool] (optional)
             Whether to return `np.ndarray` or `Categorical`
-        'obs_mode' [bool] (optional)
+        - 'obs_mode' [bool] (optional)
             Whether to perform the inner product of 'x' with the leading dimension of self. 
             We call this 'obs_mode' because it's often used to get the likelihood of an observation (leading dimension)
             under different settings of hidden states (lagging dimensions)
@@ -127,10 +138,10 @@ class Categorical(object):
             y = np.empty(len(self.values), dtype=object)
             for g in range(len(self.values)):
                 X = self[g].values
-                y[g] = F.spm_dot(X, x, dims_to_omit, obs_mode)
+                y[g] = maths.spm_dot(X, x, dims_to_omit, obs_mode)
         else:
             X = self.values
-            y = F.spm_dot(X, x, dims_to_omit, obs_mode)
+            y = maths.spm_dot(X, x, dims_to_omit, obs_mode)
 
         if return_numpy:
             return y
@@ -139,23 +150,26 @@ class Categorical(object):
 
     def cross(self, x=None, return_numpy=False, *args):
         """ Multi-dimensional outer product
+        @NOTE see `spm_cross` in core.maths
+        
         If no `x` argument is passed, the function returns the "auto-outer product" of self
         Otherwise, the function will recursively take the outer product of the initial entry
         of `x` with `self` until it has depleted the possible entries of `x` that it can outer-product
+
+        @TODO explain the concept of `args` in a clearer fashion 
+
         Parameters
         ----------
-        `x` [np.ndarray] || [Categorical] (optional)
+        - `x` [np.ndarray] || [Categorical] (optional)
             The values to perform the outer-product with
-        `args` [np.ndarray] || [Categorical] (optional)
+        - `args` [np.ndarray] || [Categorical] (optional)
             Perform the outer product of the `args` with self
        
         Returns
         -------
-        `y` [np.ndarray] || [Categorical]
+        - `y` [np.ndarray] || [Categorical]
             The result of the outer-product
         """
-
-        X = self.values
 
         if isinstance(x, Categorical):
             x = x.values
@@ -163,9 +177,9 @@ class Categorical(object):
             args_arrays = []
             for i in args:
                 args_arrays.append(i.values)
-            Y = F.spm_cross(X, x, *args_arrays)
+            Y = maths.spm_cross(self.values, x, *args_arrays)
         else:
-            Y = F.spm_cross(X, x, *args)
+            Y = maths.spm_cross(self.values, x, *args)
 
         if return_numpy:
             return Y
@@ -174,6 +188,7 @@ class Categorical(object):
 
     def normalize(self):
         """ Normalize distribution
+
         This function will ensure the distribution(s) integrate to 1.0
         In the case `ndims` >= 2, normalization is performed along the columns of the arrays
         """
@@ -181,11 +196,11 @@ class Categorical(object):
             return
         if self.IS_AOA:
             for i in range(len(self.values)):
-                array_i = self.values[i]
-                column_sums = np.sum(array_i, axis=0)
-                array_i = np.divide(array_i, column_sums)
-                array_i[np.isnan(array_i)] = np.divide(1.0, array_i.shape[0])
-                self.values[i] = array_i
+                arr = self.values[i]
+                column_sums = np.sum(arr, axis=0)
+                arr = np.divide(arr, column_sums)
+                arr[np.isnan(arr)] = np.divide(1.0, arr.shape[0])
+                self.values[i] = arr
         else:
             column_sums = np.sum(self.values, axis=0)
             self.values = np.divide(self.values, column_sums)
@@ -193,7 +208,8 @@ class Categorical(object):
 
     def is_normalized(self):
         """ Checks whether columns sum to 1
-        Note this operates within some margin of error (10^-4)
+        @NOTE this operates within some margin of error (10^-4)
+        
         """
         if self.IS_AOA:
             array_is_normed = np.zeros(len(self.values), dtype=bool)
@@ -207,14 +223,15 @@ class Categorical(object):
 
     def remove_zeros(self):
         """ Remove zeros by adding a small number
-        This function avoids division by zero
-        exp(-16) is used as the minimum value
+        @NOTE exp(-16) is used as the minimum value
+
         """
         # self.values += np.exp(-16)
         self.values += 1e-16
-        
+
     def contains_zeros(self):
         """ Checks if any values are zero
+       
         Returns
         ----------
         bool
@@ -230,13 +247,15 @@ class Categorical(object):
 
     def entropy(self, return_numpy=False):
         """ Return the entropy of each column
+       
         Parameters
         ----------
-        return_numpy: bool
+       -  return_numpy: bool
             Whether to return a :np.ndarray: or :Categorical: object
+        
         Returns
         ----------
-        np.ndarray or Categorical
+        - np.ndarray or Categorical
             The entropy of the columns
         """
 
@@ -264,23 +283,20 @@ class Categorical(object):
 
     def log(self, return_numpy=False):
         """ Return the log of the parameters
+        
         Parameters
         ----------
-        return_numpy: bool
+        - return_numpy: bool
             Whether to return a :np.ndarray: or :Categorical: object
+        
         Returns
         ----------
-        np.ndarray or Categorical
+        - np.ndarray or Categorical
             The log of the parameters
         """
 
         if self.contains_zeros():
             self.remove_zeros()
-            # self.normalize()
-            # warnings.warn(
-            #     "You have called :log: on a Categorical that contains zeros. \
-            #          We have removed zeros and normalized."
-            # )
             warnings.warn(
                 "You have called :log: on a Categorical that contains zeros. \
                      We have removed zeros by adding a small non-negative scalar to each value."
@@ -302,9 +318,10 @@ class Categorical(object):
 
     def copy(self):
         """Returns a copy of this object
+        
         Returns
         ----------
-        Categorical
+        - Categorical
             Returns a copy of this object
         """
         values = np.copy(self.values)
@@ -318,16 +335,22 @@ class Categorical(object):
             print("Shape: {} {}".format(self.values.shape, string))
 
     def sample(self):
-        """ Draws a sample from a Categorical distribution or set of samples from a set of distributions 
-            (in case that self.IS_AOA is True)
+        """ Sample from the distribution
+
+        In the case that `IS_AOA` is true, a sample is returned for each array (as a tuple)
+
+        @TODO sampling from arbitrary shape distributions  
+        
+        Returns
+        ----------
+        - `int` or `tuple`
+            Samples from distribution
         """
 
         if not self.is_normalized():
             self.normalize()
 
         if self.IS_AOA:
-            """ @TODO: In case of self.IS_AOA, how should we store a multinomial sample - a list, an array of arrays, a simple 1D array...?
-                Here, we decided to use a tuple of integers. This can be revised, however."""
             sample_array = np.zeros(len(self.values))
             for i in range(len(self.values)):
                 probabilities = np.copy(self.values[i])
@@ -336,7 +359,6 @@ class Categorical(object):
                 except:
                     sample_onehot = np.random.multinomial(1, probabilities[0])
                 sample_array[i] = np.where(sample_onehot == 1)[0][0]
-            # returning a tuple of indices is good in the case when you're sampling observations - consistent with update_posterior_states function
             return tuple(sample_array.astype(int))
         else:
             if self.ndim != 2 or self.shape[1] != 1:

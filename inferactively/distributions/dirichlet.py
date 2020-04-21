@@ -1,10 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# pylint: disable=E1136
 
 """ Dirichlet
-
 __author__: Conor Heins, Alexander Tschantz, Brennan Klein
-
 """
 
 import numpy as np
@@ -13,7 +12,10 @@ import warnings
 from inferactively.distributions import Categorical
 import inferactively.core as F
 
+
 class Dirichlet(object):
+    """ A Dirichlet distribution """
+
     def __init__(self, dims=None, values=None):
         """Initialize a Dirichlet distribution
 
@@ -21,10 +23,10 @@ class Dirichlet(object):
 
         Parameters
         ----------
-        dims: list of int _or_ list of list (where each list is a list of int)
+       -  dims: list of int _or_ list of list (where each list is a list of int)
             Specify the number and size of dimensions
             This will initialize the parameters with zero values
-        values: np.ndarray
+        - values: np.ndarray
             The parameters of the distribution
         """
 
@@ -47,7 +49,7 @@ class Dirichlet(object):
 
         Parameters
         ----------
-        values: np.ndarray
+        - values: np.ndarray
             The parameters of the distribution
 
         """
@@ -71,11 +73,9 @@ class Dirichlet(object):
     def construct_dims(self, dims):
         """Initialize a Dirichlet distribution with `values` argument
 
-        TODO: allow other iterables (such as tuple)
-
         Parameters
         ----------
-        dims: list of int
+        - dims: list of int
             Specify the number and size of dimensions
             This will initialize the parameters with zero values
         """
@@ -108,16 +108,15 @@ class Dirichlet(object):
 
         This function will ensure the distribution(s) integrate to 1.0
         In the case `ndims` >= 2, normalization is performed along the columns of the arrays
-
         """
         if self.IS_AOA:
             normed = np.empty(len(self.values), dtype=object)
             for i in range(len(self.values)):
-                array_i = self.values[i]
-                column_sums = np.sum(array_i, axis=0)
-                array_i = np.divide(array_i, column_sums)
-                array_i[np.isnan(array_i)] = np.divide(1.0, array_i.shape[0])
-                normed[i] = array_i
+                arr = self.values[i]
+                column_sums = np.sum(arr, axis=0)
+                arr = np.divide(arr, column_sums)
+                arr[np.isnan(arr)] = np.divide(1.0, arr.shape[0])
+                normed[i] = arr
         else:
             normed = np.zeros(self.values.shape)
             column_sums = np.sum(self.values, axis=0)
@@ -131,17 +130,15 @@ class Dirichlet(object):
 
     def remove_zeros(self):
         """ Remove zeros by adding a small number
-
-        This function avoids division by zero
-        exp(-16) is used as the minimum value
+        @NOTE exp(-16) is used as the minimum value
 
         """
         self.values += 1e-16
 
     def expectation_of_log(self, return_numpy=True):
-        """ Expectation of a (log) Dirichlet distribution parameterized
-        with a Dirichlet prior over its parameters (or a set of such Categorical distributions,
-        e.g. a multi-dimensional likelihood)
+        """ Expectation of the log 
+
+        @TODO this might need renaming
         """
 
         if self.IS_AOA:
@@ -174,7 +171,7 @@ class Dirichlet(object):
 
         Returns
         ----------
-        bool
+        - bool
             Whether there are any zeros
 
         """
@@ -187,7 +184,9 @@ class Dirichlet(object):
             return False
 
     def entropy(self):
+        """ Entropy of distribution 
 
+        """
         if not self.IS_AOA:
             values = np.copy(self.values)
             if values.ndim > 1:
@@ -197,8 +196,7 @@ class Dirichlet(object):
                     a0 = values[:, col_i].sum(axis=0)
                     second_term = (a0 - values.shape[0]) * special.digamma(a0)
                     third_term = -np.sum(
-                        (values[:, col_i] - 1) * special.digamma(values[:, col_i]),
-                        axis=0,
+                        (values[:, col_i] - 1) * special.digamma(values[:, col_i]), axis=0
                     )
                     output[col_i] = first_term + second_term + third_term
             else:
@@ -213,7 +211,12 @@ class Dirichlet(object):
             for i in range(len(self.values)):
                 output[i] = self.values[i].entropy()
         return output
+
+
     def variance(self, return_numpy=False):
+        """ Variance 
+
+        """
 
         if not self.IS_AOA:
             values = np.copy(self.values)
@@ -240,12 +243,12 @@ class Dirichlet(object):
 
         Parameters
         ----------
-        return_numpy: bool
+        - return_numpy: bool
             Whether to return a :np.ndarray: or :Dirichlet: object
 
         Returns
         ----------
-        np.ndarray or Dirichlet
+        - np.ndarray or Dirichlet
             The log of the parameters
         """
 

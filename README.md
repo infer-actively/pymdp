@@ -1,4 +1,4 @@
-## <img alt="logo" src="https://pluspng.com/img-png/brain-png-brain-icon-png-image-2536-942.png" height="90"> 
+### <img alt="logo" src="https://pluspng.com/img-png/brain-png-brain-icon-png-image-2536-942.png" height="90"> 
 # Active Inference for Markov Decision Processes 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

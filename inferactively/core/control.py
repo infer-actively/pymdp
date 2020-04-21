@@ -14,7 +14,6 @@ from scipy import special
 from inferactively.distributions import Categorical, Dirichlet
 from inferactively.core import softmax, spm_dot, spm_wnorm, spm_cross
 
-
 def construct_policies(Ns, Nf, control_fac_idx, policy_len):
     """Generate list of possible combinations of Ns[f_i] actions for Nf hidden state factors,
     where Nu[i] gives the number of actions available along hidden state factor f_i. Assumes that for each controllable hidden

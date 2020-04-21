@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=no-member
 
-""" Functions
+""" Generic functions
 __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
@@ -12,6 +12,77 @@ import torch
 from scipy import special
 from inferactively.core import utils
 from inferactively.distributions import Dirichlet, Categorical
+
+
+def spm_dot(X, y, dims_to_omit=None, obs_mode=False):
+    """ Dot product of a multidimensional array `X` with `y`
+    The dimensions in `dims_to_omit` will not be summed across during  dot product
+   
+    @TODO: we need documentation describing `obs_mode`
+        Ideally, we could find a way to avoid it altogether 
+
+    Parameters
+    ----------
+    `y` [1D numpy.ndarray] 
+        Either vector or array of arrays
+    `dims_to_omit` [list :: int] (optional) 
+        Which dimensions to omit
+    """
+
+    X = utils.to_numpy(X)
+    y = utils.to_numpy(y)
+
+    # if `X` is array of array, we need to construct the dims to sum
+    if utils.is_arr_of_arr(X):
+        dims = (np.arange(0, len(y)) + X.ndim - len(y)).astype(int)
+    else:
+        """ 
+        Deal with particular use case - see above @TODO 
+        """
+        if obs_mode is True:
+            """
+            Case when you're getting the likelihood of an observation under model.
+            Equivalent to something like self.values[np.where(x),:]
+            where `y` is a discrete 'one-hot' observation vector
+            """
+            dims = np.array([0], dtype=int)
+        else:
+            """
+            Case when `y` leading dimension matches the lagging dimension of `values`
+            E.g. a more 'classical' dot product of a likelihood with hidden states
+            """
+            dims = np.array([1], dtype=int)
+
+        # convert `y` to array of array
+        y = utils.to_arr_of_arr(y)
+
+    # omit dims not needed for dot product
+    if dims_to_omit is not None:
+        if not isinstance(dims_to_omit, list):
+            raise ValueError("`dims_to_omit` must be a `list` of `int`")
+
+        # delete dims
+        dims = np.delete(dims, dims_to_omit)
+        if len(y) == 1:
+            y = np.empty([0], dtype=object)
+        else:
+            y = np.delete(y, dims_to_omit)
+
+    print(dims)
+    # perform dot product
+    for d in range(len(y)):
+        s = np.ones(np.ndim(X), dtype=int)
+        s[dims[d]] = np.shape(y[d])[0]
+        X = X * y[d].reshape(tuple(s))
+        X = np.sum(X, axis=dims[d], keepdims=True)
+    X = np.squeeze(X)
+
+    # perform check to see if `x` is a scalar
+    if np.prod(X.shape) <= 1.0:
+        X = X.item()
+        X = np.array([X]).astype("float64")
+
+    return X
 
 
 def softmax(dist, return_numpy=True):
@@ -47,55 +118,6 @@ def kl_divergence(q, p):
     p = np.copy(p.values)
     kl = np.sum(q * np.log(q / p), axis=0)[0]
     return kl
-
-
-def spm_dot(a, b, dims_to_omit=None, obs_mode=False):
-    """ Dot product of a multidimensional array with `y`
-    The dimensions in `dims_to_omit` will not be summed across during the dot product
-    Parameters
-    ----------
-    `y` [1D numpy.ndarray] - either vector or array of arrays
-        The alternative array to perform the dot product with
-    `dims_to_omit` [list :: int] (optional)
-        Which dimensions to omit
-    """
-
-    if utils.is_arr_of_arr(b):
-        dims = (np.arange(0, len(b)) + a.ndim - len(b)).astype(int)
-    else:
-        if obs_mode is True:
-            """
-            Case when you're getting the likelihood of an observation under the generative model.
-            Equivalent to something like self.values[np.where(y),:]
-            when `y` is a discrete 'one-hot' observation vector
-            """
-            dims = np.array([0], dtype=int)
-        else:
-            """
-            Case when `y` leading dimension matches the lagging dimension of `values`
-            E.g. a more 'classical' dot product of a likelihood with hidden states
-            """
-            dims = np.array([1], dtype=int)
-
-        b_new = np.empty(1, dtype=object)
-        b_new[0] = b.squeeze()
-        b = b_new
-
-    if dims_to_omit is not None:
-        if not isinstance(dims_to_omit, list):
-            raise ValueError("dims_to_omit must be a `list`")
-        dims = np.delete(dims, dims_to_omit)
-        if len(b) == 1:
-            b = np.empty([0], dtype=object)
-        else:
-            b = np.delete(b, dims_to_omit)
-
-    for d in range(len(b)):
-        s = np.ones(np.ndim(a), dtype=int)
-        s[dims[d]] = np.shape(b[d])[0]
-        a = a * b[d].reshape(tuple(s))
-        a = np.sum(a, axis=dims[d], keepdims=True)
-    a = np.squeeze(a)
 
     # perform check to see if result  is a number
     if np.prod(a.shape) <= 1.0:
