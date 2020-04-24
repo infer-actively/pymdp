@@ -43,3 +43,4 @@ def to_categorical(values):
 
 def to_dirichlet(values):
     return Dirichlet(values=values)
+
