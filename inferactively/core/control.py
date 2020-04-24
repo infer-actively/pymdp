@@ -14,7 +14,6 @@ from scipy import special
 from inferactively.distributions import Categorical, Dirichlet
 from inferactively.core import softmax, spm_dot, spm_wnorm, spm_cross, spm_MDP_G, utils
 
-
 def update_posterior_policies(
     qs,
     A,
@@ -30,8 +29,6 @@ def update_posterior_policies(
     return_numpy=True,
 ):
     """ Updates the posterior beliefs about policies based on expected free energy prior
-
-
 
         @TODO: Needs to be amended for use with multi-step policies (where possible_policies is a list of np.arrays (n_step x n_factor), not just a list of tuples as it is now)
 
@@ -116,69 +113,64 @@ def get_expected_states(qs, B, policy, return_numpy=False):
         Transition likelihood mapping from states at t to states at t + 1, with different actions (per factor) stored along the lagging dimension
    - `policy` [np.arrays]:
         np.array of size (policy_len x n_factors) where each value corrresponds to a control state
-    - return_numpy [Boolean]:
+    - `return_numpy` [Boolean]:
         True/False flag to determine whether output of function is a numpy array or a Categorical
-
     Returns
     -------
-    qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
-          Expected states under the given policy - also known as the 'posterior predictive density'
-              """
+    - `qs_pi` [ list of np.arrays with len n_steps, where in case of multiple hidden state factors, each np.array in the list is a 1 x n_factors array-of-arrays, otherwise a list of 1D numpy arrays]:
+        Expected states under the given policy - also known as the 'posterior predictive density'
+
+    """
 
     n_steps = policy.shape[0]
     n_factors = policy.shape[1]
 
-    if utils.is_distribution(B):
-        if utils.is_arr_of_arr(B):
+    qs = utils.to_numpy(qs, flatten=True)
+    B = utils.to_numpy(B)
+
+    if utils.is_arr_of_arr(B):
+
+        # initialise beliefs over expected states
+        qs_pi = []
+        for t in range(n_steps):
+            qs_pi_t = np.empty(n_factors,dtype=object)
+            qs_pi.append(qs_pi_t)
+
+        # initialise expected states after first action using current posterior (t = 0)
+        for control_factor, control in enumerate(policy[0,:]):
+            qs_pi[0][control_factor] = spm_dot(B[control_factor][:,:,control], qs[control_factor])
+        
+        # then loop over future timepoints
+        if n_steps > 1:
+            for t in range(1,n_steps):
+                for control_factor, control in enumerate(policy[t,:]):
+                    qs_pi[t][control_factor] = spm_dot(B[control_factor][:,:,control], qs_pi[t-1][control_factor])
+
+    else:
+
+        # initialise beliefs over expected states
+        qs_pi = []
+
+        # initialise expected states after first action using current posterior (t = 0)
+        qs_pi.append(spm_dot(B[0][:,:,policy[0,0]], qs))
+        
+        # then loop over future timepoints
+        if n_steps > 1:
+            for t in range(1,n_steps):
+                qs_pi.append(spm_dot(B[0][:,:,policy[t,0]], qs_pi[t-1]))
+   
+    if return_numpy:
+        if len(qs_pi) == 1:
+            return qs_pi[0]
+        else:
+            return qs_pi
+    else:
+        if len(qs_pi) == 1:
+            return utils.to_categorical(qs_pi[0])
+        else:
             for t in range(n_steps):
-
-    
-    if isinstance(B, Categorical):
-        if B.IS_AOA:
-            Qs_pi = Categorical(
-                values=np.array(
-                    [
-                        B[f][:, :, a].dot(Qs[f], return_numpy=True)[:, np.newaxis]
-                        for f, a in enumerate(policy)
-                    ],
-                    dtype=object,
-                )
-            )
-        else:
-            Qs_pi = B[:, :, policy[0]].dot(Qs)
-
-        if return_numpy and Qs_pi.IS_AOA:
-            Qs_pi_flattened = np.empty(len(Qs_pi.values), dtype=object)
-            for f in range(len(Qs_pi.values)):
-                Qs_pi_flattened[f] = Qs_pi[f].values.flatten()
-            return Qs_pi_flattened
-        elif return_numpy and not Qs_pi.IS_AOA:
-            return Qs_pi.values.flatten()
-        else:
-            return Qs_pi
-
-    elif B.dtype == "object":
-        Nf = len(B)
-        Qs_pi = np.empty(Nf, dtype=object)
-
-        if isinstance(Qs, Categorical):
-            Qs = Qs.values
-            for f in range(Nf):
-                Qs[f] = Qs[f].flatten()
-        for f in range(Nf):
-            Qs_pi[f] = spm_dot(B[f][:, :, policy[f]], Qs[f])
-
-    else:
-        if isinstance(Qs, Categorical):
-            Qs = Qs.values.flatten()
-        Qs_pi = spm_dot(B[:, :, policy[0]], Qs)
-
-    if not return_numpy:
-        Qs_pi = Categorical(values=Qs_pi)
-        return Qs_pi
-    else:
-        return Qs_pi
-
+                qs_pi[t] = utils.to_categorical(qs_pi[t])
+            return qs_pi
 
 def get_expected_obs(Qs_pi, A, return_numpy=False):
     """
