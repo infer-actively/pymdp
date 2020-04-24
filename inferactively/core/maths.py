@@ -80,18 +80,15 @@ def spm_dot(X, x, dims_to_omit=None, obs_mode=False):
 def spm_cross(X, x=None, *args):
     """ Multi-dimensional outer product
     
-        @NOTE: If no `x` argument is passed, the function returns the "auto-outer product" of self
-               Otherwise, the function recursively take the outer product of the initial entry
-               of `x` with `self` until it has depleted the possible entries of `x` that it can outer-product
-
-    @TODO the `args` parameter is a bit confusing, we could maybe make this clearer
-
     Parameters
     ----------
     - `x` [np.ndarray] || [Categorical] (optional)
-        The values to perfrom the outer-product with
-    `args` [np.ndarray] || [Categorical] (optional)
-        Perform the outer product of the `args` with self
+        The values to perfrom the outer-product with. If empty, then the
+        outer-product is taken between X and itself. If x is not empty, then outer product is 
+        taken between X and the various dimensions of x.
+    - `args` [np.ndarray] || [Categorical] (optional)
+        Remaining arrays to perform outer-product with. These extra arrays are recursively multiplied 
+        with the 'initial' outer product (that between X and x).
     
     Returns
     -------
@@ -125,9 +122,9 @@ def spm_cross(X, x=None, *args):
 
 
 def spm_wnorm(A):
-    """ Normalize Dirichlet parameters
-
-    @TODO need to update the description of this function
+    """ 
+    Returns Expectation of logarithm of Dirichlet parameters over a set of Categorical distributions, 
+    stored in the columns of A.
     """
     A = A + 1e-16
     norm = np.divide(1.0, np.sum(A, axis=0))
@@ -151,9 +148,9 @@ def calc_free_energy(qs, prior, n_factors, likelihood=None):
     """
     free_energy = 0
     for factor in range(n_factors):
-        term_a = -qs[factor].dot(np.log(qs[factor][:, np.newaxis] + 1e-16))
-        term_b = -qs[factor].dot(prior[factor][:, np.newaxis])
-        free_energy += term_a + term_b
+        H_qs = -qs[factor].dot(np.log(qs[factor][:, np.newaxis] + 1e-16)) #  entropy of posterior marginal H(q[f])
+        xH_qp = -qs[factor].dot(prior[factor][:, np.newaxis])             #  cross entropy of posterior marginal with  prior marginal H(q[f],p[f])
+        free_energy += H_qs + xH_qp
 
     if likelihood is not None:
         accuracy = spm_dot(likelihood, qs)[0]
@@ -193,3 +190,64 @@ def kl_divergence(q, p):
     p = np.copy(p.values)
     kl = np.sum(q * np.log(q / p), axis=0)[0]
     return kl
+
+def spm_MDP_G(A, x):
+    """
+    Calculates the Bayesian surprise in the same way as spm_MDP_G.m does in 
+    the original matlab code.
+    
+    Parameters
+    ----------
+    A (numpy ndarray or array-object):
+        array assigning likelihoods of observations/outcomes under the various hidden state configurations
+    
+    x (numpy ndarray or array-object):
+        Categorical distribution presenting probabilities of hidden states (this can also be interpreted as the 
+        predictive density over hidden states/causes if you're calculating the 
+        expected Bayesian surprise)
+        
+    Returns
+    -------
+    G (float):
+        the (expected or not) Bayesian surprise under the density specified by x --
+        namely, this scores how much an expected observation would update beliefs about hidden states
+        x, were it to be observed. 
+    """
+    if A.dtype == "object":
+        Ng = len(A)
+        AOA_flag = True
+    else:
+        Ng = 1
+        AOA_flag = False
+
+    # probability distribution over the hidden causes: i.e., Q(x)
+    qx = spm_cross(x)
+    G = 0
+    qo = 0
+    idx = np.array(np.where(qx > np.exp(-16))).T
+
+    if AOA_flag:
+        # accumulate expectation of entropy: i.e., E[lnP(o|x)]
+        for i in idx:
+            # probability over outcomes for this combination of causes
+            po = np.ones(1)
+            for g in range(Ng):
+                index_vector = [slice(0, A[g].shape[0])] + list(i)
+                po = spm_cross(po, A[g][tuple(index_vector)])
+
+            po = po.ravel()
+            qo += qx[tuple(i)] * po
+            G += qx[tuple(i)] * po.dot(np.log(po + np.exp(-16)))
+    else:
+        for i in idx:
+            po = np.ones(1)
+            index_vector = [slice(0, A.shape[0])] + list(i)
+            po = spm_cross(po, A[tuple(index_vector)])
+            po = po.ravel()
+            qo += qx[tuple(i)] * po
+            G += qx[tuple(i)] * po.dot(np.log(po + np.exp(-16)))
+
+    # subtract negative entropy of expectations: i.e., E[lnQ(o)]
+    G = G - qo.dot(np.log(qo + np.exp(-16)))
+
+    return G

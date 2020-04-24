@@ -12,7 +12,7 @@ import numpy as np
 import torch
 from scipy import special
 from inferactively.distributions import Categorical, Dirichlet
-from inferactively.core import softmax, spm_dot, spm_wnorm, spm_cross
+from inferactively.core import softmax, spm_dot, spm_wnorm, spm_cross, spm_MDP_G
 
 def construct_policies(Ns, Nf, control_fac_idx, policy_len):
     """Generate list of possible combinations of Ns[f_i] actions for Nf hidden state factors,
@@ -26,7 +26,8 @@ def construct_policies(Ns, Nf, control_fac_idx, policy_len):
     policy_len: length of each policy
     Returns:
     -------
-    Nu: list of dimensionalities of actions along each hidden state factor
+    Nu: list of dimensionalities of actions along each hidden state factor (i.e. control state dimensionalities). 
+    The dimensionality of control states whose index is not in control_fac_idx is set to 1.
     possible_policies: list of arrays, where each array within the list corresponds to a policy, and each row
                         within a given policy (array) corresponds to a list of actions for each the several hidden state factor
                         for a given timestep (policy_len x Nf)
@@ -57,7 +58,7 @@ def update_posterior_policies(
 ):
     """ Updates the posterior beliefs about policies using the expected free energy approach
      (where belief in a policy is proportional to the free energy expected under its pursuit)
-    @TODO: Needs to be amended for use with multi-step policies (where possiblePolicies is a list of np.arrays, not a list of tuples)
+    @TODO: Needs to be amended for use with multi-step policies (where possible_policies is a list of np.arrays (nStep x nFactor), not just a list of tuples as it is now)
     Parameters
     ----------
     Qs [1D numpy array, array-of-arrays, or Categorical (either single- or multi-factor)]:
@@ -125,7 +126,7 @@ def get_expected_states(Qs, B, policy, return_numpy=False):
     Given a posterior density Qs, a transition likelihood model B, and a policy, 
     get the state distribution expected under that policy's pursuit.
 
-    @TODO: Needs to be amended for use with multi-step policies (where possiblePolicies is a list of np.arrays, not a list of tuples)
+    @TODO: Needs to be amended for use with multi-step policies (where possible_policies is a list of np.arrays (nStep x nFactor), not just a list of tuples as it is now)
     Parameters
     ----------
     Qs [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
@@ -194,7 +195,7 @@ def get_expected_obs(Qs_pi, A, return_numpy=False):
     Given a posterior predictive density Qs_pi and an observation likelihood model A,
     get the expected observations given the predictive posterior.
 
-    @TODO: Needs to be amended for use with multi-step policies (where possible_policies is a list of np.arrays, not a list of tuples)
+    @TODO: Needs to be amended for use with multi-step policies (where possible_policies is a list of np.arrays (nStep x nFactor), not just a list of tuples as it is now)
     Parameters
     ----------
     Qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
@@ -250,7 +251,7 @@ def calculate_expected_utility(Qo_pi, C):
     Given expected observations under a policy Qo_pi and a prior over observations C
     compute the expected utility of the policy.
 
-    @TODO: Needs to be amended for use with multi-step policies (where possible_policies is a list of np.arrays, not a list of tuples)
+    @TODO: Needs to be amended for use with multi-step policies (where possible_policies is a list of np.arrays (nStep x nFactor), not just a list of tuples as it is now)
     Parameters
     ----------
     Qo_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
@@ -291,8 +292,7 @@ def calculate_expected_surprise(A, Qs_pi):
     """
     Given a likelihood mapping A and a posterior predictive density over states Qs_pi,
     compute the Bayesian surprise (about states) expected under that policy
-
-    @TODO: Needs to be amended for use with multi-step policies (where possiblePolicies is a list of np.arrays, not a list of tuples)
+    @TODO: Needs to be amended for use with multi-step policies (where possible_policies is a list of np.arrays (nStep x nFactor), not just a list of tuples as it is now)
     Parameters
     ----------
     A [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Categorical (either single-factor of AoA)]:
@@ -325,6 +325,8 @@ def calculate_expected_surprise(A, Qs_pi):
 def calculate_infogain_pA(pA, Qo_pi, Qs_pi):
     """
     Compute expected Dirichlet information gain about parameters pA under a policy
+    Parameters
+    @TODO: Needs to be amended for use with multi-step policies (where possible_policies is a list of np.arrays (nStep x nFactor), not just a list of tuples as it is now)
     Parameters
     ----------
     pA [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Dirichlet (either single-factor of AoA)]:
@@ -390,6 +392,8 @@ def calculate_infogain_pA(pA, Qo_pi, Qs_pi):
 def calculate_infogain_pB(pB, Qs_next, Qs_previous, policy):
     """
     Compute expected Dirichlet information gain about parameters pB under a given policy
+    Parameters
+    @TODO: Needs to be amended for use with multi-step policies (where possible_policies is a list of np.arrays (nStep x nFactor), not just a list of tuples as it is now)
     Parameters
     ----------
     pB [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Dirichlet (either single-factor of AoA)]:
@@ -508,63 +512,4 @@ def sample_action(p_i, possible_policies, Nu, sampling_type="marginal_action"):
     return selected_policy
 
 
-def spm_MDP_G(A, x):
-    """
-    Calculates the Bayesian surprise in the same way as spm_MDP_G.m does in 
-    the original matlab code.
-    
-    Parameters
-    ----------
-    A (numpy ndarray or array-object):
-        array assigning likelihoods of observations/outcomes under the various hidden state configurations
-    
-    x (numpy ndarray or array-object):
-        Categorical distribution presenting probabilities of hidden states (this can also be interpreted as the 
-        predictive density over hidden states/causes if you're calculating the 
-        expected Bayesian surprise)
-        
-    Returns
-    -------
-    G (float):
-        the (expected or not) Bayesian surprise under the density specified by x --
-        namely, this scores how much an expected observation would update beliefs about hidden states
-        x, were it to be observed. 
-    """
-    if A.dtype == "object":
-        Ng = len(A)
-        AOA_flag = True
-    else:
-        Ng = 1
-        AOA_flag = False
 
-    # probability distribution over the hidden causes: i.e., Q(x)
-    qx = spm_cross(x)
-    G = 0
-    qo = 0
-    idx = np.array(np.where(qx > np.exp(-16))).T
-
-    if AOA_flag:
-        # accumulate expectation of entropy: i.e., E[lnP(o|x)]
-        for i in idx:
-            # probability over outcomes for this combination of causes
-            po = np.ones(1)
-            for g in range(Ng):
-                index_vector = [slice(0, A[g].shape[0])] + list(i)
-                po = spm_cross(po, A[g][tuple(index_vector)])
-
-            po = po.ravel()
-            qo += qx[tuple(i)] * po
-            G += qx[tuple(i)] * po.dot(np.log(po + np.exp(-16)))
-    else:
-        for i in idx:
-            po = np.ones(1)
-            index_vector = [slice(0, A.shape[0])] + list(i)
-            po = spm_cross(po, A[tuple(index_vector)])
-            po = po.ravel()
-            qo += qx[tuple(i)] * po
-            G += qx[tuple(i)] * po.dot(np.log(po + np.exp(-16)))
-
-    # subtract negative entropy of expectations: i.e., E[lnQ(o)]
-    G = G - qo.dot(np.log(qo + np.exp(-16)))
-
-    return G

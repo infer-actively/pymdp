@@ -10,8 +10,7 @@ import numpy as np
 from scipy import special
 import warnings
 from inferactively.distributions import Categorical
-import inferactively.core as F
-
+from inferactively.core import maths
 
 class Dirichlet(object):
     """ A Dirichlet distribution """
@@ -118,7 +117,6 @@ class Dirichlet(object):
                 arr[np.isnan(arr)] = np.divide(1.0, arr.shape[0])
                 normed[i] = arr
         else:
-            normed = np.zeros(self.values.shape)
             column_sums = np.sum(self.values, axis=0)
             normed = np.divide(self.values, column_sums)
             normed[np.isnan(normed)] = np.divide(1.0, normed.shape[0])
@@ -146,10 +144,7 @@ class Dirichlet(object):
             for i in range(len(self.values)):
                 A = Dirichlet(values=self[i].values)
                 A.remove_zeros()
-                A = A.values
-                norm = np.divide(1.0, np.sum(A, axis=0))
-                avg = np.divide(1.0, A)
-                wA[i] = norm - avg
+                wA[i] = maths.spm_wnorm(A.values)
             if return_numpy:
                 return wA
             else:
@@ -157,10 +152,7 @@ class Dirichlet(object):
         else:
             A = Dirichlet(values=self.values)
             A.remove_zeros()
-            A = A.values
-            norm = np.divide(1.0, np.sum(A, axis=0))
-            avg = np.divide(1.0, A)
-            wA = norm - avg
+            wA = maths.spm_wnorm(A.values)
             if return_numpy:
                 return wA
             else:
@@ -192,7 +184,7 @@ class Dirichlet(object):
             if values.ndim > 1:
                 output = np.zeros(values.shape[1])
                 for col_i in range(values.shape[1]):
-                    first_term = F.spm_betaln(values[:, col_i])
+                    first_term = maths.spm_betaln(values[:, col_i])
                     a0 = values[:, col_i].sum(axis=0)
                     second_term = (a0 - values.shape[0]) * special.digamma(a0)
                     third_term = -np.sum(
@@ -200,7 +192,7 @@ class Dirichlet(object):
                     )
                     output[col_i] = first_term + second_term + third_term
             else:
-                first_term = F.spm_betaln(values)
+                first_term = maths.spm_betaln(values)
                 a0 = values.sum(axis=0)
                 second_term = (a0 - values.shape[0]) * special.digamma(a0)
                 third_term = -np.sum((values - 1) * special.digamma(values), axis=0)

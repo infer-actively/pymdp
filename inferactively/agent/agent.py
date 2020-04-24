@@ -9,14 +9,12 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 from inferactively.distributions import Categorical, Dirichlet
-from inferactively.core.algos import FPI
-import inferactively.core
-
-
+from inferactively.core import inference, control
 
 class Agent(object):
-    """ Agent class """
-
+    """ Agent class 
+    @TODO: Implement methods for learning Dirichlet parameters, and accomodate multi-step policies
+    """
 
     def __init__(
         self,
@@ -32,7 +30,7 @@ class Agent(object):
         possible_policies=None,
         gamma=16.0,
         action_sampling="marginal_action",
-        inference_algo=FPI,
+        inference_algo="FPI",
         inference_params=None,
     ):
 
@@ -137,7 +135,7 @@ class Agent(object):
 
         self.inference_algo = inference_algo
         if inference_algo is None:
-            self.inference_ago = self._get_default_params()
+            self.inference_algo = self._get_default_params()
         else:
             self.inference_params = inference_params
 
@@ -197,53 +195,53 @@ class Agent(object):
         return D
 
     def _construct_n_controls(self):
-        n_controls, possible_policies = core.control.construct_policies(
+        n_controls, possible_policies = control.construct_policies(
             self.n_states, self.n_factors, self.control_fac_idx, self.policy_len
         )
 
         return n_controls, possible_policies
 
-    def reset(self, init_qx=None):
-        if init_qx is None:
-            self.qx = self._construct_D_prior()
+    def reset(self, init_qs=None):
+        if init_qs is None:
+            self.qs = self._construct_D_prior()
         else:
-            if isinstance(init_qx, Categorical):
-                self.qx = init_qx
+            if isinstance(init_qs, Categorical):
+                self.qs = init_qs
             else:
-                self.qx = Categorical(values=init_qx)
+                self.qs = Categorical(values=init_qs)
 
-        return self.qx
+        return self.qs
 
     def infer_states(self, observation):
-        if not hasattr(self, "qx"):
+        if not hasattr(self, "qs"):
             self.reset()
 
-        if self.message_passing_algo is "FPI":
+        if self.inference_algo is "FPI":
             if self.action is not None:
-                empirical_prior = core.get_expected_states(self.qx, self.B.log(), self.action)
+                empirical_prior = control.get_expected_states(self.qs, self.B.log(), self.action)
             else:
                 empirical_prior = self.D.log()
         else:
             if self.action is not None:
-                empirical_prior = core.get_expected_states(self.qx, self.B.log(), self.action)
+                empirical_prior = control.get_expected_states(self.qs, self.B.log(), self.action)
             else:
                 empirical_prior = self.D
 
-        qx = core.update_posterior_states(
+        qs = inference.update_posterior_states(
             self.A,
             observation,
             empirical_prior,
             return_numpy=False,
-            method=self.message_passing_algo,
-            **self.message_passing_params
+            method=self.inference_algo,
+            **self.inference_params
         )
-        self.qx = qx
+        self.qs = qs
 
-        return qx
+        return qs
 
     def infer_policies(self):
-        q_pi, efe = core.update_posterior_policies(
-            self.qx,
+        q_pi, efe = control.update_posterior_policies(
+            self.qs,
             self.A,
             self.B,
             self.C,
@@ -258,8 +256,8 @@ class Agent(object):
         return q_pi, efe
 
     def sample_action(self):
-        action = core.sample_action(
-            self.q_pi, self.possible_policies, self.n_controls, self.sampling_type
+        action = control.sample_action(
+            self.q_pi, self.possible_policies, self.n_controls, self.action_sampling
         )
 
         self.action = action
@@ -267,7 +265,7 @@ class Agent(object):
 
     def _get_default_params(self):
 
-        method = self.message_passing_algo
+        method = self.inference_algo
 
         if method == "FPI":
             default_params = {"dF": 1.0, "dF_tol": 0.001}
