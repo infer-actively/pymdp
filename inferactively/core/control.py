@@ -21,7 +21,7 @@ def update_posterior_policies(
     C,
     policies,
     use_utility=True,
-    use_state_info_gain=True,
+    use_states_info_gain=True,
     use_param_info_gain=False,
     pA=None,
     pB=None,
@@ -47,7 +47,7 @@ def update_posterior_policies(
             e.g. policies[1][2] yields the index of the action under policy 1 that affects hidden state factor 2
         - `use_utility` [bool]:
             Whether to calculate utility term, i.e how much expected observation confer with prior expectations
-        - `use_state_info_gain` [bool]:
+        - `use_states_info_gain` [bool]:
             Whether to calculate state information gain
         - `use_param_info_gain` [bool]:
             Whether to calculate parameter information gain @NOTE requires pA or pB to be specified 
@@ -81,8 +81,8 @@ def update_posterior_policies(
         if use_utility:
             efe[idx] += calc_expected_utility(qo_pi, C)
 
-        if use_state_info_gain:
-            efe[idx] += calc_state_info_gain(A, qs_pi)
+        if use_states_info_gain:
+            efe[idx] += calc_states_info_gain(A, qs_pi)
 
         if use_param_info_gain:
             if pA is not None:
@@ -228,7 +228,7 @@ def get_expected_obs(Qs_pi, A, return_numpy=False):
         return Qo_pi
 
 
-def calculate_expected_utility(Qo_pi, C):
+def calc_expected_utility(Qo_pi, C):
     """
     Given expected observations under a policy Qo_pi and a prior over observations C
     compute the expected utility of the policy.
@@ -270,7 +270,7 @@ def calculate_expected_utility(Qo_pi, C):
     return expected_util
 
 
-def calculate_expected_surprise(A, Qs_pi):
+def calc_states_info_gain(A, Qs_pi):
     """
     Given a likelihood mapping A and a posterior predictive density over states Qs_pi,
     compute the Bayesian surprise (about states) expected under that policy
@@ -304,7 +304,7 @@ def calculate_expected_surprise(A, Qs_pi):
     return states_surprise
 
 
-def calculate_infogain_pA(pA, Qo_pi, Qs_pi):
+def calc_pA_info_gain(pA, Qo_pi, Qs_pi):
     """
     Compute expected Dirichlet information gain about parameters pA under a policy
     Parameters
@@ -371,7 +371,7 @@ def calculate_infogain_pA(pA, Qo_pi, Qs_pi):
     return infogain_pA
 
 
-def calculate_infogain_pB(pB, Qs_next, Qs_previous, policy):
+def calc_pB_info_gain(pB, Qs_next, Qs_previous, policy):
     """
     Compute expected Dirichlet information gain about parameters pB under a given policy
     Parameters
@@ -443,29 +443,29 @@ def calculate_infogain_pB(pB, Qs_next, Qs_previous, policy):
 def construct_policies(n_states, n_factors, n_control=None, policy_len=1, control_fac_idx=None):
     """Generate a set of policies
 
-    Policies are represented as a np.array([n_steps x n_factors]), and all policies are a list of these policies.
-    Each value corresponds to a control state.
-    Factors which are not controlable are set to zero.
+    Each policy is encoded as a numpy.ndarray of shape (n_steps, n_factors), where each value corresponds to
+    the index of an action for a given time step and control factor. The variable `policies` that is returned
+    is a list of each policy-specific numpy nd.array.
 
-    @NOTE if number of control states is not provided, assumed that number of control states equal to
-    number of hidden states in same factor, and `n_control` is returned
-    If a factor is not controllable, set the number of control states to be one
+    @NOTE: If the list of control state dimensionalities (`n_control`) is not provided, 
+    `n_control` defaults to being equal to n_states, except for the indices provided by control_fac_idx, where
+    the value of n_control for the indicated factor is 1.
 
     Arguments:
     -------
     - `n_states`: list of dimensionalities of hidden state factors
-    - `n_factors`: number of hidden state factors total
-    - `n_control`: list of dimensionalities of control for each hidden state factors (optional) 
-    - `policy_len`: length of each policy
+    - `n_factors`: total number of hidden/control state factors 
+    - `n_control`: list of dimensionalities of control state factors 
+    - `policy_len`: temporal length ('horizon') of policies
     - `control_fac_idx`: list of indices of the hidden state factors that are controllable (i.e. those whose n_control[i] > 1)
 
     Returns:
     -------
-    - `policies`: list of arrays, where each array within the list corresponds to a policy np.array(n_steps x n_factors) and each
-                                  value corrresponds to a control state for time step and factor
-     - `n_control`: list of dimensionalities of actions along each hidden state factor (i.e. control state dimensionalities). 
-                    The dimensionality of control states whose index is not in control_fac_idx is set to 1.
-                    This is only returned when n_control is not provided as argument
+    - `policies`: list of np.ndarrays, where each array within the list is a numpy.ndarray of shape (n_steps, n_factors).
+                Each value in a policy array corresponds to the index of an action for a given timestep and control factor.
+    - `n_control`: list of dimensionalities of actions along each hidden state factor (i.e. control state dimensionalities). 
+                The dimensionality of control states whose index is not in control_fac_idx is set to 1.
+                This is only returned when n_control is not provided as argument.
     """
 
     if control_fac_idx is None:
