@@ -76,7 +76,7 @@ def run_fpi(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, d
     if prior is None:
         prior = np.empty(n_factors, dtype=object)
         for factor in range(n_factors):
-            prior[factor] = np.log( np.ones(n_states[factor]) / n_states[factor] + 1e-16)
+            prior[factor] = np.log(np.ones(n_states[factor]) / n_states[factor] + 1e-16)
 
     """
     =========== Step 3 ===========
@@ -110,7 +110,7 @@ def run_fpi(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, d
             # First order loops over factors starting at index = 0, second order goes in reverse
             factor_orders = [range(n_factors), range((n_factors - 1), -1, -1)]
 
-            # iteratively marginalize out each posterior marginal from the joint log-likelihood 
+            # iteratively marginalize out each posterior marginal from the joint log-likelihood
             # except for the one associated with a given factor
             for factor_order in factor_orders:
                 for factor in factor_order:
@@ -211,7 +211,7 @@ def run_fpi_faster(A, obs, n_observations, n_states, prior=None, num_iter=10, dF
     if prior is None:
         prior = np.empty(n_factors, dtype=object)
         for factor in range(n_factors):
-            prior[factor] = np.log( np.ones(n_states[factor]) / n_states[factor] + 1e-16)
+            prior[factor] = np.log(np.ones(n_states[factor]) / n_states[factor] + 1e-16)
 
     """
     =========== Step 3 ===========
@@ -228,7 +228,6 @@ def run_fpi_faster(A, obs, n_observations, n_states, prior=None, num_iter=10, dF
     if n_factors == 1:
         qL = spm_dot(likelihood, qs, [0])
         return softmax(qL + prior[0])
-
 
     else:
         """
@@ -248,9 +247,9 @@ def run_fpi_faster(A, obs, n_observations, n_states, prior=None, num_iter=10, dF
             factor_orders = [range(n_factors), range((n_factors - 1), -1, -1)]
 
             for factor_order in factor_orders:
-                
+
                 # reset the log likelihood
-                L = likelihood.copy()  
+                L = likelihood.copy()
 
                 # multiply each marginal onto a growing single joint distribution
                 for factor in factor_order:
@@ -281,4 +280,3 @@ def run_fpi_faster(A, obs, n_observations, n_states, prior=None, num_iter=10, dF
             curr_iter += 1
 
         return qs
-

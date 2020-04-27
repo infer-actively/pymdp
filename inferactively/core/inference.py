@@ -22,7 +22,7 @@ EP = "EP"
 CV = "CV"
 
 
-def update_posterior_states(A, obs, prior, method=FPI, return_numpy=True):
+def update_posterior_states(A, obs, prior=None, method=FPI, return_numpy=True):
     """ 
     Update marginal posterior over hidden states using variational inference
         Can optionally set message passing algorithm used for inference
@@ -39,6 +39,7 @@ def update_posterior_states(A, obs, prior, method=FPI, return_numpy=True):
     - 'prior' [numpy 1D array, array of arrays (with 1D numpy array entries), Categorical, or None]:
         Prior beliefs about hidden states, to be integrated with the marginal likelihood to obtain a posterior distribution. 
         If None, prior is set to be equal to a flat categorical distribution (at the level of the individual inference functions).
+        (optional)
     - 'return_numpy' [bool]:
         True/False flag to determine whether the posterior is returned as a numpy array or a Categorical
     - 'method' [str]:
@@ -77,7 +78,8 @@ def update_posterior_states(A, obs, prior, method=FPI, return_numpy=True):
         n_observations = [A.shape[0]]
 
     obs = process_observations(obs, n_modalities, n_observations)
-    prior = process_priors(prior, n_factors)
+    if prior is not None:
+        prior = process_priors(prior, n_factors)
 
     if method is FPI:
         qs = run_fpi(A, obs, n_observations, n_states, prior)
