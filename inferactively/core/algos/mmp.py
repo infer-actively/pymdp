@@ -8,10 +8,8 @@ __author__: Conor Heins, Beren Millidge, Alexander Tschantz, Brennan Klein
 """
 
 import numpy as np
-from inferactively.core.maths import spm_dot, softmax, calc_free_energy
-
-
-
+from inferactively.core.maths import spm_dot, spm_norm, softmax, calc_free_energy
+"""
 # basic logic of action-perception loop when using MMP
 
 # Time loop over generative process
@@ -41,9 +39,9 @@ for current_T in range(T):
                         #present inference
                     if window_t > current_T:
                         #future inference
-            
+            """
         
-def run_mmp(A, B, obs_t, qs_policies_t, policies, t, t_horizon, prior=None, num_iter=10, dF=1.0, dF_tol=0.001, previous_actions=None):
+def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, dF=1.0, dF_tol=0.001, tau = 0.25, previous_actions=None,use_gradient_descent=False):
     """
     Optimise marginal posterior beliefs about hidden states using marginal message-passing scheme (MMP) developed
     by Thomas Parr and colleagues, see https://github.com/tejparr/nmpassing
@@ -61,17 +59,15 @@ def run_mmp(A, B, obs_t, qs_policies_t, policies, t, t_horizon, prior=None, num_
         is either the first timestep of the generative process or the first timestep of the policy horizon (whichever is sooner in time).
         The observations over time are stored as a list of numpy arrays, where in case of multi-modalities each numpy array is an array-of-arrays, with
         one 1D numpy.ndarray for each modality. In the case of a single modality, each observation is a single 1D numpy.ndarray.
-    - 'qs_policies_t' [list of length len(policies) of lists of length(t_horizon), where the entry in each list is a numpy 1D array or array of arrays (with 1D numpy array entries)]:
-        This represents the current set of marginal posteriors for each timestep under each policy. In case of multiple hidden state factors, the array within the inner list will be an 
-        array-of-arrays, where the sub-arrays are 1D numpy.ndarrays that store the beliefs, for that policy and timestep, for a given marginal. f t == 0 (first timestep of the generative process), 
-        and no qs_policies_t is provided, then qs_policies_t is initialised to a series of flat posterior marginals. 
-    - 'policies' [list of np.ndarrays]:
-        List of policies available to the agent. Each policy in the list is a (n_steps, n_control_factors) numpy.ndarray, the values of which
+    - 'policy' [2D np.ndarray]:
+        Array of actions constituting a single policy. Policy is a shape (n_steps, n_control_factors) numpy.ndarray, the values of which
         indicate actions along a given control factor (column index) at a given timestep (row index).
-    - 't' [int]:
-        Current timestep (relative to the 'absolute' time of the generative process). I
+    - 'curr_t' [int]:
+        Current timestep (relative to the 'absolute' time of the generative process).
     - 't_horizon'[int]:
         Temporal horizon of inference for states and policies.
+    - 'T' [int]:
+        Temporal horizon of the generative process (absolute time)
     - 'prior' [numpy 1D array, array of arrays (with 1D numpy array entries) or None]:
         Prior beliefs of the agent at the beginning of the time horizon, to be integrated with the marginal likelihood to obtain posterior at the first timestep.
         If absent, prior is set to be a uniform distribution over hidden states (identical to the initialisation of the posterior.
@@ -95,6 +91,8 @@ def run_mmp(A, B, obs_t, qs_policies_t, policies, t, t_horizon, prior=None, num_
     """
 
     # get model dimensions
+    time_window_idxs = np.array([i for i in range(max(0,curr_t-t_horizon),min(T,curr_t+t_horizon))])
+    window_len = len(time_window_idxs)
     if utils.is_arr_of_arr(obs_t[0]):
         n_observations = [ obs_array_i.shape[0] for obs_array_i in obs_t[0] ]
     else:
@@ -108,46 +106,86 @@ def run_mmp(A, B, obs_t, qs_policies_t, policies, t, t_horizon, prior=None, num_
     n_modalities = len(n_observations)
     n_factors = len(n_states)
 
-    n_policies = len(policies)
-
     """
     =========== Step 1 ===========
         Loop over the observation modalities and use assumption of independence among observation modalities
         to multiply each modality-specific likelihood onto a single joint likelihood over hidden states [shape = n_states]
     """
 
-    likelihood = np.ones(tuple(n_states))
-    if n_modalities is 1:
-        likelihood *= spm_dot(A, obs, obs_mode=True)
-    else:
-        for modality in range(n_modalities):
-            likelihood *= spm_dot(A[modality], obs[modality], obs_mode=True)
-    likelihood = np.log(likelihood + 1e-16)
+    # compute time-window, taking into account boundary conditions
+    
+    obs_range = range(max(0,curr_t-t_horizon),curr_t)
+    likelihood = np.empty(len(obs_range), dtype = object)
+    for t in range(len(obs_range)):
+        likelihood_t = np.ones(tuple(n_states))
+
+        if n_modalities is 1:
+            likelihood_t *= spm_dot(A, obs_t[obs_range[t]], obs_mode=True)
+        else:
+            for modality in range(n_modalities):
+                likelihood_t *= spm_dot(A[modality], obs[obs_range[t]][modality], obs_mode=True)
+        likelihood[t] = np.log(likelihood_t + 1e-16)
 
     """
     =========== Step 2 ===========
         Create a flat posterior (and prior if necessary)
+        If prior is not provided, initialise prior to be identical to posterior
+        (namely, a flat categorical distribution).
     """
 
-    if t == 0:
-        if qs_policies_t is None:
-            qs_policies_t = []
-            for j in range(n_policies):
-                qs_t = []
-                for t in range(t_horizon):
-                    qs = np.empty(n_factors, dtype=object)
-                    for factor in range(n_factors):
-                        qs[factor] = np.ones(n_states[factor]) / n_states[factor]
-                    qs_t.append(qs)
-            qs_policies_t.append(qs_t)
-    
-    """
-    If prior is not provided, initialise prior to be identical to posterior (namely, a flat categorical distribution).
-    """
+    qs = [np.empty(n_factors,dtype=object) for i in range(window_len)+2]
     if prior is None:
-        prior = np.empty(n_factors, dtype=object)
-        for factor in range(n_factors):
-            prior[factor] = np.ones(n_states[factor]) / n_states[factor] 
+        prior = np.array([np.ones(n_states[factor]) / n_states[factor] for f in range(n_factors)],dtype=object)
+    # setup prior as first backwards message
+    qs[0] = prior
+    #set final future message as all ones at the time horizon (no information from beyond the horizon)
+    qs[-1] = np.array([np.ones(n_states[f]) for f in n_factors],dtype=object)
+    
+
+    """
+    =========== Step 3 ===========
+        Loop over time indices of time window, which includes time before the policy horizon 
+        as well as including the policy horizon
+        n_steps, n_factors [0 1 2 0;
+                            1 2 0 1]
+    """
+    obs[t-1:curr_t]
+    relative_t = max(0, curr_t - t_horizon)
+    #(1:curr_t+1)
+
+    full_policy = np.vstack( (previous_actions, policies))
+    qss = [[] for i in range(1, len(qs)-1)]
+    F = np.zeros((len(qs), num_iter))
+    for t in range(1, len(qs)-1):
+        for n in range(num_iter):
+            lnBpast_tensor = np.empty(n_factors,dtype=object)         
+            for f in range(n_factors):
+                if t <=len(obs):
+                    lnA = spm_dot(likelihood[t],qs[t],f)
+                else:
+                    lnA = np.zeros(num_states[f])
+                lnBpast = 0.5 * B[f][:,:,full_policy[t-1,f].dot(qs[t-1][f])   
+                lnBfuture = 0.5 * spm_norm(B[f][:,:,full_policy[t+1,f]].T).dot(qs[t+1][f])
+                lnBpast_tensor[f] = 2 * lnBpast         
+                if use_gradient_descent:
+                    # gradients
+                    lns = np.log(qs[t][f] + 1e-16)
+                    e = (lnA + lnBpast + lnBfuture) - lns
+                    v += tau * e
+                    qs = softmax(v)
+                    qs[t][f] = qs
+                    qss[t].append(qs)
+                else:
+                    qs[t][f] = softmax(lnA + lnBpast + lnBfuture)
+                    qss[t].append(qs[t][f])
+            
+            F[t,n] = calc_free_energy(qs[t], lnBpast_tensor, n_factors, likelihood[t])
+    
+    return qs, qss,F
+
+ 
+    """
+    
 
 
     """
