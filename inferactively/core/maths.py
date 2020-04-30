@@ -121,6 +121,15 @@ def spm_cross(X, x=None, *args):
     return Y
 
 
+def spm_norm(A):
+    """ 
+    Returns normalization of Categorical distribution, 
+    stored in the columns of A.
+    """
+    A = A + 1e-16
+    normed_A = np.divide(A,A.sum(axis=0))
+    return normed_A
+
 def spm_wnorm(A):
     """ 
     Returns Expectation of logarithm of Dirichlet parameters over a set of Categorical distributions, 
@@ -148,9 +157,9 @@ def calc_free_energy(qs, prior, n_factors, likelihood=None):
     """
     free_energy = 0
     for factor in range(n_factors):
-        H_qs = -qs[factor].dot(np.log(qs[factor][:, np.newaxis] + 1e-16)) #  entropy of posterior marginal H(q[f])
+        negH_qs = qs[factor].dot(np.log(qs[factor][:, np.newaxis] + 1e-16)) #  (neg)entropy of posterior marginal H(q[f])
         xH_qp = -qs[factor].dot(prior[factor][:, np.newaxis])             #  cross entropy of posterior marginal with  prior marginal H(q[f],p[f])
-        free_energy += H_qs + xH_qp
+        free_energy += negH_qs + xH_qp
 
     if likelihood is not None:
         accuracy = spm_dot(likelihood, qs)[0]
