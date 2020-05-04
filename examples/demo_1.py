@@ -1,0 +1,231 @@
+import sys
+import pathlib
+
+sys.path.append(str(pathlib.Path(__file__).parent.parent))
+
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+from inferactively.distributions import Categorical, Dirichlet
+from inferactively.envs import GridWorldEnv# 
+from inferactively import core
+
+def plot_beliefs(qs, title=""):
+    values = qs.values[:, 0]
+    plt.grid(zorder=0)
+    plt.bar(range(qs.shape[0]), values, color="r", zorder=3)
+    plt.xticks(range(qs.shape[0]))
+    plt.title(title)
+    plt.show()
+
+
+def plot_likelihood(A):
+    _ = sns.heatmap(A.values, cmap="OrRd", linewidth=2.5)
+    plt.xticks(range(A.shape[1]))
+    plt.yticks(range(A.shape[0]))
+    plt.title("Likelihood distribution (A)")
+    plt.show()
+
+
+def plot_empirical_prior(B):
+    fig, axes = plt.subplots(3, 2, figsize=(8, 10))
+    actions = ["UP", "RIGHT", "DOWN", "LEFT", "STAY"]
+    count = 0
+    for i in range(3):
+        for j in range(2):
+            if count >= 5:
+                break
+
+            g = sns.heatmap(B[:, :, count].values, cmap="OrRd", linewidth=2.5, cbar=False, ax=axes[i, j])
+            g.set_title(actions[count])
+            count += 1
+    fig.delaxes(axes.flatten()[5])
+    plt.tight_layout()
+    plt.show()
+
+
+env_shape = [2, 2]
+n_states = np.prod(env_shape)
+
+env = GridWorldEnv(shape=env_shape)
+
+likelihood_matrix = env.get_likelihood_dist()
+A = Categorical(values=likelihood_matrix)
+A.remove_zeros()
+plot_likelihood(A)
+
+transition_matrix = env.get_transition_dist()
+B = Categorical(values=transition_matrix)
+B.remove_zeros()
+plot_empirical_prior(B)#
+
+reward_location = 3
+
+C = Categorical(dims=[env.n_states])
+C[reward_location] = 1.0
+plot_beliefs(C, title="Prior preference (C)")
+
+qs = Categorical(dims=[env.n_states])
+
+
+policies = core.construct_policies([n_states], policy_len=policy_len)
+
+def evaluate_policy(policy, qs, A, B, C):
+    G = 0
+    qs = qs.copy()
+
+    # loop over policy
+    for t in range(len(policy)):
+        # get action
+        u = int(policy[t])
+        # work out expected state
+        qs = B[u].dot(qs)
+        # work out expected observations
+        qo = A.dot(qs)
+        # get entropy
+        H = A.entropy()
+        # get predicted divergence and uncertainty and novelty
+        divergence = core.kl_divergence(qo, C)
+        uncertainty = H.dot(qs)[0, 0]
+        G += divergence + uncertainty
+    return -G
+
+def infer_action(qs, A, B, C, n_actions, policy_len):
+
+    # this function generates all possible combinations of policies
+    policies = core.construct_policies([n_states], policy_len=policy_len)
+    n_policies = len(policies)
+
+    # negative expected free energy
+    neg_G = np.zeros([n_policies, 1])
+
+    for i, policy in enumerate(policies):
+        neg_G[i] = evaluate_policy(policy, qs, A, B, C)
+
+    # get distribution over policies
+    q_pi = core.softmax(neg_G)
+
+    # probabilites of control states
+    qu = Categorical(dims=n_actions)
+
+    # sum probabilites of controls
+    for i, policy in enumerate(policies):
+        # control state specified by policy
+        u = int(policy[0])
+        # add probability of policy
+        qu[u] += q_pi[i]
+
+    # normalize
+    qu.normalize()
+
+    # sample control
+    u = qu.sample()
+
+    return u
+
+"""
+# number of time steps
+T = 10
+
+# number of actions
+n_actions = env.n_actions
+
+# length of policies we consider
+policy_len = 4
+
+# set initial state
+env.set_initial_state(0)
+
+# reset environment
+o = env.reset()
+
+# infer initial state
+Qs = F.softmax(A[o, :].log())
+
+# loop over time
+for t in range(T):
+
+    # random action
+    a = infer_action(Qs, A, B, C, n_actions, policy_len)
+
+    # perform action
+    o, r = env.step(a)
+
+    # infer new hidden state
+    Qs = F.softmax(A[o, :].log() + B[a].dot(Qs).log())
+
+    # print information
+    print("Time step {}".format(t))
+    env.render()
+    plot_beliefs(Qs, "Beliefs (Qs) at time {}".format(t))
+
+
+def infer_action(Qs, A, B, C, n_actions, policy_len):
+
+    # this function generates all possible combinations of policies
+    policies = F.generate_policies(n_actions, policy_len)
+    n_policies = len(policies)
+
+    # negative expected free energy
+    neg_G = np.zeros([n_policies, 1])
+
+    for i, policy in enumerate(policies):
+        neg_G[i] = evaluate_policy(policy, Qs, A, B, C)
+
+    # get distribution over policies
+    Q_pi = F.softmax(neg_G)
+
+    # probabilites of control states
+    Qu = Categorical(dims=n_actions)
+
+    # sum probabilites of controls
+    for i, policy in enumerate(policies):
+        # control state specified by policy
+        u = int(policy[0])
+        # add probability of policy
+        Qu[u] += Q_pi[i]
+
+    # normalize
+    Qu.normalize()
+
+    # sample control
+    u = Qu.sample()
+
+    return u
+
+
+T = 10
+
+# number of actions
+n_actions = env.n_actions
+
+# length of policies we consider
+policy_len = 4
+
+# set initial state
+env.set_initial_state(0)
+
+# reset environment
+o = env.reset()
+
+# infer initial state
+Qs = F.softmax(A[o, :].log())
+
+# loop over time
+for t in range(T):
+
+    # random action
+    a = infer_action(Qs, A, B, C, n_actions, policy_len)
+
+    # perform action
+    o, r = env.step(a)
+
+    # infer new hidden state
+    Qs = F.softmax(A[o, :].log() + B[a].dot(Qs).log())
+
+    # print information
+    print("Time step {}".format(t))
+    env.render()
+    plot_beliefs(Qs, "Beliefs (Qs) at time {}".format(t))
+"""

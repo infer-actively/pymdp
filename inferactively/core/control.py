@@ -440,7 +440,7 @@ def calc_pB_info_gain(pB, Qs_next, Qs_previous, policy):
     return infogain_pB
 
 
-def construct_policies(n_states, n_factors, n_control=None, policy_len=1, control_fac_idx=None):
+def construct_policies(n_states, n_control=None, policy_len=1, control_fac_idx=None):
     """Generate a set of policies
 
     Each policy is encoded as a numpy.ndarray of shape (n_steps, n_factors), where each value corresponds to
@@ -454,7 +454,6 @@ def construct_policies(n_states, n_factors, n_control=None, policy_len=1, contro
     Arguments:
     -------
     - `n_states`: list of dimensionalities of hidden state factors
-    - `n_factors`: total number of hidden/control state factors 
     - `n_control`: list of dimensionalities of control state factors 
     - `policy_len`: temporal length ('horizon') of policies
     - `control_fac_idx`: list of indices of the hidden state factors that are controllable (i.e. those whose n_control[i] > 1)
@@ -468,6 +467,8 @@ def construct_policies(n_states, n_factors, n_control=None, policy_len=1, contro
                 This is only returned when n_control is not provided as argument.
     """
 
+    n_factors = len(n_states)
+    
     if control_fac_idx is None:
         control_fac_idx = list(range(n_factors))
 
