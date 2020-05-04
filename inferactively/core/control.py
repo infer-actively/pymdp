@@ -451,6 +451,8 @@ def construct_policies(n_states, n_control=None, policy_len=1, control_fac_idx=N
     `n_control` defaults to being equal to n_states, except for the indices provided by control_fac_idx, where
     the value of n_control for the indicated factor is 1.
 
+    @TODO think about returning n_control - required arg
+
     Arguments:
     -------
     - `n_states`: list of dimensionalities of hidden state factors
@@ -473,6 +475,7 @@ def construct_policies(n_states, n_control=None, policy_len=1, control_fac_idx=N
         control_fac_idx = list(range(n_factors))
 
     return_n_control = False
+    
     if n_control is None:
 
         return_n_control = True
