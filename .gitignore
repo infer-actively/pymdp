@@ -3,4 +3,5 @@ __pycache__
 .DS_Store
 .ipynb_checkpoints
 .rope*
-.vscode
+.vscode/
+.ipynb_checkpoints/
