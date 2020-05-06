@@ -42,6 +42,10 @@ class GridWorldEnv(object):
         self.last_action = None
         return self.state
 
+    def set_state(self,state):
+        self.state = state
+        return state
+
     def step(self, action):
         state = self.P[self.state][action]
         self.state = state
@@ -151,6 +155,10 @@ class DGridWorldEnv(object):
         self.set_init_state(init_state)
         self.last_action = None
         return self.state
+    
+    def set_state(self,state):
+        self.state = state
+        return state
 
     def step(self, action):
         state = self.P[self.state][action]
