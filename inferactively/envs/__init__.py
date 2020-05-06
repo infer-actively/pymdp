@@ -1,3 +1,3 @@
 from .env import Env
-from .grid_world import GridWorldEnv
+from .grid_worlds import GridWorldEnv, DGridWorldEnv
 from .visual_foraging import VisualForagingEnv
