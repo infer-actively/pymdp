@@ -288,7 +288,7 @@ def calc_expected_utility(qo_pi, C):
     return expected_util
 
 
-def calc_states_info_gain(A, Qs_pi):
+def calc_states_info_gain(A, qs_pi):
     """
     Given a likelihood mapping A and a posterior predictive density over states Qs_pi,
     compute the Bayesian surprise (about states) expected under that policy
@@ -366,7 +366,7 @@ def calc_pA_info_gain(pA, qo_pi, qs_pi):
         wA = pA.expectation_of_log(return_numpy=True)
     else:
         if num_modalities == 1:
-            wA = spm_wnorm(pA[g])
+            wA = spm_wnorm(pA)
         else:
             wA = np.empty(num_modalities,dtype=object)
             for modality in range(num_modalities):
@@ -408,55 +408,64 @@ def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
     infogain_pB [scalar]:
         Surprise (about dirichlet parameters) expected under the policy in question
     """
-    if isinstance(pB, Dirichlet):
-        if pB.IS_AOA:
-            Nf = pB.shape[0]
-        else:
-            Nf = 1
+
+    if utils.is_arr_of_arr(pB):
+        num_factors = len(pB)
+    else:
+        num_factors = 1
+
+    if utils.isinstance(pB,Dirichlet):
         wB = pB.expectation_of_log(return_numpy=True)
-        pB = pB.values
-    elif pB.dtype == "object":
-        Nf = len(pB)
-        wB = np.empty(Nf, dtype=object)
-        for f in range(Nf):
-            wB[f] = spm_wnorm(pB[f])
     else:
-        Nf = 1
-        wB = spm_wnorm(pB)
+        if num_factors == 1:
+            wB = spm_wnorm(pB)
+        else:
+            wB = np.empty(num_modalities,dtype=object)
+            for factor in range(num_factors):
+                wB[factor] = spm_wnorm(pB[factor])
 
-    if isinstance(Qs_next, Categorical):
-        Qs_next = Qs_next.values
-
-    if Qs_next.dtype == "object":
-        for f in range(Nf):
-            Qs_next[f] = Qs_next[f].flatten()
+    if isinstance(qs_pi,list)
+        for t in range(n_steps):
+            qs_pi[t] = utils.to_numpy(qs_pi[t],flatten=True)
     else:
-        Qs_next = Qs_next.flatten()
+        n_steps = 1
+        qs_pi = [utils.to_numpy(qs_pi,flatten=True)]
+    
+    if isinstance(qs_prev, Categorical):
+        qs_prev = utils.to_numpy(qs_prev,flatten=True)
 
-    if isinstance(Qs_previous, Categorical):
-        Qs_previous = Qs_previous.values
+    pB_infogain = 0
 
-    if Qs_previous.dtype == "object":
-        for f in range(Nf):
-            Qs_previous[f] = Qs_previous[f].flatten()
+    if num_factors == 1:
+        
+        for t in range(n_steps):
+
+            if t == 0:
+                previous_qs = qs_prev
+            else:
+                previous_qs = qs_pi[t-1]
+            
+            a_i = policy[t]
+
+            wB = wB[:, :, a_i] * (pB[:, :, a_i] > 0).astype("float")
+            pB_infogain = -qs_pi[t].dot(wB.dot(qs_prev))
     else:
-        Qs_previous = Qs_previous.flatten()
 
-    if Nf > 1:
-        infogain_pB = 0
-        for f_i, a_i in enumerate(policy):
-            wB_action = wB[f_i][:, :, a_i] * (pB[f_i][:, :, a_i] > 0).astype("float")
-            infogain_pB -= Qs_next[f_i].dot(wB_action.dot(Qs_previous[f_i]))
+        for t in range(n_steps):
 
-    else:
+            # the 'past posterior' used for the information gain about pB here is the posterior over expected states at the timestep previous to the one under consideration
+            if t == 0: # if we're on the first timestep, we just use the latest posterior in the entire action-perception cycle as the previous posterior
+                previous_qs = qs_prev
+            else: # otherwise, we use the expected states for the timestep previous to the timestep under consideration
+                previous_qs = qs_pi[t-1] 
+            
+            policy_t = policy[t,:] # get the list of action-indices for the current timestep
 
-        a_i = policy[0]
+            for factor, a_i in enumerate(policy_t):
+                wB_factor_t = wB[factor][:, :, a_i] * (pB[factor][:, :, a_i] > 0).astype("float")
+                pB_infogain -= qs_pi[t][factor].dot(wB_factor_t.dot(previous_qs[factor]))
 
-        wB = wB[:, :, a_i] * (pB[:, :, a_i] > 0).astype("float")
-        infogain_pB = -Qs_next.dot(wB.dot(Qs_previous))
-
-    return infogain_pB
-
+    return pB_infogain
 
 def construct_policies(n_states, n_control=None, policy_len=1, control_fac_idx=None):
     """Generate a set of policies
