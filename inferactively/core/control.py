@@ -128,10 +128,11 @@ def get_expected_states(qs, B, policy, return_numpy=False):
     qs = utils.to_numpy(qs, flatten=True)
     B = utils.to_numpy(B)
 
-    if utils.is_arr_of_arr(B):
+    # initialise beliefs over expected states
+    qs_pi = []
 
-        # initialise beliefs over expected states
-        qs_pi = []
+    if utils.is_arr_of_arr(B):
+       
         for t in range(n_steps):
             qs_pi_t = np.empty(n_factors,dtype=object)
             qs_pi.append(qs_pi_t)
@@ -140,16 +141,13 @@ def get_expected_states(qs, B, policy, return_numpy=False):
         for control_factor, control in enumerate(policy[0,:]):
             qs_pi[0][control_factor] = spm_dot(B[control_factor][:,:,control], qs[control_factor])
         
-        # then loop over future timepoints
+        # get expected states over time
         if n_steps > 1:
             for t in range(1,n_steps):
                 for control_factor, control in enumerate(policy[t,:]):
                     qs_pi[t][control_factor] = spm_dot(B[control_factor][:,:,control], qs_pi[t-1][control_factor])
 
     else:
-
-        # initialise beliefs over expected states
-        qs_pi = []
 
         # initialise expected states after first action using current posterior (t = 0)
         qs_pi.append(spm_dot(B[0][:,:,policy[0,0]], qs))
@@ -172,72 +170,81 @@ def get_expected_states(qs, B, policy, return_numpy=False):
                 qs_pi[t] = utils.to_categorical(qs_pi[t])
             return qs_pi
 
-def get_expected_obs(Qs_pi, A, return_numpy=False):
+def get_expected_obs(qs_pi, A, return_numpy=False):
     """
     Given a posterior predictive density Qs_pi and an observation likelihood model A,
     get the expected observations given the predictive posterior.
 
-    @TODO: Needs to be amended for use with multi-step policies (where possible_policies is a list of np.arrays (nStep x nFactor), not just a list of tuples as it is now)
     Parameters
     ----------
-    Qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
-        Posterior predictive density over hidden states
+    qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), Categorical (either single-factor or AoA), or list]:
+        Posterior predictive density over hidden states. If a list, each entry of the list is the posterior predictive for a given timepoint of an expected trajectory
     A [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Categorical (either single-factor of AoA)]:
         Observation likelihood mapping from hidden states to observations, with different modalities (if there are multiple) stored in different arrays
     return_numpy [Boolean]:
         True/False flag to determine whether output of function is a numpy array or a Categorical
     Returns
     -------
-    Qo_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
-        Expected observations under the given policy 
+    qo_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), Categorical (either single-factor or AoA), or list]:
+        Expected observations under the given policy. If a list, a list of the expected observations over the time horizon of policy evaluation, where
+        each entry is the expected observations at a given timestep. 
     """
-    if isinstance(A, Categorical):
 
-        if not return_numpy:
-            Qo_pi = A.dot(Qs_pi)
-            return Qo_pi
+    # initialise expected observations
+    qo_pi = []
+    A = utils.to_numpy(A)
+
+    if isinstance(qs_pi,list)
+        n_steps = len(qo_pi)
+        for t in range(n_steps):
+            qs_pi[t] = utils.to_numpy(qs_pi[t],flatten=True)
+    else:
+        n_steps = 1
+        qs_pi = [utils.to_numpy(qs_pi,flatten=True)]
+
+    if utils.is_arr_of_arr(A):
+
+        num_modalities = len(A)
+
+        for t in range(n_steps):
+            qo_pi_t = np.empty(num_modalities,dtype=object)
+            qo_pi.append(qo_pi_t)
+        
+        # get expected observations over time
+        for t in range(n_steps):
+            for modality in range(num_modalities):
+                qo_pi[t][modality] = spm_dot(A[modality], qs_pi[t])
+    
+    else:
+
+        # get expected observations over time
+        for t in range(n_steps):
+            qo_pi.append(spm_dot(A, qs_pi[t]))
+    
+    if return_numpy:
+        if len(qo_pi) == 1:
+            return qo_pi[0]
         else:
-            Qo_pi = A.dot(Qs_pi, return_numpy=True)
-            if Qo_pi.dtype == "object":
-                Qo_pi_flattened = np.empty(len(Qo_pi), dtype=object)
-                for g in range(len(Qo_pi)):
-                    Qo_pi_flattened[g] = Qo_pi[g].flatten()
-                return Qo_pi_flattened
-            else:
-                return Qo_pi.flatten()
-
-    elif A.dtype == "object":
-        Ng = len(A)
-        Qo_pi = np.empty(Ng, dtype=object)
-        if isinstance(Qs_pi, Categorical):
-            Qs_pi = Qs_pi.values
-            for f in range(len(Qs_pi)):
-                Qs_pi[f] = Qs_pi[f].flatten()
-        for g in range(Ng):
-            Qo_pi[g] = spm_dot(A[g], Qs_pi)
-
+            return qo_pi
     else:
-        if isinstance(Qs_pi, Categorical):
-            Qs_pi = Qs_pi.values
-        Qo_pi = spm_dot(A, Qs_pi)
-
-    if not return_numpy:
-        Qo_pi = Categorical(values=Qo_pi)
-        return Qo_pi
-    else:
-        return Qo_pi
+        if len(qo_pi) == 1:
+            return utils.to_categorical(qo_pi[0])
+        else:
+            for t in range(n_steps):
+                qo_pi[t] = utils.to_categorical(qo_pi[t])
+            return qo_pi
 
 
-def calc_expected_utility(Qo_pi, C):
+def calc_expected_utility(qo_pi, C):
     """
     Given expected observations under a policy Qo_pi and a prior over observations C
     compute the expected utility of the policy.
 
-    @TODO: Needs to be amended for use with multi-step policies (where possible_policies is a list of np.arrays (nStep x nFactor), not just a list of tuples as it is now)
     Parameters
     ----------
-    Qo_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
-        Posterior predictive density over outcomes
+    qo_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), Categorical (either single-factor or AoA), or list]:
+        Expected observations under the given policy (predictive posterior over outcomes). If a list, a list of the expected observations
+        over the time horizon of policy evaluation, where each entry is the expected observations at a given timestep. 
     C [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array):
         Prior beliefs over outcomes, expressed in terms of relative log probabilities
     Returns
@@ -246,26 +253,37 @@ def calc_expected_utility(Qo_pi, C):
         Utility (reward) expected under the policy in question
     """
 
-    if isinstance(Qo_pi, Categorical):
-        Qo_pi = Qo_pi.values
+    if isinstance(qo_pi,list)
+        n_steps = len(qo_pi)
+        for t in range(n_steps):
+            qo_pi[t] = utils.to_numpy(qo_pi[t],flatten=True)
+    else:
+        n_steps = 1
+        qo_pi = [utils.to_numpy(qo_pi,flatten=True)]
 
-    if Qo_pi.dtype == "object":
-        for g in range(len(Qo_pi)):
-            Qo_pi[g] = Qo_pi[g].flatten()
+    C = utils.to_numpy(C,flatten=True)
 
-    if C.dtype == "object":
+    # initialise expected utility
+    expected_util = 0
+    
+    # in case of multiple observation modalities, loop over time points and modalities
+    if utils.is_arr_of_arr(C):
 
-        expected_util = 0
+        num_modalities = len(C)
 
-        Ng = len(C)
-        for g in range(Ng):
-            lnC = np.log(softmax(C[g][:, np.newaxis]) + 1e-16)
-            expected_util += Qo_pi[g].flatten().dot(lnC)
-
+        for t in range(n_steps):
+            for modality in range(num_modalities):
+                lnC = np.log(softmax(C[modalities][:,np.newaxis] + 1e-16)
+                expected_util += qo_pi[t][modality].dot(lnC)
+    
+    # else, just loop over time (since there's only one modality)
     else:
 
         lnC = np.log(softmax(C[:, np.newaxis]) + 1e-16)
-        expected_util = Qo_pi.flatten().dot(lnC)
+
+        for t in range(n_steps):
+            lnC = np.log(softmax(C[:,np.newaxis] + 1e-16))
+            expected_util += qo_pi[t].dot(lnC)
 
     return expected_util
 
@@ -274,37 +292,37 @@ def calc_states_info_gain(A, Qs_pi):
     """
     Given a likelihood mapping A and a posterior predictive density over states Qs_pi,
     compute the Bayesian surprise (about states) expected under that policy
-    @TODO: Needs to be amended for use with multi-step policies (where possible_policies is a list of np.arrays (nStep x nFactor), not just a list of tuples as it is now)
     Parameters
     ----------
     A [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Categorical (either single-factor of AoA)]:
         Observation likelihood mapping from hidden states to observations, with different modalities (if there are multiple) stored in different arrays
-    Qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
-        Posterior predictive density over hidden states
+    qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), Categorical (either single-factor or AoA), or list]:
+        Posterior predictive density over hidden states. If a list, each entry of the list is the posterior predictive for a given timepoint of an expected trajectory
     Returns
     -------
     states_surprise [scalar]:
         Surprise (about states) expected under the policy in question
     """
 
-    if isinstance(A, Categorical):
-        A = A.values
+    A = utils.to_numpy(A)
 
-    if isinstance(Qs_pi, Categorical):
-        Qs_pi = Qs_pi.values
-
-    if Qs_pi.dtype == "object":
-        for f in range(len(Qs_pi)):
-            Qs_pi[f] = Qs_pi[f].flatten()
+    if isinstance(qs_pi,list)
+        n_steps = len(qs_pi)
+        for t in range(n_steps):
+            qs_pi[t] = utils.to_numpy(qs_pi[t],flatten=True)
     else:
-        Qs_pi = Qs_pi.flatten()
+        n_steps = 1
+        qs_pi = [utils.to_numpy(qs_pi,flatten=True)]
 
-    states_surprise = spm_MDP_G(A, Qs_pi)
+    states_surprise = 0
+
+    for t in range(n_steps):
+        states_surprise += spm_MDP_G(A,qs_pi[t])
 
     return states_surprise
 
 
-def calc_pA_info_gain(pA, Qo_pi, Qs_pi):
+def calc_pA_info_gain(pA, qo_pi, qs_pi):
     """
     Compute expected Dirichlet information gain about parameters pA under a policy
     Parameters
@@ -314,64 +332,64 @@ def calc_pA_info_gain(pA, Qo_pi, Qs_pi):
     pA [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Dirichlet (either single-factor of AoA)]:
         Prior dirichlet parameters parameterizing beliefs about the likelihood mapping from hidden states to observations, 
         with different modalities (if there are multiple) stored in different arrays.
-    Qo_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
-        Posterior predictive density over observations, given hidden states expected under a policy
-    Qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
-        Posterior predictive density over hidden states
+    qo_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), Categorical (either single-factor or AoA), or list]:
+        Expected observations. If a list, each entry of the list is the posterior predictive for a given timepoint of an expected trajectory
+    qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), Categorical (either single-factor or AoA), or list]:
+        Posterior predictive density over hidden states. If a list, each entry of the list is the posterior predictive for a given timepoint of an expected trajectory
     Returns
     -------
     infogain_pA [scalar]:
         Surprise (about dirichlet parameters) expected under the policy in question
     """
 
-    if isinstance(pA, Dirichlet):
-        if pA.IS_AOA:
-            Ng = pA.shape[0]
-        else:
-            Ng = 1
+    if isinstance(qo_pi,list)
+        n_steps = len(qo_pi)
+        for t in range(n_steps):
+            qo_pi[t] = utils.to_numpy(qo_pi[t],flatten=True)
+    else:
+        n_steps = 1
+        qo_pi = [utils.to_numpy(qo_pi,flatten=True)]
+
+    if isinstance(qs_pi,list)
+        for t in range(n_steps):
+            qs_pi[t] = utils.to_numpy(qs_pi[t],flatten=True)
+    else:
+        n_steps = 1
+        qs_pi = [utils.to_numpy(qs_pi,flatten=True)]
+
+    if utils.is_arr_of_arr(pA):
+        num_modalities = len(pA)
+    else:
+        num_modalities = 1
+
+    if utils.isinstance(pA,Dirichlet):
         wA = pA.expectation_of_log(return_numpy=True)
-        pA = pA.values
-    elif pA.dtype == "object":
-        Ng = len(pA)
-        wA = np.empty(Ng, dtype=object)
-        for g in range(Ng):
-            wA[g] = spm_wnorm(pA[g])
     else:
-        Ng = 1
-        wA = spm_wnorm(pA)
+        if num_modalities == 1:
+            wA = spm_wnorm(pA[g])
+        else:
+            wA = np.empty(num_modalities,dtype=object)
+            for modality in range(num_modalities):
+                wA[modality] = spm_wnorm(pA[modality])
 
-    if isinstance(Qo_pi, Categorical):
-        Qo_pi = Qo_pi.values
+    pA = utils.to_numpy(pA)
 
-    if Qo_pi.dtype == "object":
-        for g in range(len(Qo_pi)):
-            Qo_pi[g] = Qo_pi[g].flatten()
+    pA_infogain = 0
+
+    if num_modalities == 1:
+        wA = wA * (pA > 0).astype("float") 
+        for t in range(n_steps)
+            pA_infogain = -qo_pi[t].dot(spm_dot(wA, qs_pi[t])[:, np.newaxis])
     else:
-        Qo_pi = Qo_pi.flatten()
+        for modality in range(num_modalities):
+            wA_modality =  wA[modality] * (pA[modality] > 0).astype("float")
+            for t in range(n_steps):
+                    pA_infogain -= qo_pi[t][modality].dot(spm_dot(wA_modality, qs_pi[t])[:, np.newaxis])     
 
-    if isinstance(Qs_pi, Categorical):
-        Qs_pi = Qs_pi.values
-
-    if Qs_pi.dtype == "object":
-        for f in range(len(Qs_pi)):
-            Qs_pi[f] = Qs_pi[f].flatten()
-    else:
-        Qs_pi = Qs_pi.flatten()
-
-    if Ng > 1:
-        infogain_pA = 0
-        for g in range(Ng):
-            wA_g = wA[g] * (pA[g] > 0).astype("float")
-            infogain_pA -= Qo_pi[g].dot(spm_dot(wA_g, Qs_pi)[:, np.newaxis])
-
-    else:
-        wA = wA * (pA > 0).astype("float")
-        infogain_pA = -Qo_pi.dot(spm_dot(wA, Qs_pi)[:, np.newaxis])
-
-    return infogain_pA
+    return pA_infogain
 
 
-def calc_pB_info_gain(pB, Qs_next, Qs_previous, policy):
+def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
     """
     Compute expected Dirichlet information gain about parameters pB under a given policy
     Parameters
@@ -381,10 +399,10 @@ def calc_pB_info_gain(pB, Qs_next, Qs_previous, policy):
     pB [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Dirichlet (either single-factor of AoA)]:
         Prior dirichlet parameters parameterizing beliefs about the likelihood describing transitions bewteen hidden states,
         with different factors (if there are multiple) stored in different arrays.
-    Qs_next [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
-        Posterior predictive density over hidden states under some policy
-    Qs_previous [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
-        Posterior predictive density over hidden states (prior to observations)
+    qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), Categorical (either single-factor or AoA), or list]:
+        Posterior predictive density over hidden states. If a list, each entry of the list is the posterior predictive for a given timepoint of an expected trajectory
+    qs_prev [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+        Posterior over hidden states (before getting observations)
     Returns
     -------
     infogain_pB [scalar]:
@@ -501,55 +519,52 @@ def construct_policies(n_states, n_control=None, policy_len=1, control_fac_idx=N
         return policies
 
 
-def sample_action(p_i, possible_policies, Nu, sampling_type="marginal_action"):
+def sample_action(q_pi, policies, n_control, sampling_type="marginal_action"):
     """
     Samples action from posterior over policies, using one of two methods. 
-    @TODO: Needs to be amended for use with multi-step policies (where possible_policies is a list of np.arrays (nStep x nFactor), not just a list of tuples as it is now)
+    @TODO: Needs to be amended for use with multi-step policies (where policies is a list of np.arrays (nStep x nFactor), not just a list of tuples as it is now)
     Parameters
     ----------
-    p_i [1D numpy.ndarray or Categorical]:
-        Variational posterior over policies.
-    possible_policies [list of tuples]:
-        List of tuples that indicate the possible policies under consideration. Each tuple stores the actions taken upon the separate hidden state factors. 
-        Same length as p_i.
-    Nu [list of integers]:
-        List of the dimensionalities of the different (controllable)) hidden states
+    q_pi [1D numpy.ndarray or Categorical]:
+        Posterior beliefs about (possibly multi-step) policies.
+    policies [list of numpy ndarrays]:
+        List of arrays that indicate the policies under consideration. Each element within the list is a matrix that stores the 
+        the indices of the actions  upon the separate hidden state factors, at each timestep (nStep x nControlFactor)
+    n_control [list of integers]:
+        List of the dimensionalities of the different (controllable)) hidden state factors
     sampling_type [string, 'marginal_action' or 'posterior_sample']:
         Indicates whether the sampled action for a given hidden state factor is given by the evidence for that action, marginalized across different policies ('marginal_action')
-        or simply the action entailed by the policy sampled from the posterior. 
+        or simply the action entailed by a sample from the posterior over policies
     Returns
     ----------
-    selectedPolicy [tuple]:
-        tuple containing the list of actions selected by the agent
+    selectedPolicy [1D numpy ndarray]:
+        Numpy array containing the indices of the actions along each control factor
     """
 
-    numControls = len(Nu)
+    n_factors = len(n_control)
 
     if sampling_type == "marginal_action":
 
-        if isinstance(p_i, Categorical):
-            p_i = p_i.values.squeeze()
-
-        action_marginals = np.empty(numControls, dtype=object)
-        for nu_i in range(numControls):
-            action_marginals[nu_i] = np.zeros(Nu[nu_i])
-
-        # Weight each action according to the posterior probability it gets across policies
-        for pol_i, policy in enumerate(possible_policies):
-            for nu_i, a_i in enumerate(policy):
-                action_marginals[nu_i][a_i] += p_i[pol_i]
-
+        if utils.is_distribution(q_pi):
+            q_pi = utils.to_numpy(q_pi)
+        
+        action_marginals = np.empty(n_factors, dtype = object)
+        for c_idx in range(n_factors):
+            action_marginals[c_idx] = np.zeros(n_control[c_idx])
+        
+        # weight each action according to its integrated posterior probability over policies and timesteps
+        for pol_idx, policy in enumerate(policies):
+            for t in policy.shape[0]:
+                for factor_i, action_i in enumerate(policy):
+                    action_marginals[factor_i][action_i] += q_pi[pol_idx]
+        
         action_marginals = Categorical(values=action_marginals)
         action_marginals.normalize()
-        selected_policy = action_marginals.sample()
+        selected_policy = np.array(action_marginals.sample())
 
-    elif sampling_type == "posterior_sample":
-        if isinstance(p_i, Categorical):
-            policy_index = p_i.sample()
-            selected_policy = possible_policies[policy_index]
-        else:
-            sample_onehot = np.random.multinomial(1, p_i.squeeze())
-            policy_index = np.where(sample_onehot == 1)[0][0]
-            selected_policy = possible_policies[policy_index]
-
+    elif sampling_type = "posterior_sample":
+        if utils.is_distribution(q_pi):
+            policy_index = q_pi.sample()
+            selected_policy = policies[policy_index]
+    
     return selected_policy
