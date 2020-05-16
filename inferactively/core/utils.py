@@ -17,22 +17,21 @@ def to_numpy(dist, flatten = False):
     If flatten is True, then the individual entries of the object array will be flattened into row vectors
     (common operation when dealing with array of arrays with 1D numpy array entries)
     """
-    if isinstance(dist, Categorical):            
-        values = np.copy(dist.values)
-        if flatten:
-            if dist.IS_AOA:
-                for i in values:
-                    values[i] = values[i].flatten()
-    elif isinstance(dist, Dirichlet):
+    if isinstance(dist, (Categorical, Dirichlet)):            
         values = np.copy(dist.values)
     else:
         values = dist
+    if flatten:
+        if dist.IS_AOA:
+            for i in values:
+                values[i] = values[i].flatten()
+        else:
+            values = values.flatten()
     return values
 
 
 def is_distribution(obj):
     return isinstance(obj, (Categorical, Dirichlet))
-
 
 def is_arr_of_arr(arr):
     return arr.dtype == "object"
