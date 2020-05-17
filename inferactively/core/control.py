@@ -273,7 +273,7 @@ def calc_expected_utility(qo_pi, C):
 
         for t in range(n_steps):
             for modality in range(num_modalities):
-                lnC = np.log(softmax(C[modalities][:,np.newaxis]) + 1e-16)
+                lnC = np.log(softmax(C[modality][:,np.newaxis]) + 1e-16)
                 expected_util += qo_pi[t][modality].dot(lnC)
     
     # else, just loop over time (since there's only one modality)
@@ -420,11 +420,12 @@ def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
         if num_factors == 1:
             wB = spm_wnorm(pB)
         else:
-            wB = np.empty(num_modalities,dtype=object)
+            wB = np.empty(num_factors,dtype=object)
             for factor in range(num_factors):
                 wB[factor] = spm_wnorm(pB[factor])
 
     if isinstance(qs_pi,list):
+        n_steps = len(qs_pi)
         for t in range(n_steps):
             qs_pi[t] = utils.to_numpy(qs_pi[t],flatten=True)
     else:
@@ -567,7 +568,7 @@ def sample_action(q_pi, policies, n_control, sampling_type="marginal_action"):
         # weight each action according to its integrated posterior probability over policies and timesteps
         for pol_idx, policy in enumerate(policies):
             for t in policy.shape[0]:
-                for factor_i, action_i in enumerate(policy):
+                for factor_i, action_i in enumerate(policy[t,:]):
                     action_marginals[factor_i][action_i] += q_pi[pol_idx]
         
         action_marginals = Categorical(values=action_marginals)
