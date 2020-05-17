@@ -150,12 +150,12 @@ def get_expected_states(qs, B, policy, return_numpy=False):
     else:
 
         # initialise expected states after first action using current posterior (t = 0)
-        qs_pi.append(spm_dot(B[0][:,:,policy[0,0]], qs))
+        qs_pi.append(spm_dot(B[:,:,policy[0,0]], qs))
         
         # then loop over future timepoints
         if n_steps > 1:
             for t in range(1,n_steps):
-                qs_pi.append(spm_dot(B[0][:,:,policy[t,0]], qs_pi[t-1]))
+                qs_pi.append(spm_dot(B[:,:,policy[t,0]], qs_pi[t-1]))
    
     if return_numpy:
         if len(qs_pi) == 1:
@@ -194,8 +194,8 @@ def get_expected_obs(qs_pi, A, return_numpy=False):
     qo_pi = []
     A = utils.to_numpy(A)
 
-    if isinstance(qs_pi,list)
-        n_steps = len(qo_pi)
+    if isinstance(qs_pi,list):
+        n_steps = len(qs_pi)
         for t in range(n_steps):
             qs_pi[t] = utils.to_numpy(qs_pi[t],flatten=True)
     else:
@@ -222,12 +222,12 @@ def get_expected_obs(qs_pi, A, return_numpy=False):
             qo_pi.append(spm_dot(A, qs_pi[t]))
     
     if return_numpy:
-        if len(qo_pi) == 1:
+        if n_steps == 1:
             return qo_pi[0]
         else:
             return qo_pi
     else:
-        if len(qo_pi) == 1:
+        if n_steps == 1:
             return utils.to_categorical(qo_pi[0])
         else:
             for t in range(n_steps):
@@ -253,7 +253,7 @@ def calc_expected_utility(qo_pi, C):
         Utility (reward) expected under the policy in question
     """
 
-    if isinstance(qo_pi,list)
+    if isinstance(qo_pi,list):
         n_steps = len(qo_pi)
         for t in range(n_steps):
             qo_pi[t] = utils.to_numpy(qo_pi[t],flatten=True)
@@ -273,7 +273,7 @@ def calc_expected_utility(qo_pi, C):
 
         for t in range(n_steps):
             for modality in range(num_modalities):
-                lnC = np.log(softmax(C[modalities][:,np.newaxis] + 1e-16)
+                lnC = np.log(softmax(C[modalities][:,np.newaxis]) + 1e-16)
                 expected_util += qo_pi[t][modality].dot(lnC)
     
     # else, just loop over time (since there's only one modality)
@@ -306,7 +306,7 @@ def calc_states_info_gain(A, qs_pi):
 
     A = utils.to_numpy(A)
 
-    if isinstance(qs_pi,list)
+    if isinstance(qs_pi,list):
         n_steps = len(qs_pi)
         for t in range(n_steps):
             qs_pi[t] = utils.to_numpy(qs_pi[t],flatten=True)
@@ -342,7 +342,7 @@ def calc_pA_info_gain(pA, qo_pi, qs_pi):
         Surprise (about dirichlet parameters) expected under the policy in question
     """
 
-    if isinstance(qo_pi,list)
+    if isinstance(qo_pi,list):
         n_steps = len(qo_pi)
         for t in range(n_steps):
             qo_pi[t] = utils.to_numpy(qo_pi[t],flatten=True)
@@ -350,7 +350,7 @@ def calc_pA_info_gain(pA, qo_pi, qs_pi):
         n_steps = 1
         qo_pi = [utils.to_numpy(qo_pi,flatten=True)]
 
-    if isinstance(qs_pi,list)
+    if isinstance(qs_pi,list):
         for t in range(n_steps):
             qs_pi[t] = utils.to_numpy(qs_pi[t],flatten=True)
     else:
@@ -378,7 +378,7 @@ def calc_pA_info_gain(pA, qo_pi, qs_pi):
 
     if num_modalities == 1:
         wA = wA * (pA > 0).astype("float") 
-        for t in range(n_steps)
+        for t in range(n_steps):
             pA_infogain = -qo_pi[t].dot(spm_dot(wA, qs_pi[t])[:, np.newaxis])
     else:
         for modality in range(num_modalities):
@@ -424,7 +424,7 @@ def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
             for factor in range(num_factors):
                 wB[factor] = spm_wnorm(pB[factor])
 
-    if isinstance(qs_pi,list)
+    if isinstance(qs_pi,list):
         for t in range(n_steps):
             qs_pi[t] = utils.to_numpy(qs_pi[t],flatten=True)
     else:
@@ -521,6 +521,9 @@ def construct_policies(n_states, n_control=None, policy_len=1, control_fac_idx=N
     if policy_len > 1:
         for pol_i in range(len(policies)):
             policies[pol_i] = np.array(policies[pol_i]).reshape(policy_len, n_factors)
+    else:
+        for pol_i in range(len(policies)):
+            policies[pol_i] = np.array(policies[pol_i]).reshape(1,n_factors)
 
     if return_n_control:
         return policies, n_control
@@ -571,7 +574,7 @@ def sample_action(q_pi, policies, n_control, sampling_type="marginal_action"):
         action_marginals.normalize()
         selected_policy = np.array(action_marginals.sample())
 
-    elif sampling_type = "posterior_sample":
+    elif sampling_type == "posterior_sample":
         if utils.is_distribution(q_pi):
             policy_index = q_pi.sample()
             selected_policy = policies[policy_index]
