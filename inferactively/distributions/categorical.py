@@ -55,6 +55,8 @@ class Categorical(object):
 
         if self.IS_AOA:
             self.n_arrays = len(self.values)
+        else:
+            self.n_arrays = 1
 
     def construct_values(self, values):
         """Initialize a Categorical distribution with `values` argument

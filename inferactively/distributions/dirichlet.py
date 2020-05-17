@@ -42,6 +42,11 @@ class Dirichlet(object):
 
         if dims is not None:
             self.construct_dims(dims)
+        
+        if self.IS_AOA:
+            self.n_arrays = len(self.values)
+        else:
+            self.n_arrays = 1
 
     def construct_values(self, values):
         """Initialize a Dirichlet distribution with `values` argument

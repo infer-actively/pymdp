@@ -9,8 +9,6 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import itertools
 import numpy as np
-import torch
-from scipy import special
 from inferactively.distributions import Categorical, Dirichlet
 from inferactively.core import softmax, spm_dot, spm_wnorm, spm_cross, spm_MDP_G, utils
 
@@ -357,21 +355,22 @@ def calc_pA_info_gain(pA, qo_pi, qs_pi):
         n_steps = 1
         qs_pi = [utils.to_numpy(qs_pi,flatten=True)]
 
-    if utils.is_arr_of_arr(pA):
-        num_modalities = len(pA)
-    else:
-        num_modalities = 1
-
-    if utils.isinstance(pA,Dirichlet):
-        wA = pA.expectation_of_log(return_numpy=True)
-    else:
-        if num_modalities == 1:
-            wA = spm_wnorm(pA)
+    if isinstance(pA,Dirichlet):
+        if pA.IS_AOA:
+            num_modalities = pA.n_arrays
         else:
+            num_modalities = 1
+        wA = pA.expectation_of_log()
+    else:
+        if utils.is_arr_of_arr(pA):
+            num_modalities = len(pA)
             wA = np.empty(num_modalities,dtype=object)
             for modality in range(num_modalities):
                 wA[modality] = spm_wnorm(pA[modality])
-
+        else:
+            num_modalities = 1
+            wA = spm_wnorm(pA)
+            
     pA = utils.to_numpy(pA)
 
     pA_infogain = 0
@@ -409,21 +408,6 @@ def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
         Surprise (about dirichlet parameters) expected under the policy in question
     """
 
-    if utils.is_arr_of_arr(pB):
-        num_factors = len(pB)
-    else:
-        num_factors = 1
-
-    if utils.isinstance(pB,Dirichlet):
-        wB = pB.expectation_of_log(return_numpy=True)
-    else:
-        if num_factors == 1:
-            wB = spm_wnorm(pB)
-        else:
-            wB = np.empty(num_factors,dtype=object)
-            for factor in range(num_factors):
-                wB[factor] = spm_wnorm(pB[factor])
-
     if isinstance(qs_pi,list):
         n_steps = len(qs_pi)
         for t in range(n_steps):
@@ -434,6 +418,24 @@ def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
     
     if isinstance(qs_prev, Categorical):
         qs_prev = utils.to_numpy(qs_prev,flatten=True)
+
+    if isinstance(pB,Dirichlet):
+        if pB.IS_AOA:
+            num_factors = pB.n_arrays
+        else:
+            num_factors = 1
+        wB = pB.expectation_of_log()
+    else:
+        if utils.is_arr_of_arr(pB):
+            num_factors = len(pB)
+            wB = np.empty(num_factors,dtype=object)
+            for factor in range(num_factors):
+                wB[factor] = spm_wnorm(pB[factor])
+        else:
+            num_factors = 1
+            wB = spm_wnorm(pB)
+    
+    pB = utils.to_numpy(pB)
 
     pB_infogain = 0
 
@@ -446,10 +448,10 @@ def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
             else:
                 previous_qs = qs_pi[t-1]
             
-            a_i = policy[t]
+            a_i = policy[t,0]
 
-            wB = wB[:, :, a_i] * (pB[:, :, a_i] > 0).astype("float")
-            pB_infogain = -qs_pi[t].dot(wB.dot(qs_prev))
+            wB_t = wB[:, :, a_i] * (pB[:, :, a_i] > 0).astype("float")
+            pB_infogain = -qs_pi[t].dot(wB_t.dot(qs_prev))
     else:
 
         for t in range(n_steps):
