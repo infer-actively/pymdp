@@ -19,14 +19,20 @@ def to_numpy(dist, flatten = False):
     """
     if isinstance(dist, (Categorical, Dirichlet)):            
         values = np.copy(dist.values)
+        if flatten:
+            if dist.IS_AOA:
+                for idx, arr in enumerate(values):
+                    values[idx] = arr.flatten()
+            else:
+                values = values.flatten()
     else:
         values = dist
-    if flatten:
-        if dist.IS_AOA:
-            for i in values:
-                values[i] = values[i].flatten()
-        else:
-            values = values.flatten()
+        if flatten:
+            if is_arr_of_arr(values):
+                for idx, arr in enumerate(values):
+                    values[idx] = arr.flatten()
+            else:
+                values = values.flatten()
     return values
 
 
