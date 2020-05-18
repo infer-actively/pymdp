@@ -8,6 +8,120 @@ sys.path.append(str(pathlib.Path(__file__).parent.parent.parent))
 from inferactively.distributions import Categorical, Dirichlet
 from inferactively import core
 
+
+# %% define some auxiliary functions that help generate likelihoods and other variables useful for testing
+
+def construct_generic_A(num_obs, n_states):
+    """
+    Generates a random likelihood array
+    """ 
+
+    num_modalities = len(num_obs)
+
+    if num_modalities == 1: # single modality case
+        A = np.random.rand(*(num_obs + n_states))
+        A = np.divide(A,A.sum(axis=0))
+    elif num_modalities > 1: # multifactor case
+        A = np.empty(num_modalities, dtype = object)
+        for modality,no in enumerate(num_obs):
+            tmp = np.random.rand((*([no] + n_states)))
+            tmp = np.divide(tmp,tmp.sum(axis=0))
+            A[modality] = tmp
+    return A
+
+def construct_pA(num_obs, n_states, prior_scale = 1.0):
+    """
+    Generates Dirichlet prior over a observation likelihood distribution (initialized to all ones * prior_scale parameter)
+    """ 
+
+    num_modalities = len(num_obs)
+
+    if num_modalities == 1: # single modality case
+        pA = prior_scale * np.ones((num_obs + n_states))
+    elif num_modalities > 1: # multifactor case
+        pA = np.empty(num_modalities, dtype = object)
+        for modality,no in enumerate(num_obs):
+            pA[modality] = prior_scale * np.ones((no, *n_states))
+
+    return pA
+
+def construct_generic_B(n_states, n_control):
+    """
+    Generates a fully controllable transition likelihood array, where each action (control state) corresponds to a move to the n-th state from any other state, for each control factor
+    """ 
+
+    num_factors = len(n_states)
+
+    if num_factors == 1: # single factor case
+        B = np.eye(n_states[0])[:, :, np.newaxis]
+        B = np.tile(B, (1, 1, n_control[0]))
+        B = B.transpose(1, 2, 0)
+    elif num_factors > 1: # multifactor case
+        B = np.empty(num_factors, dtype = object)
+        for factor,nc in enumerate(n_control):
+            tmp = np.eye(nc)[:, :, np.newaxis]
+            tmp = np.tile(tmp, (1, 1, nc))
+            B[factor] = tmp.transpose(1, 2, 0)
+
+    return B
+
+def construct_pB(n_states, n_control, prior_scale = 1.0):
+    """
+    Generates Dirichlet prior over a transition likelihood distribution (initialized to all ones * prior_scale parameter)
+    """ 
+
+    num_factors = len(n_states)
+
+    if num_factors == 1: # single factor case
+        pB = prior_scale * np.ones( (n_states[0], n_states[0]) )[:, :, np.newaxis]
+        pB = np.tile(pB, (1, 1, n_control[0]))
+        pB = pB.transpose(1, 2, 0)
+    elif num_factors > 1: # multifactor case
+        pB = np.empty(num_factors, dtype = object)
+        for factor,nc in enumerate(n_control):
+            tmp = prior_scale * np.ones( (nc, nc) )[:, :, np.newaxis]
+            tmp = np.tile(tmp, (1, 1, nc))
+            pB[factor] = tmp.transpose(1, 2, 0)
+
+    return pB
+
+def construct_generic_C(num_obs):
+    """
+    Generates a random C matrix
+    """ 
+
+    num_modalities = len(num_obs)
+
+    if num_modalities == 1: # single modality case
+        C = np.random.rand(num_obs[0])
+        C = np.divide(C,C.sum(axis=0))
+    elif num_modalities > 1: # multifactor case
+        C = np.empty(num_modalities, dtype = object)
+        for modality,no in enumerate(num_obs):
+            tmp = np.random.rand(no)
+            tmp = np.divide(tmp,tmp.sum())
+            C[modality] = tmp
+
+    return C
+
+def construct_init_qs(n_states):
+    """
+    Creates a random initial posterior
+    """
+
+    num_factors = len(n_states)
+    if num_factors == 1: 
+        qs = np.random.rand(n_states[0])
+        qs = qs / qs.sum()
+    elif num_factors > 1:
+        qs = np.empty(num_factors, dtype = object)
+        for factor, ns in enumerate(n_states):
+            tmp = np.random.rand(ns)
+            qs[factor] = tmp / tmp.sum()
+    
+    return qs
+
+
 # %%
 """ 
 @TODO :
@@ -67,154 +181,86 @@ from inferactively import core
 n_states = [3]
 n_control = [3]
 
-qs = Categorical(values = np.eye(*n_states)[0])
-
-B = np.eye(*n_states)[:, :, np.newaxis]
-B = np.tile(B, (1, 1, n_control[0]))
-B = B.transpose(1, 2, 0)
-
-B = Categorical(values = B)
+qs = Categorical(values = construct_init_qs(n_states))
+B = Categorical(values = construct_generic_B(n_states, n_control))
+pB = Dirichlet(values = construct_pB(n_states,n_control))
 
 n_step = 1
-policies = core.construct_policies(n_states, n_control, policy_len=n_step, control_fac_idx=[0])
+policies = core.construct_policies(n_states, n_control, policy_len=n_step)
 
 """
 1(a)(i) Single modality
 """
 
 num_obs = [3]
-num_modalities = len(num_obs)
 
-A = Categorical(values = np.random.rand(*(num_obs + n_states)))
-A.normalize()
+A = Categorical(values = construct_generic_A(num_obs,n_states))
+pA = Dirichlet(values = construct_pA(num_obs,n_states))
+C = Categorical(values = construct_generic_C(num_obs))
 
-C = Categorical(values = np.eye(*num_obs)[0])
-
-q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
-use_param_info_gain=False,pA=None,pB=None,gamma=16.0,return_numpy=True)
-
-# now do info gain about pA
-pA = Dirichlet(values = np.ones((num_obs + n_states)))
-q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
-use_param_info_gain=True,pA=pA,pB=None,gamma=16.0,return_numpy=True)
-
-# now do info gain about pB
-pB = Dirichlet(values = np.ones(B.shape))
 q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
 use_param_info_gain=True,pA=pA,pB=pB,gamma=16.0,return_numpy=True)
 
-# %%
+actions = core.sample_action(q_pi[0], policies, n_control, sampling_type="marginal_action")
+
 """
 1(a)(ii) Multiple modality
 """
 
 num_obs = [3, 4]
-num_modalities = len(num_obs)
 
-A_numpy = np.empty(num_modalities, dtype = object)
-for modality, no in enumerate(num_obs):
-    A_numpy[modality] = np.random.rand((*([no] + n_states)))
+A = Categorical(values = construct_generic_A(num_obs,n_states))
+pA = Dirichlet(values = construct_pA(num_obs,n_states))
+C = Categorical(values = construct_generic_C(num_obs))
 
-A = Categorical(values = A_numpy)
-A.normalize()
-
-C_numpy = np.empty(num_modalities, dtype = object)
-for modality, no in enumerate(num_obs):
-    C_numpy[modality] = np.random.rand(no)
-
-C = Categorical(values = C_numpy)
-C.normalize()
-
-q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
-use_param_info_gain=False,pA=None,pB=None,gamma=16.0,return_numpy=True)
-
-# now do info gain about pA
-pA_numpy = np.empty(num_modalities, dtype = object)
-for modality, no in enumerate(num_obs):
-    pA_numpy[modality] = np.ones((no, *n_states))
-
-pA = Dirichlet(values = pA_numpy)
-q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
-use_param_info_gain=True,pA=pA,pB=None,gamma=16.0,return_numpy=True)
-
-# now do info gain about pB
-pB = Dirichlet(values = np.ones(B.shape))
 q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
 use_param_info_gain=True,pA=pA,pB=pB,gamma=16.0,return_numpy=True)
+
+actions = core.sample_action(q_pi[0], policies, n_control, sampling_type="marginal_action")
+
 
 # %%
 """
 1(b) Single factor, multiple timestep test
 """
+n_states = [3]
+n_control = [3]
+
+qs = Categorical(values = construct_init_qs(n_states))
+B = Categorical(values = construct_generic_B(n_states, n_control))
+pB = Dirichlet(values = construct_pB(n_states,n_control))
+
 n_step = 3
-policies = core.construct_policies(n_states, n_control, policy_len=n_step, control_fac_idx=[0])
+policies = core.construct_policies(n_states, n_control, policy_len=n_step)
 
 """
 1(b)(i) Single modality
 """
 
 num_obs = [3]
-num_modalities = len(num_obs)
 
-A = Categorical(values = np.random.rand(*(num_obs + n_states)))
-A.normalize()
-# qo_pi = core.get_expected_obs(qs_pi, A)
+A = Categorical(values = construct_generic_A(num_obs,n_states))
+pA = Dirichlet(values = construct_pA(num_obs,n_states))
+C = Categorical(values = construct_generic_C(num_obs))
 
-C = Categorical(values = np.eye(*num_obs)[0])
-
-q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
-use_param_info_gain=False,pA=None,pB=None,gamma=16.0,return_numpy=True)
-
-# now do info gain about pA
-pA = Dirichlet(values = np.ones((num_obs + n_states)))
-q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
-use_param_info_gain=True,pA=pA,pB=None,gamma=16.0,return_numpy=True)
-
-# now do info gain about pB
-pB = Dirichlet(values = np.ones(B.shape))
 q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
 use_param_info_gain=True,pA=pA,pB=pB,gamma=16.0,return_numpy=True)
+actions = core.sample_action(q_pi[0], policies, n_control, sampling_type="marginal_action")
 
-# %%
 """
 1(b)(ii) Multiple modality
 """
 
 num_obs = [3, 4]
-num_modalities = len(num_obs)
 
-A_numpy = np.empty(num_modalities, dtype = object)
-for modality, no in enumerate(num_obs):
-    A_numpy[modality] = np.random.rand((*([no] + n_states)))
+A = Categorical(values = construct_generic_A(num_obs,n_states))
+pA = Dirichlet(values = construct_pA(num_obs,n_states))
+C = Categorical(values = construct_generic_C(num_obs))
 
-A = Categorical(values = A_numpy)
-A.normalize()
-
-# qo_pi = core.get_expected_obs(qs_pi, A)
-
-C_numpy = np.empty(num_modalities, dtype = object)
-for modality, no in enumerate(num_obs):
-    C_numpy[modality] = np.random.rand(no)
-
-C = Categorical(values = C_numpy)
-C.normalize()
-
-q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
-use_param_info_gain=False,pA=None,pB=None,gamma=16.0,return_numpy=True)
-
-# now do info gain about pA
-pA_numpy = np.empty(num_modalities, dtype = object)
-for modality, no in enumerate(num_obs):
-    pA_numpy[modality] = np.ones((no, *n_states))
-
-pA = Dirichlet(values = pA_numpy)
-q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
-use_param_info_gain=True,pA=pA,pB=None,gamma=16.0,return_numpy=True)
-
-# now do info gain about pB
-pB = Dirichlet(values = np.ones(B.shape))
 q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
 use_param_info_gain=True,pA=pA,pB=pB,gamma=16.0,return_numpy=True)
+actions = core.sample_action(q_pi[0], policies, n_control, sampling_type="marginal_action")
+
 
 # %%
 """
@@ -227,190 +273,89 @@ use_param_info_gain=True,pA=pA,pB=pB,gamma=16.0,return_numpy=True)
 
 n_states = [3, 2]
 n_control = [3, 2]
-num_factors = len(n_states)
 
-qs_numpy = np.empty(num_factors, dtype = object)
-for factor, ns in enumerate(n_states):
-    qs_numpy[factor] = np.random.rand(ns)
-
-qs = Categorical(values = qs_numpy)
-qs.normalize()
-
-B_numpy = np.empty(num_factors, dtype = object)
-for factor,nc in enumerate(n_control):
-    tmp = np.eye(nc)[:, :, np.newaxis]
-    tmp = np.tile(tmp, (1, 1, nc))
-    B_numpy[factor] = tmp.transpose(1, 2, 0)
-
-B = Categorical(values = B_numpy)
+qs = Categorical(values = construct_init_qs(n_states))
+B = Categorical(values = construct_generic_B(n_states, n_control))
+pB = Dirichlet(values = construct_pB(n_states,n_control))
 
 n_step = 1
-policies = core.construct_policies(n_states, n_control, policy_len=n_step, control_fac_idx=[0,1])
+policies = core.construct_policies(n_states, n_control, policy_len=n_step)
 
 """
 2(a)(i) Single modality
 """
 
 num_obs = [3]
-num_modalities = len(num_obs)
 
-A = Categorical(values = np.random.rand(*(num_obs + n_states)))
-A.normalize()
+A = Categorical(values = construct_generic_A(num_obs,n_states))
+pA = Dirichlet(values = construct_pA(num_obs,n_states))
+C = Categorical(values = construct_generic_C(num_obs))
 
-C = Categorical(values = np.eye(*num_obs)[0])
-
-q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
-use_param_info_gain=False,pA=None,pB=None,gamma=16.0,return_numpy=True)
-
-# now do info gain about pA
-pA = Dirichlet(values = np.ones((num_obs + n_states)))
-q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
-use_param_info_gain=True,pA=pA,pB=None,gamma=16.0,return_numpy=True)
-
-# now do info gain about pB
-pB_numpy = np.empty(num_factors, dtype = object)
-for factor,nc in enumerate(n_control):
-    tmp = np.ones((nc,nc))[:, :, np.newaxis]
-    tmp = np.tile(tmp, (1, 1, nc))
-    pB_numpy[factor] = tmp.transpose(1, 2, 0)
-
-pB = Dirichlet(values = pB_numpy)
 q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
 use_param_info_gain=True,pA=pA,pB=pB,gamma=16.0,return_numpy=True)
+actions = core.sample_action(q_pi[0], policies, n_control, sampling_type="marginal_action")
 
-# %%
 """
 2(a)(i) Multiple modality
 """
 
 num_obs = [3, 4]
-num_modalities = len(num_obs)
 
-A_numpy = np.empty(num_modalities, dtype = object)
-for modality, no in enumerate(num_obs):
-    A_numpy[modality] = np.random.rand((*([no] + n_states)))
+A = Categorical(values = construct_generic_A(num_obs,n_states))
+pA = Dirichlet(values = construct_pA(num_obs,n_states))
+C = Categorical(values = construct_generic_C(num_obs))
 
-A = Categorical(values = A_numpy)
-A.normalize()
-
-C_numpy = np.empty(num_modalities, dtype = object)
-for modality, no in enumerate(num_obs):
-    C_numpy[modality] = np.random.rand(no)
-
-C = Categorical(values = C_numpy)
-C.normalize()
-
-q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
-use_param_info_gain=False,pA=None,pB=None,gamma=16.0,return_numpy=True)
-
-# now do info gain about pA
-pA_numpy = np.empty(num_modalities, dtype = object)
-for modality, no in enumerate(num_obs):
-    pA_numpy[modality] = np.ones((no, *n_states))
-
-pA = Dirichlet(values = pA_numpy)
-q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
-use_param_info_gain=True,pA=pA,pB=None,gamma=16.0,return_numpy=True)
-
-# now do info gain about pB
-pB_numpy = np.empty(num_factors, dtype = object)
-for factor,nc in enumerate(n_control):
-    tmp = np.ones((nc,nc))[:, :, np.newaxis]
-    tmp = np.tile(tmp, (1, 1, nc))
-    pB_numpy[factor] = tmp.transpose(1, 2, 0)
-
-# now do info gain about pB
-pB = Dirichlet(values = pB_numpy)
 q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
 use_param_info_gain=True,pA=pA,pB=pB,gamma=16.0,return_numpy=True)
+actions = core.sample_action(q_pi[0], policies, n_control, sampling_type="marginal_action")
 
 # %%
 """
-2(b) Multiple factor, multiple timestep test
+2(a) Multiple factor, single timestep test
 """
+
+n_states = [3, 2]
+n_control = [3, 2]
+
+qs = Categorical(values = construct_init_qs(n_states))
+B = Categorical(values = construct_generic_B(n_states, n_control))
+pB = Dirichlet(values = construct_pB(n_states,n_control))
+
 n_step = 3
-policies = core.construct_policies(n_states, n_control, policy_len=n_step, control_fac_idx=[0])
-
-# policy_i = policies[2]
-# qs_pi = core.get_expected_states(qs, B, policy_i)
-# qs_pi = core.get_expected_states(qs, B, policy_i, return_numpy=True)
+policies = core.construct_policies(n_states, n_control, policy_len=n_step)
 
 """
-2(b)(i) Single modality
+2(a)(i) Single modality
 """
 
 num_obs = [3]
-num_modalities = len(num_obs)
 
-A = Categorical(values = np.random.rand(*(num_obs + n_states)))
-A.normalize()
+A = Categorical(values = construct_generic_A(num_obs,n_states))
+pA = Dirichlet(values = construct_pA(num_obs,n_states))
+C = Categorical(values = construct_generic_C(num_obs))
 
-C = Categorical(values = np.eye(*num_obs)[0])
-
-q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
-use_param_info_gain=False,pA=None,pB=None,gamma=16.0,return_numpy=True)
-
-# now do info gain about pA
-pA = Dirichlet(values = np.ones((num_obs + n_states)))
-q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
-use_param_info_gain=True,pA=pA,pB=None,gamma=16.0,return_numpy=True)
-
-# now do info gain about pB
-pB_numpy = np.empty(num_factors, dtype = object)
-for factor,nc in enumerate(n_control):
-    tmp = np.ones((nc,nc))[:, :, np.newaxis]
-    tmp = np.tile(tmp, (1, 1, nc))
-    pB_numpy[factor] = tmp.transpose(1, 2, 0)
-
-pB = Dirichlet(values = pB_numpy)
 q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
 use_param_info_gain=True,pA=pA,pB=pB,gamma=16.0,return_numpy=True)
+actions = core.sample_action(q_pi[0], policies, n_control, sampling_type="marginal_action")
 
-# %%
 """
-2(b)(i) Multiple modality
+2(a)(i) Multiple modality
 """
 
 num_obs = [3, 4]
-num_modalities = len(num_obs)
 
-A_numpy = np.empty(num_modalities, dtype = object)
-for modality, no in enumerate(num_obs):
-    A_numpy[modality] = np.random.rand((*([no] + n_states)))
+A = Categorical(values = construct_generic_A(num_obs,n_states))
+pA = Dirichlet(values = construct_pA(num_obs,n_states))
+C = Categorical(values = construct_generic_C(num_obs))
 
-A = Categorical(values = A_numpy)
-A.normalize()
-
-C_numpy = np.empty(num_modalities, dtype = object)
-for modality, no in enumerate(num_obs):
-    C_numpy[modality] = np.random.rand(no)
-
-C = Categorical(values = C_numpy)
-C.normalize()
-
-q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
-use_param_info_gain=False,pA=None,pB=None,gamma=16.0,return_numpy=True)
-
-# now do info gain about pA
-pA_numpy = np.empty(num_modalities, dtype = object)
-for modality, no in enumerate(num_obs):
-    pA_numpy[modality] = np.ones((no, *n_states))
-
-pA = Dirichlet(values = pA_numpy)
-q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
-use_param_info_gain=True,pA=pA,pB=None,gamma=16.0,return_numpy=True)
-
-# now do info gain about pB
-pB_numpy = np.empty(num_factors, dtype = object)
-for factor,nc in enumerate(n_control):
-    tmp = np.ones((nc,nc))[:, :, np.newaxis]
-    tmp = np.tile(tmp, (1, 1, nc))
-    pB_numpy[factor] = tmp.transpose(1, 2, 0)
-
-# now do info gain about pB
-pB = Dirichlet(values = pB_numpy)
 q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
 use_param_info_gain=True,pA=pA,pB=pB,gamma=16.0,return_numpy=True)
+actions = core.sample_action(q_pi[0], policies, n_control, sampling_type="posterior_sample")
+
+# %%
+
+
+
 
 
 # %%

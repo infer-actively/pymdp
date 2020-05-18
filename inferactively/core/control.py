@@ -569,7 +569,7 @@ def sample_action(q_pi, policies, n_control, sampling_type="marginal_action"):
         
         # weight each action according to its integrated posterior probability over policies and timesteps
         for pol_idx, policy in enumerate(policies):
-            for t in policy.shape[0]:
+            for t in range(policy.shape[0]):
                 for factor_i, action_i in enumerate(policy[t,:]):
                     action_marginals[factor_i][action_i] += q_pi[pol_idx]
         
@@ -581,5 +581,9 @@ def sample_action(q_pi, policies, n_control, sampling_type="marginal_action"):
         if utils.is_distribution(q_pi):
             policy_index = q_pi.sample()
             selected_policy = policies[policy_index]
-    
+        else:
+            q_pi = Categorical(values = q_pi)
+            policy_index = q_pi.sample()
+            selected_policy = policies[policy_index]
+
     return selected_policy
