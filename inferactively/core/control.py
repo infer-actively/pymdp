@@ -535,7 +535,6 @@ def construct_policies(n_states, n_control=None, policy_len=1, control_fac_idx=N
 def sample_action(q_pi, policies, n_control, sampling_type="marginal_action"):
     """
     Samples action from posterior over policies, using one of two methods. 
-    @TODO: Needs to be amended for use with multi-step policies (where policies is a list of np.arrays (nStep x nFactor), not just a list of tuples as it is now)
     Parameters
     ----------
     q_pi [1D numpy.ndarray or Categorical]:

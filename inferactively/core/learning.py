@@ -23,24 +23,24 @@ def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, return_numpy=True, modal
     - A [numpy nd.array, object-like array of arrays, or Categorical (either single-modality or AoA)]:
         The observation likelihood of the generative model. 
     - obs [numpy 1D array, array-of-arrays (with 1D numpy array entries), int or tuple]:
-        A discrete observation used in the update equation
-    - Qx [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
-            Current marginal posterior beliefs about hidden state factors
+        A discrete observation (possible multi-modality) used in the update equation
+    - qs [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+        Current marginal posterior beliefs about hidden state factors
     - lr [float, optional]:
-            Learning rate.
+        Learning rate.
     - return_numpy [bool, optional]:
         Logical flag to determine whether output is a numpy array or a Dirichlet
     - modalities [list, optional]:
         Indices (in terms of range(n_modalities)) of the observation modalities to include in learning.
-        Defaults to 'all, meaning that observation likelihood matrices for all modalities
-        are updated as a function of observations in the different modalities.
+        Defaults to 'all', meaning that observation likelihood matrices for all modalities
+        are updated using their respective observations.
     """
 
     pA = utils.to_numpy(pA)
 
     if utils.is_arr_of_arr(pA):
         n_modalities = len(pA)
-        n_observations = [pA[m].shape[0] for m in range(n_modalities)]
+        n_observations = [pA[modality].shape[0] for modality in range(n_modalities)]
     else:
         n_modalities = 1
         n_observations = [pA.shape[0]]
@@ -57,7 +57,7 @@ def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, return_numpy=True, modal
     # observation indices
     elif isinstance(obs, tuple):
         obs = np.array(
-            [np.eye(n_observations[g])[obs[g]] for g in range(n_modalities)], dtype=object
+            [np.eye(n_observations[modality])[obs[modality]] for modality in range(n_modalities)], dtype=object
         )
 
     # convert to Categorical to make the cross product easier
@@ -65,20 +65,20 @@ def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, return_numpy=True, modal
 
     if modalities == "all":
         if n_modalities == 1:
-            da = obs.cross(qs, return_numpy=True)
-            da = da * (A > 0).astype("float")
-            pA_updated = pA_updated + (lr * da)
+            dfda = obs.cross(qs, return_numpy=True)
+            dfda = dfda * (A > 0).astype("float")
+            pA_updated = pA_updated + (lr * dfda)
 
         elif n_modalities > 1:
-            for g in range(n_modalities):
-                da = obs[g].cross(qs, return_numpy=True)
-                da = da * (A[g] > 0).astype("float")
-                pA_updated[g] = pA_updated[g] + (lr * da)
+            for modality in range(n_modalities):
+                dfda = obs[modality].cross(qs, return_numpy=True)
+                dfda = dfda * (A[modality] > 0).astype("float")
+                pA_updated[modality] = pA_updated[modality] + (lr * dfda)
     else:
-        for g_idx in modalities:
-            da = obs[g_idx].cross(qs, return_numpy=True)
-            da = da * (A[g_idx] > 0).astype("float")
-            pA_updated[g_idx] = pA_updated[g_idx] + (lr * da)
+        for modality in modalities:
+            dfda = obs[modality].cross(qs, return_numpy=True)
+            dfda = dfda * (A[modality] > 0).astype("float")
+            pA_updated[modality] = pA_updated[modality] + (lr * dfda)
 
     return pA_updated
 
@@ -129,19 +129,19 @@ def update_transition_dirichlet(
 
     if factors == "all":
         if n_factors == 1:
-            db = qs.cross(qs_prev, return_numpy=True)
-            db = db * (B[:, :, actions[0]] > 0).astype("float")
-            pB_updated = pB_updated + (lr * db)
+            dfdb = qs.cross(qs_prev, return_numpy=True)
+            dfdb = dfdb * (B[:, :, actions[0]] > 0).astype("float")
+            pB_updated = pB_updated + (lr * dfdb)
 
         elif n_factors > 1:
-            for f in range(n_factors):
-                db = qs[f].cross(qs_prev[f], return_numpy=True)
-                db = db * (B[f][:, :, actions[f]] > 0).astype("float")
-                pB_updated[f] = pB_updated[f] + (lr * db)
+            for factor in range(n_factors):
+                dfdb = qs[factor].cross(qs_prev[factor], return_numpy=True)
+                dfdb = dfdb * (B[factor][:, :, actions[factor]] > 0).astype("float")
+                pB_updated[factor] = pB_updated[factor] + (lr * dfdb)
     else:
-        for f_idx in factors:
-            db = qs[f_idx].cross(qs_prev[f_idx], return_numpy=True)
-            db = db * (B[f_idx][:, :, actions[f_idx]] > 0).astype("float")
-            pB_updated[f_idx] = pB_updated[f_idx] + (lr * db)
+        for factor in factors:
+            dfdb = qs[factor].cross(qs_prev[factor], return_numpy=True)
+            dfdb = dfdb * (B[factor][:, :, actions[factor]] > 0).astype("float")
+            pB_updated[factor] = pB_updated[factor] + (lr * dfdb)
 
     return pB_updated

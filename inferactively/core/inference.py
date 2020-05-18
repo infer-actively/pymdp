@@ -22,7 +22,7 @@ EP = "EP"
 CV = "CV"
 
 
-def update_posterior_states(A, obs, prior=None, method=FPI, return_numpy=True):
+def update_posterior_states(A, obs, prior=None, return_numpy=True, method=FPI, **kwargs):
     """ 
     Update marginal posterior over hidden states using variational inference
         Can optionally set message passing algorithm used for inference
@@ -52,7 +52,8 @@ def update_posterior_states(A, obs, prior=None, method=FPI, return_numpy=True):
                  'BP'  - Belief propagation (not implemented)
                  'EP'  - Expectation propagation (not implemented)
                  'CV'  - CLuster variation method (not implemented)
-    **kwargs: List of keyword/parameter arguments corresponding to parameter values for the respective variational inference algorithm
+    - **kwargs: 
+        List of keyword/parameter arguments corresponding to parameter values for the respective variational inference algorithm
 
     Returns
     ----------
@@ -82,7 +83,7 @@ def update_posterior_states(A, obs, prior=None, method=FPI, return_numpy=True):
         prior = process_priors(prior, n_factors)
 
     if method is FPI:
-        qs = run_fpi(A, obs, n_observations, n_states, prior)
+        qs = run_fpi(A, obs, n_observations, n_states, prior, **kwargs)
     elif method is VMP:
         raise NotImplementedError(f"{VMP} is not implemented")
     elif method is MMP:

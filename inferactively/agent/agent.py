@@ -12,14 +12,16 @@ from inferactively.distributions import Categorical, Dirichlet
 from inferactively.core import inference, control
 
 class Agent(object):
-    """ Agent class 
-    @TODO: Implement methods for learning Dirichlet parameters, and accomodate multi-step policies
+    """ 
+    Agent class 
     """
 
     def __init__(
         self,
         A=None,
+        pA=None,
         B=None,
+        pB=None,
         C=None,
         D=None,
         n_states=None,
@@ -27,8 +29,11 @@ class Agent(object):
         n_controls=None,
         policy_len=1,
         control_fac_idx=None,
-        possible_policies=None,
+        policies=None,
         gamma=16.0,
+        use_utility=True,
+        use_states_info_gain=True,
+        use_param_info_gain=False,
         action_sampling="marginal_action",
         inference_algo="FPI",
         inference_params=None,
@@ -40,7 +45,7 @@ class Agent(object):
         self.action_sampling = action_sampling
 
 
-        """ Setup A matrices """
+        """ Initialise observation model (A matrices) """
         if A is not None:
             # Create `Categorical`
             if not isinstance(A, Categorical):
@@ -51,10 +56,10 @@ class Agent(object):
             # Determine number of modalities and observations
             if self.A.IS_AOA:
                 self.n_modalities = self.A.shape[0]
-                self.n_observations = [self.A[g].shape[0] for g in range(self.n_modalities)]
+                self.n_observations = [self.A[modality].shape[0] for modality in range(self.n_modalities)]
             else:
                 self.n_modalities = 1
-                self.n_observations = self.A.shape[0]
+                self.n_observations = [self.A.shape[0]]
             construct_A_flag = False
         else:
             
@@ -66,8 +71,17 @@ class Agent(object):
             self.n_observations = n_observations
             self.n_modalities = len(self.n_observations)
             construct_A_flag = True
+        
+        """ Initialise prior Dirichlet parameters on observation model (pA matrices) """
+        if pA is not None:
+            if not isinstance(pA, Dirichlet):
+                self.pA = Dirichlet(values = pA)
+            else:
+                self.pA = pA
+        else:
+            self.pA = None
 
-        """ Setup A matrices """
+        """ Initialise transition model (B matrices) """
         if B is not None:
             if not isinstance(B, Categorical):
                 self.B = Categorical(values=B)
@@ -89,7 +103,18 @@ class Agent(object):
             self.n_factors = len(self.n_factors)
             construct_B_flag = True
 
-        # Users have the option to make only certain factors conrollable
+        """ Initialise prior Dirichlet parameters on transition model (pB matrices) """
+        if pB is not None:
+            if not isinstance(pB, Dirichlet):
+                self.pB = Dirichlet(values = pA)
+            else:
+                self.pB = pB
+        else:
+            self.pB = None
+
+        # Users have the option to make only certain factors controllable.
+        # default behaviour is to make all hidden state factors controllable
+        # (i.e. self.n_states == self.n_controls)
         if control_fac_idx is None:
             self.control_fac_idx = list(range(self.n_factors))
         else:
@@ -102,12 +127,12 @@ class Agent(object):
         else:
             self.n_controls = n_controls
 
-        # Again, the use can specify possible policies, or
-        # all possible combinatins of policies will be considered
-        if possible_policies is None:
-            _, self.possible_policies = self._construct_n_controls()
+        # Again, the use can specify a set of possible policies, or
+        # all possible combinations of actions and timesteps will be considered
+        if policies is None:
+            _, self.policies = self._construct_n_controls()
         else:
-            self.possible_policies = possible_policies
+            self.policies = policies
 
         # Construct prior preferences (uniform if not specified)
         if C is not None:
@@ -133,25 +158,23 @@ class Agent(object):
         if construct_B_flag:
             self.B = self._construct_B_distribution()
 
-        self.inference_algo = inference_algo
         if inference_algo is None:
-            self.inference_algo = self._get_default_params()
+            self.inference_algo = "FPI"
+            self.inference_params = self._get_default_params()
         else:
-            self.inference_params = inference_params
+            self.inference_algo = inference_algo
+            self.inference_params = self._get_default_params()
 
         self.qs = self.D
         self.action = None
-        self.pA = None
-        self.pB = None
 
     def _construct_A_distribution(self):
         if self.n_modalities == 1:
-            A = Categorical(values=np.random.rand(*(self.n_observations + self.n_states)))
+            A = Categorical(values=np.random.rand(*(self.n_observations[0] + self.n_states)))
         else:
             A = np.empty(self.n_modalities, dtype=object)
-            for g, No in enumerate(self.n_observations):
-                A[g] = np.random.rand(*([No] + self.n_states))
-
+            for modality, no in enumerate(self.n_observations):
+                A[modality] = np.random.rand(*([no] + self.n_states))
             A = Categorical(values=A)
         A.normalize()
         return A
@@ -165,13 +188,13 @@ class Agent(object):
         else:
             B = np.empty(self.n_factors, dtype=object)
 
-            for f, Ns in enumerate(self.n_states):
-                B_basic = np.eye(Ns)[:, :, np.newaxis]
-                if f in self.control_fac_idx:
-                    B[f] = np.tile(B_basic, (1, 1, self.n_controls[f]))
-                    B[f] = B[f].transpose(1, 2, 0)
+            for factor, ns in enumerate(self.n_states):
+                B_basic = np.eye(ns)[:, :, np.newaxis]
+                if factor in self.control_fac_idx:
+                    B[factor] = np.tile(B_basic, (1, 1, self.n_controls[factor]))
+                    B[factor] = B[factor].transpose(1, 2, 0)
                 else:
-                    B[f] = B_basic
+                    B[factor] = B_basic
 
         B = Categorical(values=B)
         B.normalize()
@@ -195,11 +218,10 @@ class Agent(object):
         return D
 
     def _construct_n_controls(self):
-        n_controls, possible_policies = control.construct_policies(
-            self.n_states, self.n_factors, self.control_fac_idx, self.policy_len
-        )
+        n_controls, policies = control.construct_policies(
+            self.n_states, self.n_controls, self.policy_len, self.control_fac_idx)
 
-        return n_controls, possible_policies
+        return n_controls, policies
 
     def reset(self, init_qs=None):
         if init_qs is None:
@@ -223,7 +245,7 @@ class Agent(object):
                 empirical_prior = self.D.log()
         else:
             if self.action is not None:
-                empirical_prior = control.get_expected_states(self.qs, self.B.log(), self.action)
+                empirical_prior = control.get_expected_states(self.qs, self.B, self.action)
             else:
                 empirical_prior = self.D
 
@@ -240,24 +262,28 @@ class Agent(object):
         return qs
 
     def infer_policies(self):
+
         q_pi, efe = control.update_posterior_policies(
             self.qs,
             self.A,
             self.B,
             self.C,
-            self.possible_policies,
+            self.policies,
+            use_utility=self.use_utility,
+            use_states_info_gain=self.use_states_info_gain,
+            use_param_info_gain=self.use_param_info_gain,
             self.pA,
             self.pB,
             self.gamma,
             return_numpy=False,
         )
-        self.efe = efe
         self.q_pi = q_pi
+        self.efe = efe
         return q_pi, efe
 
     def sample_action(self):
         action = control.sample_action(
-            self.q_pi, self.possible_policies, self.n_controls, self.action_sampling
+            self.q_pi, self.policies, self.n_controls, self.action_sampling
         )
 
         self.action = action
@@ -268,7 +294,7 @@ class Agent(object):
         method = self.inference_algo
 
         if method == "FPI":
-            default_params = {"dF": 1.0, "dF_tol": 0.001}
+            default_params = {"num_iter": 10, "dF": 1.0, "dF_tol": 0.001}
         if method == "VMP":
             raise NotImplementedError("VMP is not implemented")
         if method == "MMP":
