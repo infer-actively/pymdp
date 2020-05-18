@@ -93,14 +93,6 @@ class VisualForagingEnv(Env):
 
     def _get_observation(self):
 
-        # prob_obs = np.empty(self.n_modalities, dtype=object)
-        # for g in range(self.n_modalities):
-        #     prob_obs[g] = (
-        #         self._likelihood_dist[g].dot(self._state, return_numpy=True).flatten()
-        #     )
-        
-        # prob_obs = Categorical(values=prob_obs)
-
         prob_obs = self._likelihood_dist.dot(self._state)
 
         return prob_obs.sample()

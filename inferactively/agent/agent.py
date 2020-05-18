@@ -240,12 +240,12 @@ class Agent(object):
 
         if self.inference_algo is "FPI":
             if self.action is not None:
-                empirical_prior = control.get_expected_states(self.qs, self.B.log(), self.action)
+                empirical_prior = control.get_expected_states(self.qs, self.B.log(), self.action.reshape(1,-1))
             else:
                 empirical_prior = self.D.log()
         else:
             if self.action is not None:
-                empirical_prior = control.get_expected_states(self.qs, self.B, self.action)
+                empirical_prior = control.get_expected_states(self.qs, self.B, self.action.reshape(1,-1))
             else:
                 empirical_prior = self.D
 
@@ -269,9 +269,9 @@ class Agent(object):
             self.B,
             self.C,
             self.policies,
-            use_utility=self.use_utility,
-            use_states_info_gain=self.use_states_info_gain,
-            use_param_info_gain=self.use_param_info_gain,
+            self.use_utility,
+            self.use_states_info_gain,
+            self.use_param_info_gain,
             self.pA,
             self.pB,
             self.gamma,

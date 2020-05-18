@@ -582,5 +582,5 @@ def sample_action(q_pi, policies, n_control, sampling_type="marginal_action"):
             q_pi = Categorical(values = q_pi)
             policy_index = q_pi.sample()
             selected_policy = policies[policy_index]
-
+    
     return selected_policy

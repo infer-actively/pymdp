@@ -1,4 +1,8 @@
+import sys
+import pathlib
 import numpy as np
+
+sys.path.append(str(pathlib.Path(__file__).parent.parent.parent))
 
 from inferactively import core
 from inferactively.distributions import Categorical, Dirichlet
@@ -29,7 +33,7 @@ C = np.empty(env.n_modalities, dtype=object)
 for g, No in enumerate(env.n_observations):
     C[g] = np.zeros(No)
 
-_, possible_policies = core.construct_policies(env.n_states, env.n_factors, [0], 1)
+policies, n_control = core.construct_policies(env.n_states, None, 1, [0])
 
 obs = env.reset()
 
@@ -39,16 +43,16 @@ prior = env.get_uniform_posterior()
 
 for t in range(T):
 
-    Qs = core.update_posterior_states(A, obs, prior, return_numpy=False)
+    qs = core.update_posterior_states(A, obs, prior, return_numpy=False)
 
     msg = """[{}] Inference [location {} / scene {}] 
      Observation [location {} / feature {}] """
-    print(msg.format(t, Qs[0].sample(), Qs[1].sample(), obs[0], obs[1]))
+    print(msg.format(t, np.argmax(qs[0].values), np.argmax(qs[1].values), obs[0], obs[1]))
 
-    Q_pi, _ = core.update_posterior_policies(Qs, A, B, C, possible_policies)
+    q_pi, efe = core.update_posterior_policies(qs, A, B, C, policies)
 
     action = core.sample_action(
-        Q_pi, possible_policies, env.n_control, sampling_type="marginal_action"
+        q_pi, policies, env.n_control, sampling_type="marginal_action"
     )
 
     obs = env.step(action)
@@ -56,5 +60,5 @@ for t in range(T):
     msg = """[{}] Action [Saccade to location {}]"""
     print(msg.format(t, action[0]))
 
-    prior = core.get_expected_states(Qs, B.log(), action)
+    prior = core.get_expected_states(qs, B.log(), action.reshape(1,-1))
 
