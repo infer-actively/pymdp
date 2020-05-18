@@ -9,39 +9,8 @@ __author__: Conor Heins, Beren Millidge, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 from inferactively.core.maths import spm_dot, spm_norm, softmax, calc_free_energy
-"""
-# basic logic of action-perception loop when using MMP
-
-# Time loop over generative process
-obs_sequence = np.zeros( (1,T) )
-for current_T in range(T):
-    # sample an observation from the generative process
-    obs_sequence[current_T] = sample_obs(current_T, last_action)
-
-    # make the first observation be as 'far back in time' as the agent can consider (based on its policy horizon)
-    obs_sequence_trimmed = obs_sequence[max(0, current_T - policy_horizon) : current_T ] 
-
-    # THIS IS WHERE MMP FUNCTION TAKES OVER
-    for policy_i in policies:
-        for i in range(num_iter):
-            for window_t in range(0,policy_horizon):
-       
-                for modality in range(n_modalities):
-                    # likelihood *= spm_dot(A[modality], obs[window_t][modality], obs_mode=True)
-                    likelihood *= A[modality][obs_sequence_trimmed[window_t][modality],:]
-                lnA = np.log(likelihood + 1e-16)
-                
-                for f in range(Nf):
-                    if window_t < current_T:
-                        lnA = spm_dot(lnA,qs[policy_][window_t],f)
-                        #past inference
-                    if window_t == current_T:
-                        #present inference
-                    if window_t > current_T:
-                        #future inference
-            """
         
-def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, dF=1.0, dF_tol=0.001, tau = 0.25, previous_actions=None,use_gradient_descent=False):
+def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, dF=1.0, dF_tol=0.001, previous_actions=None, use_gradient_descent=False, tau = 0.25):
     """
     Optimise marginal posterior beliefs about hidden states using marginal message-passing scheme (MMP) developed
     by Thomas Parr and colleagues, see https://github.com/tejparr/nmpassing
@@ -83,11 +52,23 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
         under actions that are known to have been taken. The first dimension of previous-arrays (previous_actions.shape[0]) encodes how far back in time
         the agent is considering. The first timestep of this either corresponds to either the first timestep of the generative process or the f
         first timestep of the policy horizon (whichever is sooner in time).  (optional)
+    -'use_gradient_descent' [bool]:
+        Flag to indicate whether to use gradient descent to optimise posterior beliefs.
+    -'tau' [float]:
+        Learning rate for gradient descent (only used if use_gradient_descent is True)
+ 
   
     Returns
     ----------
-    -'qs_array' [list of length T of numpy 1D arrays or array of arrays (with 1D numpy array entries):
+    -'qs' [list of length T of numpy 1D arrays or array of arrays (with 1D numpy array entries):
         Marginal posterior beliefs over hidden states (single- or multi-factor) achieved via marginal message pasing
+    -'qss' [list of lists of length T of numpy 1D arrays or array of arrays (with 1D numpy array entries):
+        Marginal posterior beliefs about hidden states (single- or multi-factor) held at each timepoint, *about* each timepoint of the observation
+        sequence
+    -'F' [2D np.ndarray]:
+        Variational free energy of beliefs about hidden states, indexed by time point and variational iteration
+    -'F_pol' [float]:
+        Total free energy of the policy under consideration.
     """
 
     # get model dimensions
@@ -113,8 +94,9 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
     """
 
     # compute time-window, taking into account boundary conditions
-    
     obs_range = range(max(0,curr_t-t_horizon),curr_t)
+
+    # likelihood of observations under configurations of hidden causes (over time)
     likelihood = np.empty(len(obs_range), dtype = object)
     for t in range(len(obs_range)):
         likelihood_t = np.ones(tuple(n_states))
@@ -149,13 +131,15 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
         n_steps, n_factors [0 1 2 0;
                             1 2 0 1]
     """
-    obs[t-1:curr_t]
-    relative_t = max(0, curr_t - t_horizon)
-    #(1:curr_t+1)
 
-    full_policy = np.vstack( (previous_actions, policies))
+    if previous_actions is None:
+        full_policy = policies
+    else:
+        full_policy = np.vstack( (previous_actions, policies))
+
     qss = [[] for i in range(1, len(qs)-1)]
     F = np.zeros((len(qs), num_iter))
+    F_pol = 0.0
     for t in range(1, len(qs)-1):
         for n in range(num_iter):
             lnBpast_tensor = np.empty(n_factors,dtype=object)         
@@ -164,48 +148,27 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
                     lnA = spm_dot(likelihood[t],qs[t],f)
                 else:
                     lnA = np.zeros(num_states[f])
-                lnBpast = 0.5 * B[f][:,:,full_policy[t-1,f].dot(qs[t-1][f])   
+                lnBpast = 0.5 * B[f][:,:,full_policy[t-1,f].dot(qs[t-1][f])
                 lnBfuture = 0.5 * spm_norm(B[f][:,:,full_policy[t+1,f]].T).dot(qs[t+1][f])
                 lnBpast_tensor[f] = 2 * lnBpast         
                 if use_gradient_descent:
                     # gradients
-                    lns = np.log(qs[t][f] + 1e-16)
-                    e = (lnA + lnBpast + lnBfuture) - lns
-                    v += tau * e
-                    qs = softmax(v)
+                    lns = np.log(qs[t][f] + 1e-16) # current estimate
+                    e = (lnA + lnBpast + lnBfuture) - lns # prediction error
+                    lns += tau * e # increment the current (log) belief with the prediction error
+                    qs = softmax(lns)
                     qs[t][f] = qs
                     qss[t].append(qs)
                 else:
+                    # free energy minimum for the factor in question
                     qs[t][f] = softmax(lnA + lnBpast + lnBfuture)
                     qss[t].append(qs[t][f])
             
             F[t,n] = calc_free_energy(qs[t], lnBpast_tensor, n_factors, likelihood[t])
+            F_pol += F[t,n]
     
-    return qs, qss,F
-
- 
-    """
-    
+    return qs, qss, F, F_pol
 
 
-    """
-    =========== Step 1 ===========
-        Loop over policies to infer expected states under different actions (in the past and future, relative to the current timestep).
-        Within each policy, num_iter variational iterations are run to optimize beliefs about hidden states expected (in the future and past)
-        under that policy.
-    """
-
-    for policy in policies:
-
-        curr_iter = 0
-
-        while curr_iter < num_iter and dF > dF_tol:
-            
-            """
-            Loop over policy horizon of currently-considered policy
-            """
-
-            for tt in range(0,t_horizon): 
-            
 
 
