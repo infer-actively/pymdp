@@ -410,6 +410,221 @@ class TestControl(unittest.TestCase):
         for policy in policies:
             self.assertEqual(policy.shape[0], policy_len)
     
+    def test_expected_utility(self):
+        """
+        Test for the expected utility function, for a simple single factor generative model 
+        where there are imbalances in the preferences for different outcomes. Test for both single
+        timestep policy horizons and multiple timestep horizons
+        """
+
+        n_states = [2]
+        n_control = [2]
+
+        qs = Categorical(values = construct_init_qs(n_states))
+        B = Categorical(values = construct_generic_B(n_states, n_control))
+
+        # single timestep
+        n_step = 1
+        policies = core.construct_policies(n_states, n_control, policy_len=n_step)
+
+        # single observation modality
+        num_obs = [2]
+
+        # create noiseless identity A matrix
+        A = Categorical(values = np.eye(num_obs[0]))
+
+        # create imbalance in preferences for observations
+        C = Categorical(values = np.eye(num_obs[0])[1])
+
+        utilities = np.zeros(len(policies))
+
+        for idx, policy in enumerate(policies):
+
+            qs_pi = core.get_expected_states(qs, B, policy)
+            qo_pi = core.get_expected_obs(qs_pi, A)
+
+            utilities[idx] += core.calc_expected_utility(qo_pi, C)
+        
+        self.assertGreater(utilities[1],utilities[0])
+
+        n_states = [3]
+        n_control = [3]
+
+        qs = Categorical(values = construct_init_qs(n_states))
+        B = Categorical(values = construct_generic_B(n_states, n_control))
+
+        # 3-step policies -- one involves going to state 0 two times in a row, and then state 2 at the end
+        #                 -- one involves going to state 1 three times in a row
+
+        policies = [np.array( [0,0,2]).reshape(-1,1), np.array([1, 1, 1]).reshape(-1,1)]
+        
+        # single observation modality
+        num_obs = [3]
+
+        # create noiseless identity A matrix
+        A = Categorical(values = np.eye(num_obs[0]))
+
+        # create imbalance in preferences for observations
+        # this is designed to illustrate the time-integrated nature of the expected free energy
+        #  -- even though the first observation (index 0) is the most preferred, the policy 
+        # that frequents this observation the most is actually not optimal, because that policy
+        # ends up visiting a less preferred state at the end. 
+        C = Categorical(values = np.array([1.2, 1, 0.5]) )
+
+        utilities = np.zeros(len(policies))
+
+        for idx, policy in enumerate(policies):
+
+            qs_pi = core.get_expected_states(qs, B, policy)
+            qo_pi = core.get_expected_obs(qs_pi, A)
+
+            utilities[idx] += core.calc_expected_utility(qo_pi, C)
+        
+        self.assertGreater(utilities[1],utilities[0])
+    
+    def test_state_info_gain(self):
+        """
+        Test the states_info_gain function. Demonstrates working
+        by manipulating uncertainty in the likelihood matrices (A or B)
+        in a ways that alternatively change the resolvability of uncertainty
+        (via an imprecise expected state and a precise mapping, or high ambiguity
+        and imprecise mapping).
+        """
+
+        n_states = [2]
+        n_control = [2]
+
+        qs = Categorical(values = np.eye(n_states[0])[0])
+
+        # add some uncertainty into the consequences of the second policy, which 
+        # leads to increased epistemic value of observations, in case of pursuing 
+        # that policy -- in the case of a precise observation likelihood model
+        B_matrix = construct_generic_B(n_states, n_control)
+        B_matrix[:,:,1] = core.softmax(B_matrix[:,:,1])
+        B = Categorical(values = B_matrix)
+
+        # single timestep
+        n_step = 1
+        policies = core.construct_policies(n_states, n_control, policy_len=n_step)
+
+        # single observation modality
+        num_obs = [2]
+
+        # create noiseless identity A matrix
+        A = Categorical(values = np.eye(num_obs[0]))
+
+        state_info_gains = np.zeros(len(policies))
+
+        for idx, policy in enumerate(policies):
+
+            qs_pi = core.get_expected_states(qs, B, policy)
+
+            state_info_gains[idx] += core.calc_states_info_gain(A, qs_pi)
+        
+        self.assertGreater(state_info_gains[1],state_info_gains[0])
+
+        # we can 'undo' the epistemic bonus of the second policy by making the A matrix
+        # totally ambiguous, thus observations cannot resolve uncertainty about hidden states
+        # - in this case, uncertainty in the posterior beliefs doesn't matter
+
+        A = Categorical(values = np.ones((num_obs[0],num_obs[0])))
+        A.normalize()
+
+        state_info_gains = np.zeros(len(policies))
+
+        for idx, policy in enumerate(policies):
+
+            qs_pi = core.get_expected_states(qs, B, policy)
+
+            state_info_gains[idx] += core.calc_states_info_gain(A, qs_pi)
+        
+        self.assertEqual(state_info_gains[0],state_info_gains[1])
+
+    def test_pA_info_gain(self):
+        """
+        Test the pA_info_gain function. Demonstrates operation
+        by manipulating shape of the Dirichlet priors over likelihood parameters
+        (pA), which affects information gain for different expected observations
+        """
+
+        n_states = [2]
+        n_control = [2]
+
+        qs = Categorical(values = np.eye(n_states[0])[0])
+
+        B = Categorical(values = construct_generic_B(n_states, n_control))
+
+        # single timestep
+        n_step = 1
+        policies = core.construct_policies(n_states, n_control, policy_len=n_step)
+
+        # single observation modality
+        num_obs = [2]
+
+        # create noiseless identity A matrix
+        A = Categorical(values = np.eye(num_obs[0]))
+
+        # create prior over dirichlets such that there is a skew
+        # in the parameters about the likelihood mapping from the
+        # second hidden state (index 1) to observations, such that one
+        # observation is considered to be more likely than the other conditioned on that state.
+        # Therefore sampling that observation would afford high info gain
+        # about parameters for that part of the likelhood distribution.
+
+        pA_matrix = construct_pA(num_obs, n_states)
+        pA_matrix[0,1] = 2.0
+        pA = Dirichlet(values = pA_matrix)
+
+        pA_info_gains = np.zeros(len(policies))
+
+        for idx, policy in enumerate(policies):
+
+            qs_pi = core.get_expected_states(qs, B, policy)
+            qo_pi = core.get_expected_obs(qs_pi, A)
+
+            pA_info_gains[idx] += core.calc_pA_info_gain(pA, qo_pi, qs_pi)
+        
+        self.assertGreater(pA_info_gains[1],pA_info_gains[0])
+    
+    def test_pB_info_gain(self):
+        """
+        Test the pB_info_gain function. Demonstrates operation
+        by manipulating shape of the Dirichlet priors over likelihood parameters
+        (pB), which affects information gain for different states
+        """
+
+        n_states = [2]
+        n_control = [2]
+
+        qs = Categorical(values = np.eye(n_states[0])[0])
+
+        B = Categorical(values = construct_generic_B(n_states, n_control))
+        pB_matrix = construct_pB(n_states, n_control)
+
+        # create prior over dirichlets such that there is a skew
+        # in the parameters about the likelihood mapping from the
+        # hidden states to hidden states under the second action,
+        # such that hidden state 0 is considered to be more likely than the other,
+        # given the action in question
+        # Therefore taking that action would yield an expected state that afford 
+        # high information gain about that part of the likelihood distribution.
+        #  
+        pB_matrix[0,:,1] = 2.0
+        pB = Dirichlet(values = pB_matrix)
+
+        # single timestep
+        n_step = 1
+        policies = core.construct_policies(n_states, n_control, policy_len=n_step)
+
+        pB_info_gains = np.zeros(len(policies))
+
+        for idx, policy in enumerate(policies):
+
+            qs_pi = core.get_expected_states(qs, B, policy)
+
+            pB_info_gains[idx] += core.calc_pB_info_gain(pB, qs_pi, qs, policy)
+        
+        self.assertGreater(pB_info_gains[1],pB_info_gains[0])
 
 if __name__ == "__main__":
     unittest.main()

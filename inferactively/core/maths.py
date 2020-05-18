@@ -8,10 +8,8 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import itertools
 import numpy as np
-import torch
 from scipy import special
 from inferactively.core import utils
-
 
 def spm_dot(X, x, dims_to_omit=None, obs_mode=False):
     """ Dot product of a multidimensional array with `x`

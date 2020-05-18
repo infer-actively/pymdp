@@ -324,8 +324,6 @@ def calc_pA_info_gain(pA, qo_pi, qs_pi):
     """
     Compute expected Dirichlet information gain about parameters pA under a policy
     Parameters
-    @TODO: Needs to be amended for use with multi-step policies (where possible_policies is a list of np.arrays (nStep x nFactor), not just a list of tuples as it is now)
-    Parameters
     ----------
     pA [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Dirichlet (either single-factor of AoA)]:
         Prior dirichlet parameters parameterizing beliefs about the likelihood mapping from hidden states to observations, 
@@ -392,8 +390,6 @@ def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
     """
     Compute expected Dirichlet information gain about parameters pB under a given policy
     Parameters
-    @TODO: Needs to be amended for use with multi-step policies (where possible_policies is a list of np.arrays (nStep x nFactor), not just a list of tuples as it is now)
-    Parameters
     ----------
     pB [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Dirichlet (either single-factor of AoA)]:
         Prior dirichlet parameters parameterizing beliefs about the likelihood describing transitions bewteen hidden states,
@@ -402,6 +398,8 @@ def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
         Posterior predictive density over hidden states. If a list, each entry of the list is the posterior predictive for a given timepoint of an expected trajectory
     qs_prev [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
         Posterior over hidden states (before getting observations)
+    policy [numpy 2D ndarray, of size n_steps x n_control_factors]:
+        Policy to consider. Each row of the matrix encodes the action index along a different control factor for a given timestep.  
     Returns
     -------
     infogain_pB [scalar]:
