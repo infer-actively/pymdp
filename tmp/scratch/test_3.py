@@ -1,9 +1,14 @@
+import sys
+import pathlib
 import numpy as np
 
+sys.path.append(str(pathlib.Path(__file__).parent.parent.parent))
+
+from inferactively.agent import Agent
 from inferactively import core
 from inferactively.distributions import Categorical, Dirichlet
-from inferactively.agent import Agent
 from inferactively.envs import VisualForagingEnv
+
 
 print(
     """Initializing scene configuration with two scenes that share one feature
@@ -28,8 +33,9 @@ for t in range(T):
     qx = agent.infer_states(obs)
     msg = """[{}] Inference [location {} / scene {}] """
     print(msg.format(t, qx[0].sample(), qx[1].sample(), obs[0], obs[1]))
-    
+
     q_pi, efe = agent.infer_policies()
+
     action = agent.sample_action()
 
     msg = """[Step {}] Action: [Saccade to location {}]"""
