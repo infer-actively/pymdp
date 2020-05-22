@@ -93,7 +93,8 @@ def update_posterior_policies(
     if return_numpy:
         q_pi = q_pi / q_pi.sum(axis=0)
     else:
-        q_pi = utils.to_categorical(q_pi).normalize()
+        q_pi = utils.to_categorical(q_pi)
+        q_pi.normalize()
 
     return q_pi, efe
 
