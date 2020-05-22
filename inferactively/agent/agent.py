@@ -43,6 +43,9 @@ class Agent(object):
         self.policy_len = policy_len
         self.gamma = gamma
         self.action_sampling = action_sampling
+        self.use_utility = use_utility
+        self.use_states_info_gain = use_states_info_gain
+        self.use_param_info_gain = use_param_info_gain
 
 
         """ Initialise observation model (A matrices) """
@@ -123,14 +126,14 @@ class Agent(object):
         # The user can specify the number of control states
         # However, given the controllable factors, this can be inferred 
         if n_controls is None:
-            self.n_controls, _ = self._construct_n_controls()
+            _, self.n_controls = self._construct_n_controls()
         else:
             self.n_controls = n_controls
 
         # Again, the use can specify a set of possible policies, or
         # all possible combinations of actions and timesteps will be considered
         if policies is None:
-            _, self.policies = self._construct_n_controls()
+            self.policies,_  = self._construct_n_controls()
         else:
             self.policies = policies
 
@@ -218,10 +221,10 @@ class Agent(object):
         return D
 
     def _construct_n_controls(self):
-        n_controls, policies = control.construct_policies(
-            self.n_states, self.n_controls, self.policy_len, self.control_fac_idx)
+        policies, n_controls = control.construct_policies(
+            self.n_states, None, self.policy_len, self.control_fac_idx)
 
-        return n_controls, policies
+        return policies, n_controls
 
     def reset(self, init_qs=None):
         if init_qs is None:
