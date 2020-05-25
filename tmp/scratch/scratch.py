@@ -123,100 +123,76 @@ def construct_init_qs(n_states):
 
 
 # %%
-""" 
-@TODO :
-
-1 SINGLE FACTOR 
-- 1a Single factor, single timestep
-    -- get expected states X
-    1a(i)Single Modality
-        -- get expected observations X
-        --update_posterior_policies (just utility + state info gain) X
-        --update_posterior_policies (now with param info gain) X
-    1a(ii)Multiple Modality
-        -- get expected observations X
-        --update_posterior_policies (just utility + state info gain) X
-        --update_posterior_policies (now with param info gain) X
-- 1b Single factor, multiple timestep
-    -- get expected states X
-    1b(i) Single Modality
-        -- get expected observations X
-        --update_posterior_policies (just utility + state info gain) X
-        --update_posterior_policies (now with param info gain) X 
-    1b(ii) Multiple Modality
-        -- get expected observations X
-        --update_posterior_policies (just utility + state info gain) X
-        --update_posterior_policies (now with param info gain) X
-
-2 MULTIPLE FACTOR
-- 2a Multiple factor, single timestep
-    -- get expected states X
-    2a(i) Single Modality
-        -- get expected observations X
-        --update_posterior_policies (just utility + state info gain) X
-        --update_posterior_policies (now with param info gain) X
-    2a(ii) Multiple Modality
-        -- get expected observations X
-        --update_posterior_policies (just utility + state info gain) X
-        --update_posterior_policies (now with param info gain) X
-- 2b Multiple factor, multiple timestep
-    -- get expected states X
-    2b(i) Single Modality
-        -- get expected observations X
-        --update_posterior_policies (just utility + state info gain) X
-    2b(ii) Multiple Modality
-        -- get expected observations X
-        --update_posterior_policies (just utility + state info gain) X
 """
+@ TODO
 
-# %%
-"""
-1. SINGLE FACTOR
-"""
+2. UPDATING pB
+    - single factor
+        -actions
+        -no actions
+    - multiple factors
+        -actions
+            -update all factors
+            -update 1 factor
+            -update more than one factor
+        -no actions
+            -update all factors
+            -update 1 factor
+            -update more than one factor
 
-"""
-1(a) Single factor, single timestep test
 """
 
 n_states = [3]
-n_control = [3]
+n_control = [1] # this is how we encode the fact that there aren't any actions
+qs_prev = Categorical(values = construct_init_qs(n_states))
+qs = Categorical(values = construct_init_qs(n_states))
+learning_rate = 1.0
+
+B = Categorical(values = np.random.rand(n_states[0],n_states[0],n_control[0]))
+B.normalize()
+pB = Dirichlet(values = np.ones_like(B.values))
+
+action = np.array([np.random.randint(nc) for nc in n_control])
+
+pB_updated = core.update_transition_dirichlet(pB,B,action,qs,qs_prev,lr=learning_rate,factors="all",return_numpy=True)
+
+validation_pB = pB.copy()
+validation_pB[:,:,0] += learning_rate * core.spm_cross(qs.values, qs_prev.values)
+# %%
+"""
+1. UPDATING pA
+"""
+
+"""
+1(a) Single factor, single modality
+"""
+
+n_states = [3]
 
 qs = Categorical(values = construct_init_qs(n_states))
-B = Categorical(values = construct_generic_B(n_states, n_control))
-pB = Dirichlet(values = construct_pB(n_states,n_control))
 
-n_step = 1
-policies = core.construct_policies(n_states, n_control, policy_len=n_step)
+num_obs = [4]
 
-"""
-1(a)(i) Single modality
-"""
-
-num_obs = [3]
-
-A = Categorical(values = construct_generic_A(num_obs,n_states))
+A = Categorical(values = construct_generic_A(num_obs, n_states))
 pA = Dirichlet(values = construct_pA(num_obs,n_states))
-C = Categorical(values = construct_generic_C(num_obs))
 
-q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
-use_param_info_gain=True,pA=pA,pB=pB,gamma=16.0,return_numpy=True)
+observation = A.dot(qs,return_numpy=False).sample()
 
-actions = core.sample_action(q_pi[0], policies, n_control, sampling_type="marginal_action")
+pA_updated = core.update_likelihood_dirichlet(pA, A, observation, qs, lr=1.0, modalities="all",return_numpy=True)
 
 """
-1(a)(ii) Multiple modality
+1(a) Single factor, multiple modalities
 """
 
 num_obs = [3, 4]
 
-A = Categorical(values = construct_generic_A(num_obs,n_states))
+A = Categorical(values = construct_generic_A(num_obs, n_states))
 pA = Dirichlet(values = construct_pA(num_obs,n_states))
-C = Categorical(values = construct_generic_C(num_obs))
 
-q_pi = core.update_posterior_policies(qs, A, B, C, policies, use_utility=True, use_states_info_gain=True,
-use_param_info_gain=True,pA=pA,pB=pB,gamma=16.0,return_numpy=True)
+observation = A.dot(qs,return_numpy=False).sample()
 
-actions = core.sample_action(q_pi[0], policies, n_control, sampling_type="marginal_action")
+pA_updated = core.update_likelihood_dirichlet(pA, A, observation, qs, lr=1.0, modalities="all",return_numpy=False)
+
 
 
 # %%

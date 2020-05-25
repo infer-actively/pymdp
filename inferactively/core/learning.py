@@ -37,6 +37,7 @@ def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, modalities="all",return_
     """
 
     pA = utils.to_numpy(pA)
+    A = utils.to_numpy(A)
 
     if utils.is_arr_of_arr(pA):
         n_modalities = len(pA)
@@ -96,8 +97,8 @@ def update_transition_dirichlet(
         The prior Dirichlet parameters of the generative model, parameterizing the agent's beliefs about the transition likelihood. 
     - B [numpy nd.array, object-like array of arrays, or Categorical (either single-modality or AoA)]:
         The transition likelihood of the generative model. 
-    - actions [tuple]:
-        A tuple containing the action(s) performed at a given timestep.
+    - actions [numpy 1D array]:
+        A 1D numpy array of shape (num_control_factors,) containing the action(s) performed at a given timestep.
     - qs [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
         Current marginal posterior beliefs about hidden state factors
     - qs_prev [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
@@ -113,6 +114,7 @@ def update_transition_dirichlet(
     """
 
     pB = utils.to_numpy(pB)
+    B = utils.to_numpy(B)
 
     if utils.is_arr_of_arr(pB):
         n_factors = len(pB)
@@ -131,17 +133,17 @@ def update_transition_dirichlet(
         if n_factors == 1:
             dfdb = qs.cross(qs_prev, return_numpy=True)
             dfdb = dfdb * (B[:, :, actions[0]] > 0).astype("float")
-            pB_updated = pB_updated + (lr * dfdb)
+            pB_updated[:,:,actions[0]] += (lr * dfdb)
 
         elif n_factors > 1:
             for factor in range(n_factors):
                 dfdb = qs[factor].cross(qs_prev[factor], return_numpy=True)
                 dfdb = dfdb * (B[factor][:, :, actions[factor]] > 0).astype("float")
-                pB_updated[factor] = pB_updated[factor] + (lr * dfdb)
+                pB_updated[factor][:,:,actions[factor]] += (lr * dfdb)
     else:
         for factor in factors:
             dfdb = qs[factor].cross(qs_prev[factor], return_numpy=True)
             dfdb = dfdb * (B[factor][:, :, actions[factor]] > 0).astype("float")
-            pB_updated[factor] = pB_updated[factor] + (lr * dfdb)
+            pB_updated[factor][:, :, actions[factor]] += (lr * dfdb)
 
     return pB_updated
