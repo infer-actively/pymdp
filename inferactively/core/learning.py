@@ -11,7 +11,7 @@ import numpy as np
 import torch
 from scipy import special
 from inferactively.core import utils
-
+import copy
 
 def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, modalities="all",return_numpy=True):
     """ Update Dirichlet parameters of the likelihood distribution 
@@ -47,9 +47,9 @@ def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, modalities="all",return_
         n_observations = [pA.shape[0]]
 
     if return_numpy:
-        pA_updated = pA.copy()
+        pA_updated = copy.deepcopy(pA)
     else:
-        pA_updated = utils.to_dirichlet(pA.copy())
+        pA_updated = utils.to_dirichlet(copy.deepcopy(pA))
 
     # observation index
     if isinstance(obs, (int, np.integer)):
@@ -122,9 +122,9 @@ def update_transition_dirichlet(
         n_factors = 1
 
     if return_numpy:
-        pB_updated = pB.copy()
+        pB_updated = copy.deepcopy(pB)
     else:
-        pB_updated = utils.to_dirichlet(pB.copy())
+        pB_updated = utils.to_dirichlet(copy.deepcopy(pB))
 
     if not utils.is_distribution(qs):
         qs = utils.to_categorical(qs)
@@ -133,17 +133,17 @@ def update_transition_dirichlet(
         if n_factors == 1:
             dfdb = qs.cross(qs_prev, return_numpy=True)
             dfdb = dfdb * (B[:, :, actions[0]] > 0).astype("float")
-            pB_updated[:,:,actions[0]] += (lr * dfdb)
+            pB_updated[:,:,actions[0]] = pB_updated[:,:,actions[0]] + (lr * dfdb)
 
         elif n_factors > 1:
             for factor in range(n_factors):
                 dfdb = qs[factor].cross(qs_prev[factor], return_numpy=True)
                 dfdb = dfdb * (B[factor][:, :, actions[factor]] > 0).astype("float")
-                pB_updated[factor][:,:,actions[factor]] += (lr * dfdb)
+                pB_updated[factor][:,:,actions[factor]] = pB_updated[factor][:,:,actions[factor]] + (lr * dfdb)
     else:
         for factor in factors:
             dfdb = qs[factor].cross(qs_prev[factor], return_numpy=True)
             dfdb = dfdb * (B[factor][:, :, actions[factor]] > 0).astype("float")
-            pB_updated[factor][:, :, actions[factor]] += (lr * dfdb)
+            pB_updated[factor][:, :, actions[factor]] = pB_updated[factor][:, :, actions[factor]] + (lr * dfdb)
 
     return pB_updated
