@@ -335,9 +335,60 @@ class TestLearning(unittest.TestCase):
         pB_updated = core.update_transition_dirichlet(pB,B,action,qs,qs_prev,lr=learning_rate,factors="all",return_numpy=True)
 
         validation_pB = pB.copy()
-        validation_pB[:,:,0] += learning_rate * core.spm_cross(qs.values, qs_prev.values)
+        validation_pB[:,:,0] += learning_rate * core.spm_cross(qs.values, qs_prev.values) * (B[:, :, action[0]].values > 0)
         self.assertTrue(np.all(pB_updated==validation_pB.values))
+    
+    def test_update_pB_singleFactor_withActions(self):
+        """
+        Test for updating prior Dirichlet parameters over transition likelihood (pB)
+        in the case that the one and only hidden state factor is updated, and there 
+        are actions.
+        """
 
+        n_states = [3]
+        n_control = [3] 
+        qs_prev = Categorical(values = construct_init_qs(n_states))
+        qs = Categorical(values = construct_init_qs(n_states))
+        learning_rate = 1.0
+
+        B = Categorical(values = construct_generic_B(n_states, n_control))
+        pB = Dirichlet(values = np.ones_like(B.values))
+
+        action = np.array([np.random.randint(nc) for nc in n_control])
+
+        pB_updated = core.update_transition_dirichlet(pB,B,action,qs,qs_prev,lr=learning_rate,factors="all",return_numpy=True)
+
+        validation_pB = pB.copy()
+        validation_pB[:,:,action[0]] += learning_rate * core.spm_cross(qs.values, qs_prev.values) * (B[:, :, action[0]].values > 0)
+        self.assertTrue(np.all(pB_updated==validation_pB.values))
+    
+    def test_update_pB_multiFactor_noActions_allFactors(self):
+        """
+        Test for updating prior Dirichlet parameters over transition likelihood (pB)
+        in the case that there are mulitple hidden state factors, and there 
+        are actions. All factors are updated
+        """
+
+        n_states = [3, 4]
+        n_control = [1, 1] 
+        qs_prev = Categorical(values = construct_init_qs(n_states))
+        qs = Categorical(values = construct_init_qs(n_states))
+        learning_rate = 1.0
+
+        B = Categorical(values = np.array([np.random.rand(ns, ns, n_control[factor]) for factor, ns in enumerate(n_states)]))
+        B.normalize()
+        pB = Dirichlet(values = np.array([np.ones_like(B[factor].values) for factor in range(len(n_states))]))
+
+        action = np.array([np.random.randint(nc) for nc in n_control])
+
+        pB_updated = core.update_transition_dirichlet(pB,B,action,qs,qs_prev,lr=learning_rate,factors="all",return_numpy=True)
+
+        validation_pB = pB.copy()
+
+        for factor, _ in enumerate(n_control):
+            validation_pB = pB[factor].copy()
+            validation_pB[:,:,action[factor]] += learning_rate * core.spm_cross(qs[factor].values, qs_prev[factor].values) * (B[factor][:, :, action[factor]].values > 0)
+            self.assertTrue(np.all(pB_updated[factor]==validation_pB.values))
 
 if __name__ == "__main__":
     unittest.main()

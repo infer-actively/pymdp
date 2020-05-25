@@ -2,6 +2,7 @@
 import sys
 import pathlib
 import numpy as np
+import copy
 
 sys.path.append(str(pathlib.Path(__file__).parent.parent.parent))
 
@@ -127,9 +128,6 @@ def construct_init_qs(n_states):
 @ TODO
 
 2. UPDATING pB
-    - single factor
-        -actions
-        -no actions
     - multiple factors
         -actions
             -update all factors
@@ -142,58 +140,34 @@ def construct_init_qs(n_states):
 
 """
 
-n_states = [3]
-n_control = [1] # this is how we encode the fact that there aren't any actions
+
+n_states = [3, 4]
+n_control = [1, 1] 
 qs_prev = Categorical(values = construct_init_qs(n_states))
 qs = Categorical(values = construct_init_qs(n_states))
 learning_rate = 1.0
 
-B = Categorical(values = np.random.rand(n_states[0],n_states[0],n_control[0]))
+B_values = np.empty(len(n_states),dtype=object)
+for factor, ns in enumerate(n_states):
+    B_values[factor] = np.random.rand(ns, ns, n_control[factor])
+
+B = Categorical(values = B_values)
 B.normalize()
-pB = Dirichlet(values = np.ones_like(B.values))
+pB_values = np.empty(len(n_states),dtype=object)
+
+for factor, ns in enumerate(n_states):
+    pB_values[factor] = np.ones( (ns, ns, n_control[factor]) )
+
+pB = Dirichlet(values = pB_values)
 
 action = np.array([np.random.randint(nc) for nc in n_control])
 
 pB_updated = core.update_transition_dirichlet(pB,B,action,qs,qs_prev,lr=learning_rate,factors="all",return_numpy=True)
 
-validation_pB = pB.copy()
-validation_pB[:,:,0] += learning_rate * core.spm_cross(qs.values, qs_prev.values)
-# %%
-"""
-1. UPDATING pA
-"""
-
-"""
-1(a) Single factor, single modality
-"""
-
-n_states = [3]
-
-qs = Categorical(values = construct_init_qs(n_states))
-
-num_obs = [4]
-
-A = Categorical(values = construct_generic_A(num_obs, n_states))
-pA = Dirichlet(values = construct_pA(num_obs,n_states))
-
-observation = A.dot(qs,return_numpy=False).sample()
-
-pA_updated = core.update_likelihood_dirichlet(pA, A, observation, qs, lr=1.0, modalities="all",return_numpy=True)
-
-"""
-1(a) Single factor, multiple modalities
-"""
-
-num_obs = [3, 4]
-
-A = Categorical(values = construct_generic_A(num_obs, n_states))
-pA = Dirichlet(values = construct_pA(num_obs,n_states))
-
-observation = A.dot(qs,return_numpy=False).sample()
-
-pA_updated = core.update_likelihood_dirichlet(pA, A, observation, qs, lr=1.0, modalities="all",return_numpy=False)
-
-
+for factor, _ in enumerate(n_control):
+    validation_pB = copy.deepcopy(pB[factor].values)
+    validation_pB[:,:,action[factor]] += learning_rate * core.spm_cross(qs[factor].values, qs_prev[factor].values) * (B[factor][:, :, action[factor]].values > 0)
+    print(np.all(pB_updated[factor]==validation_pB))
 
 # %%
 """
