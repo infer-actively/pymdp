@@ -9,7 +9,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 from inferactively.distributions import Categorical, Dirichlet
-from inferactively.core import inference, control
+from inferactively.core import inference, control, learning
 
 class Agent(object):
     """ 
@@ -37,15 +37,27 @@ class Agent(object):
         action_sampling="marginal_action",
         inference_algo="FPI",
         inference_params=None,
+        modalities_to_learn="all",
+        lr_pA = 1.0,
+        factors_to_learn="all",
+        lr_pb = 1.0
     ):
 
-        # Constant parameters
+        ### Constant parameters ###
+
+        # policy parameters
         self.policy_len = policy_len
         self.gamma = gamma
         self.action_sampling = action_sampling
         self.use_utility = use_utility
         self.use_states_info_gain = use_states_info_gain
         self.use_param_info_gain = use_param_info_gain
+
+        # learning parameters
+        self.modalities_to_learn = "all"
+        self.lr_pA = 1.0
+        self.factors_to_learn = "all"
+        self.lr_pB = 1.0
 
 
         """ Initialise observation model (A matrices) """
@@ -291,6 +303,39 @@ class Agent(object):
 
         self.action = action
         return action
+
+    def update_A(self,obs):
+
+        pA_updated = learning.update_likelihood_dirichlet(
+            self.pA, 
+            self.A, 
+            obs, 
+            self.qs, 
+            self.lr_pA,  
+            self.modalities_to_learn,
+            return_numpy=False)
+        
+        self.pA = pA_updated
+        self.A = pA_updated.mean()
+
+        return pA_updated
+
+    def update_B(self,qs_prev):
+
+        pB_updated = learning.update_transition_dirichlet(
+            self.pB,
+            self.B,
+            self.action,
+            self.qs,
+            qs_prev,
+            self.lr_pB,
+            self.factors_to_learn,
+            return_numpy=False)
+
+        self.pB = pB_updated
+        self.A = pB_updated.mean()
+
+        return pB_updated
 
     def _get_default_params(self):
 

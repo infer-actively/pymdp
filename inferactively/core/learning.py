@@ -13,7 +13,7 @@ from scipy import special
 from inferactively.core import utils
 
 
-def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, return_numpy=True, modalities="all"):
+def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, modalities="all",return_numpy=True):
     """ Update Dirichlet parameters of the likelihood distribution 
 
     Parameters
@@ -84,7 +84,7 @@ def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, return_numpy=True, modal
 
 
 def update_transition_dirichlet(
-    pB, B, actions, qs, qs_prev, lr=1.0, return_numpy=True, factors="all"
+    pB, B, actions, qs, qs_prev, lr=1.0, factors="all", return_numpy=True
 ):
     """
     Update Dirichlet parameters that parameterize the transition model of the generative model 
@@ -98,15 +98,15 @@ def update_transition_dirichlet(
         The transition likelihood of the generative model. 
     - actions [tuple]:
         A tuple containing the action(s) performed at a given timestep.
-    - Qs_curr [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+    - qs [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
         Current marginal posterior beliefs about hidden state factors
-    - Qs_prev [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+    - qs_prev [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
         Past marginal posterior beliefs about hidden state factors
-    - eta [float, optional]:
+    - lr [float, optional]:
         Learning rate.
     - return_numpy [bool, optional]:
         Logical flag to determine whether output is a numpy array or a Dirichlet
-    - which_factors [list, optional]:
+    - factors [list, optional]:
         Indices (in terms of range(Nf)) of the hidden state factors to include in learning.
         Defaults to 'all', meaning that transition likelihood matrices for all hidden state factors
         are updated as a function of transitions in the different control factors (i.e. actions)
