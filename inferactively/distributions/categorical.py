@@ -7,6 +7,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
 import warnings
+import copy
 import numpy as np
 import matplotlib.pyplot as plt
 from inferactively.core import maths, utils
@@ -333,7 +334,10 @@ class Categorical(object):
         - `Categorical`
             A copy of this object
         """
-        values = np.copy(self.values)
+        if not self.IS_AOA:
+            values = np.copy(self.values)
+        else:
+            values = copy.deepcopy(self.values)
         return Categorical(values=values)
 
     def print_shape(self):

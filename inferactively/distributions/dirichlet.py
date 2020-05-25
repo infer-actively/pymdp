@@ -9,6 +9,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import numpy as np
 from scipy import special
 import warnings
+import copy
 from inferactively.distributions import Categorical
 from inferactively.core import maths
 
@@ -278,7 +279,10 @@ class Dirichlet(object):
         Dirichlet
             Returns a copy of this object
         """
-        values = np.copy(self.values)
+        if not self.IS_AOA:
+            values = np.copy(self.values)
+        else:
+            values = copy.deepcopy(self.values)
         return Dirichlet(values=values)
 
     def print_shape(self):
