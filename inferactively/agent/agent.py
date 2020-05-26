@@ -40,7 +40,7 @@ class Agent(object):
         modalities_to_learn="all",
         lr_pA = 1.0,
         factors_to_learn="all",
-        lr_pb = 1.0
+        lr_pB = 1.0
     ):
 
         ### Constant parameters ###
@@ -54,10 +54,10 @@ class Agent(object):
         self.use_param_info_gain = use_param_info_gain
 
         # learning parameters
-        self.modalities_to_learn = "all"
-        self.lr_pA = 1.0
-        self.factors_to_learn = "all"
-        self.lr_pB = 1.0
+        self.modalities_to_learn = modalities_to_learn
+        self.lr_pA = lr_pA
+        self.factors_to_learn = factors_to_learn
+        self.lr_pB = lr_pB
 
 
         """ Initialise observation model (A matrices) """
