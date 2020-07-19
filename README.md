@@ -1,7 +1,7 @@
-### <img alt="logo" src="https://pluspng.com/img-png/brain-png-brain-icon-png-image-2536-942.png" height="90"> 
-# Active Inference for Markov Decision Processes 
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+#  Active Inference for Markov Decision Processes
+ <img alt="logo" src="https://pluspng.com/img-png/brain-png-brain-icon-png-image-2536-942.png" height="90"> [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 
 An Python-based implementation of `active inference` for Markov Decision Processes,
 based on functions from the `SPM` [implementation](https://www.fil.ion.ucl.ac.uk/spm/doc/)
