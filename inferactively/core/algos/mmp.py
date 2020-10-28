@@ -25,7 +25,7 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
         Used in inference to get expected future (or past) hidden states, given past (or future) hidden states (or expectations thereof).
     - 'obs_t' [list of length t_horizon of numpy 1D array or array of arrays (with 1D numpy array entries)]:
         Sequence of observations sampled from beginning of time horizon the current timestep t. The first observation (the start of the time horizon) 
-        is either the first timestep of the generative process or the first timestep of the policy horizon (whichever is sooner in time).
+        is either the first timestep of the generative process or the first timestep of the policy horizon (whichever is closer to 'curr_t' in time).
         The observations over time are stored as a list of numpy arrays, where in case of multi-modalities each numpy array is an array-of-arrays, with
         one 1D numpy.ndarray for each modality. In the case of a single modality, each observation is a single 1D numpy.ndarray.
     - 'policy' [2D np.ndarray]:
@@ -123,7 +123,6 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
     #set final future message as all ones at the time horizon (no information from beyond the horizon)
     qs[-1] = np.array([np.ones(n_states[f]) for f in n_factors],dtype=object)
     
-
     """
     =========== Step 3 ===========
         Loop over time indices of time window, which includes time before the policy horizon 
@@ -133,9 +132,9 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
     """
 
     if previous_actions is None:
-        full_policy = policies
+        full_policy = policy
     else:
-        full_policy = np.vstack( (previous_actions, policies))
+        full_policy = np.vstack( (previous_actions, policy))
 
     qss = [[] for i in range(1, len(qs)-1)]
     F = np.zeros((len(qs), num_iter))
@@ -168,6 +167,7 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
             F_pol += F[t,n]
     
     return qs, qss, F, F_pol
+
 
 
 

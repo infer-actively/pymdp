@@ -163,7 +163,56 @@ def calc_free_energy(qs, prior, n_factors, likelihood=None):
         accuracy = spm_dot(likelihood, qs)[0]
         free_energy -= accuracy
     return free_energy
+    
+def calc_free_energy_policy(A, B, obs_t, qs_policy, policy, curr_t, t_horizon, T, previous_actions=None):
+    """ 
+    Calculate variational free energy for a given policy
+    """
 
+    # extract dimensions of observation modalities and number of levels per modality. Do the same for hidden states
+    if utils.is_arr_of_arr(obs_t[0]):
+        n_observations = [ obs_t_i.shape[0] for obs_t_i in obs_t[0] ]
+    else:
+        n_observations = [obs_t[0].shape[0]]
+    
+    if utils.is_arr_of_arr(qs_t[0][0]):
+        n_states = [ qs_t_i.shape[0] for qs_t_i in qs_t[0][0] ]
+    else:
+        n_states = [qs_t[0][0].shape[0]]
+    
+    n_modalities = len(n_observations)
+    n_factors = len(n_states)
+
+    # compute time-window, taking into account boundary conditions - this range goes from start of time-window (in absolute time) to current absolute time index
+    obs_range = range(max(0,curr_t-t_horizon),curr_t)
+
+    # likelihood of observations under configurations of hidden causes (over time)
+    likelihood = np.empty(len(obs_range), dtype = object)
+    for t in range(len(obs_range)):
+        likelihood_t = np.ones(tuple(n_states))
+
+        if n_modalities is 1:
+            likelihood_t *= spm_dot(A, obs_t[obs_range[t]], obs_mode=True)
+        else:
+            for modality in range(n_modalities):
+                likelihood_t *= spm_dot(A[modality], obs[obs_range[t]][modality], obs_mode=True)
+        likelihood[t] = np.log(likelihood_t + 1e-16)
+    
+    if previous_actions is None:
+        full_policy = policy
+    else:
+        full_policy = np.vstack( (previous_actions, policy))
+    
+    F_pol = 0.0
+    for t in range(1, len(qs_policy)):
+
+        lnBpast_tensor = np.empty(n_factors,dtype=object)
+        for f in range(n_factors):
+            lnBpast_tensor[f] = B[f][:,:,policy[t-1,f].dot(qs_policy[t-1][f])
+        
+        F_pol += calc_free_energy(qs_policy[t], lnBpast_tensor, n_factors, likelihood[t])
+
+    return F_pol
 
 def softmax(dist, return_numpy=True):
     """ Computes the softmax function on a set of values
