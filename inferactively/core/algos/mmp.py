@@ -8,9 +8,14 @@ __author__: Conor Heins, Beren Millidge, Alexander Tschantz, Brennan Klein
 """
 
 import numpy as np
+import sys
+import pathlib
+
+sys.path.append(str(pathlib.Path(__file__).parent.parent.parent.parent))
 from inferactively.core.maths import spm_dot, spm_norm, softmax, calc_free_energy
+from inferactively.core import utils
         
-def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, dF=1.0, dF_tol=0.001, previous_actions=None, use_gradient_descent=False, tau = 0.25):
+def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, dF=1.0, dF_tol=0.001, previous_actions=None, use_gradient_descent=False, tau=0.25):
     """
     Optimise marginal posterior beliefs about hidden states using marginal message-passing scheme (MMP) developed
     by Thomas Parr and colleagues, see https://github.com/tejparr/nmpassing
@@ -78,11 +83,17 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
         n_observations = [ obs_array_i.shape[0] for obs_array_i in obs_t[0] ]
     else:
         n_observations = [obs_t[0].shape[0]]
-    
-    if utils.is_arr_of_arr(qs_t[0][0]):
-        n_states = [ qs_array_i.shape[0] for obs_array_i in qs_t[0][0] ]
+
+    if utils.is_arr_of_arr(B):
+        n_states = [sub_B.shape[0] for sub_B in B]
     else:
-        n_states = [qs_t[0][0].shape[0]]
+        n_states = [B[0].shape[0]]
+        B = utils.to_arr_of_arr(B)
+    
+    #if utils.is_arr_of_arr(qs_t[0][0]):
+    #    n_states = [ qs_array_i.shape[0] for obs_array_i in qs_t[0][0] ]
+    #else:
+    #    n_states = [qs_t[0][0].shape[0]]
     
     n_modalities = len(n_observations)
     n_factors = len(n_states)
@@ -94,19 +105,26 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
     """
 
     # compute time-window, taking into account boundary conditions
-    obs_range = range(max(0,curr_t-t_horizon),curr_t)
+    if curr_t == 0:
+        obs_range = [0]
+    else:
+        obs_range = range(max(0,curr_t-t_horizon),curr_t)
+        print("obs range ", obs_range)
 
     # likelihood of observations under configurations of hidden causes (over time)
     likelihood = np.empty(len(obs_range), dtype = object)
     for t in range(len(obs_range)):
+        print("N states: ", n_states)
         likelihood_t = np.ones(tuple(n_states))
 
-        if n_modalities is 1:
+        print(spm_dot(A, obs_t[obs_range[0]], obs_mode=True).shape)
+        if n_modalities == 1:
             likelihood_t *= spm_dot(A, obs_t[obs_range[t]], obs_mode=True)
         else:
             for modality in range(n_modalities):
-                likelihood_t *= spm_dot(A[modality], obs[obs_range[t]][modality], obs_mode=True)
+                likelihood_t *= spm_dot(A[modality], obs_t[obs_range[t]][modality], obs_mode=True)
         likelihood[t] = np.log(likelihood_t + 1e-16)
+        
 
     """
     =========== Step 2 ===========
@@ -115,13 +133,14 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
         (namely, a flat categorical distribution).
     """
 
-    qs = [np.empty(n_factors,dtype=object) for i in range(window_len)+2]
+    qs = [np.empty(n_factors,dtype=object) for i in range(window_len+1)]
     if prior is None:
-        prior = np.array([np.ones(n_states[factor]) / n_states[factor] for f in range(n_factors)],dtype=object)
+        prior = np.array([np.ones(n_states[f]) / n_states[f] for f in range(n_factors)],dtype=object)
     # setup prior as first backwards message
     qs[0] = prior
+    qs[1] = prior
     #set final future message as all ones at the time horizon (no information from beyond the horizon)
-    qs[-1] = np.array([np.ones(n_states[f]) for f in n_factors],dtype=object)
+    qs[-1] = np.array([np.ones(n_states[f]) for f in range(n_factors)],dtype=object)
     
     """
     =========== Step 3 ===========
@@ -136,19 +155,38 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
     else:
         full_policy = np.vstack( (previous_actions, policy))
 
-    qss = [[] for i in range(1, len(qs)-1)]
+    qss = [[] for i in range(1, len(qs)+1)]
     F = np.zeros((len(qs), num_iter))
     F_pol = 0.0
-    for t in range(1, len(qs)-1):
+
+    for t in range(1, len(qs)):
         for n in range(num_iter):
             lnBpast_tensor = np.empty(n_factors,dtype=object)         
             for f in range(n_factors):
-                if t <=len(obs):
-                    lnA = spm_dot(likelihood[t],qs[t],f)
+                if t <=len(obs_t):
+                    print(t)
+                    print(f)
+                    print(n)
+                    print(likelihood.shape)
+                    print(likelihood[t].shape)
+                    print("qst")
+                    print(qs[t])
+                    print(qs[t][0].shape)
+                    print(qs[t][1].shape)
+                    lnA = spm_dot(likelihood[t],qs[t],[f])
                 else:
-                    lnA = np.zeros(num_states[f])
-                lnBpast = 0.5 * B[f][:,:,full_policy[t-1,f].dot(qs[t-1][f])
-                lnBfuture = 0.5 * spm_norm(B[f][:,:,full_policy[t+1,f]].T).dot(qs[t+1][f])
+                    lnA = np.zeros(n_states[f])
+                print("policy: ", full_policy.shape)
+                print(t+1)
+                print(len(qs))
+
+                lnBpast = 0.5 * B[f][:,:,full_policy[t-1,f]].dot(qs[t-1][f])
+
+                if t == len(qs)-1:
+                    lnBfuture = 1.0 * np.ones(n_states[f])
+                else:
+                    
+                    lnBfuture = 0.5 * spm_norm(B[f][:,:,full_policy[t+1,f]].T).dot(qs[t+1][f])
                 lnBpast_tensor[f] = 2 * lnBpast         
                 if use_gradient_descent:
                     # gradients
@@ -157,18 +195,71 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
                     lns += tau * e # increment the current (log) belief with the prediction error
                     qs = softmax(lns)
                     qs[t][f] = qs
-                    qss[t].append(qs)
                 else:
                     # free energy minimum for the factor in question
                     qs[t][f] = softmax(lnA + lnBpast + lnBfuture)
-                    qss[t].append(qs[t][f])
+                    print(t,f)
+                    print(len(qs))
+                    print(qs[0].shape)
+            print(len(qss))
+            print(t)
+            qss[t].append(qs)
             
             F[t,n] = calc_free_energy(qs[t], lnBpast_tensor, n_factors, likelihood[t])
             F_pol += F[t,n]
     
     return qs, qss, F, F_pol
 
+if __name__ == "__main__":
+    
+    n_modalities = [2]
+    n_states = [4, 2]
+    n_controls = [4, 2]
+    num_factors = len(n_states)
 
+    if num_factors == 1: # single factor case
+        B = np.eye(n_states[0])[:, :, np.newaxis]
+        B = np.tile(B, (1, 1, n_controls[0]))
+        B = B.transpose(1, 2, 0)
+    elif num_factors > 1: # multifactor case
+        B = np.empty(num_factors, dtype = object)
+        for factor,nc in enumerate(n_controls):
+            tmp = np.eye(nc)[:, :, np.newaxis]
+            tmp = np.tile(tmp, (1, 1, nc))
+            B[factor] = tmp.transpose(1, 2, 0)
 
+    print("B")
+    print(len(B))
+    print(B[0].shape)
+
+    if len(n_modalities) == 1:
+        A = np.random.rand(*(n_modalities + n_states))
+        A = np.divide(A,A.sum(axis=0))
+    else:
+        A = np.empty(len(n_modalities),dtype=object)
+        for no in n_modalities:
+            tmp = np.random.rand((*([no] + n_states)))
+            A = np.divide(tmp,tmp.sum(axis=0))
+
+        if n_modalities == 1:
+            likelihood_t *= spm_dot(A, obs_t[obs_range[t]], obs_mode=True)
+    print("A")
+    print(len(A))
+    print(A.shape)
+
+    obs_t = [np.array([1,0]),np.array([1,0]),np.array([1,0])]
+    print("obs: ", obs_t[0].shape)
+    print(len(obs_t))
+    policy = np.array([[1, 0],[0, 1]])
+    curr_t = 3
+    t_horizon = 2
+    T = 2
+    qs,qss, F, F_pol = run_mmp(A,B,obs_t, policy, curr_t, t_horizon,T)
+    print(qs)
+    print(qss)
+    print(F)
+    print(F_pol)
+
+    
 
 
