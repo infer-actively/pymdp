@@ -261,6 +261,7 @@ def softmax(dist, return_numpy=True):
             output = utils.to_categorical(np.array(output))
         else:
             dist = np.copy(dist.values)
+
     output = dist - dist.max(axis=0)
     output = np.exp(output)
     output = output / np.sum(output, axis=0)

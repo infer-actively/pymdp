@@ -137,13 +137,19 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
     """
 
     qs = [np.empty(n_factors,dtype=object) for i in range(window_len+1)]
-    if prior is None:
-        prior = np.array([np.ones(n_states[f]) / n_states[f] for f in range(n_factors)],dtype=object)
+    # if prior is None:
+    #     prior = np.array([np.ones(n_states[f]) / n_states[f] for f in range(n_factors)],dtype=object)
+    prior = np.empty(n_factors,dtype=object)
+    for f in range(n_factors):
+        prior[f] = np.ones(n_states[f])/n_states[f]
     # setup prior as first backwards message
     qs[0] = prior
     qs[1] = prior
     #set final future message as all ones at the time horizon (no information from beyond the horizon)
-    qs[-1] = np.array([np.ones(n_states[f]) for f in range(n_factors)],dtype=object)
+    last_message = np.empty(n_factors,dtype=object)
+    for f in range(n_factors):
+        last_message[f] = np.ones(n_states[f])
+    qs[-1] = last_message
     
     """
     =========== Step 3 ===========
@@ -158,7 +164,7 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
     else:
         full_policy = np.vstack( (previous_actions, policy))
 
-    qss = [[] for i in range(1, len(qs)+1)]
+    qss = [[] for i in range(num_iter)]
     F = np.zeros((len(qs), num_iter))
     F_pol = 0.0
 
@@ -184,17 +190,8 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
                 # print(len(qs))
 
                 # the 'forwards message' in VB_X
-                print(B[f][:,:,full_policy[t-1,f]])
-                print(qs[t-1][f])
-                print(B[f][:,:,full_policy[t-1,f]].dot(qs[t-1][f]) + 1e-16)
                 x = B[f][:,:,full_policy[t-1,f]].dot(qs[t-1][f]) + 1e-16
-                print(np.log([0.44, 0.44, 0.44]))
-                print(type(x))
-                print(x.shape)
-                for y in x:
-                    print(type(y))
-                print(np.log(x))
-
+  
                 lnBpast = 0.5 * np.log(B[f][:,:,full_policy[t-1,f]].dot(qs[t-1][f]) + 1e-16)
 
                 if t == len(qs)-1:
@@ -208,20 +205,19 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
                     e = (lnA + lnBpast + lnBfuture) - lns # prediction error
                     lns += tau * e # increment the current (log) belief with the prediction error
                     # e -= e.mean() # Karl does this
-                    qs = softmax(lns)
+       
+                    qs_t_f = softmax(lns)
+               
                     F_pol += 0.5*qs[t][f].dot(e)
 
-                    qs[t][f] = qs
+                    qs[t][f] = qs_t_f
                 else:
                     # free energy minimum for the factor in question
                     qs[t][f] = softmax(lnA + lnBpast + lnBfuture)
-            #         print(t,f)
-            #         print(len(qs))
-            #         print(qs[0].shape)
                 
             # print(len(qss))
             # print(t)
-            
+                        
             F[t,n] = calc_free_energy(qs[t], lnBpast_tensor, n_factors, likelihood[t])
             F_pol += F[t,n]
         qss[n].append(qs)
@@ -240,9 +236,11 @@ if __name__ == "__main__":
     num_factors = len(n_states)
 
     if num_factors == 1: # single factor case
-        B = np.eye(n_states[0])[:, :, np.newaxis]
-        B = np.tile(B, (1, 1, n_controls[0]))
-        B = B.transpose(1, 2, 0)
+        tmp = np.eye(n_states[0])[:, :, np.newaxis]
+        tmp = np.tile(tmp, (1, 1, n_controls[0]))
+        tmp = tmp.transpose(1, 2, 0)
+        B = np.empty(1, dtype=object)
+        B[0] = tmp
     elif num_factors > 1: # multifactor case
         B = np.empty(num_factors, dtype = object)
         for factor,nc in enumerate(n_controls):
@@ -280,10 +278,11 @@ if __name__ == "__main__":
     # print("obs: ", obs_t[0].shape)
     # print(len(obs_t))
     policy = np.array([[1],[1]])
+    print(policy)
     curr_t = 3
     t_horizon = 2
     T = 2
-    qs,qss, F, F_pol = run_mmp(A,B,obs_t, policy, curr_t, t_horizon,T)
+    qs, qss, F, F_pol = run_mmp(A,B,obs_t, policy, curr_t, t_horizon,T)
     # print(qs)
     # print(qss)
     # print(F)

@@ -42,7 +42,6 @@ def is_distribution(obj):
 def is_arr_of_arr(arr):
     return arr.dtype == "object"
 
-
 def to_arr_of_arr(arr):
     """ @TODO make general """
     arr_of_arr = np.empty(1, dtype=object)
