@@ -9,8 +9,12 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import itertools
 import numpy as np
-import torch
 from scipy import special
+try:
+    import torch
+except:
+    torch = None
+
 from inferactively.core import utils, softmax, spm_dot, spm_wnorm, spm_cross
 from inferactively.core.algos import run_fpi
 
