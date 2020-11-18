@@ -15,7 +15,7 @@ sys.path.append(str(pathlib.Path(__file__).parent.parent.parent.parent))
 from inferactively.core.maths import spm_dot, spm_norm, softmax, calc_free_energy
 from inferactively.core import utils
         
-def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, dF=1.0, dF_tol=0.001, previous_actions=None, use_gradient_descent=False, tau=0.25):
+def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, qs_bma = None, prior=None, num_iter=10, dF=1.0, dF_tol=0.001, previous_actions=None, use_gradient_descent=False, tau=0.25):
     """
     Optimise marginal posterior beliefs about hidden states using marginal message-passing scheme (MMP) developed
     by Thomas Parr and colleagues, see https://github.com/tejparr/nmpassing
@@ -42,6 +42,7 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
         Temporal horizon of inference for states and policies.
     - 'T' [int]:
         Temporal horizon of the generative process (absolute time)
+    - `qs_bma` [numpy 1D array, array of arrays (with 1D numpy array entries) or None]:
     - 'prior' [numpy 1D array, array of arrays (with 1D numpy array entries) or None]:
         Prior beliefs of the agent at the beginning of the time horizon, to be integrated with the marginal likelihood to obtain posterior at the first timestep.
         If absent, prior is set to be a uniform distribution over hidden states (identical to the initialisation of the posterior.
@@ -79,6 +80,7 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
     # get model dimensions
     time_window_idxs = np.array([i for i in range(max(0,curr_t-t_horizon),min(T,curr_t+t_horizon))])
     window_len = len(time_window_idxs)
+    print("window_len ",window_len)
     if utils.is_arr_of_arr(obs_t[0]):
         n_observations = [ obs_array_i.shape[0] for obs_array_i in obs_t[0] ]
     else:
@@ -136,20 +138,26 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
         (namely, a flat categorical distribution).
     """
 
+
     qs = [np.empty(n_factors,dtype=object) for i in range(window_len+1)]
+    for t in range(window_len+1):
+        for f in range(n_factors):
+            qs[t][f] = np.ones(n_states[f])/n_states[f]
     # if prior is None:
     #     prior = np.array([np.ones(n_states[f]) / n_states[f] for f in range(n_factors)],dtype=object)
-    prior = np.empty(n_factors,dtype=object)
-    for f in range(n_factors):
-        prior[f] = np.ones(n_states[f])/n_states[f]
+    if prior is None:
+        prior = np.empty(n_factors,dtype=object)
+        for f in range(n_factors):
+            prior[f] = np.ones(n_states[f])/n_states[f]
+            
+
     # setup prior as first backwards message
-    qs[0] = prior
-    qs[1] = prior
+    # qs[0] = prior
     #set final future message as all ones at the time horizon (no information from beyond the horizon)
     last_message = np.empty(n_factors,dtype=object)
     for f in range(n_factors):
         last_message[f] = np.ones(n_states[f])
-    qs[-1] = last_message
+    # qs[-1] = last_message
     
     """
     =========== Step 3 ===========
@@ -160,44 +168,43 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
     """
 
     if previous_actions is None:
-        full_policy = policy
-    else:
-        full_policy = np.vstack( (previous_actions, policy))
+        previous_actions = np.zeros((1,policy.shape[1]))
+        
+    full_policy = np.vstack( (previous_actions, policy))
+
 
     qss = [[] for i in range(num_iter)]
     F = np.zeros((len(qs), num_iter))
     F_pol = 0.0
 
     for n in range(num_iter):
-        for t in range(1, len(qs)): 
+        for t in range(0, len(qs)-1): 
             lnBpast_tensor = np.empty(n_factors,dtype=object)         
             for f in range(n_factors):
                 if t <=len(obs_t):
-                    # print(t)
-                    # print(f)
-                    # print(n)
-                    # print(likelihood.shape)
-                    # print(likelihood[t].shape)
-                    # print("qst")
-                    # print(qs[t])
-                    # print(qs[t][0].shape)
-                    # print(qs[t][1].shape)
+                    #print(f)
+                    #print("likelihood shape: ",likelihood[t].shape)
+                    #print("qs_t shape: ",qs[t])
                     lnA = spm_dot(likelihood[t],qs[t],[f])
                 else:
                     lnA = np.zeros(n_states[f])
-                # print("policy: ", full_policy.shape)
-                # print(t+1)
-                # print(len(qs))
-
                 # the 'forwards message' in VB_X
-                x = B[f][:,:,full_policy[t-1,f]].dot(qs[t-1][f]) + 1e-16
-  
-                lnBpast = 0.5 * np.log(B[f][:,:,full_policy[t-1,f]].dot(qs[t-1][f]) + 1e-16)
+                if t == 0:
+                    lnBpast = np.log(prior[f] + 1e-16)
+                else:
+                    lnBpast = 0.5 * np.log(B[f][:,:,full_policy[t-1,f]].dot(qs[t-1][f]) + 1e-16)
 
+                #print("lenqs: ",len(qs))
+                #print(t)
+                #print(len(qs))
+                #print(full_policy.shape)
                 if t == len(qs)-1:
-                    lnBfuture = 1.0 * np.ones(n_states[f])
+                    lnBfuture = last_message[f]
                 else: # the 'backwards message' in VB_X
-                    lnBfuture = 0.5 * np.log(spm_norm(B[f][:,:,full_policy[t+1,f]].T).dot(qs[t+1][f]) + 1e-16)
+                    #print("here")
+                    #print(full_policy[t+1,f])
+                    #print(qs[t+1][f])
+                    lnBfuture = 0.5 * np.log(spm_norm(B[f][:,:,int(full_policy[t+1,f])].T).dot(qs[t+1][f]) + 1e-16)
                 lnBpast_tensor[f] = 2 * lnBpast         
                 if use_gradient_descent:
                     # gradients
@@ -222,10 +229,10 @@ def run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T, prior=None, num_iter=10, 
             F_pol += F[t,n]
         qss[n].append(qs)
     
-    print(len(qs))
-    print(len(qss))
-    print(F.shape)
-    print(F_pol)
+    # print(len(qs))
+    # print(len(qss))
+    # print(F.shape)
+    # print(F_pol)
     return qs, qss, F, F_pol
 
 if __name__ == "__main__":
@@ -278,7 +285,7 @@ if __name__ == "__main__":
     # print("obs: ", obs_t[0].shape)
     # print(len(obs_t))
     policy = np.array([[1],[1]])
-    print(policy)
+    # print(policy)
     curr_t = 3
     t_horizon = 2
     T = 2
