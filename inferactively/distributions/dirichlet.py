@@ -13,6 +13,7 @@ import copy
 from inferactively.distributions import Categorical
 from inferactively.core import maths
 
+
 class Dirichlet(object):
     """ A Dirichlet distribution """
 
@@ -43,7 +44,7 @@ class Dirichlet(object):
 
         if dims is not None:
             self.construct_dims(dims)
-        
+
         if self.IS_AOA:
             self.n_arrays = len(self.values)
         else:
@@ -209,7 +210,6 @@ class Dirichlet(object):
             for i in range(len(self.values)):
                 output[i] = self.values[i].entropy()
         return output
-
 
     def variance(self, return_numpy=False):
         """ Variance 

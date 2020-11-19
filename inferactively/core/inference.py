@@ -10,6 +10,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import itertools
 import numpy as np
 from scipy import special
+
 try:
     import torch
 except:

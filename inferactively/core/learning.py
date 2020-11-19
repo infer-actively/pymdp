@@ -13,7 +13,8 @@ from scipy import special
 from inferactively.core import utils
 import copy
 
-def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, modalities="all",return_numpy=True):
+
+def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, modalities="all", return_numpy=True):
     """ Update Dirichlet parameters of the likelihood distribution 
 
     Parameters
@@ -58,7 +59,8 @@ def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, modalities="all",return_
     # observation indices
     elif isinstance(obs, tuple):
         obs = np.array(
-            [np.eye(n_observations[modality])[obs[modality]] for modality in range(n_modalities)], dtype=object
+            [np.eye(n_observations[modality])[obs[modality]] for modality in range(n_modalities)],
+            dtype=object,
         )
 
     # convert to Categorical to make the cross product easier
@@ -133,17 +135,21 @@ def update_transition_dirichlet(
         if n_factors == 1:
             dfdb = qs.cross(qs_prev, return_numpy=True)
             dfdb = dfdb * (B[:, :, actions[0]] > 0).astype("float")
-            pB_updated[:,:,actions[0]] = pB_updated[:,:,actions[0]] + (lr * dfdb)
+            pB_updated[:, :, actions[0]] = pB_updated[:, :, actions[0]] + (lr * dfdb)
 
         elif n_factors > 1:
             for factor in range(n_factors):
                 dfdb = qs[factor].cross(qs_prev[factor], return_numpy=True)
                 dfdb = dfdb * (B[factor][:, :, actions[factor]] > 0).astype("float")
-                pB_updated[factor][:,:,actions[factor]] = pB_updated[factor][:,:,actions[factor]] + (lr * dfdb)
+                pB_updated[factor][:, :, actions[factor]] = pB_updated[factor][
+                    :, :, actions[factor]
+                ] + (lr * dfdb)
     else:
         for factor in factors:
             dfdb = qs[factor].cross(qs_prev[factor], return_numpy=True)
             dfdb = dfdb * (B[factor][:, :, actions[factor]] > 0).astype("float")
-            pB_updated[factor][:, :, actions[factor]] = pB_updated[factor][:, :, actions[factor]] + (lr * dfdb)
+            pB_updated[factor][:, :, actions[factor]] = pB_updated[factor][
+                :, :, actions[factor]
+            ] + (lr * dfdb)
 
     return pB_updated

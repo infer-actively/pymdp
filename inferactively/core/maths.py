@@ -11,6 +11,7 @@ import numpy as np
 from scipy import special
 from inferactively.core import utils
 
+
 def spm_dot(X, x, dims_to_omit=None, obs_mode=False):
     """ Dot product of a multidimensional array with `x`
         The dimensions in `dims_to_omit` will not be summed across during the dot product
@@ -125,8 +126,9 @@ def spm_norm(A):
     stored in the columns of A.
     """
     A = A + 1e-16
-    normed_A = np.divide(A,A.sum(axis=0))
+    normed_A = np.divide(A, A.sum(axis=0))
     return normed_A
+
 
 def spm_wnorm(A):
     """ 
@@ -155,29 +157,34 @@ def calc_free_energy(qs, prior, n_factors, likelihood=None):
     """
     free_energy = 0
     for factor in range(n_factors):
-        negH_qs = qs[factor].dot(np.log(qs[factor][:, np.newaxis] + 1e-16)) #  (neg)entropy of posterior marginal H(q[f])
-        xH_qp = -qs[factor].dot(prior[factor][:, np.newaxis])             #  cross entropy of posterior marginal with  prior marginal H(q[f],p[f])
+        negH_qs = qs[factor].dot(
+            np.log(qs[factor][:, np.newaxis] + 1e-16)
+        )  #  (neg)entropy of posterior marginal H(q[f])
+        xH_qp = -qs[factor].dot(
+            prior[factor][:, np.newaxis]
+        )  #  cross entropy of posterior marginal with  prior marginal H(q[f],p[f])
         free_energy += negH_qs + xH_qp
 
     if likelihood is not None:
         accuracy = spm_dot(likelihood, qs)[0]
         free_energy -= accuracy
     return free_energy
-    
+
+
 # def calc_free_energy_policy(A, B, obs_t, qs_policy, policy, curr_t, t_horizon, T, previous_actions=None):
 #     """
 #     Calculate variational free energy for a specific policy.
-   
+
 #     Parameters
 #     ----------
 #     - 'A' [numpy nd.array (matrix or tensor or array-of-arrays)]:
-#         Observation likelihood of the generative model, mapping from hidden states to observations. 
+#         Observation likelihood of the generative model, mapping from hidden states to observations.
 #         Used in inference to get the likelihood of an observation, under different hidden state configurations.
 #     - 'B' [numpy.ndarray (tensor or array-of-arrays)]:
 #         Transition likelihood of the generative model, mapping from hidden states at t to hidden states at t+1.
 #         Used in inference to get expected future (or past) hidden states, given past (or future) hidden states (or expectations thereof).
 #     - 'obs_t' [list of length t_horizon of numpy 1D array or array of arrays (with 1D numpy array entries)]:
-#         Sequence of observations sampled from beginning of time horizon until the current timestep t. The first observation (the start of the time horizon) 
+#         Sequence of observations sampled from beginning of time horizon until the current timestep t. The first observation (the start of the time horizon)
 #         is either the first timestep of the generative process or the first timestep of the policy horizon (whichever is closer to 'curr_t' in time).
 #         The observations over time are stored as a list of numpy arrays, where in case of multi-modalities each numpy array is an array-of-arrays, with
 #         one 1D numpy.ndarray for each modality. In the case of a single modality, each observation is a single 1D numpy.ndarray.
@@ -197,7 +204,7 @@ def calc_free_energy(qs, prior, n_factors, likelihood=None):
 #         under actions that are known to have been taken. The first dimension of previous-arrays (previous_actions.shape[0]) encodes how far back in time
 #         the agent is considering. The first timestep of this either corresponds to either the first timestep of the generative process or the f
 #         first timestep of the policy horizon (whichever is sooner in time).  (optional)
- 
+
 #     Returns
 #     ----------
 #     -'F_pol' [float]:
@@ -209,12 +216,12 @@ def calc_free_energy(qs, prior, n_factors, likelihood=None):
 #         n_observations = [ obs_t_m.shape[0] for obs_t_m in obs_t[0] ]
 #     else:
 #         n_observations = [obs_t[0].shape[0]]
-    
+
 #     if utils.is_arr_of_arr(qs_policy[0][0]):
 #         n_states = [ qs_t_f.shape[0] for qs_t_f in qs_policy[0][0] ]
 #     else:
 #         n_states = [qs_policy[0][0].shape[0]]
-    
+
 #     n_modalities = len(n_observations)
 #     n_factors = len(n_states)
 
@@ -232,22 +239,23 @@ def calc_free_energy(qs, prior, n_factors, likelihood=None):
 #             for modality in range(n_modalities):
 #                 likelihood_t *= spm_dot(A[modality], obs[obs_range[t]][modality], obs_mode=True)
 #         likelihood[t] = np.log(likelihood_t + 1e-16)
-    
+
 #     if previous_actions is None:
 #         full_policy = policy
 #     else:
 #         full_policy = np.vstack( (previous_actions, policy))
-    
+
 #     F_pol = 0.0
 #     for t in range(1, len(qs_policy)):
 
 #         lnBpast_tensor = np.empty(n_factors,dtype=object)
 #         for f in range(n_factors):
 #             lnBpast_tensor[f] = B[f][:,:,full_policy[t-1,f].dot(qs_policy[t-1][f])
-        
+
 #         F_pol += calc_free_energy(qs_policy[t], lnBpast_tensor, n_factors, likelihood[t])
 
 #     return F_pol
+
 
 def softmax(dist, return_numpy=True):
     """ Computes the softmax function on a set of values
@@ -282,6 +290,7 @@ def kl_divergence(q, p):
     p = np.copy(p.values)
     kl = np.sum(q * np.log(q / p), axis=0)[0]
     return kl
+
 
 def spm_MDP_G(A, x):
     """

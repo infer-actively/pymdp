@@ -403,7 +403,7 @@ class Categorical(object):
             plt.title(title)
             plt.show()
         elif self.ndim == 3:
-            #@TODO
+            # @TODO
             matrix = self._get_matrix_from_dim_index(values, leading_dim, index)
             plt.imshow(matrix, cmap="OrRd")
             plt.yticks([], [])
