@@ -124,7 +124,7 @@ def run_mmp(
     if curr_t == 0:
         obs_range = [0]
     else:
-        obs_range = range(max(0, curr_t - t_horizon), curr_t)
+        obs_range = range(max(0, curr_t - t_horizon), curr_t+1)
 
     # likelihood of observations under configurations of hidden causes (over time)
     likelihood = np.empty(len(obs_range), dtype=object)
@@ -136,14 +136,16 @@ def run_mmp(
         else:
             for modality in range(n_modalities):
                 likelihood_t *= spm_dot(A[modality], obs_t[obs_range[t]][modality], obs_mode=True)
+        print(f"likelihood (pre-logging) {likelihood_t}")
         likelihood[t] = np.log(likelihood_t + 1e-16)
-    print("ll", likelihood[0].shape)
 
     """
     =========== Step 2 ===========
         Create a flat posterior (and prior if necessary)
         If prior is not provided, initialise prior to be identical to posterior
-        (namely, a flat categorical distribution).
+        (namely, a flat categorical distribution). Also make a normalized version of
+        the transpose of the transition likelihood (for computing backwards messages 'from the future')
+        called `B_t`
     """
 
     qs = [np.empty(n_factors, dtype=object) for i in range(window_len + 1)]
@@ -155,12 +157,23 @@ def run_mmp(
         prior = np.empty(n_factors, dtype=object)
         for f in range(n_factors):
             prior[f] = np.ones(n_states[f]) / n_states[f]
+    
+    if n_factors == 1:
+        B_t = np.zeros_like(B)
+        for u in range(B.shape[2]):
+            B_t[:,:,u] = spm_norm(B[:,:,u].T)
+    elif n_factors > 1:
+        B_t = np.empty(n_factors, dtype=object)
+        for f in range(n_factors):
+            B_t[f] = np.zeros_like(B[f])
+            for u in range(B[f].shape[2]):
+                B_t[f][:,:,u] = spm_norm(B[f][:,:,u].T)
+
 
     # set final future message as all ones at the time horizon (no information from beyond the horizon)
     last_message = np.empty(n_factors, dtype=object)
     for f in range(n_factors):
         last_message[f] = np.ones(n_states[f])
-    # qs[-1] = last_message
 
     """
     =========== Step 3 ===========
@@ -174,20 +187,26 @@ def run_mmp(
         previous_actions = np.zeros((1, policy.shape[1]))
 
     full_policy = np.vstack((previous_actions, policy))
+    # print(f"full_policy shape {full_policy.shape}")
 
     qss = [[] for i in range(num_iter)]
     F = np.zeros((len(qs), num_iter))
     F_pol = 0.0
 
+    # print(f"length obs_t {len(obs_t)}")
     for n in range(num_iter):
-        for t in range(0, len(qs) - 1):
+        for t in range(0, len(qs) - 1): 
             lnBpast_tensor = np.empty(n_factors, dtype=object)
             for f in range(n_factors):
-                if t <= len(obs_t):
+                if t < len(obs_t): # this is because of Python indexing (when t == len(obs_t)-1, we're at t == curr_t)
+                # if t <= len(obs_t):
+                    # print(f"t index {t}")
+                    # print(f"length likelihood {len(likelihood)}")
+                    # print(f"length qs {len(qs)}")
                     lnA = spm_dot(likelihood[t], qs[t], [f])
                 else:
                     lnA = np.zeros(n_states[f])
-                # the 'forwards message' in VB_X
+
                 if t == 0:
                     lnBpast = np.log(prior[f] + 1e-16)
                 else:
@@ -195,11 +214,12 @@ def run_mmp(
                         B[f][:, :, full_policy[t - 1, f]].dot(qs[t - 1][f]) + 1e-16
                     )
 
-                if t == len(qs) - 1:
+                if t == len(qs) - 1: # if we're at the end of the inference chain (at the current moment), the last message is just ones
                     lnBfuture = last_message[f]
-                else:  # the 'backwards message' in VB_X
+                else: 
+                    
                     lnBfuture = 0.5 * np.log(
-                        spm_norm(B[f][:, :, int(full_policy[t + 1, f])].T).dot(qs[t + 1][f]) + 1e-16
+                        B_t[f][:, :, int(full_policy[t, f])].dot(qs[t + 1][f]) + 1e-16
                     )
                 lnBpast_tensor[f] = 2 * lnBpast
                 if use_gradient_descent:
