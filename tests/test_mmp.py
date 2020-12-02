@@ -81,8 +81,8 @@ class mmp(unittest.TestCase):
         previous_actions = mat_contents["previous_actions"].astype('int64') - 1
         result_spm = mat_contents["qs"][0]
         likelihoods = mat_contents["likelihoods"][0]
-        for t in range(len(likelihoods)):
-            print(f"likelihood matlab {likelihoods[t]}")
+        # for t in range(len(likelihoods)):
+        #     print(f"likelihood matlab {likelihoods[t]}")
 
         # convert matlab index-style observations into list of array of arrays over time
         num_obs = [A[g].shape[0] for g in range(len(A))]
@@ -93,12 +93,12 @@ class mmp(unittest.TestCase):
         # print(curr_t.shape)
         qs, _, _, _ = core.algos.run_mmp(A, B, obs_t, policy, curr_t, t_horizon,T, use_gradient_descent = True, num_iter = 5, previous_actions = previous_actions)
 
-        print(f"final qs {qs[-2]}")
-        print(f"matlab qs {result_spm}")
+        print(f"final qs {qs[-1][0].shape}")
+        print(f"matlab qs shape {result_spm[0]}")
 
-        result_inferactively = qs[-2] # just check whether the latest beliefs (about curr_t, held at curr_t) match up
+        result_inferactively = qs[-1] # just check whether the latest beliefs (about curr_t, held at curr_t) match up
         for f in range(len(B)):
-            self.assertTrue(np.isclose(result_spm[f], result_inferactively[f]).all())
+            self.assertTrue(np.isclose(result_spm[f].squeeze(), result_inferactively[f]).all())
 
 
 if __name__ == "__main__":
