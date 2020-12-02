@@ -10,7 +10,6 @@ __author__: Conor Heins, Beren Millidge, Alexander Tschantz, Brennan Klein
 import numpy as np
 from inferactively.core.maths import spm_dot, softmax, calc_free_energy
 
-
 def run_fpi(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, dF_tol=0.001):
     """
     Update marginal posterior beliefs about hidden states using variational fixed point iteration (FPI).
