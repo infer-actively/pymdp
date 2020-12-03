@@ -122,7 +122,7 @@ def mmp(
             forward_tensor = obj_array(num_factors)
 
             for f in range(num_factors):
-                
+
                 """ forward """
                 if t == 0:
                     log_A = spm_dot(ll, qs_seq[t], omit=[f])
@@ -152,7 +152,6 @@ def mmp(
 
 
 if __name__ == "__main__":
-
     num_obs = [2, 2]
     num_states = [2, 2]
     num_controls = [3, 3]

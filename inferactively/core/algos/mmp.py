@@ -94,197 +94,209 @@ def run_mmp(
         Total free energy of the policy under consideration.
     """
 
-    # get model dimensions
-    time_window_idxs = np.array(
-        [i for i in range(max(0, curr_t - t_horizon), min(T, curr_t + t_horizon))]
-    )
-    window_len = len(time_window_idxs)
-    print("t_horizon ", t_horizon)
-    print("window_len ", window_len)
-    if utils.is_arr_of_arr(obs_t[0]):
-        n_observations = [obs_array_i.shape[0] for obs_array_i in obs_t[0]]
-    else:
-        n_observations = [obs_t[0].shape[0]]
+    # get temporal window for inference
+    min_time = max(0, curr_t - t_horizon)
+    max_time = min(T, curr_t + t_horizon)
+    window_idxs = np.array([t for t in range(min_time, max_time)])
+    window_len = len(window_idxs)
+    # TODO: needs a better name - the point at which we ignore future messages
+    future_cutoff = window_len - 1
+    inference_len = window_len + 1
+    obs_seq_len = len(obs_t)
 
-    if utils.is_arr_of_arr(B):
-        n_states = [sub_B.shape[0] for sub_B in B]
-    else:
-        n_states = [B[0].shape[0]]
-        B = utils.to_arr_of_arr(B)
-
-    n_modalities = len(n_observations)
-    n_factors = len(n_states)
-
-    """
-    =========== Step 1 ===========
-        Loop over the observation modalities and use assumption of independence among observation modalities
-        to multiply each modality-specific likelihood onto a single joint likelihood over hidden states [shape = n_states]
-    """
-
-    # compute time-window, taking into account boundary conditions
+    # get relevant observations, given our current time point
     if curr_t == 0:
         obs_range = [0]
     else:
-        obs_range = range(max(0, curr_t - t_horizon), curr_t+1)
+        min_obs_idx = max(0, curr_t - t_horizon)
+        max_obs_idx = curr_t + 1
+        obs_range = range(min_obs_idx, max_obs_idx)
 
-    # likelihood of observations under configurations of hidden causes (over time)
+    # get model dimensions
+    # TODO: make a general function in `utils` for extracting model dimensions
+    if utils.is_arr_of_arr(obs_t[0]):
+        num_obs = [obs.shape[0] for obs in obs_t[0]]
+    else:
+        num_obs = [obs_t[0].shape[0]]
+
+    if utils.is_arr_of_arr(B):
+        num_states = [b.shape[0] for b in B]
+    else:
+        num_states = [B[0].shape[0]]
+        B = utils.to_arr_of_arr(B)
+
+    num_modalities = len(num_obs)
+    num_factors = len(num_states)
+
+    """
+    =========== Step 1 ===========
+        Calculate likelihood
+        Loop over modalities and use assumption of independence among observation modalities
+        to combine each modality-specific likelihood into a single joint likelihood over hidden states 
+    """
+
+    # likelihood of observations under configurations of hidden states (over time)
     likelihood = np.empty(len(obs_range), dtype=object)
-    for t in range(len(obs_range)):
-        likelihood_t = np.ones(tuple(n_states))
+    for t, obs in enumerate(obs_range):
+        likelihood_t = np.ones(tuple(num_states))
 
-        if n_modalities == 1:
-            likelihood_t *= spm_dot(A, obs_t[obs_range[t]], obs_mode=True)
+        if num_modalities == 1:
+            likelihood_t *= spm_dot(A, obs_t[obs], obs_mode=True)
         else:
-            for modality in range(n_modalities):
-                likelihood_t *= spm_dot(A[modality], obs_t[obs_range[t]][modality], obs_mode=True)
-        print(f"likelihood (pre-logging) {likelihood_t}")
+            for modality in range(num_modalities):
+                likelihood_t *= spm_dot(A[modality], obs_t[obs][modality], obs_mode=True)
+
+        # The Thomas Parr MMP version, you log the likelihood first
         # likelihood[t] = np.log(likelihood_t + 1e-16) # The Thomas Parr MMP version, you log the likelihood first
-        likelihood[t] = likelihood_t # Karl SPM version, logging doesn't happen until *after* the dotting with the posterior
+
+        # Karl SPM version, logging doesn't happen until *after* the dotting with the posterior
+        likelihood[t] = likelihood_t
 
     """
     =========== Step 2 ===========
-        Create a flat posterior (and prior if necessary)
-        If prior is not provided, initialise prior to be identical to posterior
-        (namely, a flat categorical distribution). Also make a normalized version of
-        the transpose of the transition likelihood (for computing backwards messages 'from the future')
-        called `B_t`
+        Initialise a flat posterior (and prior if necessary)
+        If a prior is not provided, initialise a uniform prior
     """
 
-    qs = [np.empty(n_factors, dtype=object) for i in range(window_len + 1)]
-    print(len(qs))
-    for t in range(window_len + 1):
+    qs = [np.empty(num_factors, dtype=object) for i in range(inference_len)]
+
+    for t in range(inference_len):
         if t == window_len:
-            for f in range(n_factors):
-                qs[t][f] = np.zeros(n_states[f])
+            # final message is zeros - has no effect on inference
+            # TODO: this may be redundant now that we skip last step
+            for f in range(num_factors):
+                qs[t][f] = np.zeros(num_states[f])
         else:
-            for f in range(n_factors):
-                qs[t][f] = np.ones(n_states[f]) / n_states[f]
+            for f in range(num_factors):
+                qs[t][f] = np.ones(num_states[f]) / num_states[f]
 
     if prior is None:
-        prior = np.empty(n_factors, dtype=object)
-        for f in range(n_factors):
-            prior[f] = np.ones(n_states[f]) / n_states[f]
-    
-    if n_factors == 1:
-        B_t = np.zeros_like(B)
-        for u in range(B.shape[2]):
-            B_t[:,:,u] = spm_norm(B[:,:,u].T)
-    elif n_factors > 1:
-        B_t = np.empty(n_factors, dtype=object)
-        for f in range(n_factors):
-            B_t[f] = np.zeros_like(B[f])
-            for u in range(B[f].shape[2]):
-                B_t[f][:,:,u] = spm_norm(B[f][:,:,u].T)
+        prior = np.empty(num_factors, dtype=object)
+        for f in range(num_factors):
+            prior[f] = np.ones(num_states[f]) / num_states[f]
 
-
-    # set final future message as all ones at the time horizon (no information from beyond the horizon)
-    last_message = np.empty(n_factors, dtype=object)
-    for f in range(n_factors):
-        last_message[f] = np.zeros(n_states[f])
-
-    """
+    """ 
     =========== Step 3 ===========
-        Loop over time indices of time window, which includes time before the policy horizon 
-        as well as including the policy horizon
-        n_steps, n_factors [0 1 2 0;
-                            1 2 0 1]
+        Create a normalized transpose of the transition distribution `B_transposed`
+        Used for computing backwards messages 'from the future'
     """
 
+    if num_factors == 1:
+        B_transposed = np.zeros_like(B)
+        for u in range(B.shape[2]):
+            B_transposed[:, :, u] = spm_norm(B[:, :, u].T)
+    else:
+        B_transposed = np.empty(num_factors, dtype=object)
+        for f in range(num_factors):
+            B_transposed[f] = np.zeros_like(B[f])
+            for u in range(B[f].shape[2]):
+                B_transposed[f][:, :, u] = spm_norm(B[f][:, :, u].T)
+
+    # zero out final message
+    # TODO: may be redundant now we skip final step
+    last_message = np.empty(num_factors, dtype=object)
+    for f in range(num_factors):
+        last_message[f] = np.zeros(num_states[f])
+
+    # if previous actions not given, zero out to stop any influence on inference
     if previous_actions is None:
         previous_actions = np.zeros((1, policy.shape[1]))
 
     full_policy = np.vstack((previous_actions, policy))
-    # print(f"full_policy shape {full_policy.shape}")
+
+    """
+    =========== Step 3 ===========
+        Loop over time indices of time window, updating posterior as we go
+        This includes past time steps and future time steps
+    """
 
     qss = [[] for i in range(num_iter)]
-    F = np.zeros((len(qs), num_iter))
-    F_pol = 0.0
+    free_energy = np.zeros((len(qs), num_iter))
+    free_energy_pol = 0.0
 
-    print('length of qs:',len(qs))
-    # print(f"length obs_t {len(obs_t)}")
     for n in range(num_iter):
-        for t in range(0, len(qs)): 
-        # for t in range(0, len(qs)): 
-            lnBpast_tensor = np.empty(n_factors, dtype=object)
-            for f in range(n_factors):
-                if t < len(obs_t): # this is because of Python indexing (when t == len(obs_t)-1, we're at t == curr_t)
-                    print(t)
-                # if t <= len(obs_t):
-                    # print(f"t index {t}")
-                    # print(f"length likelihood {len(likelihood)}")
-                    # print(f"length qs {len(qs)}")
-                    # lnA = spm_dot(likelihood[t], qs[t], [f]) # the Thomas Parr MMP version
-                    lnA =  np.log(spm_dot(likelihood[t], qs[t], [f]) + 1e-16)
-                    if t == 2 and f == 0:
-                        print(f"lnA at time t = {t}, factor f = {f}: {lnA}")
-                else:
-                    lnA = np.zeros(n_states[f])
+        for t in range(inference_len):
 
+            lnB_past_tensor = np.empty(num_factors, dtype=object)
+            for f in range(num_factors):
+
+                """
+                =========== Step 3.a ===========
+                    Calculate likelihood
+                """
+                if t < obs_seq_len:
+                    # Thomas Parr MMP version
+                    # lnA = spm_dot(likelihood[t], qs[t], [f])
+
+                    # Karl SPM version
+                    lnA = np.log(spm_dot(likelihood[t], qs[t], [f]) + 1e-16)
+                else:
+                    lnA = np.zeros(num_states[f])
+
+                """
+                =========== Step 3.b ===========
+                    Calculate past message
+                """
                 if t == 0:
-                    lnBpast = np.log(prior[f] + 1e-16)
+                    lnB_past = np.log(prior[f] + 1e-16)
                 else:
-                    # lnBpast = 0.5 * np.log(
-                    #     B[f][:, :, full_policy[t - 1, f]].dot(qs[t - 1][f]) + 1e-16
-                    # ) # the Thomas Parr MMP version
-                    lnBpast = np.log(
-                        B[f][:, :, full_policy[t - 1, f]].dot(qs[t - 1][f]) + 1e-16
-                    ) # the Karl SPM version
-                
-                if t == 2 and f == 0:
-                    print(f"lnBpast at time t = {t}, factor f = {f}: {lnBpast}")
-                
-                # print(f"lnBpast at time t = {t}, factor f = {f}: {lnBpast}")
+                    # Thomas Parr MMP version
+                    # lnB_past = 0.5 * np.log(B[f][:, :, full_policy[t - 1, f]].dot(qs[t - 1][f]) + 1e-16)
 
-                # this is never reached
-                if t >= len(qs) - 2: # if we're at the end of the inference chain (at the current moment), the last message is just zeros
-                    lnBfuture = last_message[f]
-                    print('At final timestep!')
-                    # print(f"lnBfuture at time t = {t}, factor f = {f}: {lnBfuture}")
-                else: 
-                    # if t == 0 and f == 0:
-                    #     print(B_t[f][:, :, int(full_policy[t, f])])
-                    #     print(qs[t + 1][f])
-                    # lnBfuture = 0.5 * np.log(
-                    #     B_t[f][:, :, int(full_policy[t, f])].dot(qs[t + 1][f]) + 1e-16
-                    # ) # the Thomas Parr MMP version
-                    lnBfuture = np.log(
-                        B_t[f][:, :, int(full_policy[t, f])].dot(qs[t + 1][f]) + 1e-16
-                    ) # the Karl SPM  version (without the 0.5 in front)
-                
-                if t == 2 and f == 0:
-                    print(f"lnBfuture at time t = {t}, factor f = {f}: {lnBfuture}")
-                
-                # if t == 0 and f == 0:
-                #     print(f"lnBfuture at time t= {t}: {lnBfuture}")
+                    # Karl SPM version
+                    lnB_past = np.log(B[f][:, :, full_policy[t - 1, f]].dot(qs[t - 1][f]) + 1e-16)
 
-                # lnBpast_tensor[f] = 2 * lnBpast # the Thomas Parr MMP version
-                lnBpast_tensor[f] = lnBpast # the Karl version
+                """
+                =========== Step 3.c ===========
+                    Calculate future message
+                """
+                if t >= future_cutoff:
+                    # TODO: this is redundant - not used in code
+                    lnB_future = last_message[f]
+                else:
+                    # Thomas Parr MMP version
+                    # B_future = B_transposed[f][:, :, int(full_policy[t, f])].dot(qs[t + 1][f])
+                    # lnB_future = 0.5 * np.log(B_future + 1e-16)
+
+                    # Karl Friston SPM version
+                    B_future = B_transposed[f][:, :, int(full_policy[t, f])].dot(qs[t + 1][f])
+                    lnB_future = np.log(B_future + 1e-16)
+
+                # Thomas Parr MMP version
+                # lnB_past_tensor[f] = 2 * lnBpast
+                # Karl SPM version
+                lnB_past_tensor[f] = lnB_past
+
+                """
+                =========== Step 3.d ===========
+                    Update posterior
+                """
                 if use_gradient_descent:
-                    # gradients
-                    lns = np.log(qs[t][f] + 1e-16)  # current estimate
-                    # e = (lnA + lnBpast + lnBfuture) - lns  # prediction error, Thomas Parr version
-                    if t >= len(qs) - 2:
-                        e = lnA + lnBpast - lns
+                    lns = np.log(qs[t][f] + 1e-16)
+
+                    # Thomas Parr MMP version
+                    # error = (lnA + lnBpast + lnBfuture) - lns
+
+                    # Karl SPM version
+                    if t >= future_cutoff:
+                        error = lnA + lnB_past - lns
                     else:
-                        e = (2*lnA + lnBpast + lnBfuture) - 2*lns  # prediction error, Karl SPM version
-                    e -= e.mean() # Karl SPM version
-                    print(f"prediction error at time t = {t}, factor f = {f}: {e}")
-                    lns += tau * e  # increment the current (log) belief with the prediction error
+                        error = (2 * lnA + lnB_past + lnB_future) - 2 * lns
 
+                    error -= error.mean()
+                    lns = lns + tau * error
                     qs_t_f = softmax(lns)
-
-                    F_pol += 0.5 * qs[t][f].dot(e)
-
+                    free_energy_pol += 0.5 * qs[t][f].dot(error)
                     qs[t][f] = qs_t_f
                 else:
-                    # free energy minimum for the factor in question
-                    qs[t][f] = softmax(lnA + lnBpast + lnBfuture)
+                    qs[t][f] = softmax(lnA + lnB_past + lnB_future)
 
-            # F[t, n] = calc_free_energy(qs[t], lnBpast_tensor, n_factors, likelihood[t])
-            # F_pol += F[t, n]
+            # TODO: probably works anyways
+            # free_energy[t, n] = calc_free_energy(qs[t], lnB_past_tensor, num_factors, likelihood[t])
+            # free_energy_pol += F[t, n]
         qss[n].append(qs)
 
-    return qs, qss, F, F_pol
+    return qs, qss, free_energy, free_energy_pol
 
 
 if __name__ == "__main__":
