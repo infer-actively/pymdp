@@ -16,22 +16,25 @@ def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, modalities="all", return
 
     Parameters
     -----------
-    - pA [numpy nd.array, array-of-arrays (with np.ndarray entries), or Dirichlet (either single-modality or AoA)]:
-        The prior Dirichlet parameters of the generative model, parameterizing the agent's beliefs about the observation likelihood. 
+    - pA [numpy nd.array, array-of-arrays (with np.ndarray entries), or Dirichlet 
+    (either single-modality or AoA)]:
+        The prior Dirichlet parameters of the generative model, parameterizing the 
+        agent's beliefs about the observation likelihood. 
     - A [numpy nd.array, object-like array of arrays, or Categorical (either single-modality or AoA)]:
         The observation likelihood of the generative model. 
     - obs [numpy 1D array, array-of-arrays (with 1D numpy array entries), int or tuple]:
         A discrete observation (possible multi-modality) used in the update equation
-    - qs [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+    - qs [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), 
+    or Categorical (either single-factor or AoA)]:
         Current marginal posterior beliefs about hidden state factors
     - lr [float, optional]:
         Learning rate.
     - return_numpy [bool, optional]:
         Logical flag to determine whether output is a numpy array or a Dirichlet
     - modalities [list, optional]:
-        Indices (in terms of range(n_modalities)) of the observation modalities to include in learning.
-        Defaults to 'all', meaning that observation likelihood matrices for all modalities
-        are updated using their respective observations.
+        Indices (in terms of range(n_modalities)) of the observation modalities to include 
+        in learning.Defaults to 'all', meaning that observation likelihood matrices 
+        for all modalities are updated using their respective observations.
     """
 
     pA = utils.to_numpy(pA)
@@ -92,15 +95,20 @@ def update_transition_dirichlet(
 
     Parameters
     -----------
-   -  pB [numpy nd.array, array-of-arrays (with np.ndarray entries), or Dirichlet (either single-modality or AoA)]:
-        The prior Dirichlet parameters of the generative model, parameterizing the agent's beliefs about the transition likelihood. 
+   -  pB [numpy nd.array, array-of-arrays (with np.ndarray entries), or Dirichlet 
+   (either single-modality or AoA)]:
+        The prior Dirichlet parameters of the generative model, parameterizing the agent's 
+        beliefs about the transition likelihood. 
     - B [numpy nd.array, object-like array of arrays, or Categorical (either single-modality or AoA)]:
         The transition likelihood of the generative model. 
     - actions [numpy 1D array]:
-        A 1D numpy array of shape (num_control_factors,) containing the action(s) performed at a given timestep.
-    - qs [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+        A 1D numpy array of shape (num_control_factors,) containing the action(s) performed at 
+        a given timestep.
+    - qs [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical 
+    (either single-factor or AoA)]:
         Current marginal posterior beliefs about hidden state factors
-    - qs_prev [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical (either single-factor or AoA)]:
+    - qs_prev [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or 
+    Categorical (either single-factor or AoA)]:
         Past marginal posterior beliefs about hidden state factors
     - lr [float, optional]:
         Learning rate.

@@ -280,16 +280,22 @@ def spm_MDP_G(A, x):
          Used in inference to get the likelihood of an observation, under different hidden state configurations.
      - 'B' [numpy.ndarray (tensor or array-of-arrays)]:
          Transition likelihood of the generative model, mapping from hidden states at t to hidden states at t+1.
-         Used in inference to get expected future (or past) hidden states, given past (or future) hidden states (or expectations thereof).
+         Used in inference to get expected future (or past) hidden states, given past (or future) hidden 
+         states (or expectations thereof).
      - 'obs_t' [list of length t_horizon of numpy 1D array or array of arrays (with 1D numpy array entries)]:
-         Sequence of observations sampled from beginning of time horizon until the current timestep t. The first observation (the start of the time horizon)
-         is either the first timestep of the generative process or the first timestep of the policy horizon (whichever is closer to 'curr_t' in time).
-         The observations over time are stored as a list of numpy arrays, where in case of multi-modalities each numpy array is an array-of-arrays, with
-         one 1D numpy.ndarray for each modality. In the case of a single modality, each observation is a single 1D numpy.ndarray.
+         Sequence of observations sampled from beginning of time horizon until the current timestep t. The 
+         first observation (the start of the time horizon)
+         is either the first timestep of the generative process or the first timestep of the policy horizon 
+         (whichever is closer to 'curr_t' in time).
+         The observations over time are stored as a list of numpy arrays, where in case of multi-modalities 
+         each numpy array is an array-of-arrays, with
+         one 1D numpy.ndarray for each modality. In the case of a single modality, each observation is a 
+         single 1D numpy.ndarray.
      - 'qs_policy' [list of length T of numpy 1D arrays or array of arrays (with 1D numpy array entries):
          Marginal posterior beliefs over hidden states (single- or multi-factor) under a given policy.
      - 'policy' [2D np.ndarray]:
-         Array of actions constituting a single policy. Policy is a shape (n_steps, n_control_factors) numpy.ndarray, the values of which
+         Array of actions constituting a single policy. Policy is a shape (n_steps, n_control_factors) 
+         numpy.ndarray, the values of which
          indicate actions along a given control factor (column index) at a given timestep (row index).
      - 'curr_t' [int]:
          Current timestep (relative to the 'absolute' time of the generative process).
@@ -298,9 +304,12 @@ def spm_MDP_G(A, x):
      - 'T' [int]:
          Temporal horizon of the generative process (absolute time)
      -'previous_actions' [numpy.ndarray with shape (num_steps, n_control_factors) or None]:
-         Array of previous actions, which can be used to constrain the 'past' messages in inference to only consider states of affairs that were possible
-         under actions that are known to have been taken. The first dimension of previous-arrays (previous_actions.shape[0]) encodes how far back in time
-         the agent is considering. The first timestep of this either corresponds to either the first timestep of the generative process or the f
+         Array of previous actions, which can be used to constrain the 'past' messages in inference to only 
+         consider states of affairs that were possible
+         under actions that are known to have been taken. The first dimension of previous-arrays 
+         (previous_actions.shape[0]) encodes how far back in time
+         the agent is considering. The first timestep of this either corresponds to either the first 
+         timestep of the generative process or the f
          first timestep of the policy horizon (whichever is sooner in time).  (optional)
 
      Returns
@@ -308,7 +317,8 @@ def spm_MDP_G(A, x):
      -'F_pol' [float]:
          Total variational free energy of the policy under consideration.
 
-     # extract dimensions of observation modalities and number of levels per modality. Do the same for hidden states
+     # extract dimensions of observation modalities and number of levels per modality. 
+     # Do the same for hidden states
      if utils.is_arr_of_arr(obs_t[0]):
          n_observations = [ obs_t_m.shape[0] for obs_t_m in obs_t[0] ]
      else:
@@ -322,7 +332,8 @@ def spm_MDP_G(A, x):
      n_modalities = len(n_observations)
      n_factors = len(n_states)
 
-     # compute time-window, taking into account boundary conditions - this range goes from start of time-window (in absolute time) to current absolute time index
+     # compute time-window, taking into account boundary conditions - this range goes from start of 
+     # time-window (in absolute time) to current absolute time index
      obs_range = range(max(0,curr_t-t_horizon),curr_t)
 
      # likelihood of observations under configurations of hidden causes (over time)
