@@ -9,7 +9,6 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 from inferactively.envs import Env
 from inferactively.distributions import Categorical
-import inferactively.core as core
 import numpy as np
 
 LOCATION_FACTOR_ID = 0
@@ -22,6 +21,7 @@ CUE_MODALITY_ID = 2
 REWARD_IDX = 1
 LOSS_IDX = 2
 
+
 class TMazeEnv(Env):
     def __init__(self, reward_probs=None):
 
@@ -32,7 +32,7 @@ class TMazeEnv(Env):
         else:
             if sum(reward_probs) != 1:
                 raise ValueError("Reward probabilities must sum to 1!")
-            elif len(reward_probs) !=2:
+            elif len(reward_probs) != 2:
                 raise ValueError("Only two reward conditions currently supported...")
             else:
                 self.reward_probs = reward_probs
@@ -40,9 +40,9 @@ class TMazeEnv(Env):
         self.n_states = [4, 2]
         self.n_locations = self.n_states[LOCATION_FACTOR_ID]
         self.n_control = [self.n_locations, 1]
-        self.n_reward_conditions = self.n_states[TRIAL_FACTOR_ID] 
+        self.n_reward_conditions = self.n_states[TRIAL_FACTOR_ID]
         self.n_cues = self.n_reward_conditions
-        self.n_observations = [self.n_locations, self.n_reward_conditions + 1, self.n_cues]     
+        self.n_observations = [self.n_locations, self.n_reward_conditions + 1, self.n_cues]
         self.n_factors = len(self.n_states)
         self.n_modalities = len(self.n_observations)
 
@@ -72,7 +72,8 @@ class TMazeEnv(Env):
         for factor, state in enumerate(self._state):
             prob_states[factor] = (
                 self._transition_dist[factor][:, :, actions[factor]]
-                .dot(state, return_numpy=True).flatten()
+                .dot(state, return_numpy=True)
+                .flatten()
             )
         state = Categorical(values=prob_states).sample()
         self._state = self._construct_state(state)
@@ -92,10 +93,7 @@ class TMazeEnv(Env):
 
     def get_uniform_posterior(self):
         values = np.array(
-            [
-                np.ones(self.n_states[f]) / self.n_states[f]
-                for f in range(self.n_factors)
-            ]
+            [np.ones(self.n_states[f]) / self.n_states[f] for f in range(self.n_factors)]
         )
         return Categorical(values=values)
 
@@ -119,7 +117,9 @@ class TMazeEnv(Env):
 
         B = np.empty(self.n_factors, dtype=object)
         B[LOCATION_FACTOR_ID] = B_locs
-        B[TRIAL_FACTOR_ID] = np.eye(self.n_reward_conditions).reshape(self.n_reward_conditions, self.n_reward_conditions, 1)
+        B[TRIAL_FACTOR_ID] = np.eye(self.n_reward_conditions).reshape(
+            self.n_reward_conditions, self.n_reward_conditions, 1
+        )
         return Categorical(values=B)
 
     def _construct_likelihood_dist(self):
@@ -130,37 +130,52 @@ class TMazeEnv(Env):
         for loc in range(self.n_states[LOCATION_FACTOR_ID]):
             for reward_condition in range(self.n_states[TRIAL_FACTOR_ID]):
 
-                if loc == 0:  # the case when the agent is in the centre location
-                    # when in the centre location, reward observation is always 'no reward', or the outcome with index 0
-                    A[REWARD_MODALITY_ID][0,loc,reward_condition] = 1.0
+                # The case when the agent is in the centre location
+                if loc == 0:
+                    # When in the centre location, reward observation is always 'no reward'
+                    # or the outcome with index 0
+                    A[REWARD_MODALITY_ID][0, loc, reward_condition] = 1.0
 
-                    # when in the centre location, cue is totally ambiguous with respect to the reward condition
-                    A[CUE_MODALITY_ID][:,loc,reward_condition] = 1.0 / self.n_observations[2]
-                
-                elif loc == 3: # the case when loc == 3, or the cue location ('bottom arm')
+                    # When in the centre location, cue is totally ambiguous with respect to the reward condition
+                    A[CUE_MODALITY_ID][:, loc, reward_condition] = 1.0 / self.n_observations[2]
 
-                    # when in the cue location, reward observation is always 'no reward', or the outcome with index 0
-                    A[REWARD_MODALITY_ID][0,loc,reward_condition] = 1.0
+                # The case when loc == 3, or the cue location ('bottom arm')
+                elif loc == 3:
 
-                    # when in the cue location, the cue indicates the reward condition umambiguously / signals where the reward is located
-                    A[CUE_MODALITY_ID][reward_condition,loc,reward_condition] = 1.0
+                    # When in the cue location, reward observation is always 'no reward'
+                    # or the outcome with index 0
+                    A[REWARD_MODALITY_ID][0, loc, reward_condition] = 1.0
 
-                else: # the case when the agent is in one of the (potentially-) rewarding arms
-                    
-                    if loc == (reward_condition + 1): # when location is consistent with reward condition
-                        high_prob_idx = REWARD_IDX    # means highest probability is concentrated over reward outcome
-                        low_prob_idx = LOSS_IDX       # lower probability on loss outcome
-                    else: 
-                        high_prob_idx = LOSS_IDX      # means highest probability is concentrated over loss outcome
-                        low_prob_idx  = REWARD_IDX    # lower probability on reward outcome
+                    # When in the cue location, the cue indicates the reward condition umambiguously
+                    # signals where the reward is located
+                    A[CUE_MODALITY_ID][reward_condition, loc, reward_condition] = 1.0
 
-                    A[REWARD_MODALITY_ID][high_prob_idx,loc,reward_condition] = self.reward_probs[0] 
-                    A[REWARD_MODALITY_ID][low_prob_idx,loc,reward_condition] = self.reward_probs[1] 
+                # The case when the agent is in one of the (potentially-) rewarding armS
+                else:
 
-                    # cue is ambiguous when in the reward location
-                    A[CUE_MODALITY_ID][:,loc,reward_condition] = 1.0 / self.n_observations[2]
+                    # When location is consistent with reward condition
+                    if loc == (reward_condition + 1):
+                        # Means highest probability is concentrated over reward outcome
+                        high_prob_idx = REWARD_IDX
+                        # Lower probability on loss outcome
+                        low_prob_idx = LOSS_IDX
+                    else:
+                        # Means highest probability is concentrated over loss outcome
+                        high_prob_idx = LOSS_IDX
+                        # Lower probability on reward outcome
+                        low_prob_idx = REWARD_IDX
 
-                A[LOCATION_MODALITY_ID][loc, loc, reward_condition] = 1.0 # the agent always observes its location, regardless of the reward condition
+                    reward_probs = self.reward_probs[0]
+                    A[REWARD_MODALITY_ID][high_prob_idx, loc, reward_condition] = reward_probs
+
+                    reward_probs = self.reward_probs[1]
+                    A[REWARD_MODALITY_ID][low_prob_idx, loc, reward_condition] = reward_probs
+
+                    # Cue is ambiguous when in the reward location
+                    A[CUE_MODALITY_ID][:, loc, reward_condition] = 1.0 / self.n_observations[2]
+
+                # The agent always observes its location, regardless of the reward condition
+                A[LOCATION_MODALITY_ID][loc, loc, reward_condition] = 1.0
 
         return Categorical(values=A)
 
@@ -178,7 +193,8 @@ class TMazeEnv(Env):
     def reward_condition(self):
         return self._reward_condition
 
-class TMazeEnv_nullOutcome(Env):
+
+class TMazeEnvNullOutcome(Env):
     def __init__(self, reward_probs=None):
 
         if reward_probs is None:
@@ -188,7 +204,7 @@ class TMazeEnv_nullOutcome(Env):
         else:
             if sum(reward_probs) != 1:
                 raise ValueError("Reward probabilities must sum to 1!")
-            elif len(reward_probs) !=2:
+            elif len(reward_probs) != 2:
                 raise ValueError("Only two reward conditions currently supported...")
             else:
                 self.reward_probs = reward_probs
@@ -196,9 +212,9 @@ class TMazeEnv_nullOutcome(Env):
         self.n_states = [4, 2]
         self.n_locations = self.n_states[LOCATION_FACTOR_ID]
         self.n_control = [self.n_locations, 1]
-        self.n_reward_conditions = self.n_states[TRIAL_FACTOR_ID] 
+        self.n_reward_conditions = self.n_states[TRIAL_FACTOR_ID]
         self.n_cues = self.n_reward_conditions
-        self.n_observations = [self.n_locations, self.n_reward_conditions + 1, self.n_cues + 1]     
+        self.n_observations = [self.n_locations, self.n_reward_conditions + 1, self.n_cues + 1]
         self.n_factors = len(self.n_states)
         self.n_modalities = len(self.n_observations)
 
@@ -228,7 +244,8 @@ class TMazeEnv_nullOutcome(Env):
         for factor, state in enumerate(self._state):
             prob_states[factor] = (
                 self._transition_dist[factor][:, :, actions[factor]]
-                .dot(state, return_numpy=True).flatten()
+                .dot(state, return_numpy=True)
+                .flatten()
             )
         state = Categorical(values=prob_states).sample()
         self._state = self._construct_state(state)
@@ -248,10 +265,7 @@ class TMazeEnv_nullOutcome(Env):
 
     def get_uniform_posterior(self):
         values = np.array(
-            [
-                np.ones(self.n_states[f]) / self.n_states[f]
-                for f in range(self.n_factors)
-            ]
+            [np.ones(self.n_states[f]) / self.n_states[f] for f in range(self.n_factors)]
         )
         return Categorical(values=values)
 
@@ -275,7 +289,9 @@ class TMazeEnv_nullOutcome(Env):
 
         B = np.empty(self.n_factors, dtype=object)
         B[LOCATION_FACTOR_ID] = B_locs
-        B[TRIAL_FACTOR_ID] = np.eye(self.n_reward_conditions).reshape(self.n_reward_conditions, self.n_reward_conditions, 1)
+        B[TRIAL_FACTOR_ID] = np.eye(self.n_reward_conditions).reshape(
+            self.n_reward_conditions, self.n_reward_conditions, 1
+        )
         return Categorical(values=B)
 
     def _construct_likelihood_dist(self):
@@ -287,36 +303,47 @@ class TMazeEnv_nullOutcome(Env):
             for reward_condition in range(self.n_states[TRIAL_FACTOR_ID]):
 
                 if loc == 0:  # the case when the agent is in the centre location
-                    # when in the centre location, reward observation is always 'no reward', or the outcome with index 0
-                    A[REWARD_MODALITY_ID][0,loc,reward_condition] = 1.0
+                    # When in the centre location, reward observation is always 'no reward', or the outcome with index 0
+                    A[REWARD_MODALITY_ID][0, loc, reward_condition] = 1.0
 
-                    # when in the center location, cue observation is always 'no cue', or the outcome with index 0
-                    A[CUE_MODALITY_ID][0,loc,reward_condition] = 1.0
-                
-                elif loc == 3: # the case when loc == 3, or the cue location ('bottom arm')
+                    # When in the center location, cue observation is always 'no cue', or the outcome with index 0
+                    A[CUE_MODALITY_ID][0, loc, reward_condition] = 1.0
 
-                    # when in the cue location, reward observation is always 'no reward', or the outcome with index 0
-                    A[REWARD_MODALITY_ID][0,loc,reward_condition] = 1.0
+                # The case when loc == 3, or the cue location ('bottom arm')
+                elif loc == 3:
 
-                    # when in the cue location, the cue indicates the reward condition umambiguously / signals where the reward is located
-                    A[CUE_MODALITY_ID][reward_condition+1,loc,reward_condition] = 1.0
+                    # When in the cue location, reward observation is always 'no reward', or the outcome with index 0
+                    A[REWARD_MODALITY_ID][0, loc, reward_condition] = 1.0
 
-                else: # the case when the agent is in one of the (potentially-) rewarding arms
-                    
-                    if loc == (reward_condition + 1): # when location is consistent with reward condition
-                        high_prob_idx = REWARD_IDX    # means highest probability is concentrated over reward outcome
-                        low_prob_idx = LOSS_IDX       # lower probability on loss outcome
-                    else: 
-                        high_prob_idx = LOSS_IDX      # means highest probability is concentrated over loss outcome
-                        low_prob_idx  = REWARD_IDX    # lower probability on reward outcome
+                    # When in the cue location, the cue indicates the reward condition umambiguously
+                    # signals where the reward is located
+                    A[CUE_MODALITY_ID][reward_condition + 1, loc, reward_condition] = 1.0
 
-                    A[REWARD_MODALITY_ID][high_prob_idx,loc,reward_condition] = self.reward_probs[0] 
-                    A[REWARD_MODALITY_ID][low_prob_idx,loc,reward_condition] = self.reward_probs[1] 
+                # The case when the agent is in one of the (potentially-) rewarding arms
+                else:
 
-                    # when in the one of the rewarding arms, cue observation is always 'no cue', or the outcome with index 0
-                    A[CUE_MODALITY_ID][0,loc,reward_condition] = 1.0
+                    # When location is consistent with reward condition
+                    if loc == (reward_condition + 1):
+                        # Means highest probability is concentrated over reward outcome
+                        high_prob_idx = REWARD_IDX
+                        # Lower probability on loss outcome
+                        low_prob_idx = LOSS_IDX  #
+                    else:
+                        # Means highest probability is concentrated over loss outcome
+                        high_prob_idx = LOSS_IDX
+                        # Lower probability on reward outcome
+                        low_prob_idx = REWARD_IDX
 
-                A[LOCATION_MODALITY_ID][loc, loc, reward_condition] = 1.0 # the agent always observes its location, regardless of the reward condition
+                    reward_probs = self.reward_probs[0]
+                    A[REWARD_MODALITY_ID][high_prob_idx, loc, reward_condition] = reward_probs
+                    reward_probs = self.reward_probs[1]
+                    A[REWARD_MODALITY_ID][low_prob_idx, loc, reward_condition] = reward_probs
+
+                    # When in the one of the rewarding arms, cue observation is always 'no cue', or the outcome with index 0
+                    A[CUE_MODALITY_ID][0, loc, reward_condition] = 1.0
+
+                # The agent always observes its location, regardless of the reward condition
+                A[LOCATION_MODALITY_ID][loc, loc, reward_condition] = 1.0
 
         return Categorical(values=A)
 

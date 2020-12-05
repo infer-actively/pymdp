@@ -2,18 +2,19 @@
 # -*- coding: utf-8 -*-
 
 """ Unit Tests
+
 __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
 import os
-import sys
 import unittest
 
 import numpy as np
 from scipy.io import loadmat
 
-sys.path.append(".")
-from inferactively.distributions import Categorical, Dirichlet  # nopep8
+from inferactively.distributions import Categorical
+
+DATA_PATH = "test/data/"
 
 
 class TestCategorical(unittest.TestCase):
@@ -168,9 +169,9 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(np.isclose(np.array([0, 1]), c.sample()).all())
 
     def test_dot_function_a(self):
-        """ test with vectors and matrices, discrete state / outcomes """
+        """ Test with vectors and matrices, discrete state / outcomes """
 
-        array_path = os.path.join(os.getcwd(), "tests/data/dot_a.mat")
+        array_path = os.path.join(os.getcwd(), DATA_PATH + "dot_a.mat")
         mat_contents = loadmat(file_name=array_path)
 
         A = mat_contents["A"]
@@ -194,11 +195,11 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(np.isclose(result_3, result_3_py).all())
 
     def test_dot_function_a_cat(self):
-        """ test with vectors and matrices, discrete state / outcomes
+        """ Test with vectors and matrices, discrete state / outcomes
         Now, when arguments themselves are instances of Categorical
         """
 
-        array_path = os.path.join(os.getcwd(), "tests/data/dot_a.mat")
+        array_path = os.path.join(os.getcwd(), DATA_PATH + "dot_a.mat")
         mat_contents = loadmat(file_name=array_path)
 
         A = mat_contents["A"]
@@ -220,8 +221,8 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(np.isclose(result_3, result_3_py).all())
 
     def test_dot_function_b(self):
-        """ continuous states and outcomes """
-        array_path = os.path.join(os.getcwd(), "tests/data/dot_b.mat")
+        """ Continuous states and outcomes """
+        array_path = os.path.join(os.getcwd(), DATA_PATH + "dot_b.mat")
         mat_contents = loadmat(file_name=array_path)
 
         A = mat_contents["A"]
@@ -245,8 +246,8 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(np.isclose(result_3, result_3_py).all())
 
     def test_dot_function_c(self):
-        """ DISCRETE states and outcomes, but also a third hidden state factor """
-        array_path = os.path.join(os.getcwd(), "tests/data/dot_c.mat")
+        """ Discrete states and outcomes, but also a third hidden state factor """
+        array_path = os.path.join(os.getcwd(), DATA_PATH + "dot_c.mat")
         mat_contents = loadmat(file_name=array_path)
 
         A = mat_contents["A"]
@@ -272,12 +273,12 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(np.isclose(result_3, result_3_py).all())
 
     def test_dot_function_c_cat(self):
-        """ test with vectors and matrices, discrete state / outcomes but with a
+        """ Test with vectors and matrices, discrete state / outcomes but with a
         third hidden state factor. Now, when arguments themselves are
         instances of Categorical
         """
 
-        array_path = os.path.join(os.getcwd(), "tests/data/dot_c.mat")
+        array_path = os.path.join(os.getcwd(), DATA_PATH + "dot_c.mat")
         mat_contents = loadmat(file_name=array_path)
 
         A = mat_contents["A"]
@@ -303,8 +304,8 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(np.isclose(result_3, result_3_py).all())
 
     def test_dot_function_d(self):
-        """ CONTINUOUS states and outcomes, but also a third hidden state factor """
-        array_path = os.path.join(os.getcwd(), "tests/data/dot_d.mat")
+        """ Continuous states and outcomes, but also a third hidden state factor """
+        array_path = os.path.join(os.getcwd(), DATA_PATH + "dot_d.mat")
         mat_contents = loadmat(file_name=array_path)
 
         A = mat_contents["A"]
@@ -330,8 +331,8 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(np.isclose(result_3, result_3_py).all())
 
     def test_dot_function_e(self):
-        """ CONTINUOUS states and outcomes, but add a final (fourth) hidden state factor """
-        array_path = os.path.join(os.getcwd(), "tests/data/dot_e.mat")
+        """ Continuous states and outcomes, but add a final (fourth) hidden state factor """
+        array_path = os.path.join(os.getcwd(), DATA_PATH + "dot_e.mat")
         mat_contents = loadmat(file_name=array_path)
 
         A = mat_contents["A"]
@@ -357,9 +358,9 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(np.isclose(result_3, result_3_py).all())
 
     def test_dot_function_e_cat(self):
-        """ CONTINUOUS states and outcomes, but add a final (fourth) hidden state factor
+        """ Continuous states and outcomes, but add a final (fourth) hidden state factor
         Now, when arguments themselves are instances of Categorical """
-        array_path = os.path.join(os.getcwd(), "tests/data/dot_e.mat")
+        array_path = os.path.join(os.getcwd(), DATA_PATH + "dot_e.mat")
         mat_contents = loadmat(file_name=array_path)
 
         A = mat_contents["A"]
@@ -386,8 +387,8 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(np.isclose(result_3, result_3_py).all())
 
     def test_dot_function_f(self):
-        """ Test for when the outcome modality is a trivially one-dimensional vector, meaning
-        the return of spm_dot is a scalar - this tests that the spm_dot function
+        """ Test for when the outcome modality is a trivially one-dimensional vector, 
+        meaningthe return of spm_dot is a scalar - this tests that the spm_dot function
         successfully wraps such scalar returns into an array """
 
         states = np.empty(2, dtype=object)
@@ -408,7 +409,7 @@ class TestCategorical(unittest.TestCase):
     def test_cross_function_a(self):
         """Test case a: passing in a single-factor hidden state vector -
         under both options of Categorical: where self.AOA is True or False """
-        array_path = os.path.join(os.getcwd(), "tests/data/cross_a.mat")
+        array_path = os.path.join(os.getcwd(), DATA_PATH + "cross_a.mat")
         mat_contents = loadmat(file_name=array_path)
         result_1 = mat_contents["result1"]
         result_2 = mat_contents["result2"]
@@ -435,7 +436,7 @@ class TestCategorical(unittest.TestCase):
         (non-object array)
         - first vector is a Categorical, second vector is also Categorical
         """
-        array_path = os.path.join(os.getcwd(), "tests/data/cross_b.mat")
+        array_path = os.path.join(os.getcwd(), DATA_PATH + "cross_b.mat")
         mat_contents = loadmat(file_name=array_path)
         result_1 = mat_contents["result1"]
         result_2 = mat_contents["result2"]
@@ -462,11 +463,11 @@ class TestCategorical(unittest.TestCase):
     def test_cross_function_c(self):
         """Test case c: outer-producting a vector and a matrix together:
         Options:
-        - first vector is a Categorical, and the matrix argument is a numpy ndarray
+        - First vector is a Categorical, and the matrix argument is a numpy ndarray
         (non-object array)
-        - first vector is a Categorical, and the matrix argument is also a Categorical
+        - First vector is a Categorical, and the matrix argument is also a Categorical
         """
-        array_path = os.path.join(os.getcwd(), "tests/data/cross_c.mat")
+        array_path = os.path.join(os.getcwd(), DATA_PATH + "cross_c.mat")
         mat_contents = loadmat(file_name=array_path)
         result_1 = mat_contents["result1"]
         random_vec = Categorical(values=mat_contents["random_vec"])
@@ -482,14 +483,14 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(np.isclose(result_1, result_1b_py).all())
 
     def test_cross_function_d(self):
-        """Test case d: outer-producting a vector and a sequence of vectors:
+        """ Test case d: outer-producting a vector and a sequence of vectors:
         Options:
-        - first vector is a Categorical, second sequence of vectors is a numpy ndarray
+        - First vector is a Categorical, second sequence of vectors is a numpy ndarray
         (dtype = object)
-        - first vector is a Categorical, second sequence of vectors is a Categorical
+        - First vector is a Categorical, second sequence of vectors is a Categorical
         (where self.IS_AOA = True))
         """
-        array_path = os.path.join(os.getcwd(), "tests/data/cross_d.mat")
+        array_path = os.path.join(os.getcwd(), DATA_PATH + "cross_d.mat")
         mat_contents = loadmat(file_name=array_path)
         result_1 = mat_contents["result1"]
         random_vec = Categorical(values=mat_contents["random_vec"])
@@ -497,12 +498,12 @@ class TestCategorical(unittest.TestCase):
         for i in range(len(states)):
             states[i] = states[i].squeeze()
 
-        # first way, where first array is a Categorical, second array is a numpy ndarray
+        # First way, where first array is a Categorical, second array is a numpy ndarray
         # (dtype = object)
         result_1a_py = random_vec.cross(states, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1a_py).all())
 
-        # second way, where first array is a Categorical, second array is a Categorical
+        # Second way, where first array is a Categorical, second array is a Categorical
         # (where self.IS_AOA = True)
         states = Categorical(values=states[0])
         result_1b_py = random_vec.cross(states, return_numpy=True)
@@ -518,7 +519,7 @@ class TestCategorical(unittest.TestCase):
         - First sequence is an AoA Categorical, second sequence is an AoA Categorical
         - First sequence is NOT an AoA Categorical, second sequence is an AoA Categorical
         """
-        array_path = os.path.join(os.getcwd(), "tests/data/cross_e.mat")
+        array_path = os.path.join(os.getcwd(), DATA_PATH + "cross_e.mat")
         mat_contents = loadmat(file_name=array_path)
         result_1 = mat_contents["result1"]
 
@@ -527,26 +528,26 @@ class TestCategorical(unittest.TestCase):
         for i in range(len(s2_new)):
             s2_new[i] = s2[0][i].squeeze()
 
-        # first way (type 1), first sequence is a Categorical (self.AOA = True) and
+        # First way (type 1), first sequence is a Categorical (self.AOA = True) and
         # second sequence is a numpy ndarray (dtype = object)
         s1 = Categorical(values=mat_contents["s1"][0])
         result_1aa_py = s1.cross(s2_new, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1aa_py).all())
 
-        # first way (type 2), first sequence is a Categorical (self.AOA = False) and
+        # First way (type 2), first sequence is a Categorical (self.AOA = False) and
         # second sequence is a numpy ndarray (dtype = object)
         s1 = Categorical(values=mat_contents["s1"][0][0])
         result_1ab_py = s1.cross(s2_new, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1ab_py).all())
 
         s2_new = Categorical(values=mat_contents["s2"][0])
-        # second way (type 1), first sequence is a Categorical (self.AOA = True)
+        # Second way (type 1), first sequence is a Categorical (self.AOA = True)
         # and second sequence is a Categorical
         s1 = Categorical(values=mat_contents["s1"][0])
         result_2aa_py = s1.cross(s2_new, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_2aa_py).all())
 
-        # second way (type 2), first sequence is a Categorical (self.AOA = False)
+        # Second way (type 2), first sequence is a Categorical (self.AOA = False)
         # and second sequence is a Categorical
         s1 = Categorical(values=mat_contents["s1"][0][0])
         result_2ab_py = s1.cross(s2_new, return_numpy=True)

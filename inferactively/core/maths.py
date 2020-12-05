@@ -6,7 +6,6 @@
 __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
-import itertools
 import numpy as np
 from scipy import special
 from inferactively.core import utils
@@ -100,6 +99,8 @@ def spm_cross(X, x=None, *args):
             Y = spm_cross(*list(X))
         elif np.issubdtype(X.dtype, np.number):
             Y = X
+        else:
+            raise ValueError(f"Invalid input to spm_cross ({X})")
         return Y
 
     if utils.is_arr_of_arr(X):

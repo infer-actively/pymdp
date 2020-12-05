@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# pylint: disable=no-member
-# pylint: disable=not-an-iterable
 
 """ Utils
 __author__: Conor Heins, Alexander Tschantz, Brennan Klein

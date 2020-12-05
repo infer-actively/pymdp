@@ -6,9 +6,7 @@
 __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
-import itertools
 import numpy as np
-import torch
 from scipy import special
 from inferactively.core import utils
 import copy

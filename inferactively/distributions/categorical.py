@@ -160,14 +160,10 @@ class Categorical(object):
 
     def cross(self, x=None, return_numpy=False, *args):
         """ Multi-dimensional outer product
-        
-            @NOTE see `spm_cross` in core.maths
             
             If no `x` argument is passed, the function returns the "auto-outer product" of self
             Otherwise, the function will recursively take the outer product of the initial entry
             of `x` with `self` until it has depleted the possible entries of `x` that it can outer-product
-
-            @TODO explain the concept of `args` in a clearer fashion 
 
         Parameters
         ----------

@@ -92,9 +92,7 @@ class VisualForagingEnv(Env):
         pass
 
     def _get_observation(self):
-
         prob_obs = self._likelihood_dist.dot(self._state)
-
         return prob_obs.sample()
 
     def _construct_transition_dist(self):

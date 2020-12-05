@@ -10,7 +10,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import itertools
 import numpy as np
 from inferactively.distributions import Categorical, Dirichlet
-from inferactively.core import softmax, spm_dot, spm_wnorm, spm_cross, spm_MDP_G, utils
+from inferactively.core import softmax, spm_dot, spm_wnorm, spm_MDP_G, utils
 
 
 def update_posterior_policies(

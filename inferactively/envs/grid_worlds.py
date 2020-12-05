@@ -15,7 +15,7 @@ import seaborn as sns
 from inferactively.envs import Env
 
 
-class GridWorldEnv(object):
+class GridWorldEnv(Env):
     """ Basic grid-world implementation """
 
     UP = 0
@@ -42,7 +42,7 @@ class GridWorldEnv(object):
         self.last_action = None
         return self.state
 
-    def set_state(self,state):
+    def set_state(self, state):
         self.state = state
         return state
 
@@ -155,8 +155,8 @@ class DGridWorldEnv(object):
         self.set_init_state(init_state)
         self.last_action = None
         return self.state
-    
-    def set_state(self,state):
+
+    def set_state(self, state):
         self.state = state
         return state
 

@@ -13,7 +13,7 @@ import numpy as np
 from scipy.io import loadmat
 
 sys.path.append(".")
-from inferactively.distributions import Categorical, Dirichlet  # nopep8
+from inferactively.distributions import Categorical, Dirichlet  
 
 
 class TestDirichlet(unittest.TestCase):
@@ -99,14 +99,6 @@ class TestDirichlet(unittest.TestCase):
         d = Dirichlet(values=values)
         self.assertFalse(d.contains_zeros())
 
-    """
-    def test_entropy(self):
-        values = np.random.rand(3, 2)
-        entropy = -np.sum(values * np.log(values), 0) 
-        d = Dirichlet(values=values)
-        self.assertTrue(np.array_equal(d.entropy(return_numpy=True), entropy))
-    """
-
     def test_log(self):
         values = np.random.rand(3, 2)
         log_values = np.log(values)
@@ -132,7 +124,7 @@ class TestDirichlet(unittest.TestCase):
         self.assertEqual(d.shape, (3, 2))
 
     def test_expectation_single_factor(self):
-        """ tests implementation of expect_log method against matlab version (single factor)
+        """ Tests implementation of expect_log method against matlab version (single factor)
         """
 
         array_path = os.path.join(os.getcwd(), "tests/data/wnorm_a.mat")
@@ -144,7 +136,7 @@ class TestDirichlet(unittest.TestCase):
         self.assertTrue(np.isclose(result, result_py).all())
 
     def test_expectation_multi_factor(self):
-        """ tests implementation of expect_log method against matlab version (multi factor)
+        """ Tests implementation of expect_log method against matlab version (multi factor)
         """
 
         array_path = os.path.join(os.getcwd(), "tests/data/wnorm_b.mat")

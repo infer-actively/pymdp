@@ -16,7 +16,7 @@ try:
 except:
     torch = None
 
-from inferactively.core import utils, softmax, spm_dot, spm_wnorm, spm_cross
+from inferactively.core import utils
 from inferactively.core.algos import run_fpi
 
 FPI = "FPI"

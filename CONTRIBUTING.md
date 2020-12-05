@@ -176,7 +176,7 @@ Once you have completed the above steps, you are ready to choose an algorithm to
    button reads 'head fork: <your_username>/infer-actively', and the fourth button
    reads 'compare: master'. (If everything has gone according to plan, the
    only button you should have to change is the third one - make sure you
-   find your username, not someone else's.) After you find your username,
+   find your username, not someone elses.) After you find your username,
    GitHub will show a rundown of the differences that you are adding to the
    upstream repository, so you will be able to see what changes you are
    contributing. If everything looks correct, press 'Create Pull

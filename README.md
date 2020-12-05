@@ -1,7 +1,9 @@
 
-#  Active Inference for Markov Decision Processes
- <img alt="logo" src="https://pluspng.com/img-png/brain-png-brain-icon-png-image-2536-942.png" height="90"> [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
+<p align='center'>
+  <a href='https://github.com/alec-tschantz/inferactively'>
+    <img src='.github/logo.png' />
+  </a> 
+</p>
 
 An Python-based implementation of `active inference` for Markov Decision Processes,
 based on functions from the `SPM` [implementation](https://www.fil.ion.ucl.ac.uk/spm/doc/)
@@ -17,20 +19,24 @@ This package is under active development and is currently not suited for use. If
 In order to use this code, download the `inferactively` folder into your project
 folder. You can now use all classes and functions via `import inferactively`
 
-To see some examples, refer to the [examples folder](examples/)
-
 ## Requirements 
 
 This code is written in [Python 3.x](https://www.python.org) and uses 
 the following packages:
 
-* [NumPy](http://numpy.scipy.org/)
+* [NumPy](https://github.com/numpy/numpy)
 * [SciPy](http://numpy.scipy.org/)
-* And for replicating figures, you will need:
-    + [matplotlib](https://matplotlib.org)
+* [Matplotlib](https://github.com/matplotlib/matplotlib)
+* [Seaborn](https://seaborn.pydata.org/)
+
+You can install the relevant package versions with:
+```bash
+conda env create -f environment.yml
+```
 
 ## Authors
 
-- Alec Tschantz [@alec-tschantz](https://github.com/alec-tschantz)
 - Conor Heins [@conorheins](https://github.com/conorheins)
+- Alec Tschantz [@alec-tschantz](https://github.com/alec-tschantz)
+- Beren Millidge [@BereMillidge](https://github.com/BerenMillidge)
 - Brennan Klein [@jkbren](https://github.com/jkbren)
