@@ -128,6 +128,8 @@ def dot_likelihood(A, obs):
 
 
 def get_joint_likelihood(A, obs, num_states):
+    if type(num_states) is int:
+        num_states = [num_states]
     A = utils.to_arr_of_arr(A)
     ll = np.ones(tuple(num_states))
     for modality in range(len(A)):

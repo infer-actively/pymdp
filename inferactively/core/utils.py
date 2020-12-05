@@ -61,7 +61,7 @@ def get_model_dimensions(A, B):
 
 
 def norm_dist(dist):
-    if len(dist.shape) == 2:
+    if len(dist.shape) == 3:
         new_dist = np.zeros_like(dist)
         for c in range(dist.shape[2]):
             new_dist[:, :, c] = np.divide(dist[:, :, c], dist[:, :, c].sum(axis=0))

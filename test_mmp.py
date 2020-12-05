@@ -6,6 +6,8 @@ from inferactively.core.algos import run_mmp_v2
 
 
 def rand_onehot_obs(num_obs):
+    if type(num_obs) is int:
+        num_obs = [num_obs]
     obs = obj_array(len(num_obs))
     for i in range(len(num_obs)):
         ob = np.random.randint(num_obs[i])
@@ -14,6 +16,8 @@ def rand_onehot_obs(num_obs):
 
 
 def rand_controls(num_controls):
+    if type(num_controls) is int:
+        num_controls = [num_controls]
     controls = np.zeros(len(num_controls))
     for i in range(len(num_controls)):
         controls[i] = np.random.randint(num_controls[i])
@@ -23,13 +27,12 @@ def rand_controls(num_controls):
 if __name__ == "__main__":
     past_len = 4
     future_len = 4
-    num_states = [2, 3]
-    num_controls = [2, 3]
-    num_obs = [3, 2, 3]
+    num_states = 2
+    num_controls = 3
+    num_obs = 5
 
     A = random_A_matrix(num_obs, num_states)
     B = random_B_matrix(num_states, num_controls)
-
     prev_obs = [rand_onehot_obs(num_obs) for _ in range(past_len)]
     prev_actions = np.array([rand_controls(num_controls) for _ in range(past_len)])
     policy = np.array([rand_controls(num_controls) for _ in range(future_len)])
