@@ -188,7 +188,7 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states, return_numpy=True)
-        result_2_py = result_2_py.astype("float64")[:, np.newaxis]
+        result_2_py = result_2_py.astype("float64")[:, np.newaxis] # type: ignore
         self.assertTrue(np.isclose(result_2, result_2_py).all())
 
         result_3_py = A.dot(states, dims_to_omit=[0], return_numpy=True)
@@ -214,7 +214,7 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states, return_numpy=True)
-        result_2_py = result_2_py.astype("float64")[:, np.newaxis]
+        result_2_py = result_2_py.astype("float64")[:, np.newaxis] # type: ignore
         self.assertTrue(np.isclose(result_2, result_2_py).all())
 
         result_3_py = A.dot(states, dims_to_omit=[0], return_numpy=True)
@@ -239,7 +239,7 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states, return_numpy=True)
-        result_2_py = result_2_py.astype("float64")[:, np.newaxis]
+        result_2_py = result_2_py.astype("float64")[:, np.newaxis] # type: ignore
         self.assertTrue(np.isclose(result_2, result_2_py).all())
 
         result_3_py = A.dot(states, dims_to_omit=[0], return_numpy=True)
@@ -266,7 +266,7 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states_array_version, return_numpy=True)
-        result_2_py = result_2_py.astype("float64")[:, np.newaxis]
+        result_2_py = result_2_py.astype("float64")[:, np.newaxis] # type: ignore
         self.assertTrue(np.isclose(result_2, result_2_py).all())
 
         result_3_py = A.dot(states_array_version, dims_to_omit=[0], return_numpy=True)
@@ -297,7 +297,7 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states_array_version, return_numpy=True)
-        result_2_py = result_2_py.astype("float64")[:, np.newaxis]
+        result_2_py = result_2_py.astype("float64")[:, np.newaxis] # type: ignore
         self.assertTrue(np.isclose(result_2, result_2_py).all())
 
         result_3_py = A.dot(states_array_version, dims_to_omit=[0], return_numpy=True)
@@ -324,7 +324,7 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states_array_version, return_numpy=True)
-        result_2_py = result_2_py.astype("float64")[:, np.newaxis]
+        result_2_py = result_2_py.astype("float64")[:, np.newaxis] # type: ignore
         self.assertTrue(np.isclose(result_2, result_2_py).all())
 
         result_3_py = A.dot(states_array_version, dims_to_omit=[0], return_numpy=True)
@@ -351,7 +351,7 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states_array_version, return_numpy=True)
-        result_2_py = result_2_py.astype("float64")[:, np.newaxis]
+        result_2_py = result_2_py.astype("float64")[:, np.newaxis] # type: ignore
         self.assertTrue(np.isclose(result_2, result_2_py).all())
 
         result_3_py = A.dot(states_array_version, dims_to_omit=[0], return_numpy=True)
@@ -380,7 +380,7 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states_array_version, return_numpy=True)
-        result_2_py = result_2_py.astype("float64")[:, np.newaxis]
+        result_2_py = result_2_py.astype("float64")[:, np.newaxis] # type: ignore
         self.assertTrue(np.isclose(result_2, result_2_py).all())
 
         result_3_py = A.dot(states_array_version, dims_to_omit=[0], return_numpy=True)
