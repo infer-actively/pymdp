@@ -53,20 +53,57 @@ def convert_observation_array(obs, num_obs):
     obs_t = [] # initialise the output
     if num_modalities == 1: # case of one modality
         for t in range(T):
-            obs_t.append(onehot(obs[0,t],num_obs[0]))
+            obs_t.append(onehot(obs[0,t]-1,num_obs[0]))
     else:
         for t in range(T):
             obs_AoA = np.empty(num_modalities,dtype=object)
+            # print(t)
             for g in range(num_modalities):
+                # print(g)
+                print(num_obs[g])
                 obs_AoA[g] = onehot(obs[g,t]-1,num_obs[g]) # subtract obs[g,t] by 1 to account for MATLAB vs. Python indexing (MATLAB is 1-indexed)
             obs_t.append(obs_AoA)
     
     return obs_t
                 
 class mmp(unittest.TestCase):
+
+    def test_mmp_a(self):
+        """ Testing our SPM-ified version of `run_MMP` with
+        1 hidden state factor & 1 outcome modality, at a random fixed
+        timestep during the generative process"""
+
+        array_path = os.path.join(os.getcwd(), "tests/data/mmp_a.mat")
+        mat_contents = loadmat(file_name=array_path)
+
+        A = mat_contents["A"][0]
+        B = mat_contents["B"][0]
+        obs = mat_contents["obs_idx"].astype('int64')
+        policy = mat_contents["policy"].astype('int64') - 1
+        curr_t = mat_contents["t"][0,0].astype('int64') - 1
+        t_horizon = mat_contents["t_horizon"][0,0].astype('int64')
+        T = obs.shape[1]
+        previous_actions = mat_contents["previous_actions"].astype('int64') - 1
+        result_spm = mat_contents["qs"][0]
+        likelihoods = mat_contents["likelihoods"][0]
+
+        # convert matlab index-style observations into list of array of arrays over time
+        num_obs = [A[g].shape[0] for g in range(len(A))]
+        obs_t = convert_observation_array(obs, num_obs)
+
+        qs, _, _, _ = core.algos.run_mmp(A, B, obs_t, policy, curr_t, t_horizon,T, use_gradient_descent = True, num_iter = 5, previous_actions = previous_actions)
+
+        print(f"final qs {qs[-1][0]}")
+        print(f"matlab qs shape {result_spm[0]}")
+
+        result_inferactively = qs[-1] # just check whether the latest beliefs (about curr_t, held at curr_t) match up
+        for f in range(len(B)):
+            self.assertTrue(np.isclose(result_spm[f].squeeze(), result_inferactively[f]).all())
     
     def test_mmp_b(self):
-        """ 2 hidden state factors, 2 outcome modalities"""
+        """ Testing our SPM-ified version of `run_MMP` with
+        2 hidden state factors & 2 outcome modalities, at a random fixed
+        timestep during the generative process"""
 
         array_path = os.path.join(os.getcwd(), "tests/data/mmp_b.mat")
         mat_contents = loadmat(file_name=array_path)
@@ -81,20 +118,13 @@ class mmp(unittest.TestCase):
         previous_actions = mat_contents["previous_actions"].astype('int64') - 1
         result_spm = mat_contents["qs"][0]
         likelihoods = mat_contents["likelihoods"][0]
-        # for t in range(len(likelihoods)):
-        #     print(f"likelihood matlab {likelihoods[t]}")
 
         # convert matlab index-style observations into list of array of arrays over time
         num_obs = [A[g].shape[0] for g in range(len(A))]
         obs_t = convert_observation_array(obs, num_obs)
 
-        # print(previous_actions.shape)
-        # print(policy.shape)
-        # print(curr_t.shape)
         qs, _, _, _ = core.algos.run_mmp(A, B, obs_t, policy, curr_t, t_horizon,T, use_gradient_descent = True, num_iter = 5, previous_actions = previous_actions)
 
-        print(f"final qs {qs[-1][0].shape}")
-        print(f"matlab qs shape {result_spm[0]}")
 
         result_inferactively = qs[-1] # just check whether the latest beliefs (about curr_t, held at curr_t) match up
         for f in range(len(B)):

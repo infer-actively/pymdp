@@ -141,7 +141,7 @@ def run_mmp(
         likelihood_t = np.ones(tuple(num_states))
 
         if num_modalities == 1:
-            likelihood_t *= spm_dot(A, obs_t[obs], obs_mode=True)
+            likelihood_t *= spm_dot(A[0], obs_t[obs], obs_mode=True)
         else:
             for modality in range(num_modalities):
                 likelihood_t *= spm_dot(A[modality], obs_t[obs][modality], obs_mode=True)
@@ -181,16 +181,11 @@ def run_mmp(
         Used for computing backwards messages 'from the future'
     """
 
-    if num_factors == 1:
-        B_transposed = np.zeros_like(B)
-        for u in range(B.shape[2]):
-            B_transposed[:, :, u] = spm_norm(B[:, :, u].T)
-    else:
-        B_transposed = np.empty(num_factors, dtype=object)
-        for f in range(num_factors):
-            B_transposed[f] = np.zeros_like(B[f])
-            for u in range(B[f].shape[2]):
-                B_transposed[f][:, :, u] = spm_norm(B[f][:, :, u].T)
+    B_transposed = np.empty(num_factors, dtype=object)
+    for f in range(num_factors):
+        B_transposed[f] = np.zeros_like(B[f])
+        for u in range(B[f].shape[2]):
+            B_transposed[f][:, :, u] = spm_norm(B[f][:, :, u].T)
 
     # zero out final message
     # TODO: may be redundant now we skip final step
@@ -204,6 +199,8 @@ def run_mmp(
 
     full_policy = np.vstack((previous_actions, policy))
 
+    print(full_policy.shape)
+
     """
     =========== Step 3 ===========
         Loop over time indices of time window, updating posterior as we go
@@ -214,17 +211,23 @@ def run_mmp(
     free_energy = np.zeros((len(qs), num_iter))
     free_energy_pol = 0.0
 
+    # print(obs_seq_len)
+
     for n in range(num_iter):
         for t in range(inference_len):
 
             lnB_past_tensor = np.empty(num_factors, dtype=object)
             for f in range(num_factors):
 
+                # if t == 0 and n == 0:
+                #     print(f"qs at time t = {t}, factor f = {f}, iteration i = {n}: {qs[t][f]}")
+
                 """
                 =========== Step 3.a ===========
                     Calculate likelihood
                 """
-                if t < obs_seq_len:
+                if t < len(obs_range):
+                # if t < len(obs_seq_len):
                     # Thomas Parr MMP version
                     # lnA = spm_dot(likelihood[t], qs[t], [f])
 
@@ -232,19 +235,29 @@ def run_mmp(
                     lnA = np.log(spm_dot(likelihood[t], qs[t], [f]) + 1e-16)
                 else:
                     lnA = np.zeros(num_states[f])
+                
+                if t == 0 and n == 0:
+                    print(f"lnA at time t = {t}, factor f = {f}, iteration i = {n}: {lnA}")
+
+                # print(f"lnA at time t = {t}, factor f = {f}, iteration i = {n}: {lnA}")
 
                 """
                 =========== Step 3.b ===========
                     Calculate past message
                 """
-                if t == 0:
+                if t == 0 and window_idxs[0] == 0:
                     lnB_past = np.log(prior[f] + 1e-16)
-                else:
+                else:         
                     # Thomas Parr MMP version
                     # lnB_past = 0.5 * np.log(B[f][:, :, full_policy[t - 1, f]].dot(qs[t - 1][f]) + 1e-16)
 
                     # Karl SPM version
                     lnB_past = np.log(B[f][:, :, full_policy[t - 1, f]].dot(qs[t - 1][f]) + 1e-16)
+                    if t == 0:
+                        print(f"qs_t_1 at time t = {t}, factor f = {f}, iteration i = {n}: {qs[t - 1][f]}")
+                
+                if t == 0 and n == 0:
+                    print(f"lnB_past at time t = {t}, factor f = {f}, iteration i = {n}: {lnB_past}")
 
                 """
                 =========== Step 3.c ===========
@@ -267,6 +280,8 @@ def run_mmp(
                 # Karl SPM version
                 lnB_past_tensor[f] = lnB_past
 
+
+
                 """
                 =========== Step 3.d ===========
                     Update posterior
@@ -282,6 +297,8 @@ def run_mmp(
                         error = lnA + lnB_past - lns
                     else:
                         error = (2 * lnA + lnB_past + lnB_future) - 2 * lns
+
+                    # print(f"prediction error at time t = {t}, factor f = {f}, iteration i = {n}: {error}")
 
                     error -= error.mean()
                     lns = lns + tau * error
