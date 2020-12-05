@@ -140,8 +140,9 @@ class Categorical(object):
         - 'obs_mode' [bool] (optional)
             Whether to perform the inner product of `x` with the leading dimension of self
             
-            @NOTE We call this `obs_mode` because it's often used to get the likelihood of an observation (leading dimension)
-                  under different settings of hidden states (lagging dimensions)
+            @NOTE We call this `obs_mode` because it's often used to get the likelihood 
+                  of an observation (leading dimension) under different settings of 
+                  hidden states (lagging dimensions)
         """
         x = utils.to_numpy(x)
 
@@ -161,9 +162,10 @@ class Categorical(object):
     def cross(self, x=None, return_numpy=False, *args):
         """ Multi-dimensional outer product
             
-            If no `x` argument is passed, the function returns the "auto-outer product" of self
-            Otherwise, the function will recursively take the outer product of the initial entry
-            of `x` with `self` until it has depleted the possible entries of `x` that it can outer-product
+            If no `x` argument is passed, the function returns the "auto-outer product" 
+            of self. Otherwise, the function will recursively take the outer product 
+            of the initial entry of `x` with `self` until it has depleted the possible 
+            entries of `x` that it can outer-product
 
         Parameters
         ----------
@@ -187,6 +189,8 @@ class Categorical(object):
                 y = maths.spm_cross(self.values, x, *arg_array)
             else:
                 y = maths.spm_cross(self.values, x, *args)
+        else:
+            y = maths.spm_cross(self.values)
 
         if return_numpy:
             return y
@@ -197,7 +201,8 @@ class Categorical(object):
         """ Normalize distribution (i.e. columns)
 
             This function will ensure the distribution(s) integrate to 1.0
-            In the case `ndims` >= 2, normalization is performed along the columns of the arrays
+            In the case `ndims` >= 2, normalization is performed along 
+            the columns of the arrays
         """
         if self.is_normalized():
             return

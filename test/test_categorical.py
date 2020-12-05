@@ -184,7 +184,7 @@ class TestCategorical(unittest.TestCase):
         result_3 = mat_contents["result3"]
 
         A = Categorical(values=A)
-        result_1_py = A.dot(obs, return_numpy=True)
+        result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states, return_numpy=True)
@@ -210,7 +210,7 @@ class TestCategorical(unittest.TestCase):
         result_3 = mat_contents["result3"]
 
         A = Categorical(values=A)
-        result_1_py = A.dot(obs, return_numpy=True)
+        result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states, return_numpy=True)
@@ -235,7 +235,7 @@ class TestCategorical(unittest.TestCase):
         result_3 = mat_contents["result3"]
 
         A = Categorical(values=A)
-        result_1_py = A.dot(obs, return_numpy=True)
+        result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states, return_numpy=True)
@@ -262,7 +262,7 @@ class TestCategorical(unittest.TestCase):
         result_3 = mat_contents["result3"]
 
         A = Categorical(values=A)
-        result_1_py = A.dot(obs, return_numpy=True)
+        result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states_array_version, return_numpy=True)
@@ -293,7 +293,7 @@ class TestCategorical(unittest.TestCase):
         result_3 = mat_contents["result3"]
 
         A = Categorical(values=A)
-        result_1_py = A.dot(obs, return_numpy=True)
+        result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states_array_version, return_numpy=True)
@@ -320,7 +320,7 @@ class TestCategorical(unittest.TestCase):
         result_3 = mat_contents["result3"]
 
         A = Categorical(values=A)
-        result_1_py = A.dot(obs, return_numpy=True)
+        result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states_array_version, return_numpy=True)
@@ -347,7 +347,7 @@ class TestCategorical(unittest.TestCase):
         result_3 = mat_contents["result3"]
 
         A = Categorical(values=A)
-        result_1_py = A.dot(obs, return_numpy=True)
+        result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states_array_version, return_numpy=True)
@@ -376,7 +376,7 @@ class TestCategorical(unittest.TestCase):
         result_3 = mat_contents["result3"]
 
         A = Categorical(values=A)
-        result_1_py = A.dot(obs, return_numpy=True)
+        result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states_array_version, return_numpy=True)
@@ -416,15 +416,13 @@ class TestCategorical(unittest.TestCase):
 
         states = np.empty(1, dtype=object)
         states[0] = mat_contents["s"][0, 0].squeeze()
-        states = Categorical(
-            values=states
-        )  # this would create a 1-dimensional array of arrays (namely, self.IS_AOA == True)
+        # This would create a 1-dimensional array of arrays (namely, self.IS_AOA == True)
+        states = Categorical(values=states)
         result_1_py = states.cross(return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
-        states = Categorical(
-            values=mat_contents["s"][0, 0].squeeze()
-        )  # this creates a simple single-factor Categorical (namely, self.IS_AOA == False)
+        # this creates a simple single-factor Categorical (namely, self.IS_AOA == False)
+        states = Categorical(values=mat_contents["s"][0, 0].squeeze())
         result_2_py = states.cross(return_numpy=True)
         self.assertTrue(np.isclose(result_2, result_2_py).all())
 

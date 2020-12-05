@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """ Utils
+
 __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
@@ -12,8 +13,9 @@ from inferactively.distributions import Categorical, Dirichlet
 
 def to_numpy(dist, flatten=False):
     """
-    If flatten is True, then the individual entries of the object array will be flattened into row vectors
-    (common operation when dealing with array of arrays with 1D numpy array entries)
+    If flatten is True, then the individual entries of the object array will be 
+    flattened into row vectors(common operation when dealing with array of arrays 
+    with 1D numpy array entries)
     """
     if isinstance(dist, (Categorical, Dirichlet)):
         values = np.copy(dist.values)

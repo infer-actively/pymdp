@@ -7,7 +7,6 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
 import numpy as np
-from scipy import special
 from inferactively.core import utils
 import copy
 
