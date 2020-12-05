@@ -44,15 +44,19 @@ def run_mmp(
         Used in inference to get the likelihood of an observation, under different hidden state configurations.
     - 'B' [numpy.ndarray (tensor or array-of-arrays)]:
         Transition likelihood of the generative model, mapping from hidden states at t to hidden states at t+1.
-        Used in inference to get expected future (or past) hidden states, given past (or future) hidden states (or expectations thereof).
+        Used in inference to get expected future (or past) hidden states, given past (or future) hidden 
+        states (or expectations thereof).
     - 'obs_t' [list of length t_horizon of numpy 1D array or array of arrays (with 1D numpy array entries)]:
-        Sequence of observations sampled from beginning of time horizon the current timestep t. The first observation (the start of the time horizon) 
-        is either the first timestep of the generative process or the first timestep of the policy horizon (whichever is closer to 'curr_t' in time).
-        The observations over time are stored as a list of numpy arrays, where in case of multi-modalities each numpy array is an array-of-arrays, with
-        one 1D numpy.ndarray for each modality. In the case of a single modality, each observation is a single 1D numpy.ndarray.
+        Sequence of observations sampled from beginning of time horizon the current timestep t. 
+        The first observation (the start of the time horizon) is either the first timestep of the generative 
+        process or the first timestep of the policy horizon (whichever is closer to 'curr_t' in time).
+        The observations over time are stored as a list of numpy arrays, where in case of multi-modalities 
+        each numpy array is an array-of-arrays, with one 1D numpy.ndarray for each modality. 
+        In the case of a single modality, each observation is a single 1D numpy.ndarray.
     - 'policy' [2D np.ndarray]:
-        Array of actions constituting a single policy. Policy is a shape (n_steps, n_control_factors) numpy.ndarray, the values of which
-        indicate actions along a given control factor (column index) at a given timestep (row index).
+        Array of actions constituting a single policy. Policy is a shape 
+        (n_steps, n_control_factors) numpy.ndarray, the values of which indicate actions along a given control 
+        factor (column index) at a given timestep (row index).
     - 'curr_t' [int]:
         Current timestep (relative to the 'absolute' time of the generative process).
     - 't_horizon'[int]:
@@ -61,20 +65,24 @@ def run_mmp(
         Temporal horizon of the generative process (absolute time)
     - `qs_bma` [numpy 1D array, array of arrays (with 1D numpy array entries) or None]:
     - 'prior' [numpy 1D array, array of arrays (with 1D numpy array entries) or None]:
-        Prior beliefs of the agent at the beginning of the time horizon, to be integrated with the marginal likelihood to obtain posterior at the first timestep.
-        If absent, prior is set to be a uniform distribution over hidden states (identical to the initialisation of the posterior.
+        Prior beliefs of the agent at the beginning of the time horizon, to be integrated 
+        with the marginal likelihood to obtain posterior at the first timestep.
+        If absent, prior is set to be a uniform distribution over hidden states (identical to the 
+        initialisation of the posterior.
     -'num_iter' [int]:
         Number of variational iterations to run. (optional)
     -'dF' [float]:
-        Starting free energy gradient (dF/dt) before updating in the course of gradient descent.  (optional)
+        Starting free energy gradient (dF/dt) before updating in the course of gradient descent. (optional)
     -'dF_tol' [float]:
-        Threshold value of the gradient of the variational free energy (dF/dt), to be checked at each iteration. If 
-        dF <= dF_tol, the iterations are halted pre-emptively and the final marginal posterior belief(s) is(are) returned.  (optional)
+        Threshold value of the gradient of the variational free energy (dF/dt), to be checked 
+        at each iteration. If dF <= dF_tol, the iterations are halted pre-emptively and the final 
+        marginal posterior belief(s) is(are) returned.  (optional)
     -'previous_actions' [numpy.ndarray with shape (num_steps, n_control_factors) or None]:
-        Array of previous actions, which can be used to constrain the 'past' messages in inference to only consider states of affairs that were possible
-        under actions that are known to have been taken. The first dimension of previous-arrays (previous_actions.shape[0]) encodes how far back in time
-        the agent is considering. The first timestep of this either corresponds to either the first timestep of the generative process or the f
-        first timestep of the policy horizon (whichever is sooner in time).  (optional)
+        Array of previous actions, which can be used to constrain the 'past' messages in inference 
+        to only consider states of affairs that were possible under actions that are known to have been taken. 
+        The first dimension of previous-arrays (previous_actions.shape[0]) encodes how far back in time the agent is 
+        considering. The first timestep of this either corresponds to either the first timestep of the generative 
+        process or the first timestep of the policy horizon (whichever is sooner in time).  (optional)
     -'use_gradient_descent' [bool]:
         Flag to indicate whether to use gradient descent to optimise posterior beliefs.
     -'tau' [float]:
@@ -84,9 +92,11 @@ def run_mmp(
     Returns
     ----------
     -'qs' [list of length T of numpy 1D arrays or array of arrays (with 1D numpy array entries):
-        Marginal posterior beliefs over hidden states (single- or multi-factor) achieved via marginal message pasing
+        Marginal posterior beliefs over hidden states (single- or multi-factor) achieved 
+        via marginal message pasing
     -'qss' [list of lists of length T of numpy 1D arrays or array of arrays (with 1D numpy array entries):
-        Marginal posterior beliefs about hidden states (single- or multi-factor) held at each timepoint, *about* each timepoint of the observation
+        Marginal posterior beliefs about hidden states (single- or multi-factor) held at 
+        each timepoint, *about* each timepoint of the observation
         sequence
     -'F' [2D np.ndarray]:
         Variational free energy of beliefs about hidden states, indexed by time point and variational iteration
@@ -147,7 +157,7 @@ def run_mmp(
                 likelihood_t *= spm_dot(A[modality], obs_t[obs][modality], obs_mode=True)
 
         # The Thomas Parr MMP version, you log the likelihood first
-        # likelihood[t] = np.log(likelihood_t + 1e-16) # The Thomas Parr MMP version, you log the likelihood first
+        # likelihood[t] = np.log(likelihood_t + 1e-16)
 
         # Karl SPM version, logging doesn't happen until *after* the dotting with the posterior
         likelihood[t] = likelihood_t
@@ -227,7 +237,7 @@ def run_mmp(
                     Calculate likelihood
                 """
                 if t < len(obs_range):
-                # if t < len(obs_seq_len):
+                    # if t < len(obs_seq_len):
                     # Thomas Parr MMP version
                     # lnA = spm_dot(likelihood[t], qs[t], [f])
 
@@ -235,7 +245,7 @@ def run_mmp(
                     lnA = np.log(spm_dot(likelihood[t], qs[t], [f]) + 1e-16)
                 else:
                     lnA = np.zeros(num_states[f])
-                
+
                 if t == 0 and n == 0:
                     print(f"lnA at time t = {t}, factor f = {f}, iteration i = {n}: {lnA}")
 
@@ -247,17 +257,21 @@ def run_mmp(
                 """
                 if t == 0 and window_idxs[0] == 0:
                     lnB_past = np.log(prior[f] + 1e-16)
-                else:         
+                else:
                     # Thomas Parr MMP version
                     # lnB_past = 0.5 * np.log(B[f][:, :, full_policy[t - 1, f]].dot(qs[t - 1][f]) + 1e-16)
 
                     # Karl SPM version
                     lnB_past = np.log(B[f][:, :, full_policy[t - 1, f]].dot(qs[t - 1][f]) + 1e-16)
                     if t == 0:
-                        print(f"qs_t_1 at time t = {t}, factor f = {f}, iteration i = {n}: {qs[t - 1][f]}")
-                
+                        print(
+                            f"qs_t_1 at time t = {t}, factor f = {f}, iteration i = {n}: {qs[t - 1][f]}"
+                        )
+
                 if t == 0 and n == 0:
-                    print(f"lnB_past at time t = {t}, factor f = {f}, iteration i = {n}: {lnB_past}")
+                    print(
+                        f"lnB_past at time t = {t}, factor f = {f}, iteration i = {n}: {lnB_past}"
+                    )
 
                 """
                 =========== Step 3.c ===========
@@ -279,8 +293,6 @@ def run_mmp(
                 # lnB_past_tensor[f] = 2 * lnBpast
                 # Karl SPM version
                 lnB_past_tensor[f] = lnB_past
-
-
 
                 """
                 =========== Step 3.d ===========
@@ -314,38 +326,3 @@ def run_mmp(
         qss[n].append(qs)
 
     return qs, qss, free_energy, free_energy_pol
-
-
-if __name__ == "__main__":
-
-    n_modalities = [2]
-    n_states = [3]
-    n_controls = [3]
-    num_factors = len(n_states)
-
-    if num_factors == 1:  # single factor case
-        tmp = np.eye(n_states[0])[:, :, np.newaxis]
-        tmp = np.tile(tmp, (1, 1, n_controls[0]))
-        tmp = tmp.transpose(1, 2, 0)
-        B = np.empty(1, dtype=object)
-        B[0] = tmp
-    elif num_factors > 1:  # multifactor case
-        B = np.empty(num_factors, dtype=object)
-        for factor, nc in enumerate(n_controls):
-            tmp = np.eye(nc)[:, :, np.newaxis]
-            tmp = np.tile(tmp, (1, 1, nc))
-            B[factor] = tmp.transpose(1, 2, 0)
-
-    A = np.zeros((2, 3))
-    A[0, 0] = 1
-    A[0, 1] = 1
-    A[1, 2] = 1
-    print(A)
-
-    obs_t = [np.array([1, 0]), np.array([1, 0]), np.array([1, 0])]
-
-    policy = np.array([[1], [1]])
-    curr_t = 3
-    t_horizon = 2
-    T = 2
-    qs, qss, F, F_pol = run_mmp(A, B, obs_t, policy, curr_t, t_horizon, T)

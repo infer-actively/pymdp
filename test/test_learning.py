@@ -155,13 +155,7 @@ class TestLearning(unittest.TestCase):
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
         observation = A.dot(qs, return_numpy=False).sample()
         pA_updated = core.update_likelihood_dirichlet(
-            pA,
-            A,
-            observation,
-            qs,
-            lr=l_rate,
-            modalities=modality_to_update,
-            return_numpy=True,
+            pA, A, observation, qs, lr=l_rate, modalities=modality_to_update, return_numpy=True
         )
 
         for modality, no in enumerate(num_obs):
@@ -188,13 +182,7 @@ class TestLearning(unittest.TestCase):
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
         observation = A.dot(qs, return_numpy=False).sample()
         pA_updated = core.update_likelihood_dirichlet(
-            pA,
-            A,
-            observation,
-            qs,
-            lr=l_rate,
-            modalities=modalities_to_update,
-            return_numpy=True,
+            pA, A, observation, qs, lr=l_rate, modalities=modalities_to_update, return_numpy=True
         )
 
         for modality, no in enumerate(num_obs):
@@ -257,13 +245,7 @@ class TestLearning(unittest.TestCase):
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
         observation = A.dot(qs, return_numpy=False).sample()
         pA_updated = core.update_likelihood_dirichlet(
-            pA,
-            A,
-            observation,
-            qs,
-            lr=l_rate,
-            modalities=modality_to_update,
-            return_numpy=True,
+            pA, A, observation, qs, lr=l_rate, modalities=modality_to_update, return_numpy=True
         )
 
         for modality, no in enumerate(num_obs):
@@ -291,13 +273,7 @@ class TestLearning(unittest.TestCase):
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
         observation = A.dot(qs, return_numpy=False).sample()
         pA_updated = core.update_likelihood_dirichlet(
-            pA,
-            A,
-            observation,
-            qs,
-            lr=l_rate,
-            modalities=modalities_to_update,
-            return_numpy=True,
+            pA, A, observation, qs, lr=l_rate, modalities=modalities_to_update, return_numpy=True
         )
 
         for modality, no in enumerate(num_obs):
@@ -331,9 +307,7 @@ class TestLearning(unittest.TestCase):
 
         validation_pB = pB.copy()
         validation_pB[:, :, 0] += (
-            l_rate
-            * core.spm_cross(qs.values, qs_prev.values)
-            * (B[:, :, action[0]].values > 0)
+            l_rate * core.spm_cross(qs.values, qs_prev.values) * (B[:, :, action[0]].values > 0)
         )
         self.assertTrue(np.all(pB_updated == validation_pB.values))
 
@@ -359,9 +333,7 @@ class TestLearning(unittest.TestCase):
 
         validation_pB = pB.copy()
         validation_pB[:, :, action[0]] += (
-            l_rate
-            * core.spm_cross(qs.values, qs_prev.values)
-            * (B[:, :, action[0]].values > 0)
+            l_rate * core.spm_cross(qs.values, qs_prev.values) * (B[:, :, action[0]].values > 0)
         )
         self.assertTrue(np.all(pB_updated == validation_pB.values))
 
@@ -428,14 +400,7 @@ class TestLearning(unittest.TestCase):
         action = np.array([np.random.randint(nc) for nc in n_control])
 
         pB_updated = core.update_transition_dirichlet(
-            pB,
-            B,
-            action,
-            qs,
-            qs_prev,
-            lr=l_rate,
-            factors=factors_to_update,
-            return_numpy=True,
+            pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update, return_numpy=True
         )
 
         validation_pB = pB.copy()
@@ -474,14 +439,7 @@ class TestLearning(unittest.TestCase):
         )
         action = np.array([np.random.randint(nc) for nc in n_control])
         pB_updated = core.update_transition_dirichlet(
-            pB,
-            B,
-            action,
-            qs,
-            qs_prev,
-            lr=l_rate,
-            factors=factors_to_update,
-            return_numpy=True,
+            pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update, return_numpy=True
         )
         validation_pB = pB.copy()
         for factor, _ in enumerate(n_control):
@@ -546,14 +504,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(nc) for nc in n_control])
         pB_updated = core.update_transition_dirichlet(
-            pB,
-            B,
-            action,
-            qs,
-            qs_prev,
-            lr=l_rate,
-            factors=factors_to_update,
-            return_numpy=True,
+            pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update, return_numpy=True
         )
 
         validation_pB = pB.copy()
@@ -590,14 +541,7 @@ class TestLearning(unittest.TestCase):
         action = np.array([np.random.randint(nc) for nc in n_control])
 
         pB_updated = core.update_transition_dirichlet(
-            pB,
-            B,
-            action,
-            qs,
-            qs_prev,
-            lr=l_rate,
-            factors=factors_to_update,
-            return_numpy=True,
+            pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update, return_numpy=True
         )
 
         validation_pB = pB.copy()
@@ -666,7 +610,6 @@ class TestLearning(unittest.TestCase):
         l_rate = 1.0
 
         factors_to_update = [0, 1]
-
         B_values = np.empty(len(n_states), dtype=object)
         pB_values = np.empty(len(n_states), dtype=object)
         for factor, ns in enumerate(n_states):
@@ -678,31 +621,19 @@ class TestLearning(unittest.TestCase):
         pB = Dirichlet(values=pB_values)
 
         action = np.array([np.random.randint(nc) for nc in n_control])
-
         pB_updated = core.update_transition_dirichlet(
-            pB,
-            B,
-            action,
-            qs,
-            qs_prev,
-            lr=l_rate,
-            factors=factors_to_update,
-            return_numpy=True,
+            pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update, return_numpy=True
         )
 
         validation_pB = pB.copy()
-
         for factor, _ in enumerate(n_control):
-
             validation_pB = pB[factor].copy()
-
             if factor in factors_to_update:
                 validation_pB[:, :, action[factor]] += (
                     l_rate
                     * core.spm_cross(qs[factor].values, qs_prev[factor].values)
                     * (B[factor][:, :, action[factor]].values > 0)
                 )
-
             self.assertTrue(np.all(pB_updated[factor] == validation_pB.values))
 
 

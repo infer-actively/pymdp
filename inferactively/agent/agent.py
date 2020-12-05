@@ -11,6 +11,7 @@ import numpy as np
 from inferactively.distributions import Categorical, Dirichlet
 from inferactively.core import inference, control, learning
 
+
 class Agent(object):
     """ 
     Agent class 
@@ -38,9 +39,9 @@ class Agent(object):
         inference_algo="FPI",
         inference_params=None,
         modalities_to_learn="all",
-        lr_pA = 1.0,
+        lr_pA=1.0,
         factors_to_learn="all",
-        lr_pB = 1.0
+        lr_pB=1.0,
     ):
 
         ### Constant parameters ###
@@ -59,7 +60,6 @@ class Agent(object):
         self.factors_to_learn = factors_to_learn
         self.lr_pB = lr_pB
 
-
         """ Initialise observation model (A matrices) """
         if A is not None:
             # Create `Categorical`
@@ -71,13 +71,15 @@ class Agent(object):
             # Determine number of modalities and observations
             if self.A.IS_AOA:
                 self.n_modalities = self.A.shape[0]
-                self.n_observations = [self.A[modality].shape[0] for modality in range(self.n_modalities)]
+                self.n_observations = [
+                    self.A[modality].shape[0] for modality in range(self.n_modalities)
+                ]
             else:
                 self.n_modalities = 1
                 self.n_observations = [self.A.shape[0]]
             construct_A_flag = False
         else:
-            
+
             # If A is none, we randomly initialise the matrix. This requires some information
             if n_observations is None:
                 raise ValueError(
@@ -86,11 +88,11 @@ class Agent(object):
             self.n_observations = n_observations
             self.n_modalities = len(self.n_observations)
             construct_A_flag = True
-        
+
         """ Initialise prior Dirichlet parameters on observation model (pA matrices) """
         if pA is not None:
             if not isinstance(pA, Dirichlet):
-                self.pA = Dirichlet(values = pA)
+                self.pA = Dirichlet(values=pA)
             else:
                 self.pA = pA
         else:
@@ -115,13 +117,13 @@ class Agent(object):
             if n_states is None:
                 raise ValueError("Must provide either `B` or `n_states` to `Agent` constructor")
             self.n_states = n_states
-            self.n_factors = len(self.n_factors)
+            self.n_factors = len(self.n_factors) #type: ignore
             construct_B_flag = True
 
         """ Initialise prior Dirichlet parameters on transition model (pB matrices) """
         if pB is not None:
             if not isinstance(pB, Dirichlet):
-                self.pB = Dirichlet(values = pA)
+                self.pB = Dirichlet(values=pA)
             else:
                 self.pB = pB
         else:
@@ -136,7 +138,7 @@ class Agent(object):
             self.control_fac_idx = control_fac_idx
 
         # The user can specify the number of control states
-        # However, given the controllable factors, this can be inferred 
+        # However, given the controllable factors, this can be inferred
         if n_controls is None:
             _, self.n_controls = self._construct_n_controls()
         else:
@@ -145,7 +147,7 @@ class Agent(object):
         # Again, the use can specify a set of possible policies, or
         # all possible combinations of actions and timesteps will be considered
         if policies is None:
-            self.policies,_  = self._construct_n_controls()
+            self.policies, _ = self._construct_n_controls()
         else:
             self.policies = policies
 
@@ -157,7 +159,7 @@ class Agent(object):
                 self.C = Categorical(values=C)
         else:
             self.C = self._construct_C_prior()
-        
+
         # Construct initial beliefs (uniform if not specified)
         if D is not None:
             if isinstance(D, Categorical):
@@ -234,7 +236,8 @@ class Agent(object):
 
     def _construct_n_controls(self):
         policies, n_controls = control.construct_policies(
-            self.n_states, None, self.policy_len, self.control_fac_idx)
+            self.n_states, None, self.policy_len, self.control_fac_idx
+        )
 
         return policies, n_controls
 
@@ -255,12 +258,16 @@ class Agent(object):
 
         if self.inference_algo is "FPI":
             if self.action is not None:
-                empirical_prior = control.get_expected_states(self.qs, self.B.log(), self.action.reshape(1,-1))
+                empirical_prior = control.get_expected_states(
+                    self.qs, self.B.log(), self.action.reshape(1, -1) #type: ignore
+                )
             else:
                 empirical_prior = self.D.log()
         else:
             if self.action is not None:
-                empirical_prior = control.get_expected_states(self.qs, self.B, self.action.reshape(1,-1))
+                empirical_prior = control.get_expected_states(
+                    self.qs, self.B, self.action.reshape(1, -1) #type: ignore
+                )
             else:
                 empirical_prior = self.D
 
@@ -304,23 +311,18 @@ class Agent(object):
         self.action = action
         return action
 
-    def update_A(self,obs):
+    def update_A(self, obs):
 
         pA_updated = learning.update_likelihood_dirichlet(
-            self.pA, 
-            self.A, 
-            obs, 
-            self.qs, 
-            self.lr_pA,  
-            self.modalities_to_learn,
-            return_numpy=False)
-        
+            self.pA, self.A, obs, self.qs, self.lr_pA, self.modalities_to_learn, return_numpy=False
+        )
+
         self.pA = pA_updated
         self.A = pA_updated.mean()
 
         return pA_updated
 
-    def update_B(self,qs_prev):
+    def update_B(self, qs_prev):
 
         pB_updated = learning.update_transition_dirichlet(
             self.pB,
@@ -330,7 +332,8 @@ class Agent(object):
             qs_prev,
             self.lr_pB,
             self.factors_to_learn,
-            return_numpy=False)
+            return_numpy=False,
+        )
 
         self.pB = pB_updated
         self.A = pB_updated.mean()
@@ -338,20 +341,19 @@ class Agent(object):
         return pB_updated
 
     def _get_default_params(self):
-
         method = self.inference_algo
-
+        default_params = None
         if method == "FPI":
             default_params = {"num_iter": 10, "dF": 1.0, "dF_tol": 0.001}
-        if method == "VMP":
+        elif method == "VMP":
             raise NotImplementedError("VMP is not implemented")
-        if method == "MMP":
+        elif method == "MMP":
             raise NotImplementedError("MMP is not implemented")
-        if method == "BP":
+        elif method == "BP":
             raise NotImplementedError("BP is not implemented")
-        if method == "EP":
+        elif method == "EP":
             raise NotImplementedError("EP is not implemented")
-        if method == "CV":
+        elif method == "CV":
             raise NotImplementedError("CV is not implemented")
 
         return default_params
