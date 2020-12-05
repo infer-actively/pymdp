@@ -6,7 +6,6 @@
 __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
-import itertools
 import numpy as np
 from inferactively.distributions import Categorical, Dirichlet
 
@@ -45,7 +44,8 @@ def is_arr_of_arr(arr):
 
 
 def to_arr_of_arr(arr):
-    """ @TODO make general """
+    if is_arr_of_arr(arr):
+        return arr
     arr_of_arr = np.empty(1, dtype=object)
     arr_of_arr[0] = arr.squeeze()
     return arr_of_arr

@@ -14,6 +14,7 @@ import numpy as np
 from scipy.io import loadmat
 
 from inferactively import core
+from inferactively.core import run_mmp_v2
 
 DATA_PATH = "test/data/"
 

@@ -35,4 +35,4 @@ from .utils import (
     to_categorical,
     to_dirichlet,
 )
-from .algos import run_fpi, run_mmp
+from .algos import run_fpi, run_mmp, run_mmp_v2
