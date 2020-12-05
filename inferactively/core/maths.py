@@ -123,6 +123,25 @@ def spm_cross(x, y=None, *args):
     return z
 
 
+def dot_likelihood(A, obs):
+    return spm_dot(A, np.array(obs), obs_mode=True)
+
+
+def get_joint_likelihood(A, obs, num_states):
+    A = utils.to_arr_of_arr(A)
+    ll = np.ones(tuple(num_states))
+    for modality in range(len(A)):
+        ll = ll * dot_likelihood(A[modality], obs[modality])
+    return ll
+
+
+def get_joint_likelihood_seq(A, obs, num_states):
+    ll_seq = np.empty(len(obs), dtype=object)
+    for t in range(len(obs)):
+        ll_seq[t] = get_joint_likelihood(A, obs[t], num_states)
+    return ll_seq
+
+
 def spm_norm(A):
     """ 
     Returns normalization of Categorical distribution, 

@@ -11,7 +11,6 @@ import numpy as np
 import sys
 import pathlib
 
-sys.path.append(str(pathlib.Path(__file__).parent.parent.parent.parent))
 from inferactively.core.maths import spm_dot, spm_norm, softmax, calc_free_energy
 from inferactively.core import utils
 
