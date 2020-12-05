@@ -27,9 +27,9 @@ def rand_controls(num_controls):
 if __name__ == "__main__":
     past_len = 4
     future_len = 4
-    num_states = 2
-    num_controls = 3
-    num_obs = 5
+    num_states = [8, 12, 13]
+    num_controls = [12, 3, 16]
+    num_obs = [12, 14, 6]
 
     A = random_A_matrix(num_obs, num_states)
     B = random_B_matrix(num_states, num_controls)
