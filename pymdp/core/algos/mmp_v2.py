@@ -18,7 +18,7 @@ def run_mmp_v2(
     # window
     past_len = len(ll_seq)
     future_len = policy.shape[0]
-    infer_len = past_len + future_len 
+    infer_len = past_len + future_len
     future_cutoff = past_len + future_len - 2
 
     # dimensions
@@ -63,7 +63,7 @@ def run_mmp_v2(
                     lnA = np.log(spm_dot(ll_seq[t], qs_seq[t], [f]) + 1e-16)
                 else:
                     lnA = np.zeros(num_states[f])
-   
+
                 # past message
                 if t == 0:
                     lnB_past = np.log(prior[f] + 1e-16)
