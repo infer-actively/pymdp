@@ -1,8 +1,8 @@
 import numpy as np
 
-from inferactively.core.utils import random_A_matrix, random_B_matrix, obj_array, onehot
-from inferactively.core.maths import get_joint_likelihood_seq
-from inferactively.core.algos import run_mmp_v2
+from pymdp.core.utils import random_A_matrix, random_B_matrix, obj_array, onehot
+from pymdp.core.maths import get_joint_likelihood_seq
+from pymdp.core.algos import run_mmp_v2
 
 
 def rand_onehot_obs(num_obs):

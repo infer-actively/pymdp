@@ -13,8 +13,8 @@ import unittest
 import numpy as np
 from scipy.io import loadmat
 
-from inferactively import core
-from inferactively.core.algos import run_mmp_v2
+from pymdp import core
+from pymdp.core.algos import run_mmp_v2
 
 DATA_PATH = "test/data/"
 
@@ -118,9 +118,9 @@ class MMP(unittest.TestCase):
         print(f"matlab qs shape {result_spm[0]}")
 
         # Just check whether the latest beliefs (about curr_t, held at curr_t) match up
-        result_inferactively = qs[-1]
+        result_pymdp = qs[-1]
         for f in range(len(B)):
-            self.assertTrue(np.isclose(result_spm[f].squeeze(), result_inferactively[f]).all())
+            self.assertTrue(np.isclose(result_spm[f].squeeze(), result_pymdp[f]).all())
 
     def test_mmp_b(self):
         """ Testing our SPM-ified version of `run_MMP` with
@@ -159,9 +159,9 @@ class MMP(unittest.TestCase):
         )
 
         # Just check whether the latest beliefs (about curr_t, held at curr_t) match up
-        result_inferactively = qs[-1]
+        result_pymdp = qs[-1]
         for f in range(len(B)):
-            self.assertTrue(np.isclose(result_spm[f].squeeze(), result_inferactively[f]).all())
+            self.assertTrue(np.isclose(result_spm[f].squeeze(), result_pymdp[f]).all())
 
 
 if __name__ == "__main__":

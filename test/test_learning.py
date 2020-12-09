@@ -8,8 +8,8 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import unittest
 
 import numpy as np
-from inferactively.distributions import Categorical, Dirichlet
-from inferactively import core
+from pymdp.distributions import Categorical, Dirichlet
+from pymdp import core
 
 
 def construct_generic_A(num_obs, n_states):

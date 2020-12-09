@@ -10,8 +10,8 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import numpy as np
 
 
-from inferactively.core import utils
-from inferactively.core.algos import run_fpi
+from pymdp.core import utils
+from pymdp.core.algos import run_fpi
 
 FPI = "FPI"
 VMP = "VMP"

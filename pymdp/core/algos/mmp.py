@@ -11,8 +11,8 @@ import numpy as np
 import sys
 import pathlib
 
-from inferactively.core.maths import spm_dot, spm_norm, softmax, calc_free_energy
-from inferactively.core import utils
+from pymdp.core.maths import spm_dot, spm_norm, softmax, calc_free_energy
+from pymdp.core import utils
 
 
 def run_mmp(

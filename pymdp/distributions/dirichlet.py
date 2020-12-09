@@ -10,8 +10,8 @@ import numpy as np
 from scipy import special
 import warnings
 import copy
-from inferactively.distributions import Categorical
-from inferactively.core import maths
+from pymdp.distributions import Categorical
+from pymdp.core import maths
 
 
 class Dirichlet(object):

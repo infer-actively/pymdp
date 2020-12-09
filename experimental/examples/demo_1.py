@@ -7,9 +7,9 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-from inferactively.distributions import Categorical, Dirichlet
-from inferactively.envs import GridWorldEnv  #
-from inferactively import core
+from pymdp.distributions import Categorical, Dirichlet
+from pymdp.envs import GridWorldEnv  #
+from pymdp import core
 
 
 def plot_beliefs(qs, title=""):

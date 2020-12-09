@@ -4,10 +4,10 @@ import numpy as np
 
 sys.path.append(str(pathlib.Path(__file__).parent.parent.parent))
 
-from inferactively.agent import Agent
-from inferactively import core
-from inferactively.distributions import Categorical, Dirichlet
-from inferactively.envs import VisualForagingEnv
+from pymdp.agent import Agent
+from pymdp import core
+from pymdp.distributions import Categorical, Dirichlet
+from pymdp.envs import VisualForagingEnv
 
 
 print(

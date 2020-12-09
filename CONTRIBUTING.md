@@ -1,8 +1,8 @@
-# inferactively
+# pymdp
 
 *Borrowed below list from [here](https://github.com/netsiphds/netrd)*
 
-Welcome to `inferactively` and thanks for your interest in contributing!
+Welcome to `pymdp` and thanks for your interest in contributing!
 During development please make sure to keep the following checklists handy.
 They contain a summary of all the important steps you need to take to contribute
 to the package. As a general statement, the more familiar you already are
@@ -11,11 +11,11 @@ with git(hub), the less relevant the detailed instructions below will be for you
 
 ## Types of Contribution
 
-There are multiple ways to contribute to `inferactively` (borrowed below list from [here](https://github.com/uzhdag/pathpy/blob/master/CONTRIBUTING.rst)):
+There are multiple ways to contribute to `pymdp` (borrowed below list from [here](https://github.com/uzhdag/pathpy/blob/master/CONTRIBUTING.rst)):
 
 #### Report Bugs
 
-To report a bug in the package, open an issue at https://github.com/alec-tschantz/infer-actively/issues.
+To report a bug in the package, open an issue at https://github.com/infer-actively/pymdp/issues.
 
 Please include in your bug report:
 
@@ -34,7 +34,7 @@ Look through the GitHub issues for features. Anything tagged with "enhancement"
 and "help wanted" is open to whomever wants to implement it. If you know of a 
 method that is implemented in another programming language, feel free to 
 translate it into python here. If you don't want to translate it yourself, feel 
-free to add an issue at https://github.com/alec-tschantz/infer-actively/issues. If you have 
+free to add an issue at https://github.com/infer-actively/pymdp/issues. If you have 
 read through this document and still have questions, also open an issue. When 
 in doubt, open an issue.
 
@@ -59,18 +59,18 @@ If you are proposing a feature not directly related to implementing a new method
   are welcome!
 
 ##### A Brief Note On Licensing
-Often, python code for an algorithm of interest already exists. In the interest of avoiding repeated reinvention of the wheel, we welcome code from other sources being integrated into `inferactively`. If you are doing this, we ask that you be explicit and transparent about where the code came from and which license it is released under. The safest thing to do is copy the license from the original code into the header documentation of your file. For reference, this software is [licensed under MIT](https://github.com/tlarock/netrd/blob/master/LICENSE).
+Often, python code for an algorithm of interest already exists. In the interest of avoiding repeated reinvention of the wheel, we welcome code from other sources being integrated into `pymdp`. If you are doing this, we ask that you be explicit and transparent about where the code came from and which license it is released under. The safest thing to do is copy the license from the original code into the header documentation of your file. For reference, this software is [licensed under MIT](https://github.com/tlarock/netrd/blob/master/LICENSE).
 
 ## Setup
 Before starting your contribution, you need to complete the following instructions once.
-The goal of this process is to fork, download and install the latest version of `inferactively`.
+The goal of this process is to fork, download and install the latest version of `pymdp`.
 
 1. Log in to GitHub.
 
 2. Fork this repository by pressing 'Fork' at the top right of this
    page. This will lead you to 'github.com/<your_account>/infer-actively'. We refer
    to this as your personal fork (or just 'your fork'), as opposed to this repository
-   (github.com/alec-tschantz/infer-actively), which we refer to as the 'upstream repository'.
+   (github.com/infer-actively/pymdp), which we refer to as the 'upstream repository'.
 
 3. Clone your fork to your machine by opening a console and doing
 
@@ -82,14 +82,14 @@ The goal of this process is to fork, download and install the latest version of 
    directory called 'infer-actively/'. Navigate to it and execute
 
    ```
-   git remote add upstream https://github.com/alec-tschantz/infer-actively.git
+   git remote add upstream https://github.com/infer-actively/pymdp.git
    ```
 
    In this way, your machine will know of both your fork (which git calls
    `origin`) and the upstream repository (`upstream`).
 
 4. During development, you will probably want to play around with your
-   code. For this, you need to install the `inferactively` package and have it
+   code. For this, you need to install the `pymdp` package and have it
    reflect your changes as you go along. For this, open the console and
    navigate to the `infer-actively/` directory, and execute
 
@@ -98,7 +98,7 @@ The goal of this process is to fork, download and install the latest version of 
 	```
 
 	From now on, you can open a Jupyter notebook, ipython console, or your
-    favorite IDE from anywhere in your computer and type `import inferactively`.
+    favorite IDE from anywhere in your computer and type `import pymdp`.
 
 
 These steps need to be taken only once. Now anything you do in the `infer-actively/`
@@ -113,16 +113,16 @@ Once you have completed the above steps, you are ready to choose an algorithm to
 
 1. Choose which algorithm you are interested in working on.
 
-2. Open an issue at https://github.com/alec-tschantz/infer-actively/issues by clicking the "New Issue" button. 
+2. Open an issue at https://github.com/infer-actively/pymdp/issues by clicking the "New Issue" button. 
 
 	* Title the issue "Implement XYZ method", where XYZ method is a shorthand name for whatever function / method / environment class you plan to implement.
-	* Leave a comment that includes a brief motivation for why you want to see this method in `inferactively`, as well as any key citations.
+	* Leave a comment that includes a brief motivation for why you want to see this method in `pymdp`, as well as any key citations.
 	* If such an issue already exists for the method you are going to write, it is not necessary to open another. However, it is a good idea to leave a comment letting others know you are going to work on it.
 
 2. In your machine, create the file where your algorithm is going to
    live. If you chose a softmax algorithm, copy
-   an existing fiile, such as `/inferactively/functions.py`, into 
-   `/inferactively/<algorithm_name>.py`. Please keep in mind that
+   an existing fiile, such as `/pymdp/functions.py`, into 
+   `/pymdp/<algorithm_name>.py`. Please keep in mind that
    <algorithm_name> will be used inside the code, so try to choose
    something that looks "pythonic". In particular, <algorithm_name> cannot
    include spaces, should not include upper case letters, and should use underscores 
@@ -140,7 +140,7 @@ Once you have completed the above steps, you are ready to choose an algorithm to
    function, for example, do
 
    ```
-   git add inferactively/<your_file>.py
+   git add pymdp/<your_file>.py
    ```
 
 2. Next tell git to commit (or save) your changes:
@@ -172,7 +172,7 @@ Once you have completed the above steps, you are ready to choose an algorithm to
    will take you to a page titled 'Compare Changes'. Right below the title,
    click on the blue text that reads 'compare across forks'. This will show
    four buttons. Make sure that the first button reads 'base fork:
-   alec-tschantz/infer-actively', the second button reads 'base: master', the third
+   infer-actively/pymdp', the second button reads 'base: master', the third
    button reads 'head fork: <your_username>/infer-actively', and the fourth button
    reads 'compare: master'. (If everything has gone according to plan, the
    only button you should have to change is the third one - make sure you

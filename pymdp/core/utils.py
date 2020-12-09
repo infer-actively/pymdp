@@ -8,7 +8,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 
-from inferactively.distributions import Categorical, Dirichlet
+from pymdp.distributions import Categorical, Dirichlet
 
 
 def obj_array(shape):

@@ -10,8 +10,8 @@ import unittest
 
 import numpy as np
 
-from inferactively.distributions import Categorical, Dirichlet  # nopep8
-from inferactively import core
+from pymdp.distributions import Categorical, Dirichlet  # nopep8
+from pymdp import core
 
 
 def construct_generic_A(num_obs, n_states):

@@ -12,7 +12,7 @@ import unittest
 import numpy as np
 from scipy.io import loadmat
 
-from inferactively.distributions import Categorical, Dirichlet  
+from pymdp.distributions import Categorical, Dirichlet  
 
 DATA_PATH = "test/data/"
 

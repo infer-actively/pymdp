@@ -1,6 +1,6 @@
 
 <p align='center'>
-  <a href='https://github.com/alec-tschantz/inferactively'>
+  <a href='https://github.com/alec-tschantz/pymdp'>
     <img src='.github/logo.png' />
   </a> 
 </p>
@@ -16,8 +16,8 @@ This package is under active development and is currently not suited for use. If
 
 ## Installation and Usage
 
-In order to use this code, download the `inferactively` folder into your project
-folder. You can now use all classes and functions via `import inferactively`
+In order to use this code, download the `pymdp` folder into your project
+folder. You can now use all classes and functions via `import pymdp`
 
 ## Requirements 
 

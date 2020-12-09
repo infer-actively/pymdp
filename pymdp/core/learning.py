@@ -7,7 +7,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
 import numpy as np
-from inferactively.core import utils
+from pymdp.core import utils
 import copy
 
 

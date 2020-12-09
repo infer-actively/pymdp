@@ -1,9 +1,9 @@
 """
 CORE Implementation:
 
-Implementation of active inference using inferactively. Here, we implement
+Implementation of active inference using pymdp. Here, we implement
 the necessary computations for hidden state inference and learning (updating parameters
-of the generative model) using functions from the `core` module of inferactively. 
+of the generative model) using functions from the `core` module of pymdp. 
 
 This ends up being simple mathematical manipulations of instances of the Categorical and Dirichlet classes, 
 which represent the various distributions encoding posterior and prior beliefs of the agent.
@@ -19,14 +19,14 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 """
-## Add `inferactively` module
+## Add `pymdp` module
 """
 
 sys.path.append(str(pathlib.Path(__file__).parent.parent))
 
-from inferactively.envs import GridWorldEnv
-from inferactively.distributions import Categorical, Dirichlet
-from inferactively import core
+from pymdp.envs import GridWorldEnv
+from pymdp.distributions import Categorical, Dirichlet
+from pymdp import core
 
 """
 ## Plotting functions (come in handy later on)

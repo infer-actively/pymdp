@@ -8,8 +8,8 @@ __author__: Conor Heins, Beren Millidge, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 
-from inferactively.core.utils import to_arr_of_arr, get_model_dimensions
-from inferactively.core.maths import spm_dot, spm_norm, softmax
+from pymdp.core.utils import to_arr_of_arr, get_model_dimensions
+from pymdp.core.maths import spm_dot, spm_norm, softmax
 
 
 def run_mmp_v2(

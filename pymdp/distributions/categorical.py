@@ -10,7 +10,7 @@ import warnings
 import copy
 import numpy as np
 import matplotlib.pyplot as plt
-from inferactively.core import maths, utils
+from pymdp.core import maths, utils
 
 
 class Categorical(object):

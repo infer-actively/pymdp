@@ -4,10 +4,10 @@ import numpy as np
 
 sys.path.append(str(pathlib.Path(__file__).parent.parent.parent))
 
-from inferactively.agent import Agent
-from inferactively import core
-from inferactively.distributions import Categorical, Dirichlet
-from inferactively.envs import TMazeEnv
+from pymdp.agent import Agent
+from pymdp import core
+from pymdp.distributions import Categorical, Dirichlet
+from pymdp.envs import TMazeEnv
 
 reward_probabilities = [0.6, 0.4]
 # reward_probabilities = [0.98, 0.02] # probabilities used in Karl's original SPM demo

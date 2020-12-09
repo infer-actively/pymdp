@@ -6,8 +6,8 @@ import copy
 
 sys.path.append(str(pathlib.Path(__file__).parent.parent.parent))
 
-from inferactively.distributions import Categorical, Dirichlet
-from inferactively import core
+from pymdp.distributions import Categorical, Dirichlet
+from pymdp import core
 
 
 # %% define some auxiliary functions that help generate likelihoods and other variables useful for testing

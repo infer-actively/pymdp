@@ -7,9 +7,9 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 """
 
-from inferactively.envs import Env
-from inferactively.distributions import Categorical
-import inferactively.core as core
+from pymdp.envs import Env
+from pymdp.distributions import Categorical
+import pymdp.core as core
 import numpy as np
 
 LOCATION_ID = 0

@@ -8,8 +8,8 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
 import numpy as np
-from inferactively.distributions import Categorical, Dirichlet
-from inferactively.core import inference, control, learning
+from pymdp.distributions import Categorical, Dirichlet
+from pymdp.core import inference, control, learning
 
 
 class Agent(object):

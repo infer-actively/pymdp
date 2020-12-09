@@ -9,9 +9,9 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import itertools
 import numpy as np
-from inferactively.distributions import Categorical, Dirichlet
-from inferactively.core.maths import softmax, spm_dot, spm_wnorm, spm_MDP_G
-from inferactively.core import utils
+from pymdp.distributions import Categorical, Dirichlet
+from pymdp.core.maths import softmax, spm_dot, spm_wnorm, spm_MDP_G
+from pymdp.core import utils
 
 
 def update_posterior_policies(

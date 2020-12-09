@@ -10,7 +10,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 from scipy import special
-from inferactively.core import utils
+from pymdp.core import utils
 
 
 def spm_dot(X, x, dims_to_omit=None, obs_mode=False):

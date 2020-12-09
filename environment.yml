@@ -1,4 +1,4 @@
-name: inferactively
+name: pymdp
 channels:
   - defaults
 dependencies:
@@ -48,4 +48,4 @@ dependencies:
   - xz=5.2.5=h1de35cc_0
   - zlib=1.2.11=h1de35cc_3
   - zstd=1.4.5=h41d2c2f_0
-prefix: /Users/at449/anaconda3/envs/inferactively
+prefix: /Users/at449/anaconda3/envs/pymdp

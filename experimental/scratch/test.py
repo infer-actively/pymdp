@@ -10,8 +10,8 @@ import itertools
 import numpy as np
 import torch
 from scipy import special
-from inferactively.core import utils
-from inferactively.distributions import Dirichlet, Categorical
+from pymdp.core import utils
+from pymdp.distributions import Dirichlet, Categorical
 
 
 def spm_dot(X, y, dims_to_omit=None, obs_mode=False):
