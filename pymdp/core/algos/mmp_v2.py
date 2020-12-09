@@ -57,8 +57,6 @@ def run_mmp_v2(
 
     for _ in range(num_iter):
         for t in range(infer_len):
-            lnB_past_tensor = np.empty(num_factors, dtype=object)
-
             for f in range(num_factors):
                 # likelihood
                 if t < past_len:
@@ -72,7 +70,6 @@ def run_mmp_v2(
                 else:
                     past_msg = B[f][:, :, int(policy[t - 1, f])].dot(qs_seq[t - 1][f])
                     lnB_past = np.log(past_msg + 1e-16)
-                lnB_past_tensor[f] = lnB_past
 
                 # future message
                 if t >= future_cutoff:
