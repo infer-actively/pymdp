@@ -14,7 +14,9 @@ import numpy as np
 from scipy.io import loadmat
 
 from pymdp import core
+from pymdp.core.utils import get_model_dimensions
 from pymdp.core.algos import run_mmp_v2
+from pymdp.core.maths import get_joint_likelihood_seq
 
 DATA_PATH = "test/data/"
 
@@ -79,89 +81,102 @@ def convert_observation_array(obs, num_obs):
 
 class MMP(unittest.TestCase):
     def test_mmp_a(self):
-        """ Testing our SPM-ified version of `run_MMP` with
-        1 hidden state factor & 1 outcome modality, at a random fixed
-        timestep during the generative process"""
+        """
+        Testing our SPM-ified version of `run_MMP` with
+            1 hidden state factor & 1 outcome modality, at a random fixed
+            timestep during the generative process
+        """
 
         array_path = os.path.join(os.getcwd(), DATA_PATH + "mmp_a.mat")
         mat_contents = loadmat(file_name=array_path)
 
         A = mat_contents["A"][0]
         B = mat_contents["B"][0]
-        obs = mat_contents["obs_idx"].astype("int64")
+        prev_obs = mat_contents["obs_idx"].astype("int64")
         policy = mat_contents["policy"].astype("int64") - 1
         curr_t = mat_contents["t"][0, 0].astype("int64") - 1
         t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")
-        T = obs.shape[1]
-        previous_actions = mat_contents["previous_actions"].astype("int64") - 1
+        prev_actions = mat_contents["previous_actions"].astype("int64") - 1
         result_spm = mat_contents["qs"][0]
         likelihoods = mat_contents["likelihoods"][0]
 
-        # convert matlab index-style observations into list of array of arrays over time
-        num_obs = [A[g].shape[0] for g in range(len(A))]
-        obs_t = convert_observation_array(obs, num_obs)
-
-        qs, _, _, _ = core.algos.run_mmp(
-            A,
-            B,
-            obs_t,
-            policy,
-            curr_t,
-            t_horizon,
-            T,
-            use_gradient_descent=True,
-            num_iter=5,
-            previous_actions=previous_actions,
+        num_obs, num_states, _, num_factors = get_model_dimensions(A, B)
+        prev_obs = convert_observation_array(
+            prev_obs[:, max(0, curr_t - t_horizon) : (curr_t + 1)], num_obs
         )
 
-        print(f"final qs {qs[-1][0]}")
-        print(f"matlab qs shape {result_spm[0]}")
+        ll_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
+        qs_seq = run_mmp_v2(A, B, ll_seq, policy, prev_actions, num_iter=5, grad_descent=True)
 
-        # Just check whether the latest beliefs (about curr_t, held at curr_t) match up
-        result_pymdp = qs[-1]
-        for f in range(len(B)):
+        result_pymdp = qs_seq[-1]
+        for f in range(num_factors):
             self.assertTrue(np.isclose(result_spm[f].squeeze(), result_pymdp[f]).all())
 
-    def test_mmp_b(self):
-        """ Testing our SPM-ified version of `run_MMP` with
-        2 hidden state factors & 2 outcome modalities, at a random fixed
-        timestep during the generative process"""
+    # def test_mmp_b(self):
+    #     """ Testing our SPM-ified version of `run_MMP` with
+    #     2 hidden state factors & 2 outcome modalities, at a random fixed
+    #     timestep during the generative process"""
 
-        array_path = os.path.join(os.getcwd(), DATA_PATH + "mmp_b.mat")
-        mat_contents = loadmat(file_name=array_path)
+    #     array_path = os.path.join(os.getcwd(), DATA_PATH + "mmp_b.mat")
+    #     mat_contents = loadmat(file_name=array_path)
 
-        A = mat_contents["A"][0]
-        B = mat_contents["B"][0]
-        obs = mat_contents["obs_idx"].astype("int64")
-        policy = mat_contents["policy"].astype("int64") - 1
-        curr_t = mat_contents["t"][0, 0].astype("int64") - 1
-        t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")
-        T = obs.shape[1]
-        previous_actions = mat_contents["previous_actions"].astype("int64") - 1
-        result_spm = mat_contents["qs"][0]
-        _ = mat_contents["likelihoods"][0]
+    #     A = mat_contents["A"][0]
+    #     B = mat_contents["B"][0]
+    #     obs = mat_contents["obs_idx"].astype("int64")
+    #     policy = mat_contents["policy"].astype("int64") - 1
+    #     curr_t = mat_contents["t"][0, 0].astype("int64") - 1
+    #     t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")
+    #     T = obs.shape[1]
+    #     previous_actions = mat_contents["previous_actions"].astype("int64") - 1
+    #     result_spm = mat_contents["qs"][0]
+    #     _ = mat_contents["likelihoods"][0]
 
-        # Convert matlab index-style observations into list of array of arrays over time
-        num_obs = [A[g].shape[0] for g in range(len(A))]
-        obs_t = convert_observation_array(obs, num_obs)
+    #     # Convert matlab index-style observations into list of array of arrays over time
+    #     num_obs = [A[g].shape[0] for g in range(len(A))]
+    #     obs_t = convert_observation_array(obs, num_obs)
 
-        qs, _, _, _ = core.algos.run_mmp(
-            A,
-            B,
-            obs_t,
-            policy,
-            curr_t,
-            t_horizon,
-            T,
-            use_gradient_descent=True,
-            num_iter=5,
-            previous_actions=previous_actions,
-        )
+    #     qs, _, _, _ = core.algos.run_mmp(
+    #         A,
+    #         B,
+    #         obs_t,
+    #         policy,
+    #         curr_t,
+    #         t_horizon,
+    #         T,
+    #         use_gradient_descent=True,
+    #         num_iter=5,
+    #         previous_actions=previous_actions,
+    #     )
 
-        # Just check whether the latest beliefs (about curr_t, held at curr_t) match up
-        result_pymdp = qs[-1]
-        for f in range(len(B)):
-            self.assertTrue(np.isclose(result_spm[f].squeeze(), result_pymdp[f]).all())
+    #     # Just check whether the latest beliefs (about curr_t, held at curr_t) match up
+    #     result_pymdp = qs[-1]
+    #     for f in range(len(B)):
+    #         self.assertTrue(np.isclose(result_spm[f].squeeze(), result_pymdp[f]).all())
+
+    # def test_mmp_v2(self):
+    #     array_path = os.path.join(os.getcwd(), DATA_PATH + "mmp_b.mat")
+    #     mat_contents = loadmat(file_name=array_path)
+    #     A = mat_contents["A"][0]
+    #     B = mat_contents["B"][0]
+    #     prev_obs = mat_contents["obs_idx"].astype("int64")
+    #     policy = mat_contents["policy"].astype("int64") - 1
+    #     curr_t = mat_contents["t"][0, 0].astype("int64") - 1
+    #     t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")
+    #     prev_actions = mat_contents["previous_actions"].astype("int64") - 1
+    #     result_spm = mat_contents["qs"][0]
+    #     _ = mat_contents["likelihoods"][0]
+
+    #     num_obs, num_states, _, num_factors = get_model_dimensions(A, B)
+    #     prev_obs = convert_observation_array(
+    #         prev_obs[:, max(0, curr_t - t_horizon) : (curr_t + 1)], num_obs
+    #     )
+
+    #     ll_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
+    #     qs_seq = run_mmp_v2(A, B, ll_seq, policy, prev_actions, num_iter=5, grad_descent=True)
+
+    #     result_pymdp = qs_seq[-1]
+    #     for f in range(num_factors):
+    #         self.assertTrue(np.isclose(result_spm[f].squeeze(), result_pymdp[f]).all())
 
 
 if __name__ == "__main__":

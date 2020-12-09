@@ -124,13 +124,15 @@ def spm_cross(x, y=None, *args):
 
 
 def dot_likelihood(A, obs):
-    return spm_dot(A, np.array(obs), obs_mode=True)
+    return spm_dot(A, obs, obs_mode=True)
 
 
 def get_joint_likelihood(A, obs, num_states):
+    # deal with single modality case
     if type(num_states) is int:
         num_states = [num_states]
     A = utils.to_arr_of_arr(A)
+    obs = utils.to_arr_of_arr(obs)
     ll = np.ones(tuple(num_states))
     for modality in range(len(A)):
         ll = ll * dot_likelihood(A[modality], obs[modality])

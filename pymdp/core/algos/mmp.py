@@ -208,7 +208,7 @@ def run_mmp(
 
     full_policy = np.vstack((previous_actions, policy))
 
-    print(full_policy.shape)
+    # print(full_policy.shape)
 
     """
     =========== Step 3 ===========
@@ -246,7 +246,8 @@ def run_mmp(
                     lnA = np.zeros(num_states[f])
 
                 if t == 0 and n == 0:
-                    print(f"lnA at time t = {t}, factor f = {f}, iteration i = {n}: {lnA}")
+                    pass
+                    # print(f"lnA at time t = {t}, factor f = {f}, iteration i = {n}: {lnA}")
 
                 # print(f"lnA at time t = {t}, factor f = {f}, iteration i = {n}: {lnA}")
 
@@ -262,15 +263,15 @@ def run_mmp(
 
                     # Karl SPM version
                     lnB_past = np.log(B[f][:, :, full_policy[t - 1, f]].dot(qs[t - 1][f]) + 1e-16)
-                    if t == 0:
-                        print(
-                            f"qs_t_1 at time t = {t}, factor f = {f}, iteration i = {n}: {qs[t - 1][f]}"
-                        )
+                    # if t == 0:
+                    # print(
+                    # f"qs_t_1 at time t = {t}, factor f = {f}, iteration i = {n}: {qs[t - 1][f]}"
+                    # )
 
-                if t == 0 and n == 0:
-                    print(
-                        f"lnB_past at time t = {t}, factor f = {f}, iteration i = {n}: {lnB_past}"
-                    )
+                # if t == 0 and n == 0:
+                # print(
+                #     f"lnB_past at time t = {t}, factor f = {f}, iteration i = {n}: {lnB_past}"
+                # )
 
                 """
                 =========== Step 3.c ===========
@@ -287,7 +288,7 @@ def run_mmp(
                     # Karl Friston SPM version
                     B_future = B_transposed[f][:, :, int(full_policy[t, f])].dot(qs[t + 1][f])
                     lnB_future = np.log(B_future + 1e-16)
-
+                
                 # Thomas Parr MMP version
                 # lnB_past_tensor[f] = 2 * lnBpast
                 # Karl SPM version
@@ -306,11 +307,13 @@ def run_mmp(
                     # Karl SPM version
                     if t >= future_cutoff:
                         error = lnA + lnB_past - lns
+
                     else:
                         error = (2 * lnA + lnB_past + lnB_future) - 2 * lns
+                        
 
                     # print(f"prediction error at time t = {t}, factor f = {f}, iteration i = {n}: {error}")
-
+                    # print(f"OG {t} {f} {error}")
                     error -= error.mean()
                     lns = lns + tau * error
                     qs_t_f = softmax(lns)
