@@ -105,8 +105,16 @@ class MMP(unittest.TestCase):
             prev_obs[:, max(0, curr_t - t_horizon) : (curr_t + 1)], num_obs
         )
 
+        prev_actions = prev_actions[(max(0, curr_t - t_horizon) - 1) :, :]
+        prior = np.empty(num_factors, dtype=object)
+        for f in range(num_factors):
+            uniform = np.ones(num_states[f]) / num_states[f]
+            prior[f] = B[f][:, :, prev_actions[0, f]].dot(uniform)
+
         ll_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
-        qs_seq = run_mmp_v2(A, B, ll_seq, policy, prev_actions, num_iter=5, grad_descent=True)
+        qs_seq = run_mmp_v2(
+            A, B, ll_seq, policy, prev_actions[1:], prior=prior, num_iter=5, grad_descent=True
+        )
 
         result_pymdp = qs_seq[-1]
         for f in range(num_factors):
