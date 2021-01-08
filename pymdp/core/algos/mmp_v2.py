@@ -21,6 +21,10 @@ def run_mmp_v2(
     infer_len = past_len + future_len
     future_cutoff = past_len + future_len - 2
 
+    # print(past_len)
+    # print(future_len)
+    print(infer_len)
+
     # dimensions
     _, num_states, _, num_factors = get_model_dimensions(A, B)
     A = to_arr_of_arr(A)
@@ -75,6 +79,8 @@ def run_mmp_v2(
                 if t >= future_cutoff:
                     lnB_future = qs_T[f]
                 else:
+                    print(qs_seq[t+1])
+                    print(policy[t,f])
                     future_msg = trans_B[f][:, :, int(policy[t, f])].dot(qs_seq[t + 1][f])
                     lnB_future = np.log(future_msg + 1e-16)
 
