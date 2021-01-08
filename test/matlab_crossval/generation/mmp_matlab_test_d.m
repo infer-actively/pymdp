@@ -160,7 +160,8 @@ for t = 1:T
     if t == 10
         save_dir = 'output/mmp_d.mat';
         policy = squeeze(policy_matrix(end,1,:))';
-        previous_actions = squeeze(policy_matrix(1:(end-1),1,:));
+%         previous_actions = squeeze(policy_matrix(1:(end-1),1,:));
+        previous_actions = squeeze(policy_matrix(1:end,1,:));
         t_horizon = window_len;
         qs = xq;
         obs_idx = obs(:,1:t);

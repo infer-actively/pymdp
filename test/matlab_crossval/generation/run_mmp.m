@@ -65,6 +65,10 @@ for iter = 1:num_iter       % iterate belief updates
                 %------------------------------------------
                 if j < R
                     px = log( b_t{f}(:,:,policy_matrix(j,1,f)) * x{f}(:,j+1,1) );
+%                     if iter == num_iter
+%                         fprintf('inference timestep: %d, factor: %d \n',j, f)
+%                         disp(px)
+%                     end
                     v  = v + px + qL - qx;
                 end
                 
@@ -80,6 +84,10 @@ for iter = 1:num_iter       % iterate belief updates
                 %-----------------------------------------                
                 
                 v    = v - mean(v);
+%                 if iter == num_iter
+%                     fprintf('inference timestep: %d, factor: %d \n',j, f)
+%                     disp(v)
+%                 end
                 
                 sx   = softmax(qx + v/4);
                 
