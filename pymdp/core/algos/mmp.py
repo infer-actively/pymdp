@@ -312,8 +312,8 @@ def run_mmp(
                         error = (2 * lnA + lnB_past + lnB_future) - 2 * lns
                         
 
-                    # print(f"prediction error at time t = {t}, factor f = {f}, iteration i = {n}: {error}")
-                    # print(f"OG {t} {f} {error}")
+                    print(f"prediction error at time t = {t}, factor f = {f}, iteration i = {n}: {error}")
+                    print(f"OG {t} {f} {error}")
                     error -= error.mean()
                     lns = lns + tau * error
                     qs_t_f = softmax(lns)

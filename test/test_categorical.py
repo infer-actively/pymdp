@@ -14,7 +14,7 @@ from scipy.io import loadmat
 
 from pymdp.distributions import Categorical
 
-DATA_PATH = "test/data/"
+DATA_PATH = "test/matlab_crossval/output/"
 
 
 class TestCategorical(unittest.TestCase):

@@ -18,7 +18,7 @@ from pymdp.core.utils import get_model_dimensions
 from pymdp.core.algos import run_mmp_v2
 from pymdp.core.maths import get_joint_likelihood_seq
 
-DATA_PATH = "test/data/"
+DATA_PATH = "test/matlab_crossval/output/"
 
 
 def onehot(value, num_values):
@@ -160,6 +160,121 @@ class MMP(unittest.TestCase):
         result_pymdp = qs[-1]
         for f in range(len(B)):
             self.assertTrue(np.isclose(result_spm[f].squeeze(), result_pymdp[f]).all())
+    
+    def test_mmp_c(self):
+        """ Testing our SPM-ified version of `run_MMP` with
+        2 hidden state factors & 2 outcome modalities, at the first
+        timestep of the generative process (boundary condition test)"""
+
+        array_path = os.path.join(os.getcwd(), DATA_PATH + "mmp_c.mat")
+        mat_contents = loadmat(file_name=array_path)
+
+        A = mat_contents["A"][0]
+        B = mat_contents["B"][0]
+        obs = mat_contents["obs_idx"].astype("int64")
+        policy = mat_contents["policy"].astype("int64") - 1
+        curr_t = mat_contents["t"][0, 0].astype("int64") - 1
+        t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")
+        T = obs.shape[1]
+        previous_actions = mat_contents["previous_actions"].astype("int64") - 1
+        result_spm = mat_contents["qs"][0]
+        _ = mat_contents["likelihoods"][0]
+
+        # Convert matlab index-style observations into list of array of arrays over time
+        num_obs = [A[g].shape[0] for g in range(len(A))]
+        obs_t = convert_observation_array(obs, num_obs)
+
+        qs, _, _, _ = core.algos.run_mmp(
+            A,
+            B,
+            obs_t,
+            policy,
+            curr_t,
+            t_horizon,
+            T,
+            use_gradient_descent=True,
+            num_iter=5,
+            previous_actions=previous_actions,
+        )
+
+        # Just check whether the latest beliefs (about curr_t, held at curr_t) match up
+        result_pymdp = qs[-1]
+        for f in range(len(B)):
+            self.assertTrue(np.isclose(result_spm[f].squeeze(), result_pymdp[f]).all())
+    
+    def test_mmp_d(self):
+        """ Testing our SPM-ified version of `run_MMP` with
+        2 hidden state factors & 2 outcome modalities, at the final
+        timestep of the generative process (boundary condition test)"""
+
+        array_path = os.path.join(os.getcwd(), DATA_PATH + "mmp_d.mat")
+        mat_contents = loadmat(file_name=array_path)
+
+        A = mat_contents["A"][0]
+        B = mat_contents["B"][0]
+        obs = mat_contents["obs_idx"].astype("int64")
+        policy = mat_contents["policy"].astype("int64") - 1
+        curr_t = mat_contents["t"][0, 0].astype("int64") - 1
+        t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")
+        T = obs.shape[1]
+        previous_actions = mat_contents["previous_actions"].astype("int64") - 1
+        result_spm = mat_contents["qs"][0]
+        _ = mat_contents["likelihoods"][0]
+
+        # Convert matlab index-style observations into list of array of arrays over time
+        num_obs = [A[g].shape[0] for g in range(len(A))]
+        obs_t = convert_observation_array(obs, num_obs)
+
+        # print('policy:')
+        # print(policy)
+        # print('-----------------')
+
+        # print('Previous actions:')
+        # print(previous_actions)
+        # print('-----------------')
+
+        # print('Obs_t:')
+        # print(obs_t)
+        # print('-----------------')
+
+        qs, _, _, _ = core.algos.run_mmp(
+            A,
+            B,
+            obs_t,
+            policy,
+            curr_t,
+            t_horizon,
+            T,
+            use_gradient_descent=True,
+            num_iter=5,
+            previous_actions=previous_actions,
+        )
+
+        # print("number of timesteps stored in posterior:")
+        # print(len(qs))
+        # print('-----------------')
+
+        # Just check whether the latest beliefs (about curr_t, held at curr_t) match up
+        result_pymdp = qs[-1]
+
+        # print("factor 1 first timestep:")
+        # print(qs[0][0])
+        # print('-----------------')
+
+        # print("factor 2 first timestep:")
+        # print(qs[0][1])
+        # print('-----------------')
+
+        # print("factor 1 final timestep:")
+        # print(result_pymdp[0])
+        # print('-----------------')
+
+        # print("factor 2 final timestep:")
+        # print(result_pymdp[1])
+        # print('-----------------')
+        for f in range(len(B)):
+            self.assertTrue(np.isclose(result_spm[f].squeeze(), result_pymdp[f]).all())
+
 
     def test_mmp_v2(self):
         array_path = os.path.join(os.getcwd(), DATA_PATH + "mmp_b.mat")
