@@ -170,13 +170,15 @@ def run_mmp(
     qs = [np.empty(num_factors, dtype=object) for i in range(inference_len)]
 
     for t in range(inference_len):
-        if t == window_len:
-            # final message is zeros - has no effect on inference
-            # TODO: this may be redundant now that we skip last step
-            for f in range(num_factors):
-                qs[t][f] = np.zeros(num_states[f])
-        else:
-            for f in range(num_factors):
+        # if t == window_len:
+        #     # final message is zeros - has no effect on inference
+        #     # TODO: this may be redundant now that we skip last step
+        #     for f in range(num_factors):
+        #         qs[t][f] = np.zeros(num_states[f])
+        # else:
+            # for f in range(num_factors):
+            #     qs[t][f] = np.ones(num_states[f]) / num_states[f]
+        for f in range(num_factors):
                 qs[t][f] = np.ones(num_states[f]) / num_states[f]
 
     if prior is None:
@@ -222,6 +224,10 @@ def run_mmp(
 
     # print(obs_seq_len)
 
+    print('Full policy history')
+    print('------------------')
+    print(full_policy)
+
     for n in range(num_iter):
         for t in range(inference_len):
 
@@ -245,9 +251,9 @@ def run_mmp(
                 else:
                     lnA = np.zeros(num_states[f])
 
-                if t == 0 and n == 0:
-                    pass
-                    # print(f"lnA at time t = {t}, factor f = {f}, iteration i = {n}: {lnA}")
+                if t == 1 and n == 0:
+                    # pass
+                    print(f"lnA at time t = {t}, factor f = {f}, iteration i = {n}: {lnA}")
 
                 # print(f"lnA at time t = {t}, factor f = {f}, iteration i = {n}: {lnA}")
 
@@ -262,16 +268,23 @@ def run_mmp(
                     # lnB_past = 0.5 * np.log(B[f][:, :, full_policy[t - 1, f]].dot(qs[t - 1][f]) + 1e-16)
 
                     # Karl SPM version
+                    if t == 1 and n == 0 and f == 1:
+                        print('past action:')
+                        print('-------------')
+                        print(full_policy[t - 1, :])
+                        print(B[f][:,:,0])
+                        print(B[f][:,:,1])
+                        print(qs[t - 1][f])
                     lnB_past = np.log(B[f][:, :, full_policy[t - 1, f]].dot(qs[t - 1][f]) + 1e-16)
                     # if t == 0:
                     # print(
                     # f"qs_t_1 at time t = {t}, factor f = {f}, iteration i = {n}: {qs[t - 1][f]}"
                     # )
 
-                # if t == 0 and n == 0:
-                # print(
-                #     f"lnB_past at time t = {t}, factor f = {f}, iteration i = {n}: {lnB_past}"
-                # )
+                if t == 1 and n == 0:
+                    print(
+                        f"lnB_past at time t = {t}, factor f = {f}, iteration i = {n}: {lnB_past}"
+                    )
 
                 """
                 =========== Step 3.c ===========
@@ -312,8 +325,8 @@ def run_mmp(
                         error = (2 * lnA + lnB_past + lnB_future) - 2 * lns
                         
 
-                    print(f"prediction error at time t = {t}, factor f = {f}, iteration i = {n}: {error}")
-                    print(f"OG {t} {f} {error}")
+                    # print(f"prediction error at time t = {t}, factor f = {f}, iteration i = {n}: {error}")
+                    # print(f"OG {t} {f} {error}")
                     error -= error.mean()
                     lns = lns + tau * error
                     qs_t_f = softmax(lns)
