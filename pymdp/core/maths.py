@@ -123,8 +123,23 @@ def spm_cross(x, y=None, *args):
     return z
 
 
-def dot_likelihood(A, obs):
-    return spm_dot(A, obs, obs_mode=True)
+# def dot_likelihood_old(A, obs):
+#     return spm_dot(A, obs, obs_mode=True)
+
+def dot_likelihood(A,obs):
+
+    s = np.ones(np.ndim(A), dtype = int)
+    s[0] = obs.shape[0]
+    X = A * obs.reshape(tuple(s))
+    X = np.sum(X, axis=0, keepdims=True)
+    LL = np.squeeze(X)
+
+    # check to see if `LL` is a scalar
+    if np.prod(LL.shape) <= 1.0:
+        LL = LL.item()
+        LL = np.array([LL]).astype("float64")
+
+    return LL
 
 
 def get_joint_likelihood(A, obs, num_states):
