@@ -9,7 +9,7 @@ import unittest
 
 import numpy as np
 from pymdp.distributions import Categorical, Dirichlet
-from pymdp import core
+from pymdp.core import maths, learning
 
 
 def construct_generic_A(num_obs, n_states):
@@ -117,10 +117,10 @@ class TestLearning(unittest.TestCase):
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
 
         observation = A.dot(qs, return_numpy=False).sample()
-        pA_updated = core.update_likelihood_dirichlet(
+        pA_updated = learning.update_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities="all", return_numpy=True
         )
-        validation_pA = pA + l_rate * core.spm_cross(np.eye(*num_obs)[observation], qs.values)
+        validation_pA = pA + l_rate * maths.spm_cross(np.eye(*num_obs)[observation], qs.values)
         self.assertTrue(np.all(pA_updated == validation_pA.values))
 
         # multiple observation modalities
@@ -128,12 +128,12 @@ class TestLearning(unittest.TestCase):
         A = Categorical(values=construct_generic_A(num_obs, n_states))
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
         observation = A.dot(qs, return_numpy=False).sample()
-        pA_updated = core.update_likelihood_dirichlet(
+        pA_updated = learning.update_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities="all", return_numpy=True
         )
 
         for modality, no in enumerate(num_obs):
-            update = core.spm_cross(np.eye(no)[observation[modality]], qs.values)
+            update = maths.spm_cross(np.eye(no)[observation[modality]], qs.values)
             validation_pA = pA[modality] + l_rate * update
             self.assertTrue(np.all(pA_updated[modality] == validation_pA.values))
 
@@ -154,13 +154,13 @@ class TestLearning(unittest.TestCase):
         A = Categorical(values=construct_generic_A(num_obs, n_states))
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
         observation = A.dot(qs, return_numpy=False).sample()
-        pA_updated = core.update_likelihood_dirichlet(
+        pA_updated = learning.update_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities=modality_to_update, return_numpy=True
         )
 
         for modality, no in enumerate(num_obs):
             if modality in modality_to_update:
-                update = core.spm_cross(np.eye(no)[observation[modality]], qs.values)
+                update = maths.spm_cross(np.eye(no)[observation[modality]], qs.values)
                 validation_pA = pA[modality] + l_rate * update
             else:
                 validation_pA = pA[modality]
@@ -181,13 +181,13 @@ class TestLearning(unittest.TestCase):
         A = Categorical(values=construct_generic_A(num_obs, n_states))
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
         observation = A.dot(qs, return_numpy=False).sample()
-        pA_updated = core.update_likelihood_dirichlet(
+        pA_updated = learning.update_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities=modalities_to_update, return_numpy=True
         )
 
         for modality, no in enumerate(num_obs):
             if modality in modalities_to_update:
-                update = core.spm_cross(np.eye(no)[observation[modality]], qs.values)
+                update = maths.spm_cross(np.eye(no)[observation[modality]], qs.values)
                 validation_pA = pA[modality] + l_rate * update
             else:
                 validation_pA = pA[modality]
@@ -208,10 +208,10 @@ class TestLearning(unittest.TestCase):
         A = Categorical(values=construct_generic_A(num_obs, n_states))
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
         observation = A.dot(qs, return_numpy=False).sample()
-        pA_updated = core.update_likelihood_dirichlet(
+        pA_updated = learning.update_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities="all", return_numpy=True
         )
-        update = core.spm_cross(np.eye(*num_obs)[observation], qs.values)
+        update = maths.spm_cross(np.eye(*num_obs)[observation], qs.values)
         validation_pA = pA + l_rate * update
         self.assertTrue(np.all(pA_updated == validation_pA.values))
 
@@ -220,11 +220,11 @@ class TestLearning(unittest.TestCase):
         A = Categorical(values=construct_generic_A(num_obs, n_states))
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
         observation = A.dot(qs, return_numpy=False).sample()
-        pA_updated = core.update_likelihood_dirichlet(
+        pA_updated = learning.update_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities="all", return_numpy=True
         )
         for modality, no in enumerate(num_obs):
-            update = core.spm_cross(np.eye(no)[observation[modality]], qs.values)
+            update = maths.spm_cross(np.eye(no)[observation[modality]], qs.values)
             validation_pA = pA[modality] + l_rate * update
             self.assertTrue(np.all(pA_updated[modality] == validation_pA.values))
 
@@ -244,13 +244,13 @@ class TestLearning(unittest.TestCase):
         A = Categorical(values=construct_generic_A(num_obs, n_states))
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
         observation = A.dot(qs, return_numpy=False).sample()
-        pA_updated = core.update_likelihood_dirichlet(
+        pA_updated = learning.update_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities=modality_to_update, return_numpy=True
         )
 
         for modality, no in enumerate(num_obs):
             if modality in modality_to_update:
-                update = core.spm_cross(np.eye(no)[observation[modality]], qs.values)
+                update = maths.spm_cross(np.eye(no)[observation[modality]], qs.values)
                 validation_pA = pA[modality] + l_rate * update
             else:
                 validation_pA = pA[modality]
@@ -272,13 +272,13 @@ class TestLearning(unittest.TestCase):
         A = Categorical(values=construct_generic_A(num_obs, n_states))
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
         observation = A.dot(qs, return_numpy=False).sample()
-        pA_updated = core.update_likelihood_dirichlet(
+        pA_updated = learning.update_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities=modalities_to_update, return_numpy=True
         )
 
         for modality, no in enumerate(num_obs):
             if modality in modalities_to_update:
-                update = core.spm_cross(np.eye(no)[observation[modality]], qs.values)
+                update = maths.spm_cross(np.eye(no)[observation[modality]], qs.values)
                 validation_pA = pA[modality] + l_rate * update
             else:
                 validation_pA = pA[modality]
@@ -301,13 +301,13 @@ class TestLearning(unittest.TestCase):
         B.normalize()
         pB = Dirichlet(values=np.ones_like(B.values))
         action = np.array([np.random.randint(nc) for nc in n_control])
-        pB_updated = core.update_transition_dirichlet(
+        pB_updated = learning.update_transition_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors="all", return_numpy=True
         )
 
         validation_pB = pB.copy()
         validation_pB[:, :, 0] += (
-            l_rate * core.spm_cross(qs.values, qs_prev.values) * (B[:, :, action[0]].values > 0)
+            l_rate * maths.spm_cross(qs.values, qs_prev.values) * (B[:, :, action[0]].values > 0)
         )
         self.assertTrue(np.all(pB_updated == validation_pB.values))
 
@@ -327,13 +327,13 @@ class TestLearning(unittest.TestCase):
         B = Categorical(values=construct_generic_B(n_states, n_control))
         pB = Dirichlet(values=np.ones_like(B.values))
         action = np.array([np.random.randint(nc) for nc in n_control])
-        pB_updated = core.update_transition_dirichlet(
+        pB_updated = learning.update_transition_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors="all", return_numpy=True
         )
 
         validation_pB = pB.copy()
         validation_pB[:, :, action[0]] += (
-            l_rate * core.spm_cross(qs.values, qs_prev.values) * (B[:, :, action[0]].values > 0)
+            l_rate * maths.spm_cross(qs.values, qs_prev.values) * (B[:, :, action[0]].values > 0)
         )
         self.assertTrue(np.all(pB_updated == validation_pB.values))
 
@@ -359,7 +359,7 @@ class TestLearning(unittest.TestCase):
             values=np.array([np.ones_like(B[factor].values) for factor in range(len(n_states))])
         )
         action = np.array([np.random.randint(nc) for nc in n_control])
-        pB_updated = core.update_transition_dirichlet(
+        pB_updated = learning.update_transition_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors="all", return_numpy=True
         )
 
@@ -368,7 +368,7 @@ class TestLearning(unittest.TestCase):
             validation_pB = pB[factor].copy()
             validation_pB[:, :, action[factor]] += (
                 l_rate
-                * core.spm_cross(qs[factor].values, qs_prev[factor].values)
+                * maths.spm_cross(qs[factor].values, qs_prev[factor].values)
                 * (B[factor][:, :, action[factor]].values > 0)
             )
             self.assertTrue(np.all(pB_updated[factor] == validation_pB.values))
@@ -399,7 +399,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(nc) for nc in n_control])
 
-        pB_updated = core.update_transition_dirichlet(
+        pB_updated = learning.update_transition_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update, return_numpy=True
         )
 
@@ -409,7 +409,7 @@ class TestLearning(unittest.TestCase):
             if factor in factors_to_update:
                 validation_pB[:, :, action[factor]] += (
                     l_rate
-                    * core.spm_cross(qs[factor].values, qs_prev[factor].values)
+                    * maths.spm_cross(qs[factor].values, qs_prev[factor].values)
                     * (B[factor][:, :, action[factor]].values > 0)
                 )
 
@@ -438,7 +438,7 @@ class TestLearning(unittest.TestCase):
             values=np.array([np.ones_like(B[factor].values) for factor in range(len(n_states))])
         )
         action = np.array([np.random.randint(nc) for nc in n_control])
-        pB_updated = core.update_transition_dirichlet(
+        pB_updated = learning.update_transition_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update, return_numpy=True
         )
         validation_pB = pB.copy()
@@ -447,7 +447,7 @@ class TestLearning(unittest.TestCase):
             if factor in factors_to_update:
                 validation_pB[:, :, action[factor]] += (
                     l_rate
-                    * core.spm_cross(qs[factor].values, qs_prev[factor].values)
+                    * maths.spm_cross(qs[factor].values, qs_prev[factor].values)
                     * (B[factor][:, :, action[factor]].values > 0)
                 )
             self.assertTrue(np.all(pB_updated[factor] == validation_pB.values))
@@ -470,7 +470,7 @@ class TestLearning(unittest.TestCase):
         pB = Dirichlet(values=construct_pB(n_states, n_control))
         action = np.array([np.random.randint(nc) for nc in n_control])
 
-        pB_updated = core.update_transition_dirichlet(
+        pB_updated = learning.update_transition_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors="all", return_numpy=True
         )
 
@@ -479,7 +479,7 @@ class TestLearning(unittest.TestCase):
             validation_pB = pB[factor].copy()
             validation_pB[:, :, action[factor]] += (
                 l_rate
-                * core.spm_cross(qs[factor].values, qs_prev[factor].values)
+                * maths.spm_cross(qs[factor].values, qs_prev[factor].values)
                 * (B[factor][:, :, action[factor]].values > 0)
             )
             self.assertTrue(np.all(pB_updated[factor] == validation_pB.values))
@@ -503,7 +503,7 @@ class TestLearning(unittest.TestCase):
         pB = Dirichlet(values=construct_pB(n_states, n_control))
 
         action = np.array([np.random.randint(nc) for nc in n_control])
-        pB_updated = core.update_transition_dirichlet(
+        pB_updated = learning.update_transition_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update, return_numpy=True
         )
 
@@ -513,7 +513,7 @@ class TestLearning(unittest.TestCase):
             if factor in factors_to_update:
                 validation_pB[:, :, action[factor]] += (
                     l_rate
-                    * core.spm_cross(qs[factor].values, qs_prev[factor].values)
+                    * maths.spm_cross(qs[factor].values, qs_prev[factor].values)
                     * (B[factor][:, :, action[factor]].values > 0)
                 )
 
@@ -540,7 +540,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(nc) for nc in n_control])
 
-        pB_updated = core.update_transition_dirichlet(
+        pB_updated = learning.update_transition_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update, return_numpy=True
         )
 
@@ -550,7 +550,7 @@ class TestLearning(unittest.TestCase):
             if factor in factors_to_update:
                 validation_pB[:, :, action[factor]] += (
                     l_rate
-                    * core.spm_cross(qs[factor].values, qs_prev[factor].values)
+                    * maths.spm_cross(qs[factor].values, qs_prev[factor].values)
                     * (B[factor][:, :, action[factor]].values > 0)
                 )
 
@@ -581,7 +581,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(nc) for nc in n_control])
 
-        pB_updated = core.update_transition_dirichlet(
+        pB_updated = learning.update_transition_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors="all", return_numpy=True
         )
 
@@ -590,7 +590,7 @@ class TestLearning(unittest.TestCase):
             validation_pB = pB[factor].copy()
             validation_pB[:, :, action[factor]] += (
                 l_rate
-                * core.spm_cross(qs[factor].values, qs_prev[factor].values)
+                * maths.spm_cross(qs[factor].values, qs_prev[factor].values)
                 * (B[factor][:, :, action[factor]].values > 0)
             )
 
@@ -621,7 +621,7 @@ class TestLearning(unittest.TestCase):
         pB = Dirichlet(values=pB_values)
 
         action = np.array([np.random.randint(nc) for nc in n_control])
-        pB_updated = core.update_transition_dirichlet(
+        pB_updated = learning.update_transition_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update, return_numpy=True
         )
 
@@ -631,7 +631,7 @@ class TestLearning(unittest.TestCase):
             if factor in factors_to_update:
                 validation_pB[:, :, action[factor]] += (
                     l_rate
-                    * core.spm_cross(qs[factor].values, qs_prev[factor].values)
+                    * maths.spm_cross(qs[factor].values, qs_prev[factor].values)
                     * (B[factor][:, :, action[factor]].values > 0)
                 )
             self.assertTrue(np.all(pB_updated[factor] == validation_pB.values))
