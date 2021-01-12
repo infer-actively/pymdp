@@ -19,10 +19,12 @@ def run_mmp_v2(
 ):
 
     # window
+
+    # these variables to be changed in the case that the final timestep of the
+    # inference length is larger than absolute last timestep of the simulation (`curr_t == T`)
     past_len = len(ll_seq)
     future_len = policy.shape[0]
     infer_len = past_len + future_len
-    print(f'infer_len: {infer_len}') 
     future_cutoff = past_len + future_len - 2
 
     # dimensions
@@ -67,7 +69,7 @@ def run_mmp_v2(
                     lnA = np.log(spm_dot(ll_seq[t], qs_seq[t], [f]) + 1e-16)
                 else:
                     lnA = np.zeros(num_states[f])
-
+                
                 # past message
                 if t == 0:
                     lnB_past = np.log(prior[f] + 1e-16)
@@ -81,12 +83,17 @@ def run_mmp_v2(
                 else:
                     future_msg = trans_B[f][:, :, int(policy[t, f])].dot(qs_seq[t + 1][f])
                     lnB_future = np.log(future_msg + 1e-16)
+                
+                # if t == 5 and f == 0 and itr == (num_iter-1):
+                #     print(f"qs: {np.log(qs_seq[t][f] + 1e-16)}, lnA: {lnA}, lnB_past: {lnB_past}, lnB_future: {lnB_future} ")
 
                 # inference
                 if grad_descent:
                     lnqs = np.log(qs_seq[t][f] + 1e-16)
                     coeff = 1 if (t >= future_cutoff) else 2
                     err = (coeff * lnA + lnB_past + lnB_future) - coeff * lnqs
+                    # if t == 5 and f == 0 and itr == (num_iter-1):
+                    #     print(f"prediction error: {err}")
                     err -= err.mean()
                     lnqs = lnqs + tau * err
                     qs_seq[t][f] = softmax(lnqs)
