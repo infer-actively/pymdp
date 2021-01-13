@@ -10,7 +10,7 @@ __author__: Conor Heins, Beren Millidge, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 
-from pymdp.core.utils import to_arr_of_arr, get_model_dimensions
+from pymdp.core.utils import to_arr_of_arr, get_model_dimensions, obj_array
 from pymdp.core.maths import spm_dot, spm_norm, softmax
 
 
@@ -38,8 +38,15 @@ def run_mmp_v2(
     B = to_arr_of_arr(B)
 
     # beliefs
-    qs_seq = [np.empty(num_factors, dtype=object) for _ in range(infer_len)]
+    # qs_seq = [np.empty(num_factors, dtype=object) for _ in range(infer_len)]
+    # for t in range(infer_len):
+    #     for f in range(num_factors):
+    #         qs_seq[t][f] = np.ones(num_states[f]) / num_states[f]
+
+    qs_seq = obj_array(infer_len)
+    base_array = obj_array(num_factors)
     for t in range(infer_len):
+        qs_seq[t] = base_array.copy()
         for f in range(num_factors):
             qs_seq[t][f] = np.ones(num_states[f]) / num_states[f]
 
