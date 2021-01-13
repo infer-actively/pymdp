@@ -51,9 +51,9 @@ def update_posterior_states_v2(
     A = utils.to_arr_of_arr(A)
     B = utils.to_arr_of_arr(B)
 
-    prev_obs = process_observation_seq(prev_obs, num_modalities, num_obs)
+    prev_obs = utils.process_observation_seq(prev_obs, num_modalities, num_obs)
     if prior is not None:
-        prior = process_prior(prior, num_factors)
+        prior = utils.process_prior(prior, num_factors)
 
     ll_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
 
@@ -163,70 +163,5 @@ def update_posterior_states_v2(
 #         return utils.to_categorical(qs)
 
 
-def process_observation_seq(obs_seq, n_modalities, n_observations):
-    """
-    Helper function for formatting observations    
-
-        Observations can either be `Categorical`, `int` (converted to one-hot)
-        or `tuple` (obs for each modality)
-    
-    @TODO maybe provide error messaging about observation format
-    """
-    proc_obs_seq = np.empty(len(obs_seq), dtype=object)
-    for t in range(len(obs_seq)):
-        proc_obs_seq[t] = process_observation(obs_seq[t], n_modalities, n_observations)
-    return proc_obs_seq
-
-
-def process_observation(obs, n_modalities, n_observations):
-    """
-    Helper function for formatting observations    
-
-        Observations can either be `Categorical`, `int` (converted to one-hot)
-        or `tuple` (obs for each modality)
-    
-    @TODO maybe provide error messaging about observation format
-    """
-    if utils.is_distribution(obs):
-        obs = utils.to_numpy(obs)
-        if n_modalities == 1:
-            obs = obs.squeeze()
-        else:
-            for m in range(n_modalities):
-                obs[m] = obs[m].squeeze()
-
-    if isinstance(obs, (int, np.integer)):
-        obs = np.eye(n_observations[0])[obs]
-
-    if isinstance(obs, tuple):
-        obs_arr_arr = np.empty(n_modalities, dtype=object)
-        for m in range(n_modalities):
-            obs_arr_arr[m] = np.eye(n_observations[m])[obs[m]]
-        obs = obs_arr_arr
-
-    return obs
-
-
-def process_prior(prior, n_factors):
-    """
-    Helper function for formatting observations  
-    
-    @TODO
-    """
-    if utils.is_distribution(prior):
-        prior_arr = np.empty(n_factors, dtype=object)
-        if n_factors == 1:
-            prior_arr[0] = prior.values.squeeze()
-        else:
-            for factor in range(n_factors):
-                prior_arr[factor] = prior[factor].values.squeeze()
-        prior = prior_arr
-
-    elif not utils.is_arr_of_arr(prior):
-        prior = utils.to_arr_of_arr(prior)
-
-    return prior
-
-
 def print_inference_methods():
-    print(f"Avaliable Inference methods: {FPI}")
+    print(f"Avaliable Inference methods: {FPI}, {MMP}")

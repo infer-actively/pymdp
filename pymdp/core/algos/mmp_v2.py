@@ -12,6 +12,7 @@ import numpy as np
 
 from pymdp.core.utils import to_arr_of_arr, get_model_dimensions, obj_array
 from pymdp.core.maths import spm_dot, spm_norm, softmax
+import copy
 
 
 def run_mmp_v2(
@@ -19,9 +20,6 @@ def run_mmp_v2(
 ):
 
     # window
-
-    # these variables to be changed in the case that the final timestep of the
-    # inference length is larger than absolute last timestep of the simulation (`curr_t == T`)
     past_len = len(ll_seq)
     future_len = policy.shape[0]
 
@@ -43,10 +41,11 @@ def run_mmp_v2(
     #     for f in range(num_factors):
     #         qs_seq[t][f] = np.ones(num_states[f]) / num_states[f]
 
+    # beliefs
     qs_seq = obj_array(infer_len)
     base_array = obj_array(num_factors)
     for t in range(infer_len):
-        qs_seq[t] = base_array.copy()
+        qs_seq[t] = copy.deepcopy(base_array)
         for f in range(num_factors):
             qs_seq[t][f] = np.ones(num_states[f]) / num_states[f]
 
@@ -96,16 +95,11 @@ def run_mmp_v2(
                     future_msg = trans_B[f][:, :, int(policy[t, f])].dot(qs_seq[t + 1][f])
                     lnB_future = np.log(future_msg + 1e-16)
                 
-                # if t == 5 and f == 0 and itr == (num_iter-1):
-                #     print(f"qs: {np.log(qs_seq[t][f] + 1e-16)}, lnA: {lnA}, lnB_past: {lnB_past}, lnB_future: {lnB_future} ")
-
                 # inference
                 if grad_descent:
                     lnqs = np.log(qs_seq[t][f] + 1e-16)
                     coeff = 1 if (t >= future_cutoff) else 2
                     err = (coeff * lnA + lnB_past + lnB_future) - coeff * lnqs
-                    # if t == 5 and f == 0 and itr == (num_iter-1):
-                    #     print(f"prediction error: {err}")
                     err -= err.mean()
                     lnqs = lnqs + tau * err
                     qs_seq[t][f] = softmax(lnqs)

@@ -12,7 +12,7 @@ import numpy as np
 from pymdp.distributions import Categorical, Dirichlet
 from pymdp.core.maths import softmax, spm_dot, spm_wnorm, spm_MDP_G
 from pymdp.core import utils
-
+import copy
 
 def update_posterior_policies_v2(
     qs_seq_pi,
@@ -33,43 +33,46 @@ def update_posterior_policies_v2(
     horizon = len(qs_seq_pi[0])
     num_policies = len(qs_seq_pi)
 
-    # this is useful for initially filling out `qo_seq_pi`
+    # initialise `base_obs` and `obs_over_time` as object arrays to initially populate `qo_seq_pi`
+    
+    # base obs is the observation (potentially multi-modality) template for a single timepoint
     base_obs = utils.obj_array(num_modalities)
     for g in range(num_modalities):
         base_obs[g] = np.zeros(num_obs[g])
 
-    obs_list = []
+    # obs_over_time is the multi-timestep observation (potentially multi-modality) template at all timepoints
+    obs_over_time = utils.obj_array(horizon)
     for t in range(horizon):
-        obs_list.append(base_obs)
+        obs_over_time[t] = copy.deepcopy(base_obs)
 
-    # beliefs
+    # initialise expected observations
     qo_seq_pi = utils.obj_array(num_policies)
     for p_idx in range(num_policies):
-        qo_seq_pi[p_idx] = obs_list.copy()
+        qo_seq_pi[p_idx] = copy.deepcopy(obs_over_time)
 
     efe = np.zeros(num_policies)
     q_pi = np.zeros((num_policies, 1))
 
-    for p_idx, _ in enumerate(policies):
+    for p_idx, policy in enumerate(policies):
 
         qs_seq_pi_i = qs_seq_pi[p_idx]
 
         for t in range(horizon):
-            print(qs_seq_pi_i[t].shape)
+            # print(qs_seq_pi_i[t].shape)
             qo_pi_t = get_expected_obs(qs_seq_pi_i[t], A)
             qo_seq_pi[p_idx][t] = qo_pi_t
 
-            # if use_utility:
-            #    efe[p_idx] += calc_expected_utility(qo_pi_t, C)
+            if use_utility:
+               efe[p_idx] += calc_expected_utility(qo_seq_pi[p_idx][t], C[t])
 
             if use_states_info_gain:
-                efe[p_idx] += calc_states_info_gain(A, qs_seq_pi[t])
+                efe[p_idx] += calc_states_info_gain(A, qs_seq_pi_i[t])
 
             # if use_param_info_gain:
             #    if pA is not None:
-            #        efe[p_idx] += calc_pA_info_gain(pA, qo_seq_pi, qs_seq_pi)
+            #        efe[p_idx] += calc_pA_info_gain(pA, qo_seq_pi[p_idx][t], qs_seq_pi_i[t])
             # if pB is not None:
-            # efe[p_idx] += calc_pB_info_gain(pB, qs_seq_pi, qs, policy)
+            # efe[p_idx] += calc_pB_info_gain(pB, qs_seq_pi_i[t], qs_seq_pi_i[t-1], policy)
 
     q_pi = softmax(efe * gamma)
     if return_numpy:

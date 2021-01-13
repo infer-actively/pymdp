@@ -61,6 +61,7 @@ class Inference(unittest.TestCase):
         num_states = [6, 7, 8]
         num_controls = [9, 10, 11]
         num_obs = [12, 13, 14]
+        num_modalities = len(num_obs)
 
         A = random_A_matrix(num_obs, num_states)
         B = random_B_matrix(num_states, num_controls)
@@ -78,12 +79,21 @@ class Inference(unittest.TestCase):
         for p_idx in range(num_policies):
             qs_seq_pi_future[p_idx] = qs_seq_pi[p_idx][(1 + past_len) :]
         
+        # create  C matrix
+        horizon = len(qs_seq_pi_future[0])
+        C = utils.obj_array(horizon)
+        for t in range(horizon):
+            C[t] = utils.obj_array(num_modalities)
+            for g in range(num_modalities):
+                C[t][g] = np.ones(num_obs[g]) 
+
+        
         # add in __option__ for F and E
         q_pi, efe = update_posterior_policies = update_posterior_policies_v2(
             qs_seq_pi_future,
             A,
             B,
-            None,
+            C,
             policies,
             use_utility=True,
             use_states_info_gain=True,
