@@ -14,6 +14,72 @@ from pymdp.core.maths import softmax, spm_dot, spm_wnorm, spm_MDP_G
 from pymdp.core import utils
 
 
+def update_posterior_policies_v2(
+    qs_seq_pi,
+    A,
+    B,
+    C,
+    policies,
+    use_utility=True,
+    use_states_info_gain=True,
+    use_param_info_gain=True,
+    pA=None,
+    pB=None,
+    gamma=16.0,
+    return_numpy=True,
+):
+
+    num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A, B)
+    horizon = len(qs_seq_pi[0])
+    num_policies = len(qs_seq_pi)
+
+    # this is useful for initially filling out `qo_seq_pi`
+    base_obs = utils.obj_array(num_modalities)
+    for g in range(num_modalities):
+        base_obs[g] = np.zeros(num_obs[g])
+
+    obs_list = []
+    for t in range(horizon):
+        obs_list.append(base_obs)
+
+    # beliefs
+    qo_seq_pi = utils.obj_array(num_policies)
+    for p_idx in range(num_policies):
+        qo_seq_pi[p_idx] = obs_list.copy()
+
+    efe = np.zeros(num_policies)
+    q_pi = np.zeros((num_policies, 1))
+
+    for p_idx, _ in enumerate(policies):
+
+        qs_seq_pi_i = qs_seq_pi[p_idx]
+
+        for t in range(horizon):
+            print(qs_seq_pi_i[t].shape)
+            qo_pi_t = get_expected_obs(qs_seq_pi_i[t], A)
+            qo_seq_pi[p_idx][t] = qo_pi_t
+
+            # if use_utility:
+            #    efe[p_idx] += calc_expected_utility(qo_pi_t, C)
+
+            if use_states_info_gain:
+                efe[p_idx] += calc_states_info_gain(A, qs_seq_pi[t])
+
+            # if use_param_info_gain:
+            #    if pA is not None:
+            #        efe[p_idx] += calc_pA_info_gain(pA, qo_seq_pi, qs_seq_pi)
+            # if pB is not None:
+            # efe[p_idx] += calc_pB_info_gain(pB, qs_seq_pi, qs, policy)
+
+    q_pi = softmax(efe * gamma)
+    if return_numpy:
+        q_pi = q_pi / q_pi.sum(axis=0)
+    else:
+        q_pi = utils.to_categorical(q_pi)
+        q_pi.normalize()
+    return q_pi, efe
+
+
 def update_posterior_policies(
     qs,
     A,
