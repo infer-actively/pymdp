@@ -21,6 +21,38 @@ EP = "EP"
 CV = "CV"
 
 
+def update_posterior_states_v2(A, obs_hist, policies, prior=None, return_numpy=True, method=VANILLA, **kwargs):
+    """
+    Update posterior over hidden states using desired scheme for variational inference. 
+
+    @NOTE: OPEN ISSUES:
+
+    - Design choice question - do we return the full 'joint posterior' that includes
+    the policy-conditioned beliefs about each marginal hidden state factor, or do we do the Bayesian model averaging (thus summing along the 'policy' dimension)
+    within this function and return it as the output of this function?
+
+    - Design choice question - how do we do the observation sequence (starting from t = max(0,curr_t - t_horizon) to curr_t)? Do we pass in the history
+    of observations into this function? And do we do the likelihood-sequence conversion in-function or outside of function?
+
+
+    """
+    # safe convert to numpy
+    A = utils.to_numpy(A)
+
+    # collect model dimensions
+    if utils.is_arr_of_arr(A):
+        n_factors = A[0].ndim - 1
+        n_states = list(A[0].shape[1:])
+        n_modalities = len(A)
+        n_observations = []
+        for m in range(n_modalities):
+            n_observations.append(A[m].shape[0])
+    else:
+        n_factors = A.ndim - 1
+        n_states = list(A.shape[1:])
+        n_modalities = 1
+        n_observations = [A.shape[0]]
+
 def update_posterior_states(A, obs, prior=None, return_numpy=True, method=FPI, **kwargs):
     """ 
     Update marginal posterior over hidden states using variational inference
