@@ -15,7 +15,7 @@ from pymdp.core.maths import spm_dot, spm_norm, softmax
 
 
 def run_mmp_v2(
-    A, B, ll_seq, policy, prev_actions=None, prior=None, num_iter=10, grad_descent=False, tau=0.25
+    A, B, ll_seq, policy, prev_actions=None, prior=None, num_iter=10, grad_descent=False, tau=0.25, last_timestep = False
 ):
 
     # window
@@ -24,7 +24,12 @@ def run_mmp_v2(
     # inference length is larger than absolute last timestep of the simulation (`curr_t == T`)
     past_len = len(ll_seq)
     future_len = policy.shape[0]
-    infer_len = past_len + future_len
+
+    if last_timestep:
+        infer_len = past_len + future_len - 1
+    else:
+        infer_len = past_len + future_len
+    
     future_cutoff = past_len + future_len - 2
 
     # dimensions

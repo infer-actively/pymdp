@@ -225,14 +225,15 @@ class MMP(unittest.TestCase):
 
         # the variable infer_len in run_mmp_v2 is too long for test_mmp_d case - it needs to be shortened if it stretches beyond the true end time of the trial
         qs_seq = run_mmp_v2(
-            A, B, ll_seq, policy, prev_actions[1:], prior=prior, num_iter=5, grad_descent=True
+            A, B, ll_seq, policy, prev_actions[1:], prior=prior, num_iter=5, grad_descent=True, last_timestep=True
         )
 
         # print(f"len_qs_seq: {len(qs_seq)}")
         # print(f"qs_1: {qs_seq[-2][0]}, qs_2: {qs_seq[-2][1]}")
 
-        result_pymdp = qs_seq[-2] # we have to do this - for some reason in this case there are one too many elements in qs_seq
-        
+        # result_pymdp = qs_seq[-2] # we have to do this - for some reason in this case there are one too many elements in qs_seq
+        result_pymdp = qs_seq[-1] # we have to do this - for some reason in this case there are one too many elements in qs_seq
+
         for f in range(num_factors):
             self.assertTrue(np.isclose(result_spm[f].squeeze(), result_pymdp[f]).all())
 
