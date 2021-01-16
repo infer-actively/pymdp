@@ -118,3 +118,65 @@ def to_categorical(values):
 def to_dirichlet(values):
     return Dirichlet(values=values)
 
+def process_observation_seq(obs_seq, n_modalities, n_observations):
+    """
+    Helper function for formatting observations    
+
+        Observations can either be `Categorical`, `int` (converted to one-hot)
+        or `tuple` (obs for each modality)
+    
+    @TODO maybe provide error messaging about observation format
+    """
+    proc_obs_seq = np.empty(len(obs_seq), dtype=object)
+    for t in range(len(obs_seq)):
+        proc_obs_seq[t] = process_observation(obs_seq[t], n_modalities, n_observations)
+    return proc_obs_seq
+
+def process_observation(obs, n_modalities, n_observations):
+    """
+    Helper function for formatting observations    
+
+        Observations can either be `Categorical`, `int` (converted to one-hot)
+        or `tuple` (obs for each modality)
+    
+    @TODO maybe provide error messaging about observation format
+    """
+    if is_distribution(obs):
+        obs = to_numpy(obs)
+        if n_modalities == 1:
+            obs = obs.squeeze()
+        else:
+            for m in range(n_modalities):
+                obs[m] = obs[m].squeeze()
+
+    if isinstance(obs, (int, np.integer)):
+        obs = np.eye(n_observations[0])[obs]
+
+    if isinstance(obs, tuple):
+        obs_arr_arr = np.empty(n_modalities, dtype=object)
+        for m in range(n_modalities):
+            obs_arr_arr[m] = np.eye(n_observations[m])[obs[m]]
+        obs = obs_arr_arr
+
+    return obs
+
+def process_prior(prior, n_factors):
+    """
+    Helper function for formatting observations  
+    
+    @TODO
+    """
+    if is_distribution(prior):
+        prior_arr = np.empty(n_factors, dtype=object)
+        if n_factors == 1:
+            prior_arr[0] = prior.values.squeeze()
+        else:
+            for factor in range(n_factors):
+                prior_arr[factor] = prior[factor].values.squeeze()
+        prior = prior_arr
+
+    elif not is_arr_of_arr(prior):
+        prior = to_arr_of_arr(prior)
+
+    return prior
+

@@ -10,19 +10,24 @@ __author__: Conor Heins, Beren Millidge, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 
-from pymdp.core.utils import to_arr_of_arr, get_model_dimensions
+from pymdp.core.utils import to_arr_of_arr, get_model_dimensions, obj_array
 from pymdp.core.maths import spm_dot, spm_norm, softmax
+import copy
 
 
 def run_mmp_v2(
-    A, B, ll_seq, policy, prev_actions=None, prior=None, num_iter=10, grad_descent=False, tau=0.25
+    A, B, ll_seq, policy, prev_actions=None, prior=None, num_iter=10, grad_descent=False, tau=0.25, last_timestep = False
 ):
 
     # window
     past_len = len(ll_seq)
     future_len = policy.shape[0]
-    infer_len = past_len + future_len
-    print(f'infer_len: {infer_len}') 
+
+    if last_timestep:
+        infer_len = past_len + future_len - 1
+    else:
+        infer_len = past_len + future_len
+    
     future_cutoff = past_len + future_len - 2
 
     # dimensions
@@ -31,8 +36,16 @@ def run_mmp_v2(
     B = to_arr_of_arr(B)
 
     # beliefs
-    qs_seq = [np.empty(num_factors, dtype=object) for _ in range(infer_len)]
+    # qs_seq = [np.empty(num_factors, dtype=object) for _ in range(infer_len)]
+    # for t in range(infer_len):
+    #     for f in range(num_factors):
+    #         qs_seq[t][f] = np.ones(num_states[f]) / num_states[f]
+
+    # beliefs
+    qs_seq = obj_array(infer_len)
+    base_array = obj_array(num_factors)
     for t in range(infer_len):
+        qs_seq[t] = copy.deepcopy(base_array)
         for f in range(num_factors):
             qs_seq[t][f] = np.ones(num_states[f]) / num_states[f]
 
@@ -67,7 +80,7 @@ def run_mmp_v2(
                     lnA = np.log(spm_dot(ll_seq[t], qs_seq[t], [f]) + 1e-16)
                 else:
                     lnA = np.zeros(num_states[f])
-
+                
                 # past message
                 if t == 0:
                     lnB_past = np.log(prior[f] + 1e-16)
@@ -81,7 +94,7 @@ def run_mmp_v2(
                 else:
                     future_msg = trans_B[f][:, :, int(policy[t, f])].dot(qs_seq[t + 1][f])
                     lnB_future = np.log(future_msg + 1e-16)
-
+                
                 # inference
                 if grad_descent:
                     lnqs = np.log(qs_seq[t][f] + 1e-16)

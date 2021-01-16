@@ -157,11 +157,10 @@ for t = 1:T
     
     [F, G, x, xq, vn, xn] = run_mmp(num_iter, window_len, policy_matrix, t, xq, x, L, D, b, b_t, xn, vn);
     
-    if t == 10
+    if t == T
         save_dir = 'output/mmp_d.mat';
         policy = squeeze(policy_matrix(end,1,:))';
-%         previous_actions = squeeze(policy_matrix(1:(end-1),1,:));
-        previous_actions = squeeze(policy_matrix(1:end,1,:));
+        previous_actions = squeeze(policy_matrix(1:end,1,:)); % because we're at final timestep, the policy_matrix isn't expanded so we get the whole thing (see lines 178-180 - this condition is not fulfilled at t == T-1, the time iteration before this timestep)
         t_horizon = window_len;
         qs = xq;
         obs_idx = obs(:,1:t);
