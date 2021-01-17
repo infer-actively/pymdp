@@ -50,7 +50,7 @@ class TestCategorical(unittest.TestCase):
     def test_multi_factor_init_values(self):
         values_1 = np.random.rand(5, 4)
         values_2 = np.random.rand(4, 3)
-        values = np.array([values_1, values_2])
+        values = np.array([values_1, values_2], dtype=object)
         c = Categorical(values=values)
         self.assertEqual(c.shape, (2,))
         self.assertEqual(c[0].shape, (5, 4))
@@ -59,7 +59,7 @@ class TestCategorical(unittest.TestCase):
     def test_multi_factor_init_values_expand(self):
         values_1 = np.random.rand(5)
         values_2 = np.random.rand(4)
-        values = np.array([values_1, values_2])
+        values = np.array([values_1, values_2], dtype=object)
         c = Categorical(values=values)
         self.assertEqual(c.shape, (2,))
         self.assertEqual(c[0].shape, (5, 1))
@@ -68,7 +68,7 @@ class TestCategorical(unittest.TestCase):
     def test_normalize_multi_factor(self):
         values_1 = np.random.rand(5)
         values_2 = np.random.rand(4, 3)
-        values = np.array([values_1, values_2])
+        values = np.array([values_1, values_2], dtype=object)
         c = Categorical(values=values)
         c.normalize()
         self.assertTrue(c.is_normalized())
@@ -157,14 +157,14 @@ class TestCategorical(unittest.TestCase):
         # values are already normalized
         values_1 = np.array([1.0, 0.0])
         values_2 = np.array([0.0, 1.0, 0.0])
-        values = np.array([values_1, values_2])
+        values = np.array([values_1, values_2], dtype=object)
         c = Categorical(values=values)
         self.assertTrue(np.isclose(np.array([0, 1]), c.sample()).all())
 
         # values are not normalized
         values_1 = np.array([10.0, 0.0])
         values_2 = np.array([0.0, 10.0, 0.0])
-        values = np.array([values_1, values_2])
+        values = np.array([values_1, values_2], dtype=object)
         c = Categorical(values=values)
         self.assertTrue(np.isclose(np.array([0, 1]), c.sample()).all())
 

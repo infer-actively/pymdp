@@ -50,7 +50,7 @@ class TestDirichlet(unittest.TestCase):
     def test_multi_factor_init_values(self):
         values_1 = np.random.rand(5, 4)
         values_2 = np.random.rand(4, 3)
-        values = np.array([values_1, values_2])
+        values = np.array([values_1, values_2], dtype=object)
         d = Dirichlet(values=values)
         self.assertEqual(d.shape, (2,))
         self.assertEqual(d[0].shape, (5, 4))
@@ -59,7 +59,7 @@ class TestDirichlet(unittest.TestCase):
     def test_multi_factor_init_values_expand(self):
         values_1 = np.random.rand(5)
         values_2 = np.random.rand(4)
-        values = np.array([values_1, values_2])
+        values = np.array([values_1, values_2], dtype=object)
         d = Dirichlet(values=values)
         self.assertEqual(d.shape, (2,))
         self.assertEqual(d[0].shape, (5, 1))
@@ -68,7 +68,7 @@ class TestDirichlet(unittest.TestCase):
     def test_normalize_multi_factor(self):
         values_1 = np.random.rand(5)
         values_2 = np.random.rand(4, 3)
-        values = np.array([values_1, values_2])
+        values = np.array([values_1, values_2], dtype=object)
         d = Dirichlet(values=values)
         normed = Categorical(values=d.mean(return_numpy=True))
         self.assertTrue(normed.is_normalized())
