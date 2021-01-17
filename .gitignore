@@ -5,3 +5,6 @@ __pycache__
 .rope*
 .vscode/
 .ipynb_checkpoints/
+.pytest_cache
+env/
+pymdp.egg-info

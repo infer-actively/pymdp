@@ -29,9 +29,23 @@ the following packages:
 * [Matplotlib](https://github.com/matplotlib/matplotlib)
 * [Seaborn](https://seaborn.pydata.org/)
 
-You can install the relevant package versions with:
+You can install the relevant package versions with conda (YMMV):
 ```bash
 conda env create -f environment.yml
+```
+
+If you would like to contribute to this repo, you may have more success with venv and pip
+```bash
+cd <path_to_repo_fork>
+python3 -m venv env
+source env/bin/activate
+pip install -r requirements.txt
+pip install -e ./ # This will install pymdp as a local dev package
+```
+
+You should then be able to run tests locally with `pytest`
+```bash
+pytest test
 ```
 
 ## Authors
