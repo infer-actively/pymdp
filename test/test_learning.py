@@ -351,12 +351,14 @@ class TestLearning(unittest.TestCase):
         l_rate = 1.0
         B = Categorical(
             values=np.array(
-                [np.random.rand(ns, ns, n_control[factor]) for factor, ns in enumerate(n_states)]
+                [np.random.rand(ns, ns, n_control[factor]) for factor, ns in enumerate(n_states)], dtype=object
             )
         )
         B.normalize()
         pB = Dirichlet(
-            values=np.array([np.ones_like(B[factor].values) for factor in range(len(n_states))])
+            values=np.array(
+                [np.ones_like(B[factor].values) for factor in range(len(n_states))], dtype=object
+            )
         )
         action = np.array([np.random.randint(nc) for nc in n_control])
         pB_updated = learning.update_transition_dirichlet(
@@ -389,12 +391,14 @@ class TestLearning(unittest.TestCase):
 
         B = Categorical(
             values=np.array(
-                [np.random.rand(ns, ns, n_control[factor]) for factor, ns in enumerate(n_states)]
+                [np.random.rand(ns, ns, n_control[factor]) for factor, ns in enumerate(n_states)], dtype=object
             )
         )
         B.normalize()
         pB = Dirichlet(
-            values=np.array([np.ones_like(B[factor].values) for factor in range(len(n_states))])
+            values=np.array(
+                [np.ones_like(B[factor].values) for factor in range(len(n_states))], dtype=object
+            )
         )
 
         action = np.array([np.random.randint(nc) for nc in n_control])
@@ -430,12 +434,14 @@ class TestLearning(unittest.TestCase):
         factors_to_update = [0, 2]
         B = Categorical(
             values=np.array(
-                [np.random.rand(ns, ns, n_control[factor]) for factor, ns in enumerate(n_states)]
+                [np.random.rand(ns, ns, n_control[factor]) for factor, ns in enumerate(n_states)], dtype=object
             )
         )
         B.normalize()
         pB = Dirichlet(
-            values=np.array([np.ones_like(B[factor].values) for factor in range(len(n_states))])
+            values=np.array(
+                [np.ones_like(B[factor].values) for factor in range(len(n_states))], dtype=object
+            )
         )
         action = np.array([np.random.randint(nc) for nc in n_control])
         pB_updated = learning.update_transition_dirichlet(
