@@ -14,7 +14,7 @@ from pymdp.core.utils import (
     norm_dist,
 )
 from pymdp.core.maths import get_joint_likelihood_seq
-from pymdp.core.inference import update_posterior_states_v2
+from pymdp.core.inference import update_posterior_states_v2, average_states_over_policies
 from pymdp.core.control import update_posterior_policies_v2
 from pymdp.core import utils
 
@@ -89,7 +89,7 @@ class Inference(unittest.TestCase):
 
         
         # add in __option__ for F and E
-        q_pi, efe = update_posterior_policies = update_posterior_policies_v2(
+        q_pi, efe = update_posterior_policies_v2(
             qs_seq_pi_future,
             A,
             B,
@@ -97,17 +97,19 @@ class Inference(unittest.TestCase):
             policies,
             use_utility=True,
             use_states_info_gain=True,
-            use_param_info_gain=True,
+            use_param_info_gain=False,
+            prior = None,
             pA=None,
             pB=None,
             gamma=16.0,
             return_numpy=True,
         )
+
+        qs_pi_curr_t = utils.obj_array(num_policies)
+        for p_idx in range(num_policies):
+            qs_pi_curr_t[p_idx] = qs_seq_pi[p_idx][past_len]
         
-        # init marginalised state rep.
-        # loop over policies
-        # times policy_state by q_pi 
-        # add to state rep
+        qs_bma = average_states_over_policies(qs_pi_curr_t, q_pi) # Bayesian model average of hidden states across policies
 
 if __name__ == "__main__":
     unittest.main()
