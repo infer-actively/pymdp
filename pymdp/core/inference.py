@@ -35,14 +35,6 @@ def update_posterior_states_v2(
 ):
     """
     Update posterior over hidden states using desired scheme for variational inference. 
-
-    @NOTE: OPEN ISSUES:
-
-    - Design choice question - do we return the full 'joint posterior' that includes
-    the policy-conditioned beliefs about each marginal hidden state factor, or do we do the Bayesian model averaging (thus summing along the 'policy' dimension)
-    within this function and return it as the output of this function?
-
-
     """
     # safe convert to numpy
     A = utils.to_numpy(A)
@@ -74,6 +66,32 @@ def update_posterior_states_v2(
 
     return qs_seq_pi
 
+def average_states_over_policies(qs_pi, q_pi):
+    """
+    Parameters
+    ----------
+    `qs_seq_pi` - marginal posteriors over hidden states, per policy, at the current time point
+    `q_pi` - posterior beliefs about policies  - (num_policies x 1) numpy 1D array
+
+    Returns:
+    ---------
+    `qs_bma` - marginal posterior over hidden states for the current timepoint, averaged across policies according to their posterior probability given by `q_pi`
+    """
+
+    num_factors = len(qs_pi[0]) # get the number of hidden state factors using the shape of the first-policy-conditioned posterior
+    num_states = [qs_f.shape[0] for qs_f in qs_pi[0]] # get the dimensionalities of each hidden state factor 
+
+    qs_bma = utils.obj_array(num_factors)
+    for f in range(num_factors):
+        qs_bma[f] = np.zeros(num_states[f])
+
+    for p_idx, policy_weight in enumerate(q_pi):
+
+        for f in range(num_factors):
+
+            qs_bma[f] += qs_pi[p_idx][f] * policy_weight
+
+    return qs_bma
 
 # def update_posterior_states(A, obs, prior=None, return_numpy=True, method=FPI, **kwargs):
 #     """
