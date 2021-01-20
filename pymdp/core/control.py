@@ -22,12 +22,18 @@ def update_posterior_policies_v2(
     policies,
     use_utility=True,
     use_states_info_gain=True,
-    use_param_info_gain=True,
+    use_param_info_gain=False,
+    prior=None,
     pA=None,
     pB=None,
     gamma=16.0,
     return_numpy=True,
-):
+):  
+    """
+    `qs_seq_pi`: numpy object array that stores posterior marginals beliefs over hidden states for each policy. 
+                The structure is nested as policies --> timesteps --> hidden state factors. So qs_seq_pi[p_idx][t][f] is the belief about factor `f` at time `t`, under policy `p_idx`
+
+    """
 
     num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A, B)
     horizon = len(qs_seq_pi[0])
@@ -51,7 +57,6 @@ def update_posterior_policies_v2(
         qo_seq_pi[p_idx] = copy.deepcopy(obs_over_time)
 
     efe = np.zeros(num_policies)
-    q_pi = np.zeros((num_policies, 1))
 
     for p_idx, policy in enumerate(policies):
 
@@ -68,11 +73,16 @@ def update_posterior_policies_v2(
             if use_states_info_gain:
                 efe[p_idx] += calc_states_info_gain(A, qs_seq_pi_i[t])
 
-            # if use_param_info_gain:
-            #    if pA is not None:
-            #        efe[p_idx] += calc_pA_info_gain(pA, qo_seq_pi[p_idx][t], qs_seq_pi_i[t])
-            # if pB is not None:
-            # efe[p_idx] += calc_pB_info_gain(pB, qs_seq_pi_i[t], qs_seq_pi_i[t-1], policy)
+            if use_param_info_gain:
+                if pA is not None:
+                    efe[p_idx] += calc_pA_info_gain(pA, qo_seq_pi[p_idx][t], qs_seq_pi_i[t])
+                if pB is not None:
+                    if t > 0:
+                        efe[p_idx] += calc_pB_info_gain(pB, qs_seq_pi_i[t], qs_seq_pi_i[t-1], policy)
+                    else:
+                        if prior is not None:
+                            efe[p_idx] += calc_pB_info_gain(pB, qs_seq_pi_i[t], prior, policy)
+
 
     q_pi = softmax(efe * gamma)
     if return_numpy:
