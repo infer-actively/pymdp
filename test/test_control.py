@@ -11,7 +11,7 @@ import unittest
 import numpy as np
 
 from pymdp.distributions import Categorical, Dirichlet  # nopep8
-from pymdp import core
+from pymdp.core import control
 
 
 def construct_generic_A(num_obs, n_states):
@@ -138,7 +138,7 @@ class TestControl(unittest.TestCase):
 
         # Single timestep
         n_step = 1
-        policies = core.construct_policies(n_states, n_control, policy_len=n_step)
+        policies = control.construct_policies(n_states, n_control, policy_len=n_step)
 
         # Single observation modality
         num_obs = [4]
@@ -147,7 +147,7 @@ class TestControl(unittest.TestCase):
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
         C = Categorical(values=construct_generic_C(num_obs))
 
-        q_pi, efe = core.update_posterior_policies(
+        q_pi, efe = control.update_posterior_policies(
             qs,
             A,
             B,
@@ -172,7 +172,7 @@ class TestControl(unittest.TestCase):
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
         C = Categorical(values=construct_generic_C(num_obs))
 
-        q_pi, efe = core.update_posterior_policies(
+        q_pi, efe = control.update_posterior_policies(
             qs,
             A,
             B,
@@ -206,7 +206,7 @@ class TestControl(unittest.TestCase):
 
         # Multiple timestep
         n_step = 3
-        policies = core.construct_policies(n_states, n_control, policy_len=n_step)
+        policies = control.construct_policies(n_states, n_control, policy_len=n_step)
 
         # Single observation modality
         num_obs = [4]
@@ -215,7 +215,7 @@ class TestControl(unittest.TestCase):
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
         C = Categorical(values=construct_generic_C(num_obs))
 
-        q_pi, efe = core.update_posterior_policies(
+        q_pi, efe = control.update_posterior_policies(
             qs,
             A,
             B,
@@ -240,7 +240,7 @@ class TestControl(unittest.TestCase):
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
         C = Categorical(values=construct_generic_C(num_obs))
 
-        q_pi, efe = core.update_posterior_policies(
+        q_pi, efe = control.update_posterior_policies(
             qs,
             A,
             B,
@@ -273,7 +273,7 @@ class TestControl(unittest.TestCase):
 
         # Single timestep
         n_step = 1
-        policies = core.construct_policies(n_states, n_control, policy_len=n_step)
+        policies = control.construct_policies(n_states, n_control, policy_len=n_step)
 
         # Single observation modality
         num_obs = [4]
@@ -282,7 +282,7 @@ class TestControl(unittest.TestCase):
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
         C = Categorical(values=construct_generic_C(num_obs))
 
-        q_pi, efe = core.update_posterior_policies(
+        q_pi, efe = control.update_posterior_policies(
             qs,
             A,
             B,
@@ -307,7 +307,7 @@ class TestControl(unittest.TestCase):
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
         C = Categorical(values=construct_generic_C(num_obs))
 
-        q_pi, efe = core.update_posterior_policies(
+        q_pi, efe = control.update_posterior_policies(
             qs,
             A,
             B,
@@ -340,7 +340,7 @@ class TestControl(unittest.TestCase):
 
         # Single timestep
         n_step = 3
-        policies = core.construct_policies(n_states, n_control, policy_len=n_step)
+        policies = control.construct_policies(n_states, n_control, policy_len=n_step)
 
         # Single observation modality
         num_obs = [4]
@@ -349,7 +349,7 @@ class TestControl(unittest.TestCase):
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
         C = Categorical(values=construct_generic_C(num_obs))
 
-        q_pi, efe = core.update_posterior_policies(
+        q_pi, efe = control.update_posterior_policies(
             qs,
             A,
             B,
@@ -374,7 +374,7 @@ class TestControl(unittest.TestCase):
         pA = Dirichlet(values=construct_pA(num_obs, n_states))
         C = Categorical(values=construct_generic_C(num_obs))
 
-        q_pi, efe = core.update_posterior_policies(
+        q_pi, efe = control.update_posterior_policies(
             qs,
             A,
             B,
@@ -403,7 +403,7 @@ class TestControl(unittest.TestCase):
         # One step policies
         policy_len = 1
 
-        policies = core.construct_policies(n_states, n_control, policy_len, control_fac_idx)
+        policies = control.construct_policies(n_states, n_control, policy_len, control_fac_idx)
         self.assertEqual(len(policies), n_control[0])
         for policy in policies:
             self.assertEqual(policy.shape[0], policy_len) # type: ignore
@@ -411,7 +411,7 @@ class TestControl(unittest.TestCase):
         # multistep step policies
         policy_len = 3
 
-        policies = core.construct_policies(n_states, n_control, policy_len, control_fac_idx)
+        policies = control.construct_policies(n_states, n_control, policy_len, control_fac_idx)
         for policy in policies:
             self.assertEqual(policy.shape[0], policy_len) # type: ignore
 
@@ -422,7 +422,7 @@ class TestControl(unittest.TestCase):
         # one step policies
         policy_len = 1
 
-        policies, n_control = core.construct_policies(n_states, None, policy_len, None)
+        policies, n_control = control.construct_policies(n_states, None, policy_len, None)
         self.assertEqual(len(policies), n_control[0])
         self.assertEqual(n_states[0], n_control[0])
         for policy in policies:
@@ -431,7 +431,7 @@ class TestControl(unittest.TestCase):
         # multistep step policies
         policy_len = 3
 
-        policies, n_control = core.construct_policies(n_states, None, policy_len, None)
+        policies, n_control = control.construct_policies(n_states, None, policy_len, None)
         self.assertEqual(n_states[0], n_control[0])
         for policy in policies:
             self.assertEqual(policy.shape[0], policy_len) # type: ignore
@@ -447,7 +447,7 @@ class TestControl(unittest.TestCase):
         # One step policies
         policy_len = 1
 
-        policies = core.construct_policies(n_states, n_control, policy_len, control_fac_idx)
+        policies = control.construct_policies(n_states, n_control, policy_len, control_fac_idx)
         self.assertEqual(len(policies), n_control[0])
         for policy in policies:
             self.assertEqual(policy.shape[0], policy_len) # type: ignore
@@ -455,14 +455,14 @@ class TestControl(unittest.TestCase):
         # Multistep step policies
         policy_len = 3
 
-        policies = core.construct_policies(n_states, n_control, policy_len, control_fac_idx)
+        policies = control.construct_policies(n_states, n_control, policy_len, control_fac_idx)
         for policy in policies:
             self.assertEqual(policy.shape[0], policy_len) # type: ignore
 
         # One step policies
         policy_len = 1
 
-        policies, n_control = core.construct_policies(n_states, None, policy_len, control_fac_idx)
+        policies, n_control = control.construct_policies(n_states, None, policy_len, control_fac_idx)
         self.assertEqual(len(policies), n_control[0])
         self.assertEqual(n_control[1], 1)
         for policy in policies:
@@ -471,7 +471,7 @@ class TestControl(unittest.TestCase):
         # multistep step policies
         policy_len = 3
 
-        policies, n_control = core.construct_policies(n_states, None, policy_len, control_fac_idx)
+        policies, n_control = control.construct_policies(n_states, None, policy_len, control_fac_idx)
         self.assertEqual(n_states[0], n_control[0])
         self.assertEqual(n_control[1], 1)
         for policy in policies:
@@ -481,7 +481,7 @@ class TestControl(unittest.TestCase):
         # One step policies
         policy_len = 1
 
-        policies, n_control = core.construct_policies(n_states, None, policy_len, control_fac_idx)
+        policies, n_control = control.construct_policies(n_states, None, policy_len, control_fac_idx)
         self.assertEqual(len(policies), n_control[1])
         self.assertEqual(n_control[0], 1)
         for policy in policies:
@@ -490,7 +490,7 @@ class TestControl(unittest.TestCase):
         # multistep step policies
         policy_len = 3
 
-        policies, n_control = core.construct_policies(n_states, None, policy_len, control_fac_idx)
+        policies, n_control = control.construct_policies(n_states, None, policy_len, control_fac_idx)
         self.assertEqual(n_control[0], 1)
         for policy in policies:
             self.assertEqual(policy.shape[0], policy_len) # type: ignore
@@ -509,7 +509,7 @@ class TestControl(unittest.TestCase):
 
         # Single timestep
         n_step = 1
-        policies = core.construct_policies(n_states, n_control, policy_len=n_step)
+        policies = control.construct_policies(n_states, n_control, policy_len=n_step)
 
         # Single observation modality
         num_obs = [2]
@@ -521,9 +521,9 @@ class TestControl(unittest.TestCase):
         C = Categorical(values=np.eye(num_obs[0])[1])
         utilities = np.zeros(len(policies))
         for idx, policy in enumerate(policies):
-            qs_pi = core.get_expected_states(qs, B, policy)
-            qo_pi = core.get_expected_obs(qs_pi, A)
-            utilities[idx] += core.calc_expected_utility(qo_pi, C)
+            qs_pi = control.get_expected_states(qs, B, policy)
+            qo_pi = control.get_expected_obs(qs_pi, A)
+            utilities[idx] += control.calc_expected_utility(qo_pi, C)
 
         self.assertGreater(utilities[1], utilities[0])
 
@@ -553,9 +553,9 @@ class TestControl(unittest.TestCase):
 
         utilities = np.zeros(len(policies))
         for idx, policy in enumerate(policies):
-            qs_pi = core.get_expected_states(qs, B, policy)
-            qo_pi = core.get_expected_obs(qs_pi, A)
-            utilities[idx] += core.calc_expected_utility(qo_pi, C)
+            qs_pi = control.get_expected_states(qs, B, policy)
+            qo_pi = control.get_expected_obs(qs_pi, A)
+            utilities[idx] += control.calc_expected_utility(qo_pi, C)
         self.assertGreater(utilities[1], utilities[0])
 
     def test_state_info_gain(self):
@@ -574,12 +574,12 @@ class TestControl(unittest.TestCase):
         # leads to increased epistemic value of observations, in case of pursuing
         # that policy -- in the case of a precise observation likelihood model
         B_matrix = construct_generic_B(n_states, n_control)
-        B_matrix[:, :, 1] = core.softmax(B_matrix[:, :, 1])
+        B_matrix[:, :, 1] = control.softmax(B_matrix[:, :, 1])
         B = Categorical(values=B_matrix)
 
         # single timestep
         n_step = 1
-        policies = core.construct_policies(n_states, n_control, policy_len=n_step)
+        policies = control.construct_policies(n_states, n_control, policy_len=n_step)
 
         # single observation modality
         num_obs = [2]
@@ -589,8 +589,8 @@ class TestControl(unittest.TestCase):
 
         state_info_gains = np.zeros(len(policies))
         for idx, policy in enumerate(policies):
-            qs_pi = core.get_expected_states(qs, B, policy)
-            state_info_gains[idx] += core.calc_states_info_gain(A, qs_pi)
+            qs_pi = control.get_expected_states(qs, B, policy)
+            state_info_gains[idx] += control.calc_states_info_gain(A, qs_pi)
         self.assertGreater(state_info_gains[1], state_info_gains[0])
 
         # we can 'undo' the epistemic bonus of the second policy by making the A matrix
@@ -601,8 +601,8 @@ class TestControl(unittest.TestCase):
 
         state_info_gains = np.zeros(len(policies))
         for idx, policy in enumerate(policies):
-            qs_pi = core.get_expected_states(qs, B, policy)
-            state_info_gains[idx] += core.calc_states_info_gain(A, qs_pi)
+            qs_pi = control.get_expected_states(qs, B, policy)
+            state_info_gains[idx] += control.calc_states_info_gain(A, qs_pi)
         self.assertEqual(state_info_gains[0], state_info_gains[1])
 
     def test_pA_info_gain(self):
@@ -620,7 +620,7 @@ class TestControl(unittest.TestCase):
 
         # single timestep
         n_step = 1
-        policies = core.construct_policies(n_states, n_control, policy_len=n_step)
+        policies = control.construct_policies(n_states, n_control, policy_len=n_step)
 
         # single observation modality
         num_obs = [2]
@@ -641,9 +641,9 @@ class TestControl(unittest.TestCase):
 
         pA_info_gains = np.zeros(len(policies))
         for idx, policy in enumerate(policies):
-            qs_pi = core.get_expected_states(qs, B, policy)
-            qo_pi = core.get_expected_obs(qs_pi, A)
-            pA_info_gains[idx] += core.calc_pA_info_gain(pA, qo_pi, qs_pi)
+            qs_pi = control.get_expected_states(qs, B, policy)
+            qo_pi = control.get_expected_obs(qs_pi, A)
+            pA_info_gains[idx] += control.calc_pA_info_gain(pA, qo_pi, qs_pi)
         self.assertGreater(pA_info_gains[1], pA_info_gains[0])
 
     def test_pB_info_gain(self):
@@ -671,12 +671,12 @@ class TestControl(unittest.TestCase):
 
         # single timestep
         n_step = 1
-        policies = core.construct_policies(n_states, n_control, policy_len=n_step)
+        policies = control.construct_policies(n_states, n_control, policy_len=n_step)
 
         pB_info_gains = np.zeros(len(policies))
         for idx, policy in enumerate(policies):
-            qs_pi = core.get_expected_states(qs, B, policy)
-            pB_info_gains[idx] += core.calc_pB_info_gain(pB, qs_pi, qs, policy)
+            qs_pi = control.get_expected_states(qs, B, policy)
+            pB_info_gains[idx] += control.calc_pB_info_gain(pB, qs_pi, qs, policy)
         self.assertGreater(pB_info_gains[1], pB_info_gains[0])
 
 
