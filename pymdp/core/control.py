@@ -103,7 +103,7 @@ def update_posterior_policies_v2(
                             efe[p_idx] += calc_pB_info_gain(pB, qs_seq_pi_i[t], prior, policy)
 
 
-    q_pi = softmax(efe * gamma - F - E)
+    q_pi = softmax(efe * gamma - F + E)
     if return_numpy:
         q_pi = q_pi / q_pi.sum(axis=0)
     else:
