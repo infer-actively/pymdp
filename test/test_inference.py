@@ -86,9 +86,7 @@ class Inference(unittest.TestCase):
             C[t] = utils.obj_array(num_modalities)
             for g in range(num_modalities):
                 C[t][g] = np.ones(num_obs[g]) 
-
         
-        # add in __option__ for F and E
         q_pi, efe = update_posterior_policies_v2(
             qs_seq_pi_future,
             A,
@@ -101,6 +99,8 @@ class Inference(unittest.TestCase):
             prior = None,
             pA=None,
             pB=None,
+            F = None,
+            E = None,
             gamma=16.0,
             return_numpy=True,
         )

@@ -26,13 +26,27 @@ def update_posterior_policies_v2(
     prior=None,
     pA=None,
     pB=None,
+    F = None,
+    E = None,
     gamma=16.0,
     return_numpy=True,
 ):  
     """
     `qs_seq_pi`: numpy object array that stores posterior marginals beliefs over hidden states for each policy. 
                 The structure is nested as policies --> timesteps --> hidden state factors. So qs_seq_pi[p_idx][t][f] is the belief about factor `f` at time `t`, under policy `p_idx`
-
+    `A`: numpy object array that stores likelihood mappings for each modality.
+    `B`: numpy object array that stores transition matrices (possibly action-conditioned) for each hidden state factor
+    `policies`: numpy object array that stores each (potentially-multifactorial) policy in `policies[p_idx]`. Shape of `policies[p_idx]` is `(num_timesteps, num_factors)`
+    `use_utility`: Boolean that determines whether expected utility should be incorporated into computation of EFE (default: `True`)
+    `use_states_info_gain`: Boolean that determines whether state epistemic value (info gain about hidden states) should be incorporated into computation of EFE (default: `True`)
+    `use_param_info_gain`: Boolean that determines whether parameter epistemic value (info gain about generative model parameters) should be incorporated into computation of EFE (default: `False`)
+    `prior`: numpy object array that stores priors over hidden states 
+    `pA`: numpy object array that stores Dirichlet priors over likelihood mappings (one per modality)
+    `pB`: numpy object array that stores Dirichlet priors over transition mappings (one per hidden state factor)
+    `F` : 1D numpy array that stores variational free energy of each policy 
+    `E` : 1D numpy array that stores prior probability each policy (e.g. 'habits')
+    `gamma`: Float that encodes the precision over policies
+    `return_numpy`: Boolean that determines whether output should be a numpy array or an instance of the Categorical class (default: `True`)
     """
 
     num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A, B)
@@ -57,6 +71,11 @@ def update_posterior_policies_v2(
         qo_seq_pi[p_idx] = copy.deepcopy(obs_over_time)
 
     efe = np.zeros(num_policies)
+
+    if F is None:
+        F = np.zeros(num_policies)
+    if E is None:
+        E = np.zeros(num_policies)
 
     for p_idx, policy in enumerate(policies):
 
@@ -84,7 +103,7 @@ def update_posterior_policies_v2(
                             efe[p_idx] += calc_pB_info_gain(pB, qs_seq_pi_i[t], prior, policy)
 
 
-    q_pi = softmax(efe * gamma)
+    q_pi = softmax(efe * gamma - F - E)
     if return_numpy:
         q_pi = q_pi / q_pi.sum(axis=0)
     else:
