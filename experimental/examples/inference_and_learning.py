@@ -26,7 +26,7 @@ sys.path.append(str(pathlib.Path(__file__).parent.parent))
 
 from pymdp.envs import GridWorldEnv
 from pymdp.distributions import Categorical, Dirichlet
-from pymdp import core
+from pymdp.core import maths
 
 """
 ## Plotting functions (come in handy later on)
@@ -131,7 +131,7 @@ print("Initial Location {}".format(first_state))
 print("Initial Observation {}".format(first_obs))
 
 # infer initial state, given first observation
-qs = core.softmax(A[first_obs, :].log() + D.log(), return_numpy=False)
+qs = maths.softmax(A[first_obs, :].log() + D.log(), return_numpy=False)
 
 # loop over time
 for t in range(T):
@@ -150,7 +150,7 @@ for t in range(T):
     B = b.mean()
 
     # infer new hidden state
-    qs = core.softmax(A[obs, :].log() + B.dot(qs_past).log(), return_numpy=False)
+    qs = maths.softmax(A[obs, :].log() + B.dot(qs_past).log(), return_numpy=False)
 
     # update beliefs about the transition likelihood (i.e. 'learning')
 

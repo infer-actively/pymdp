@@ -8,12 +8,18 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 from pymdp.distributions import Categorical, Dirichlet
-from pymdp.envs import GridWorldEnv  #
-from pymdp import core
+from pymdp.envs import GridWorldEnv
+from pymdp.core import control
+from pymdp.core import maths
+
+PLOT = False
 
 
 def plot_beliefs(qs, title=""):
-    values = qs.values[:, 0]
+    try:
+        values = qs.values[:, 0]
+    except AttributeError:
+        values = qs[:, 0]
     plt.grid(zorder=0)
     plt.bar(range(qs.shape[0]), values, color="r", zorder=3)
     plt.xticks(range(qs.shape[0]))
@@ -56,24 +62,27 @@ env = GridWorldEnv(shape=env_shape)
 likelihood_matrix = env.get_likelihood_dist()
 A = Categorical(values=likelihood_matrix)
 A.remove_zeros()
-# plot_likelihood(A)
+if PLOT:
+    plot_likelihood(A)
 
 transition_matrix = env.get_transition_dist()
 B = Categorical(values=transition_matrix)
 B.remove_zeros()
-# plot_empirical_prior(B)#
+if PLOT:
+    plot_empirical_prior(B)
 
 reward_location = 3
 
 C = Categorical(dims=[env.n_states])
 C[reward_location] = 1.0
-# plot_beliefs(C, title="Prior preference (C)")
+if PLOT:
+    plot_beliefs(C, title="Prior preference (C)")
 
 qs = Categorical(dims=[env.n_states])
 
 policy_len = 2
 n_control = [env.n_control]
-policies = core.construct_policies([n_states], n_control=n_control, policy_len=policy_len)
+policies = control.construct_policies([n_states], n_control=n_control, policy_len=policy_len)
 n_policies = len(policies)
 print(f"Total number of policies {n_policies}")
 print(policies[0].shape)
@@ -96,7 +105,7 @@ def evaluate_policy(policy, qs, A, B, C):
         # get entropy
         H = A.entropy()
         # get predicted divergence and uncertainty and novelty
-        divergence = core.kl_divergence(qo, C)
+        divergence = maths.kl_divergence(qo, C)
         uncertainty = H.dot(qs)[0, 0]
         G += divergence + uncertainty
     return -G
@@ -111,7 +120,7 @@ def infer_action(qs, A, B, C, n_control, policies):
         neg_G[i] = evaluate_policy(policy, qs, A, B, C)
 
     # get distribution over policies
-    q_pi = core.softmax(neg_G)
+    q_pi = maths.softmax(neg_G)
 
     # probabilites of control states
     qu = Categorical(dims=n_control)
@@ -142,7 +151,7 @@ T = 10
 obs = env.reset()
 print("Initial Location {}".format(env.state))
 # infer initial state
-qs = core.softmax(A[obs, :].log())
+qs = maths.softmax(A[obs, :].log())
 
 # loop over time
 for t in range(T):
@@ -154,11 +163,11 @@ for t in range(T):
     obs = env.step(action)
 
     # infer new hidden state
-    qs = core.softmax(A[obs, :].log() + B[:,:,action].dot(qs).log())
+    qs = maths.softmax(A[obs, :].log() + B[:,:,action].dot(qs).log())
 
     # print information
     print("Time step {} Location {}".format(t, env.state))
-    # env.render()
-    # plot_beliefs(Qs, "Beliefs (Qs) at time {}".format(t))
-
+    if PLOT:
+        env.render()
+        plot_beliefs(qs, "Beliefs (Qs) at time {}".format(t))
 
