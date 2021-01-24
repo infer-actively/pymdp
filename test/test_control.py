@@ -20,12 +20,12 @@ def construct_generic_A(num_obs, n_states):
     """
     num_modalities = len(num_obs)
     if num_modalities == 1:
-        A = np.random.rand(*(num_obs + n_states))
+        A = np.random.random_sample(tuple(num_obs + n_states))
         A = np.divide(A, A.sum(axis=0))
     else:
         A = np.empty(num_modalities, dtype=object)
         for modality, no in enumerate(num_obs):
-            tmp = np.random.rand((*([no] + n_states)))
+            tmp = np.random.random_sample(tuple([no] + n_states))
             tmp = np.divide(tmp, tmp.sum(axis=0))
             A[modality] = tmp
     return A
