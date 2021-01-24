@@ -52,5 +52,6 @@ pytest test
 
 - Conor Heins [@conorheins](https://github.com/conorheins)
 - Alec Tschantz [@alec-tschantz](https://github.com/alec-tschantz)
-- Beren Millidge [@BereMillidge](https://github.com/BerenMillidge)
+- Beren Millidge [@BerenMillidge](https://github.com/BerenMillidge)
 - Brennan Klein [@jkbren](https://github.com/jkbren)
+- Arun Niranjan [@Arun-Niranjan](https://github.com/Arun-Niranjan)
