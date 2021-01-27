@@ -113,7 +113,7 @@ class MMP(unittest.TestCase):
             prior[f] = B[f][:, :, prev_actions[0, f]].dot(uniform)
 
         ll_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
-        qs_seq = run_mmp_v2(
+        qs_seq, _ = run_mmp_v2(
             A, B, ll_seq, policy, prev_actions[1:], prior=prior, num_iter=5, grad_descent=True
         )
 
@@ -146,7 +146,7 @@ class MMP(unittest.TestCase):
 
         prev_actions = prev_actions[(max(0, curr_t - t_horizon)) :, :]
         ll_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
-        qs_seq = run_mmp_v2(
+        qs_seq, _ = run_mmp_v2(
             A, B, ll_seq, policy, prev_actions=prev_actions, prior=None, num_iter=5, grad_descent=True
         )
 
@@ -180,7 +180,7 @@ class MMP(unittest.TestCase):
 
         # prev_actions = prev_actions[(max(0, curr_t - t_horizon)) :, :]
         ll_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
-        qs_seq = run_mmp_v2(
+        qs_seq, _ = run_mmp_v2(
             A, B, ll_seq, policy, prev_actions=None, prior=None, num_iter=5, grad_descent=True
         )
 
@@ -224,7 +224,7 @@ class MMP(unittest.TestCase):
         # print(f"ll seq {len(ll_seq)}, actions passed {prev_actions[1:].shape} policy {policy.shape}")
 
         # the variable infer_len in run_mmp_v2 is too long for test_mmp_d case - it needs to be shortened if it stretches beyond the true end time of the trial
-        qs_seq = run_mmp_v2(
+        qs_seq, _ = run_mmp_v2(
             A, B, ll_seq, policy, prev_actions[1:], prior=prior, num_iter=5, grad_descent=True, last_timestep=True
         )
 
