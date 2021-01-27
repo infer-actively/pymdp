@@ -50,9 +50,11 @@ def update_posterior_states_v2(
     ll_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
 
     qs_seq_pi = utils.obj_array(len(policies))
+    F = np.zeros(len(policies)) # variational free energy of policies
+
     for p_idx, policy in enumerate(policies):
         # get sequence and the free energy for policy
-        qs_seq_pi[p_idx] = run_mmp_v2(
+        qs_seq_pi[p_idx], F[p_idx] = run_mmp_v2(
             A,
             B,
             ll_seq,
@@ -64,7 +66,7 @@ def update_posterior_states_v2(
         )
 
 
-    return qs_seq_pi
+    return qs_seq_pi, F
 
 def average_states_over_policies(qs_pi, q_pi):
     """

@@ -36,12 +36,6 @@ def run_mmp_v2(
     B = to_arr_of_arr(B)
 
     # beliefs
-    # qs_seq = [np.empty(num_factors, dtype=object) for _ in range(infer_len)]
-    # for t in range(infer_len):
-    #     for f in range(num_factors):
-    #         qs_seq[t][f] = np.ones(num_states[f]) / num_states[f]
-
-    # beliefs
     qs_seq = obj_array(infer_len)
     base_array = obj_array(num_factors)
     for t in range(infer_len):
@@ -71,6 +65,9 @@ def run_mmp_v2(
     if prev_actions is None:
         prev_actions = np.zeros((past_len, policy.shape[1]))
     policy = np.vstack((prev_actions, policy))
+
+    # initialise variational free energy of policy (accumulated over time)
+    F = 0
 
     for itr in range(num_iter):
         for t in range(infer_len):
@@ -103,7 +100,12 @@ def run_mmp_v2(
                     err -= err.mean()
                     lnqs = lnqs + tau * err
                     qs_seq[t][f] = softmax(lnqs)
+                    if (t == 0) or (t == (infer_len-1)):
+                        F += + 0.5*lnqs.dot(0.5*err)
+                    else:
+                        F += lnqs.dot(0.5*(err - (num_factors - 1)*lnA/num_factors)) # @NOTE: not sure why Karl does this in SPM_MDP_VB_X, we should look into this
                 else:
+                    # @NOTE: We need to figure out how to calculate the VFE here
                     qs_seq[t][f] = softmax(lnA + lnB_past + lnB_future)
 
-    return qs_seq
+    return qs_seq, F
