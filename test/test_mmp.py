@@ -236,7 +236,39 @@ class MMP(unittest.TestCase):
 
         for f in range(num_factors):
             self.assertTrue(np.isclose(result_spm[f].squeeze(), result_pymdp[f]).all())
+    
+    def test_mmp_fixedpoints(self):
 
+        array_path = os.path.join(os.getcwd(), DATA_PATH + "mmp_a.mat")
+        mat_contents = loadmat(file_name=array_path)
+
+        A = mat_contents["A"][0]
+        B = mat_contents["B"][0]
+        prev_obs = mat_contents["obs_idx"].astype("int64")
+        policy = mat_contents["policy"].astype("int64") - 1
+        curr_t = mat_contents["t"][0, 0].astype("int64") - 1
+        t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")
+        prev_actions = mat_contents["previous_actions"].astype("int64") - 1
+        result_spm = mat_contents["qs"][0]
+        likelihoods = mat_contents["likelihoods"][0]
+
+        num_obs, num_states, _, num_factors = get_model_dimensions(A, B)
+        prev_obs = convert_observation_array(
+            prev_obs[:, max(0, curr_t - t_horizon) : (curr_t + 1)], num_obs
+        )
+
+        prev_actions = prev_actions[(max(0, curr_t - t_horizon) -1) :, :]
+        prior = np.empty(num_factors, dtype=object)
+        for f in range(num_factors):
+            uniform = np.ones(num_states[f]) / num_states[f]
+            prior[f] = B[f][:, :, prev_actions[0, f]].dot(uniform)
+
+        ll_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
+        qs_seq, F = run_mmp_v2(
+            A, B, ll_seq, policy, prev_actions[1:], prior=prior, num_iter=5, grad_descent=False
+        )
+
+    
     # def test_mmp_b_old(self):
     #     """ Testing our SPM-ified version of `run_MMP` with
     #     2 hidden state factors & 2 outcome modalities, at a random fixed

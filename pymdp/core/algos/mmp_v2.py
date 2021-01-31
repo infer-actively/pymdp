@@ -11,7 +11,7 @@ __author__: Conor Heins, Beren Millidge, Alexander Tschantz, Brennan Klein
 import numpy as np
 
 from pymdp.core.utils import to_arr_of_arr, get_model_dimensions, obj_array
-from pymdp.core.maths import spm_dot, spm_norm, softmax
+from pymdp.core.maths import spm_dot, spm_norm, softmax, calc_free_energy
 import copy
 
 
@@ -107,5 +107,12 @@ def run_mmp_v2(
                 else:
                     # @NOTE: We need to figure out how to calculate the VFE here
                     qs_seq[t][f] = softmax(lnA + lnB_past + lnB_future)
+            
+            if not grad_descent:
+                if t < past_len:
+                    F += calc_free_energy(qs_seq[t], prior, num_factors, likelihood = np.log(ll_seq[t] + 1e-16) )
+                else:
+                    F += calc_free_energy(qs_seq[t], prior, num_factors)
+
 
     return qs_seq, F
