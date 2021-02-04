@@ -13,7 +13,57 @@ from scipy import special
 from pymdp.core import utils
 
 
-def spm_dot(X, x, dims_to_omit=None, obs_mode=False):
+def spm_dot(X, x, dims_to_omit=None):
+    """ Dot product of a multidimensional array with `x`. The dimensions in `dims_to_omit` 
+    will not be summed across during the dot product
+    
+    Parameters
+    ----------
+    - `x` [1D numpy.ndarray] - either vector or array of arrays
+        The alternative array to perform the dot product with
+    - `dims_to_omit` [list :: int] (optional)
+        Which dimensions to omit
+    
+    Returns 
+    -------
+    - `Y` [1D numpy.ndarray] - the result of the dot product
+    """
+
+    # Construct dims to perform dot product on
+    if utils.is_arr_of_arr(x):
+        dims = (np.arange(0, len(x)) + X.ndim - len(x)).astype(int)
+    else:
+        dims = np.array([1], dtype=int)
+        x = utils.to_arr_of_arr(x)
+
+    # delete ignored dims
+    if dims_to_omit is not None:
+        if not isinstance(dims_to_omit, list):
+            raise ValueError("`dims_to_omit` must be a `list` of `int`")
+        dims = np.delete(dims, dims_to_omit)
+        if len(x) == 1:
+            x = np.empty([0], dtype=object)
+        else:
+            x = np.delete(x, dims_to_omit)
+
+    # compute dot product
+    for d in range(len(x)):
+        s = np.ones(np.ndim(X), dtype=int)
+        s[dims[d]] = np.shape(x[d])[0]
+        X = X * x[d].reshape(tuple(s))
+        # X = np.sum(X, axis=dims[d], keepdims=True)
+
+    Y = np.sum(X, axis=tuple(dims.astype(int))).squeeze()
+    # Y = np.squeeze(X)
+
+    # check to see if `Y` is a scalar
+    if np.prod(Y.shape) <= 1.0:
+        Y = Y.item()
+        Y = np.array([Y]).astype("float64")
+
+    return Y
+
+def spm_dot_old(X, x, dims_to_omit=None, obs_mode=False):
     """ Dot product of a multidimensional array with `x`. The dimensions in `dims_to_omit` 
     will not be summed across during the dot product
 
@@ -66,8 +116,10 @@ def spm_dot(X, x, dims_to_omit=None, obs_mode=False):
         s = np.ones(np.ndim(X), dtype=int)
         s[dims[d]] = np.shape(x[d])[0]
         X = X * x[d].reshape(tuple(s))
-        X = np.sum(X, axis=dims[d], keepdims=True)
-    Y = np.squeeze(X)
+        # X = np.sum(X, axis=dims[d], keepdims=True)
+
+    Y = np.sum(X, axis=tuple(dims.astype(int))).squeeze()
+    # Y = np.squeeze(X)
 
     # check to see if `Y` is a scalar
     if np.prod(Y.shape) <= 1.0:
@@ -121,10 +173,6 @@ def spm_cross(x, y=None, *args):
     for x in args:
         z = spm_cross(z, x)
     return z
-
-
-# def dot_likelihood_old(A, obs):
-#     return spm_dot(A, obs, obs_mode=True)
 
 def dot_likelihood(A,obs):
 

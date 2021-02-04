@@ -8,7 +8,7 @@ __author__: Conor Heins, Beren Millidge, Alexander Tschantz, Brennan Klein
 """
 
 import numpy as np
-from pymdp.core.maths import spm_dot, softmax, calc_free_energy
+from pymdp.core.maths import spm_dot, get_joint_likelihood, softmax, calc_free_energy
 
 
 def run_fpi(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, dF_tol=0.001):
@@ -59,12 +59,15 @@ def run_fpi(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, d
         onto a single joint likelihood over hidden factors [size n_states]
     """
 
-    likelihood = np.ones(tuple(n_states))
-    if n_modalities is 1:
-        likelihood *= spm_dot(A, obs, obs_mode=True)
-    else:
-        for modality in range(n_modalities):
-            likelihood *= spm_dot(A[modality], obs[modality], obs_mode=True)
+
+    # likelihood = np.ones(tuple(n_states))
+    # if n_modalities is 1:
+    #     likelihood *= spm_dot(A, obs, obs_mode=True)
+    # else:
+    #     for modality in range(n_modalities):
+    #         likelihood *= spm_dot(A[modality], obs[modality], obs_mode=True)
+    likelihood = get_joint_likelihood(A, obs, n_states)
+
     likelihood = np.log(likelihood + 1e-16)
 
     """
@@ -202,13 +205,14 @@ def run_fpi_faster(A, obs, n_observations, n_states, prior=None, num_iter=10, dF
         onto a single joint likelihood over hidden factors [size n_states]
     """
 
-    likelihood = np.ones(tuple(n_states))
+    # likelihood = np.ones(tuple(n_states))
 
-    if n_modalities is 1:
-        likelihood *= spm_dot(A, obs, obs_mode=True)
-    else:
-        for modality in range(n_modalities):
-            likelihood *= spm_dot(A[modality], obs[modality], obs_mode=True)
+    # if n_modalities is 1:
+    #     likelihood *= spm_dot(A, obs, obs_mode=True)
+    # else:
+    #     for modality in range(n_modalities):
+    #         likelihood *= spm_dot(A[modality], obs[modality], obs_mode=True)
+    likelihood = get_joint_likelihood(A, obs, n_states)
     likelihood = np.log(likelihood + 1e-16)
 
     """

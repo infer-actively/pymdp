@@ -121,7 +121,7 @@ class Categorical(object):
         else:
             raise ValueError("`dims` must be either `list` or `int`")
 
-    def dot(self, x, dims_to_omit=None, return_numpy=False, obs_mode=False):
+    def dot_old(self, x, dims_to_omit=None, return_numpy=False, obs_mode=False):
         """ Dot product of a this distribution with `x`
         
             @NOTE see `spm_dot` in core.maths
@@ -153,6 +153,64 @@ class Categorical(object):
                 y[i] = maths.spm_dot(self[i].values, x, dims_to_omit, obs_mode)
         else:
             y = maths.spm_dot(self.values, x, dims_to_omit, obs_mode)
+
+        if return_numpy:
+            return y
+        else:
+            return Categorical(values=y)
+    
+    def dot(self, x, dims_to_omit=None, return_numpy=False):
+        """ Dot product of distribution encoded in self.values  with `x`
+        
+            @NOTE see `spm_dot` in core.maths
+
+            The dimensions in `dims_to_omit` will not be summed across during the dot product
+        
+        Parameters
+        ----------
+        - `x` [1D np.ndarray || Categorical]
+            The array to perform the dot product with
+        - `dims_to_omit` [list of ints] (optional)
+            Which dimensions to omit
+        - `return_numpy` [bool] (optional)
+            Whether to return `np.ndarray` or `Categorical` - defaults to `Categorical`
+        """
+        x = utils.to_numpy(x)
+
+        # perform dot product on each sub-array
+        if self.IS_AOA:
+            y = np.empty(self.n_arrays, dtype=object)
+            for i in range(self.n_arrays):
+                y[i] = maths.spm_dot(self[i].values, x, dims_to_omit)
+        else:
+            y = maths.spm_dot(self.values, x, dims_to_omit)
+
+        if return_numpy:
+            return y
+        else:
+            return Categorical(values=y)
+
+    def dot_likelihood(self, obs, dims_to_omit=None, return_numpy=False):
+        """ Product of delta distribution encoded in obs with self.values  with `x`
+        
+            @NOTE see `dot_likelihood` in core.maths
+        
+        Parameters
+        ----------
+        - `obs` [1D np.ndarray || Categorical]
+            The observations (delta vector, one-hot vector) to evaluate the likelihood of
+        - `return_numpy` [bool] (optional)
+            Whether to return `np.ndarray` or `Categorical` - defaults to `Categorical`
+        """
+        obs = utils.to_numpy(obs)
+
+        # perform dot product on each sub-array
+        if self.IS_AOA:
+            y = np.empty(self.n_arrays, dtype=object)
+            for i in range(self.n_arrays):
+                y[i] = maths.dot_likelihood(self[i].values, obs[i])
+        else:
+            y = maths.dot_likelihood(self.values, obs)
 
         if return_numpy:
             return y

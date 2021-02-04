@@ -184,7 +184,8 @@ class TestCategorical(unittest.TestCase):
         result_3 = mat_contents["result3"]
 
         A = Categorical(values=A)
-        result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
+        # result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
+        result_1_py = A.dot_likelihood(obs, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states, return_numpy=True)
@@ -210,7 +211,8 @@ class TestCategorical(unittest.TestCase):
         result_3 = mat_contents["result3"]
 
         A = Categorical(values=A)
-        result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
+        # result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
+        result_1_py = A.dot_likelihood(obs, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states, return_numpy=True)
@@ -235,7 +237,8 @@ class TestCategorical(unittest.TestCase):
         result_3 = mat_contents["result3"]
 
         A = Categorical(values=A)
-        result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
+        # result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
+        result_1_py = A.dot_likelihood(obs, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states, return_numpy=True)
@@ -262,7 +265,8 @@ class TestCategorical(unittest.TestCase):
         result_3 = mat_contents["result3"]
 
         A = Categorical(values=A)
-        result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
+        # result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
+        result_1_py = A.dot_likelihood(obs, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states_array_version, return_numpy=True)
@@ -293,7 +297,8 @@ class TestCategorical(unittest.TestCase):
         result_3 = mat_contents["result3"]
 
         A = Categorical(values=A)
-        result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
+        # result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
+        result_1_py = A.dot_likelihood(obs, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states_array_version, return_numpy=True)
@@ -320,7 +325,8 @@ class TestCategorical(unittest.TestCase):
         result_3 = mat_contents["result3"]
 
         A = Categorical(values=A)
-        result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
+        # result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
+        result_1_py = A.dot_likelihood(obs, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states_array_version, return_numpy=True)
@@ -347,7 +353,8 @@ class TestCategorical(unittest.TestCase):
         result_3 = mat_contents["result3"]
 
         A = Categorical(values=A)
-        result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
+        # result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
+        result_1_py = A.dot_likelihood(obs, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states_array_version, return_numpy=True)
@@ -376,7 +383,8 @@ class TestCategorical(unittest.TestCase):
         result_3 = mat_contents["result3"]
 
         A = Categorical(values=A)
-        result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
+        # result_1_py = A.dot(obs, obs_mode=True, return_numpy=True)
+        result_1_py = A.dot_likelihood(obs, return_numpy=True)
         self.assertTrue(np.isclose(result_1, result_1_py).all())
 
         result_2_py = A.dot(states_array_version, return_numpy=True)

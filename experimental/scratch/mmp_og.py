@@ -130,14 +130,17 @@ def run_mmp(
     # likelihood of observations under configurations of hidden causes (over time)
     likelihood = np.empty(len(obs_range), dtype=object)
     for t in range(len(obs_range)):
-        likelihood_t = np.ones(tuple(n_states))
+        # likelihood_t = np.ones(tuple(n_states))
 
-        if n_modalities == 1:
-            likelihood_t *= spm_dot(A, obs_t[obs_range[t]], obs_mode=True)
-        else:
-            for modality in range(n_modalities):
-                likelihood_t *= spm_dot(A[modality], obs_t[obs_range[t]][modality], obs_mode=True)
-        print(f"likelihood (pre-logging) {likelihood_t}")
+        # if n_modalities == 1:
+        #     likelihood_t *= spm_dot(A, obs_t[obs_range[t]], obs_mode=True)
+        # else:
+        #     for modality in range(n_modalities):
+        #         likelihood_t *= spm_dot(A[modality], obs_t[obs_range[t]][modality], obs_mode=True)
+        
+        likelihood_t = get_joint_likelihood(A, obs_t[obs_range[t]], n_states)
+
+        # print(f"likelihood (pre-logging) {likelihood_t}")
         # likelihood[t] = np.log(likelihood_t + 1e-16) # The Thomas Parr MMP version, you log the likelihood first
         likelihood[t] = likelihood_t # Karl SPM version, logging doesn't happen until *after* the dotting with the posterior
 
