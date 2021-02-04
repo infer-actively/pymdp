@@ -11,7 +11,7 @@ import numpy as np
 import sys
 import pathlib
 
-from pymdp.core.maths import spm_dot, spm_norm, softmax, calc_free_energy
+from pymdp.core.maths import spm_dot, get_joint_likelihood, spm_norm, softmax, calc_free_energy
 from pymdp.core import utils
 
 
@@ -147,13 +147,15 @@ def run_mmp(
     # likelihood of observations under configurations of hidden states (over time)
     likelihood = np.empty(len(obs_range), dtype=object)
     for t, obs in enumerate(obs_range):
-        likelihood_t = np.ones(tuple(num_states))
+        # likelihood_t = np.ones(tuple(num_states))
 
-        if num_modalities == 1:
-            likelihood_t *= spm_dot(A[0], obs_t[obs], obs_mode=True)
-        else:
-            for modality in range(num_modalities):
-                likelihood_t *= spm_dot(A[modality], obs_t[obs][modality], obs_mode=True)
+        # if num_modalities == 1:
+        #     likelihood_t *= spm_dot(A[0], obs_t[obs], obs_mode=True)
+        # else:
+        #     for modality in range(num_modalities):
+        #         likelihood_t *= spm_dot(A[modality], obs_t[obs][modality], obs_mode=True)
+        
+        likelihood_t = get_joint_likelihood(A, obs_t, num_states)
 
         # The Thomas Parr MMP version, you log the likelihood first
         # likelihood[t] = np.log(likelihood_t + 1e-16)
