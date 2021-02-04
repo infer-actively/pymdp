@@ -3,8 +3,6 @@
 
 """ Marginal message passing
 
-> We are trying to fix mmp_test case D 
-
 __author__: Conor Heins, Beren Millidge, Alexander Tschantz, Brennan Klein
 """
 
@@ -16,8 +14,28 @@ import copy
 
 
 def run_mmp_v2(
-    A, B, ll_seq, policy, prev_actions=None, prior=None, num_iter=10, grad_descent=False, tau=0.25, last_timestep = False
-):
+    A, B, ll_seq, policy, prev_actions=None, prior=None, num_iter=10, grad_descent=False, tau=0.25, last_timestep = False, save_vfe_seq=False):
+    """
+    Marginal message passing scheme (newer version) for updating posterior beliefs about multi-factor hidden states over time, 
+    conditioned on a particular policy.
+    Parameters:
+    --------------
+    `A`[numpy object array]
+    `B`[numpy object array]
+    `ll_seq`[numpy object array]
+    `policy` [2-D numpy.ndarray]
+    `prev_actions` [None or 2-D numpy.ndarray]
+    `prior`[None or numpy object array]
+    `num_iter`[Int]
+    `grad_descent` [Bool]
+    `tau` [Float]
+    `last_timestep` [Bool]
+    `save_vfe_seq` [Bool]
+    Returns:
+    --------------
+    `qs_seq`[list]
+    `F`[Float or list, depending on setting of save_vfe_seq]
+    """
 
     # window
     past_len = len(ll_seq)
@@ -67,7 +85,12 @@ def run_mmp_v2(
     policy = np.vstack((prev_actions, policy))
 
     # initialise variational free energy of policy (accumulated over time)
-    F = 0
+
+    if save_vfe_seq:
+        F = []
+        F.append(0.0)
+    else:
+        F = 0.0
 
     for itr in range(num_iter):
         for t in range(infer_len):
@@ -109,10 +132,16 @@ def run_mmp_v2(
                     qs_seq[t][f] = softmax(lnA + lnB_past + lnB_future)
             
             if not grad_descent:
-                if t < past_len:
-                    F += calc_free_energy(qs_seq[t], prior, num_factors, likelihood = np.log(ll_seq[t] + 1e-16) )
-                else:
-                    F += calc_free_energy(qs_seq[t], prior, num_factors)
 
+                if save_vfe_seq:
+                    if t < past_len:
+                        F.append(F[-1] + calc_free_energy(qs_seq[t], prior, num_factors, likelihood = np.log(ll_seq[t] + 1e-16) ))
+                    else:
+                        F.append(F[-1] + calc_free_energy(qs_seq[t], prior, num_factors))
+                else:
+                    if t < past_len:
+                        F += calc_free_energy(qs_seq[t], prior, num_factors, likelihood = np.log(ll_seq[t] + 1e-16) )
+                    else:
+                        F += calc_free_energy(qs_seq[t], prior, num_factors)
 
     return qs_seq, F
