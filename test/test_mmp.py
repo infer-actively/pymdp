@@ -265,8 +265,10 @@ class MMP(unittest.TestCase):
 
         ll_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
         qs_seq, F = run_mmp_v2(
-            A, B, ll_seq, policy, prev_actions[1:], prior=prior, num_iter=5, grad_descent=False
+            A, B, ll_seq, policy, prev_actions[1:], prior=prior, num_iter=5, grad_descent=False, save_vfe_seq=True
         )
+
+        self.assertTrue((np.diff(np.array(F)) < 0).all())
 
     
     # def test_mmp_b_old(self):
