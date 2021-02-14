@@ -1,8 +1,8 @@
-import sys
-import pathlib
-import numpy as np
+# import sys
+# import pathlib
+# import numpy as np
 
-sys.path.append(str(pathlib.Path(__file__).parent.parent.parent))
+# sys.path.append(str(pathlib.Path(__file__).parent.parent.parent))
 
 from pymdp.agent import Agent
 from pymdp import core
