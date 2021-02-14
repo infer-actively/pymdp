@@ -36,7 +36,7 @@ class Agent(object):
         use_states_info_gain=True,
         use_param_info_gain=False,
         action_sampling="marginal_action",
-        inference_algo="FPI",
+        inference_algo="VANILLA",
         inference_params=None,
         modalities_to_learn="all",
         lr_pA=1.0,
@@ -176,7 +176,7 @@ class Agent(object):
             self.B = self._construct_B_distribution()
 
         if inference_algo is None:
-            self.inference_algo = "FPI"
+            self.inference_algo = "VANILLA"
             self.inference_params = self._get_default_params()
         else:
             self.inference_algo = inference_algo
@@ -256,7 +256,7 @@ class Agent(object):
         if not hasattr(self, "qs"):
             self.reset()
 
-        if self.inference_algo is "FPI":
+        if self.inference_algo is "VANILLA":
             if self.action is not None:
                 empirical_prior = control.get_expected_states(
                     self.qs, self.B.log(), self.action.reshape(1, -1) #type: ignore
@@ -343,7 +343,7 @@ class Agent(object):
     def _get_default_params(self):
         method = self.inference_algo
         default_params = None
-        if method == "FPI":
+        if method == "VANILLA":
             default_params = {"num_iter": 10, "dF": 1.0, "dF_tol": 0.001}
         elif method == "VMP":
             raise NotImplementedError("VMP is not implemented")
