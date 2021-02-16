@@ -10,7 +10,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import numpy as np
 from pymdp.distributions import Categorical, Dirichlet
 from pymdp.core import inference, control, learning
-
+import copy
 
 class Agent(object):
     """ 
@@ -192,12 +192,16 @@ class Agent(object):
         # Initialise posterior beliefs over hidden states
         if self.inference_horizon == 1:
             self.qs = self.D
-        else:
+        else: # in the case you're doing MMP (i.e. you have an inference_horizon > 1), you have to have policy- and timestep-conditioned posterior beliefs
             self.qs = utils.obj_array(len(self.policies))
             for p_i, _ in enumerate(self.policies):
-                self.qs[p_i] = utils.obj_array(inference_horizon + self.policy_len)
-                self.qs[p_i][0] = self.D
+                self.qs[p_i] = utils.obj_array(inference_horizon + self.policy_len + 1)
+                self.qs[p_i][0] = copy.deepcopy(self.D)
+            
+            self.set_latest_prev_beliefs()
+
         self.action = None
+        self.prev_actions = None
 
     def _construct_A_distribution(self):
         if self.n_modalities == 1:
@@ -258,6 +262,7 @@ class Agent(object):
     def reset(self, init_qs=None):
         if init_qs is None:
             self.qs = self._construct_D_prior()
+            self.set_prev_beliefs()
         else:
             if isinstance(init_qs, Categorical):
                 self.qs = init_qs
@@ -265,6 +270,34 @@ class Agent(object):
                 self.qs = Categorical(values=init_qs)
 
         return self.qs
+
+    def step_time(self):
+
+        self.curr_timestep += 1
+        
+        return self.curr_timestep
+    
+    def set_latest_prev_beliefs(self,last_belief=None):
+        """
+        This method sets the 'last' belief before the inference horizon. In the case that the inference
+        horizon reaches back to the first timestep of the simulation, then the `latest_prev_belief` is
+        identical to the first belief / the prior.
+        """
+
+        if last_belief is None:
+            last_belief = utils.obj_array(len(self.policies))
+            for p_i, _ in enumerate(self.policies):
+                last_belief[p_i] = copy.deecopy(self.qs[p_i][0])
+
+        if (self.curr_timestep - self.inference_horizon) > 0:
+            if self.inference_params['BMA'] is True:
+                self.latest_prev_belief = inference.average_states_over_policies(last_belief, self.q_pi) # average the earliest marginals together using posterior over policies (`self.q_pi`)
+            else:
+                self.latest_prev_belief = last_belief
+        else:
+            self.latest_prev_belief = last_belief
+
+        return self.latest_prev_belief
 
     def infer_states(self, observation):
         observation = tuple(observation)
@@ -279,22 +312,18 @@ class Agent(object):
                 )
             else:
                 empirical_prior = self.D.log()
-        else:
-            if self.action is not None:
-                empirical_prior = control.get_expected_states(
-                    self.qs, self.B, self.action.reshape(1, -1) #type: ignore
-                )
-            else:
-                empirical_prior = self.D
-
-        qs = inference.update_posterior_states(
+            qs = inference.update_posterior_states(
             self.A,
             observation,
             empirical_prior,
             return_numpy=False,
             method=self.inference_algo,
             **self.inference_params
-        )
+            )
+        elif self.inference_algo is "MMP":
+            
+            qs, F = inference.update_posterior_states_v2(self.A, self.B, prev_obs, self.policies, self.prev_actions, prior = self.latest_prev_belief)  
+        
         self.qs = qs
 
         return qs
@@ -325,6 +354,9 @@ class Agent(object):
         )
 
         self.action = action
+
+        self.step_time()
+
         return action
 
     def update_A(self, obs):
@@ -364,7 +396,7 @@ class Agent(object):
         elif method == "VMP":
             raise NotImplementedError("VMP is not implemented")
         elif method == "MMP":
-            raise NotImplementedError("MMP is not implemented")
+            default_params = {"num_iter": 10, "grad_descent": False, "tau": 0.25, "save_vfe_seq":False}
         elif method == "BP":
             raise NotImplementedError("BP is not implemented")
         elif method == "EP":

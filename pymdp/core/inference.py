@@ -30,11 +30,10 @@ def update_posterior_states_v2(
     prev_actions=None,
     prior=None,
     return_numpy=True,
-    method=VANILLA,
     **kwargs,
 ):
     """
-    Update posterior over hidden states using desired scheme for variational inference. 
+    Update posterior over hidden states using marginal message passing
     """
     # safe convert to numpy
     A = utils.to_numpy(A)
@@ -60,11 +59,10 @@ def update_posterior_states_v2(
             ll_seq,
             policy,
             prev_actions=prev_actions,
-            prior=prior,
+            prior=prior[p_idx],
             num_iter=5,
             grad_descent=True,
         )
-
 
     return qs_seq_pi, F
 
