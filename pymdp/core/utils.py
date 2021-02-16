@@ -10,16 +10,27 @@ import numpy as np
 
 from pymdp.distributions import Categorical, Dirichlet
 
+def sample(probabilities):
+    # TODO dont assume dist class
+    # if probabilities.shape[1] > 1:
+    #     raise ValueError("Can only currently sample from [n x 1] distribution")
+    sample_onehot = np.random.multinomial(1, probabilities.squeeze())
+    return np.where(sample_onehot == 1)[0][0]
+
 
 def obj_array(shape):
     return np.empty(shape, dtype=object)
 
+def obj_array_zeros(shape_list):
+    arr = np.empty(len(shape_list), dtype=object)
+    for i, shape in enumerate(shape_list):
+        arr[i] = np.zeros(shape)
+    return arr
 
 def onehot(value, num_values):
     arr = np.zeros(num_values)
     arr[value] = 1.0
     return arr
-
 
 def random_A_matrix(num_obs, num_states):
     if type(num_obs) is int:
