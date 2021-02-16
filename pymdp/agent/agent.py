@@ -253,6 +253,8 @@ class Agent(object):
         return self.qs
 
     def infer_states(self, observation):
+        observation = tuple(observation)
+
         if not hasattr(self, "qs"):
             self.reset()
 
