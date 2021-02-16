@@ -29,6 +29,7 @@ class Agent(object):
         n_observations=None,
         n_controls=None,
         policy_len=1,
+        inference_horizon=1,
         control_fac_idx=None,
         policies=None,
         gamma=16.0,
@@ -178,11 +179,24 @@ class Agent(object):
         if inference_algo is None:
             self.inference_algo = "VANILLA"
             self.inference_params = self._get_default_params()
+            if inference_horizon > 1:
+                print("WARNING: if `inference_algo` is VANILLA, then inference_horizon must be 1\n. \
+                    Setting inference_horizon to default value of 1...\n")
+            else:
+                self.inference_horizon = 1
         else:
             self.inference_algo = inference_algo
             self.inference_params = self._get_default_params()
+            self.inference_horizon = inference_horizon
 
-        self.qs = self.D
+        # Initialise posterior beliefs over hidden states
+        if self.inference_horizon == 1:
+            self.qs = self.D
+        else:
+            self.qs = utils.obj_array(len(self.policies))
+            for p_i, _ in enumerate(self.policies):
+                self.qs[p_i] = utils.obj_array(inference_horizon + self.policy_len)
+                self.qs[p_i][0] = self.D
         self.action = None
 
     def _construct_A_distribution(self):
