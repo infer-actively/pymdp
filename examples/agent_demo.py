@@ -5,11 +5,11 @@ from pymdp.core.maths import softmax
 from pymdp.distributions import Categorical, Dirichlet
 import copy
 
-obs_names = ["state_observation", "reward"]
-state_names = ["reward_level", "playing_sampling_nothing"]
-action_names = ["uncontrolled", "playing_sampling_nothing"]
+obs_names = ["state_observation", "reward", "decision_proprioceptive"]
+state_names = ["reward_level", "decision_state"]
+action_names = ["uncontrolled", "decision_state"]
 
-num_obs = [3, 3]
+num_obs = [3, 3, 3]
 num_states = [2, 3]
 num_modalities = len(num_obs)
 num_factors = len(num_states)
@@ -17,9 +17,8 @@ num_factors = len(num_states)
 A = utils.obj_array_zeros([[o] + num_states for _, o in enumerate(num_obs)])
 
 A[0][:, :, 0] = np.ones( (num_obs[0], num_states[0]) ) / num_obs[0]
-A[0][:, 0, 1] = softmax(utils.onehot(0, num_obs[0]))
-A[0][:, 1, 1] = softmax(np.array([0.0, 1.0, 1.0]))
-A[0][:, :, 2] = np.array([[1.0, 0.0], [0.0, 0.0], [0.0, 1.0]])
+A[0][:, :, 1] = np.ones( (num_obs[0], num_states[0]) ) / num_obs[0]
+A[0][:, :, 2] = np.array([[0.8, 0.2], [0.0, 0.0], [0.2, 0.8]])
 
 # print(A[0][:,:,0])
 # print(A[0][:,:,1])
@@ -27,6 +26,11 @@ A[0][:, :, 2] = np.array([[1.0, 0.0], [0.0, 0.0], [0.0, 1.0]])
 A[1][2, :, 0] = np.ones(num_states[0])
 A[1][0:2, :, 1] = softmax(np.eye(num_obs[1] - 1)) # bandit statistics (mapping between reward-state (first hidden state factor) and rewards (Good vs Bad))
 A[1][2, :, 2] = np.ones(num_states[0])
+
+# establish a proprioceptive mapping that determines how the agent perceives its own `decision_state`
+A[2][0,:,0] = 1.0
+A[2][1,:,1] = 1.0
+A[2][2,:,2] = 1.0
 
 control_fac_idx = [1]
 B = utils.obj_array(num_factors)
@@ -48,14 +52,16 @@ agent = Agent(A=A, B=B, C=C, control_fac_idx=[1])
 
 # initial state
 T = 5
-o = [2, 2]
-s = [1, 0]
+o = [2, 2, 0]
+s = [0, 0]
 
-print(f"evidence vector about first factor, given hidden states: {A[0][o[0],:,s[1]]}\n")
-print(f"evidence vector about first factor, hidden states: {A[1][o[1],:,s[1]]}\n")
+# print(f"evidence vector about first factor provided by modality 1, given hidden states: {A[0][o[0],:,s[1]]}\n")
+# print(f"evidence vector about first factor provided by modality 2, given hidden states: {A[1][o[1],:,s[1]]}\n")
+# print(f"evidence vector about first factor provided by modality 3, given hidden states: {A[2][o[2],:,s[1]]}\n")
 
-print(f"evidence vector about second factor, given hidden states: {A[0][o[0],s[0],:]}\n")
-print(f"evidence vector about second factor, hidden states: {A[1][o[1],s[0],:]}\n")
+# print(f"evidence vector about second factor provided by modality 1, given hidden states: {A[0][o[0],s[0],:]}\n")
+# print(f"evidence vector about second factor provided by modality 2, hidden states: {A[1][o[1],s[0],:]}\n")
+# print(f"evidence vector about second factor provided by modality 3, given hidden states: {A[2][o[2],s[0],:]}\n")
 
 # transition/observation matrices characterising the generative process
 A_gp = copy.deepcopy(A)
