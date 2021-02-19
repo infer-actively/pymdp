@@ -18,13 +18,30 @@ def sample(probabilities):
     return np.where(sample_onehot == 1)[0][0]
 
 
-def obj_array(shape):
-    return np.empty(shape, dtype=object)
+def obj_array(num_arr):
+    """
+    Creates a generic object array with the desired number of sub-arrays, given by `num_arr`
+    """
+    return np.empty(num_arr, dtype=object)
 
 def obj_array_zeros(shape_list):
+    """ 
+    Creates a numpy object array whose sub-arrays are 1-D vectors
+    filled with zeros, with shapes given by shape_list[i]
+    """
     arr = np.empty(len(shape_list), dtype=object)
     for i, shape in enumerate(shape_list):
         arr[i] = np.zeros(shape)
+    return arr
+
+def obj_array_uniform(shape_list):
+    """ 
+    Creates a numpy object array whose sub-arrays are uniform Categorical
+    distributions with shapes given by shape_list[i]
+    """
+    arr = np.empty(len(shape_list), dtype=object)
+    for i, shape in enumerate(shape_list):
+        arr[i] = np.ones(shape)/shape
     return arr
 
 def onehot(value, num_values):
@@ -63,11 +80,25 @@ def random_B_matrix(num_states, num_controls):
     return B
 
 
-def get_model_dimensions(A, B):
-    num_obs = [a.shape[0] for a in A] if is_arr_of_arr(A) else [A.shape[0]]
-    num_states = [b.shape[0] for b in B] if is_arr_of_arr(B) else [B.shape[0]]
-    num_modalities = len(num_obs)
-    num_factors = len(num_states)
+def get_model_dimensions(A=None, B=None):
+
+    if A is None and B is None:
+        raise ValueError(
+                    "Must provide either `A` or `B`"
+                )
+
+    if A is not None:
+        num_obs = [a.shape[0] for a in A] if is_arr_of_arr(A) else [A.shape[0]]
+        num_modalities = len(num_obs)
+    else:
+        num_obs, num_modalities = None, None
+    
+    if B is not None:
+        num_states = [b.shape[0] for b in B] if is_arr_of_arr(B) else [B.shape[0]]
+        num_factors = len(num_states)
+    else:
+        num_states, num_factors = None, None
+    
     return num_obs, num_states, num_modalities, num_factors
 
 
