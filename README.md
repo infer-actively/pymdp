@@ -12,12 +12,20 @@ based on functions from the `SPM` [implementation](https://www.fil.ion.ucl.ac.uk
 
 ![status](https://img.shields.io/badge/status-development-orange)
 
-This package is under active development and is currently not suited for use. If you would like to contribute, please refer to [this file](CONTRIBUTING.md)
+This package is under active development. If you would like to contribute, please refer to [this file](CONTRIBUTING.md)
 
 ## Installation and Usage
 
 In order to use this code, download the `pymdp` folder into your project
 folder. You can now use all classes and functions via `import pymdp`
+
+## Getting started
+
+For an illustrative tutorial for how to use the functionalities of the `Agent()` class, which is used to perform active inference using the core functionality of `pymdp`, we recommend
+going through the Jupyter notebooks in the `pymdp/examples/` folder. `tmaze_demo.ipynb` is a good place to start, and provides a step-by-step walkthrough of how to build an instance
+of `Agent()`, sample observations from the generative process, and perform active inference. 
+
+THe `agent_demo.ipynb` notebook also provides a more 'naked' implementation of how to build and encode a generative model in terms of straight numpy arrays. Unlike the `tmaze_demo`, this doesn't rely on an environment constructor class, whose methods can build the `A`, `B`, etc. matrices for you.
 
 ## Requirements 
 
