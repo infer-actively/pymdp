@@ -15,7 +15,7 @@ from scipy.io import loadmat
 
 from pymdp import core
 from pymdp.core.utils import get_model_dimensions
-from pymdp.core.algos import run_mmp_v2
+from pymdp.core.algos import run_mmp
 from pymdp.core.maths import get_joint_likelihood_seq
 
 DATA_PATH = "test/matlab_crossval/output/"
@@ -112,9 +112,9 @@ class MMP(unittest.TestCase):
             uniform = np.ones(num_states[f]) / num_states[f]
             prior[f] = B[f][:, :, prev_actions[0, f]].dot(uniform)
 
-        ll_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
-        qs_seq, _ = run_mmp_v2(
-            A, B, ll_seq, policy, prev_actions[1:], prior=prior, num_iter=5, grad_descent=True
+        lh_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
+        qs_seq, _ = run_mmp(
+            lh_seq, B, policy, prev_actions[1:], prior=prior, num_iter=5, grad_descent=True
         )
 
         result_pymdp = qs_seq[-1]
@@ -145,9 +145,9 @@ class MMP(unittest.TestCase):
         )
 
         prev_actions = prev_actions[(max(0, curr_t - t_horizon)) :, :]
-        ll_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
-        qs_seq, _ = run_mmp_v2(
-            A, B, ll_seq, policy, prev_actions=prev_actions, prior=None, num_iter=5, grad_descent=True
+        lh_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
+        qs_seq, _ = run_mmp(lh_seq, 
+             B, policy, prev_actions=prev_actions, prior=None, num_iter=5, grad_descent=True
         )
 
         result_pymdp = qs_seq[-1]
@@ -179,9 +179,9 @@ class MMP(unittest.TestCase):
         )
 
         # prev_actions = prev_actions[(max(0, curr_t - t_horizon)) :, :]
-        ll_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
-        qs_seq, _ = run_mmp_v2(
-            A, B, ll_seq, policy, prev_actions=None, prior=None, num_iter=5, grad_descent=True
+        lh_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
+        qs_seq, _ = run_mmp(
+            lh_seq, B, policy, prev_actions=None, prior=None, num_iter=5, grad_descent=True
         )
 
         result_pymdp = qs_seq[-1]
@@ -219,20 +219,13 @@ class MMP(unittest.TestCase):
             uniform = np.ones(num_states[f]) / num_states[f]
             prior[f] = B[f][:, :, prev_actions[0, f]].dot(uniform)
 
-        ll_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
+        lh_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
 
-        # print(f"ll seq {len(ll_seq)}, actions passed {prev_actions[1:].shape} policy {policy.shape}")
-
-        # the variable infer_len in run_mmp_v2 is too long for test_mmp_d case - it needs to be shortened if it stretches beyond the true end time of the trial
-        qs_seq, _ = run_mmp_v2(
-            A, B, ll_seq, policy, prev_actions[1:], prior=prior, num_iter=5, grad_descent=True, last_timestep=True
+        qs_seq, _ = run_mmp(
+            lh_seq, B, policy, prev_actions[1:], prior=prior, num_iter=5, grad_descent=True, last_timestep=True
         )
-
-        # print(f"len_qs_seq: {len(qs_seq)}")
-        # print(f"qs_1: {qs_seq[-2][0]}, qs_2: {qs_seq[-2][1]}")
-
-        # result_pymdp = qs_seq[-2] # we have to do this - for some reason in this case there are one too many elements in qs_seq
-        result_pymdp = qs_seq[-1] # we have to do this - for some reason in this case there are one too many elements in qs_seq
+    
+        result_pymdp = qs_seq[-1] 
 
         for f in range(num_factors):
             self.assertTrue(np.isclose(result_spm[f].squeeze(), result_pymdp[f]).all())
@@ -263,138 +256,12 @@ class MMP(unittest.TestCase):
             uniform = np.ones(num_states[f]) / num_states[f]
             prior[f] = B[f][:, :, prev_actions[0, f]].dot(uniform)
 
-        ll_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
-        qs_seq, F = run_mmp_v2(
-            A, B, ll_seq, policy, prev_actions[1:], prior=prior, num_iter=5, grad_descent=False, save_vfe_seq=True
+        lh_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
+        qs_seq, F = run_mmp(
+            lh_seq, B, policy, prev_actions[1:], prior=prior, num_iter=5, grad_descent=False, save_vfe_seq=True
         )
 
         self.assertTrue((np.diff(np.array(F)) < 0).all())
-
-    
-    # def test_mmp_b_old(self):
-    #     """ Testing our SPM-ified version of `run_MMP` with
-    #     2 hidden state factors & 2 outcome modalities, at a random fixed
-    #     timestep during the generative process"""
-
-    #     array_path = os.path.join(os.getcwd(), DATA_PATH + "mmp_b.mat")
-    #     mat_contents = loadmat(file_name=array_path)
-
-    #     A = mat_contents["A"][0]
-    #     B = mat_contents["B"][0]
-    #     obs = mat_contents["obs_idx"].astype("int64")
-    #     policy = mat_contents["policy"].astype("int64") - 1
-    #     curr_t = mat_contents["t"][0, 0].astype("int64") - 1
-    #     t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")
-    #     T = obs.shape[1]
-    #     previous_actions = mat_contents["previous_actions"].astype("int64") - 1
-    #     result_spm = mat_contents["qs"][0]
-    #     _ = mat_contents["likelihoods"][0]
-
-    #     # Convert matlab index-style observations into list of array of arrays over time
-    #     num_obs = [A[g].shape[0] for g in range(len(A))]
-    #     obs_t = convert_observation_array(obs, num_obs)
-
-    #     qs, _, _, _ = core.algos.run_mmp(
-    #         A,
-    #         B,
-    #         obs_t,
-    #         policy,
-    #         curr_t,
-    #         t_horizon,
-    #         T,
-    #         use_gradient_descent=True,
-    #         num_iter=5,
-    #         previous_actions=previous_actions,
-    #     )
-
-    #     # Just check whether the latest beliefs (about curr_t, held at curr_t) match up
-    #     result_pymdp = qs[-1]
-    #     for f in range(len(B)):
-    #         self.assertTrue(np.isclose(result_spm[f].squeeze(), result_pymdp[f]).all())
-    
-    # def test_mmp_c_old(self):
-    #     """ Testing our SPM-ified version of `run_MMP` with
-    #     2 hidden state factors & 2 outcome modalities, at the first
-    #     timestep of the generative process (boundary condition test)"""
-
-    #     array_path = os.path.join(os.getcwd(), DATA_PATH + "mmp_c.mat")
-    #     mat_contents = loadmat(file_name=array_path)
-
-    #     A = mat_contents["A"][0]
-    #     B = mat_contents["B"][0]
-    #     obs = mat_contents["obs_idx"].astype("int64")
-    #     policy = mat_contents["policy"].astype("int64") - 1
-    #     curr_t = mat_contents["t"][0, 0].astype("int64") - 1
-    #     t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")
-    #     T = obs.shape[1]
-    #     previous_actions = mat_contents["previous_actions"].astype("int64") - 1
-    #     result_spm = mat_contents["qs"][0]
-    #     _ = mat_contents["likelihoods"][0]
-
-    #     # Convert matlab index-style observations into list of array of arrays over time
-    #     num_obs = [A[g].shape[0] for g in range(len(A))]
-    #     obs_t = convert_observation_array(obs, num_obs)
-
-    #     qs, _, _, _ = core.algos.run_mmp(
-    #         A,
-    #         B,
-    #         obs_t,
-    #         policy,
-    #         curr_t,
-    #         t_horizon,
-    #         T,
-    #         use_gradient_descent=True,
-    #         num_iter=5,
-    #         previous_actions=previous_actions,
-    #     )
-
-    #     # Just check whether the latest beliefs (about curr_t, held at curr_t) match up
-    #     result_pymdp = qs[-1]
-    #     for f in range(len(B)):
-    #         self.assertTrue(np.isclose(result_spm[f].squeeze(), result_pymdp[f]).all())
-    
-    # def test_mmp_d_old(self):
-    #     """ Testing our SPM-ified version of `run_MMP` with
-    #     2 hidden state factors & 2 outcome modalities, at the final
-    #     timestep of the generative process (boundary condition test)"""
-
-    #     array_path = os.path.join(os.getcwd(), DATA_PATH + "mmp_d.mat")
-    #     mat_contents = loadmat(file_name=array_path)
-
-    #     A = mat_contents["A"][0]
-    #     B = mat_contents["B"][0]
-    #     obs = mat_contents["obs_idx"].astype("int64")
-    #     policy = mat_contents["policy"].astype("int64") - 1
-    #     curr_t = mat_contents["t"][0, 0].astype("int64") - 1
-    #     t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")
-    #     T = obs.shape[1]
-    #     previous_actions = mat_contents["previous_actions"].astype("int64") - 1
-    #     result_spm = mat_contents["qs"][0]
-    #     _ = mat_contents["likelihoods"][0]
-
-    #     # Convert matlab index-style observations into list of array of arrays over time
-    #     num_obs = [A[g].shape[0] for g in range(len(A))]
-    #     obs_t = convert_observation_array(obs, num_obs)
-
-    #     qs, _, _, _ = core.algos.run_mmp(
-    #         A,
-    #         B,
-    #         obs_t,
-    #         policy,
-    #         curr_t,
-    #         t_horizon,
-    #         T,
-    #         use_gradient_descent=True,
-    #         num_iter=5,
-    #         previous_actions=previous_actions,
-    #     )
-
-    #     # Just check whether the latest beliefs (about curr_t, held at curr_t) match up
-    #     result_pymdp = qs[-1]
-
-    #     for f in range(len(B)):
-    #         self.assertTrue(np.isclose(result_spm[f].squeeze(), result_pymdp[f]).all())
-
 
 
 if __name__ == "__main__":

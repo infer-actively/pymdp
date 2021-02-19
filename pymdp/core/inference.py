@@ -12,7 +12,7 @@ import numpy as np
 
 from pymdp.core import utils
 from pymdp.core.maths import get_joint_likelihood_seq
-from pymdp.core.algos import run_fpi, run_mmp_v2
+from pymdp.core.algos import run_fpi, run_mmp
 
 VANILLA = "VANILLA"
 VMP = "VMP"
@@ -46,20 +46,19 @@ def update_posterior_states_v2(
     if prior is not None:
         prior = utils.process_prior(prior, num_factors)
 
-    ll_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
+    lh_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
 
     qs_seq_pi = utils.obj_array(len(policies))
     F = np.zeros(len(policies)) # variational free energy of policies
 
     for p_idx, policy in enumerate(policies):
         # get sequence and the free energy for policy
-        qs_seq_pi[p_idx], F[p_idx] = run_mmp_v2(
-            A,
+        qs_seq_pi[p_idx], F[p_idx] = run_mmp(
+            lh_seq,
             B,
-            ll_seq,
             policy,
             prev_actions=prev_actions,
-            prior=prior[p_idx],
+            prior=prior, # @NOTE: we need to figure this out, in case that the prior is passed from previous timestep in a policy-dependent fashion. So you'd have `prior[p_idx]` instead
             num_iter=5,
             grad_descent=True,
         )
