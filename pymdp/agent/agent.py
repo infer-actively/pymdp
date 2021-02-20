@@ -10,7 +10,8 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import numpy as np
 from pymdp.distributions import Categorical, Dirichlet
 from pymdp.core import inference, control, learning
-
+from pymdp.core import utils
+import copy
 
 class Agent(object):
     """ 
@@ -29,6 +30,7 @@ class Agent(object):
         n_observations=None,
         n_controls=None,
         policy_len=1,
+        inference_horizon=1,
         control_fac_idx=None,
         policies=None,
         gamma=16.0,
@@ -42,6 +44,8 @@ class Agent(object):
         lr_pA=1.0,
         factors_to_learn="all",
         lr_pB=1.0,
+        use_BMA = False,
+        policy_sep_prior = False
     ):
 
         ### Constant parameters ###
@@ -178,12 +182,24 @@ class Agent(object):
         if inference_algo is None:
             self.inference_algo = "VANILLA"
             self.inference_params = self._get_default_params()
+            if inference_horizon > 1:
+                print("WARNING: if `inference_algo` is VANILLA, then inference_horizon must be 1\n. \
+                    Setting inference_horizon to default value of 1...\n")
+            else:
+                self.inference_horizon = 1
         else:
             self.inference_algo = inference_algo
             self.inference_params = self._get_default_params()
+            self.inference_horizon = inference_horizon
+        
+        self.edge_handling_params = {}
+        self.edge_handling_params['use_BMA'] = use_BMA
+        self.edge_handling_params['policy_sep_prior'] = policy_sep_prior
 
-        self.qs = self.D
+        self.reset()
+        
         self.action = None
+        self.prev_actions = None
 
     def _construct_A_distribution(self):
         if self.n_modalities == 1:
@@ -242,8 +258,27 @@ class Agent(object):
         return policies, n_controls
 
     def reset(self, init_qs=None):
+
+        self.curr_timestep = 1
+
         if init_qs is None:
-            self.qs = self._construct_D_prior()
+            if self.inference_horizon == 1:
+                self.qs = self._construct_D_prior()
+            else: # in the case you're doing MMP (i.e. you have an inference_horizon > 1), we have to account for policy- and timestep-conditioned posterior beliefs
+                self.qs = utils.obj_array(len(self.policies))
+                for p_i, _ in enumerate(self.policies):
+                    self.qs[p_i] = utils.obj_array(inference_horizon + self.policy_len + 1) # + 1 to include belief about current timestep
+                    self.qs[p_i][0] = copy.deepcopy(self.D) # initialize the very first belief of the inference_len as the prior over initial hidden states
+                
+                first_belief = utils.obj_array(len(self.policies))
+                for p_i, _ in enumerate(self.policies):
+                    first_belief[p_i] = copy.deepcopy(self.D) 
+                
+                if self.edge_handling_params['policy_sep_prior']:
+                    self.set_latest_beliefs(last_belief = first_belief)
+                else:
+                    self.set_latest_beliefs(last_belief = self.D)
+            
         else:
             if isinstance(init_qs, Categorical):
                 self.qs = init_qs
@@ -251,6 +286,35 @@ class Agent(object):
                 self.qs = Categorical(values=init_qs)
 
         return self.qs
+
+    def step_time(self):
+
+        self.curr_timestep += 1
+
+        if self.inference_algo == "MMP":
+            if (self.curr_timestep - self.inference_horizon) > 0:
+                self.set_latest_beliefs()
+        
+        return self.curr_timestep
+    
+    def set_latest_beliefs(self,last_belief=None):
+        """
+        This method sets the 'last' belief before the inference horizon. In the case that the inference
+        horizon reaches back to the first timestep of the simulation, then the `latest_belief` is
+        identical to the first belief / the prior (`self.D`). 
+        """
+
+        if last_belief is None:
+            last_belief = utils.obj_array(len(self.policies))
+            for p_i, _ in enumerate(self.policies):
+                last_belief[p_i] = copy.deepcopy(self.qs[p_i][0])
+
+        if self.edge_handling_params['use_BMA']:
+            self.latest_belief = inference.average_states_over_policies(last_belief, self.q_pi) # average the earliest marginals together using posterior over policies (`self.q_pi`)
+        else:
+            self.latest_belief = last_belief
+
+        return self.latest_belief
 
     def infer_states(self, observation):
         observation = tuple(observation)
@@ -265,22 +329,27 @@ class Agent(object):
                 )
             else:
                 empirical_prior = self.D.log()
-        else:
-            if self.action is not None:
-                empirical_prior = control.get_expected_states(
-                    self.qs, self.B, self.action.reshape(1, -1) #type: ignore
-                )
-            else:
-                empirical_prior = self.D
-
-        qs = inference.update_posterior_states(
+            qs = inference.update_posterior_states(
             self.A,
             observation,
             empirical_prior,
             return_numpy=False,
             method=self.inference_algo,
             **self.inference_params
-        )
+            )
+        elif self.inference_algo is "MMP":
+            
+            qs, F = inference.update_posterior_states_v2(
+                self.A, 
+                self.B, 
+                prev_obs, 
+                self.policies, 
+                self.prev_actions, 
+                prior = self.latest_belief, 
+                policy_sep_prior = self.edge_handling_params['policy_sep_prior'],
+                **self.inference_params
+            )  
+    
         self.qs = qs
 
         return qs
@@ -311,6 +380,9 @@ class Agent(object):
         )
 
         self.action = action
+
+        self.step_time()
+
         return action
 
     def update_A(self, obs):
@@ -320,7 +392,7 @@ class Agent(object):
         )
 
         self.pA = pA_updated
-        self.A = pA_updated.mean()
+        self.A = pA_updated.mean() 
 
         return pA_updated
 
@@ -347,10 +419,10 @@ class Agent(object):
         default_params = None
         if method == "VANILLA":
             default_params = {"num_iter": 10, "dF": 1.0, "dF_tol": 0.001}
+        elif method == "MMP":
+            default_params = {"num_iter": 10, "grad_descent": False, "tau": 0.25, "save_vfe_seq": False}
         elif method == "VMP":
             raise NotImplementedError("VMP is not implemented")
-        elif method == "MMP":
-            raise NotImplementedError("MMP is not implemented")
         elif method == "BP":
             raise NotImplementedError("BP is not implemented")
         elif method == "EP":

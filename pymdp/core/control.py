@@ -677,7 +677,7 @@ def sample_action(q_pi, policies, n_control, sampling_type="marginal_action"):
         or simply the action entailed by a sample from the posterior over policies
     Returns
     ----------
-    selectedPolicy [1D numpy ndarray]:
+    selected_policy [1D numpy ndarray]:
         Numpy array containing the indices of the actions along each control factor
     """
 

@@ -2,7 +2,7 @@ import numpy as np
 
 from pymdp.core.utils import random_A_matrix, random_B_matrix, obj_array, onehot
 from pymdp.core.maths import get_joint_likelihood_seq
-from pymdp.core.algos import run_mmp_v2
+from pymdp.core.algos import run_mmp
 
 
 def rand_onehot_obs(num_obs):
@@ -37,7 +37,7 @@ if __name__ == "__main__":
     prev_actions = np.array([rand_controls(num_controls) for _ in range(past_len)])
     policy = np.array([rand_controls(num_controls) for _ in range(future_len)])
                                                      
-    ll_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
-    qs_seq = run_mmp_v2(A, B, ll_seq, policy, grad_descent=True)
+    lh_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
+    qs_seq = run_mmp(lh_seq, B, policy, grad_descent=True)
     for t, qs in enumerate(qs_seq):
         print(f"Step {t} shape {[el.shape for el in qs]}")

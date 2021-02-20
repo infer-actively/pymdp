@@ -12,7 +12,7 @@ import numpy as np
 
 from pymdp.core import utils
 from pymdp.core.maths import get_joint_likelihood_seq
-from pymdp.core.algos import run_fpi, run_mmp_v2
+from pymdp.core.algos import run_fpi, run_mmp
 
 VANILLA = "VANILLA"
 VMP = "VMP"
@@ -30,11 +30,11 @@ def update_posterior_states_v2(
     prev_actions=None,
     prior=None,
     return_numpy=True,
-    method=VANILLA,
+    policy_sep_prior = True,
     **kwargs,
 ):
     """
-    Update posterior over hidden states using desired scheme for variational inference. 
+    Update posterior over hidden states using marginal message passing
     """
     # safe convert to numpy
     A = utils.to_numpy(A)
@@ -45,26 +45,39 @@ def update_posterior_states_v2(
 
     prev_obs = utils.process_observation_seq(prev_obs, num_modalities, num_obs)
     if prior is not None:
-        prior = utils.process_prior(prior, num_factors)
+        if policy_sep_prior:
+            for p_idx, policy in enumerate(policies):
+                prior[p_idx] = utils.process_prior(prior[p_idx], num_factors)
+        else:
+            prior = utils.process_prior(prior, num_factors)
 
-    ll_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
+    lh_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
 
     qs_seq_pi = utils.obj_array(len(policies))
     F = np.zeros(len(policies)) # variational free energy of policies
 
-    for p_idx, policy in enumerate(policies):
-        # get sequence and the free energy for policy
-        qs_seq_pi[p_idx], F[p_idx] = run_mmp_v2(
-            A,
-            B,
-            ll_seq,
-            policy,
-            prev_actions=prev_actions,
-            prior=prior,
-            num_iter=5,
-            grad_descent=True,
-        )
-
+    if policy_sep_prior:
+        for p_idx, policy in enumerate(policies):
+            # get sequence and the free energy for policy
+            qs_seq_pi[p_idx], F[p_idx] = run_mmp(
+                lh_seq,
+                B,
+                policy,
+                prev_actions=prev_actions,
+                prior=prior[p_idx], 
+                **kwargs
+            )
+    else:
+        for p_idx, policy in enumerate(policies):
+            # get sequence and the free energy for policy
+            qs_seq_pi[p_idx], F[p_idx] = run_mmp(
+                lh_seq,
+                B,
+                policy,
+                prev_actions=prev_actions,
+                prior=prior, 
+                **kwargs
+            )
 
     return qs_seq_pi, F
 

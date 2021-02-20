@@ -679,45 +679,6 @@ class TestControl(unittest.TestCase):
             pB_info_gains[idx] += control.calc_pB_info_gain(pB, qs_pi, qs, policy)
         self.assertGreater(pB_info_gains[1], pB_info_gains[0])
 
-# class TestControl_v2(unittest.TestCase):
-#     def test_update_posterior_policies(self):
-#         """
-#         Test for (the new-and-improved version of) computing posterior over policies (and associated expected free energies)
-#         in the case of a posterior over hidden states with a single hidden state factor. 
-#         This version tests using a policy horizon of 1 step ahead
-#         """
-
-#         # need to initialize some generic inputs for the new update_psoterior_policies, e.g.
-#         # variables like `qs_seq_pi_future`
-
-#         # add in __option__ for F and E
-#         q_pi, efe = update_posterior_policies_v2(
-#             qs_seq_pi_future,
-#             A,
-#             B,
-#             C,
-#             policies,
-#             use_utility=True,
-#             use_states_info_gain=True,
-#             use_param_info_gain=False,
-#             prior = None,
-#             pA=None,
-#             pB=None,
-#             F = None,
-#             E = None,
-#             gamma=16.0,
-#             return_numpy=True,
-#         )
-
-#         """
-#         @NOTE: not sure these length checks are really rigorous enough - maybe we should have some pre-computed Q(pi)'s or EFE vectors,
-#         either computed here 'manually' (outside the function) or even more rigorously, used a fixed random generative model benchmark from MATLAB
-#         """
-#         # self.assertEqual(len(q_pi), len(policies)) # type: ignore
-#         # self.assertEqual(len(efe), len(policies))
-
-    
-
 
 if __name__ == "__main__":
     unittest.main()

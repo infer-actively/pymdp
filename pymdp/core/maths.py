@@ -12,6 +12,7 @@ import numpy as np
 from scipy import special
 from pymdp.core import utils
 
+EPS_VAL = 1e-16 # global constant for use in spm_log() function
 
 def spm_dot(X, x, dims_to_omit=None):
     """ Dot product of a multidimensional array with `x`. The dimensions in `dims_to_omit` 
@@ -214,9 +215,15 @@ def spm_norm(A):
     Returns normalization of Categorical distribution, 
     stored in the columns of A.
     """
-    A = A + 1e-16
+    A = A + EPS_VAL
     normed_A = np.divide(A, A.sum(axis=0))
     return normed_A
+
+def spm_log(arr):
+    """
+    Adds small epsilon value to an array before natural logging it
+    """
+    return np.log(arr + EPS_VAL)
 
 
 def spm_wnorm(A):
@@ -224,7 +231,7 @@ def spm_wnorm(A):
     Returns Expectation of logarithm of Dirichlet parameters over a set of 
     Categorical distributions, stored in the columns of A.
     """
-    A = A + 1e-16
+    A = A + EPS_VAL
     norm = np.divide(1.0, np.sum(A, axis=0))
     avg = np.divide(1.0, A)
     wA = norm - avg
@@ -314,12 +321,15 @@ def spm_MDP_G(A, x):
         namely, this scores how much an expected observation would update beliefs 
         about hidden states x, were it to be observed. 
     """
-    if A.dtype == "object":
-        Ng = len(A)
-        AOA_flag = True
-    else:
-        Ng = 1
-        AOA_flag = False
+
+    # if A.dtype == "object":
+    #     Ng = len(A)
+    #     AOA_flag = True
+    # else:
+    #     Ng = 1
+    #     AOA_flag = False
+
+    _, _, Ng, _ = utils.get_model_dimensions(A=A)
 
     # Probability distribution over the hidden causes: i.e., Q(x)
     qx = spm_cross(x)
@@ -327,7 +337,7 @@ def spm_MDP_G(A, x):
     qo = 0
     idx = np.array(np.where(qx > np.exp(-16))).T
 
-    if AOA_flag:
+    if utils.is_arr_of_arr(A):
         # Accumulate expectation of entropy: i.e., E[lnP(o|x)]
         for i in idx:
             # Probability over outcomes for this combination of causes
@@ -349,7 +359,8 @@ def spm_MDP_G(A, x):
             G += qx[tuple(i)] * po.dot(np.log(po + np.exp(-16)))
 
     # Subtract negative entropy of expectations: i.e., E[lnQ(o)]
-    G = G - qo.dot(np.log(qo + np.exp(-16)))  # type: ignore
+    # G = G - qo.dot(np.log(qo + np.exp(-16)))  # type: ignore
+    G = G - qo.dot(spm_log(qo))  # type: ignore
 
     return G
 
