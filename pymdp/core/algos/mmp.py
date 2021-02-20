@@ -134,9 +134,9 @@ def run_mmp(
 
                 if save_vfe_seq:
                     if t < past_len:
-                        F.append(F[-1] + calc_free_energy(qs_seq[t], prior, num_factors, likelihood = spm_log(lh_seq[t]) ))
+                        F.append(F[-1] + calc_free_energy(qs_seq[t], prior, num_factors, likelihood = spm_log(lh_seq[t]) )[0] )
                     else:
-                        F.append(F[-1] + calc_free_energy(qs_seq[t], prior, num_factors))
+                        F.append(F[-1] + calc_free_energy(qs_seq[t], prior, num_factors)[0] )
                 else:
                     if t < past_len:
                         F += calc_free_energy(qs_seq[t], prior, num_factors, likelihood = spm_log(lh_seq[t]) )
