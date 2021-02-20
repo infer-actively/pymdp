@@ -30,6 +30,7 @@ def update_posterior_states_v2(
     prev_actions=None,
     prior=None,
     return_numpy=True,
+    policy_sep_prior = True,
     **kwargs,
 ):
     """
@@ -44,24 +45,39 @@ def update_posterior_states_v2(
 
     prev_obs = utils.process_observation_seq(prev_obs, num_modalities, num_obs)
     if prior is not None:
-        prior = utils.process_prior(prior, num_factors)
+        if policy_sep_prior:
+            for p_idx, policy in enumerate(policies):
+                prior[p_idx] = utils.process_prior(prior[p_idx], num_factors)
+        else:
+            prior = utils.process_prior(prior, num_factors)
 
     lh_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
 
     qs_seq_pi = utils.obj_array(len(policies))
     F = np.zeros(len(policies)) # variational free energy of policies
 
-    for p_idx, policy in enumerate(policies):
-        # get sequence and the free energy for policy
-        qs_seq_pi[p_idx], F[p_idx] = run_mmp(
-            lh_seq,
-            B,
-            policy,
-            prev_actions=prev_actions,
-            prior=prior, # @NOTE: we need to figure this out, in case that the prior is passed from previous timestep in a policy-dependent fashion. So you'd have `prior[p_idx]` instead
-            num_iter=5,
-            grad_descent=True,
-        )
+    if policy_sep_prior:
+        for p_idx, policy in enumerate(policies):
+            # get sequence and the free energy for policy
+            qs_seq_pi[p_idx], F[p_idx] = run_mmp(
+                lh_seq,
+                B,
+                policy,
+                prev_actions=prev_actions,
+                prior=prior[p_idx], 
+                **kwargs
+            )
+    else:
+        for p_idx, policy in enumerate(policies):
+            # get sequence and the free energy for policy
+            qs_seq_pi[p_idx], F[p_idx] = run_mmp(
+                lh_seq,
+                B,
+                policy,
+                prev_actions=prev_actions,
+                prior=prior, 
+                **kwargs
+            )
 
     return qs_seq_pi, F
 

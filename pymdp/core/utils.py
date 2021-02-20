@@ -204,12 +204,10 @@ def process_observation(obs, n_modalities, n_observations):
 
 def process_prior(prior, n_factors):
     """
-    Helper function for formatting observations  
-    
-    @TODO
-    """
+    Helper function for formatting prior beliefs  
+        """
     if is_distribution(prior):
-        prior_arr = np.empty(n_factors, dtype=object)
+        prior_arr = obj_array(n_factors)
         if n_factors == 1:
             prior_arr[0] = prior.values.squeeze()
         else:
