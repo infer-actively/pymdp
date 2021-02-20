@@ -20,9 +20,6 @@ A[0][:, :, 0] = np.ones( (num_obs[0], num_states[0]) ) / num_obs[0]
 A[0][:, :, 1] = np.ones( (num_obs[0], num_states[0]) ) / num_obs[0]
 A[0][:, :, 2] = np.array([[0.8, 0.2], [0.0, 0.0], [0.2, 0.8]])
 
-# print(A[0][:,:,0])
-# print(A[0][:,:,1])
-
 A[1][2, :, 0] = np.ones(num_states[0])
 A[1][0:2, :, 1] = softmax(np.eye(num_obs[1] - 1)) # bandit statistics (mapping between reward-state (first hidden state factor) and rewards (Good vs Bad))
 A[1][2, :, 2] = np.ones(num_states[0])
@@ -45,7 +42,7 @@ for f, ns in enumerate(num_states):
 
 C = utils.obj_array_zeros([num_ob for num_ob in num_obs])
 C[1][0] = 1.0  # put a 'reward' over first observation
-C[1][1] = -5.0  # put a 'punishment' over first observation
+C[1][1] = -2.0  # put a 'punishment' over first observation
 # this implies that C[1][2] is 'neutral'
 
 agent = Agent(A=A, B=B, C=C, control_fac_idx=[1])
@@ -54,14 +51,6 @@ agent = Agent(A=A, B=B, C=C, control_fac_idx=[1])
 T = 5
 o = [2, 2, 0]
 s = [0, 0]
-
-# print(f"evidence vector about first factor provided by modality 1, given hidden states: {A[0][o[0],:,s[1]]}\n")
-# print(f"evidence vector about first factor provided by modality 2, given hidden states: {A[1][o[1],:,s[1]]}\n")
-# print(f"evidence vector about first factor provided by modality 3, given hidden states: {A[2][o[2],:,s[1]]}\n")
-
-# print(f"evidence vector about second factor provided by modality 1, given hidden states: {A[0][o[0],s[0],:]}\n")
-# print(f"evidence vector about second factor provided by modality 2, hidden states: {A[1][o[1],s[0],:]}\n")
-# print(f"evidence vector about second factor provided by modality 3, given hidden states: {A[2][o[2],s[0],:]}\n")
 
 # transition/observation matrices characterising the generative process
 A_gp = copy.deepcopy(A)
