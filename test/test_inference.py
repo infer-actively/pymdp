@@ -73,7 +73,7 @@ class Inference(unittest.TestCase):
         ]
         prior = rand_dist_states(num_states)
 
-        qs_seq_pi, VFE_policies = update_posterior_states_v2(A, B, prev_obs, policies, prev_actions, prior=prior)
+        qs_seq_pi, VFE_policies = update_posterior_states_v2(A, B, prev_obs, policies, prev_actions, prior=prior, policy_sep_prior = False)
 
         qs_seq_pi_future = utils.obj_array(num_policies)
         for p_idx in range(num_policies):
