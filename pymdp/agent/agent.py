@@ -44,7 +44,7 @@ class Agent(object):
         lr_pA=1.0,
         factors_to_learn="all",
         lr_pB=1.0,
-        use_BMA = False,
+        use_BMA = True,
         policy_sep_prior = False
     ):
 
@@ -179,6 +179,10 @@ class Agent(object):
         if construct_B_flag:
             self.B = self._construct_B_distribution()
 
+        self.edge_handling_params = {}
+        self.edge_handling_params['use_BMA'] = use_BMA
+        self.edge_handling_params['policy_sep_prior'] = policy_sep_prior
+
         if inference_algo is None:
             self.inference_algo = "VANILLA"
             self.inference_params = self._get_default_params()
@@ -190,12 +194,9 @@ class Agent(object):
         else:
             self.inference_algo = inference_algo
             self.inference_params = self._get_default_params()
-            self.inference_horizon = inference_horizon
+            self.inference_horizon = 1
         
-        self.edge_handling_params = {}
-        self.edge_handling_params['use_BMA'] = use_BMA
-        self.edge_handling_params['policy_sep_prior'] = policy_sep_prior
-
+        self.prev_obs = []
         self.reset()
         
         self.action = None
@@ -262,13 +263,14 @@ class Agent(object):
         self.curr_timestep = 1
 
         if init_qs is None:
-            if self.inference_horizon == 1:
-                self.qs = self._construct_D_prior()
+            if self.inference_algo == 'VANILLA':
+                self.qs = utils.obj_array_uniform(self.n_states)
             else: # in the case you're doing MMP (i.e. you have an inference_horizon > 1), we have to account for policy- and timestep-conditioned posterior beliefs
                 self.qs = utils.obj_array(len(self.policies))
                 for p_i, _ in enumerate(self.policies):
-                    self.qs[p_i] = utils.obj_array(inference_horizon + self.policy_len + 1) # + 1 to include belief about current timestep
-                    self.qs[p_i][0] = copy.deepcopy(self.D) # initialize the very first belief of the inference_len as the prior over initial hidden states
+                    self.qs[p_i] = utils.obj_array(self.inference_horizon + self.policy_len + 1) # + 1 to include belief about current timestep
+                    # self.qs[p_i][0] = copy.deepcopy(self.D) # initialize the very first belief of the inference_horizon as the prior over initial hidden states
+                    self.qs[p_i][0] = utils.obj_array_uniform(self.n_states)
                 
                 first_belief = utils.obj_array(len(self.policies))
                 for p_i, _ in enumerate(self.policies):
@@ -309,7 +311,7 @@ class Agent(object):
             for p_i, _ in enumerate(self.policies):
                 last_belief[p_i] = copy.deepcopy(self.qs[p_i][0])
 
-        if self.edge_handling_params['use_BMA']:
+        if self.edge_handling_params['use_BMA'] and (self.curr_timestep - self.inference_horizon > 0):
             self.latest_belief = inference.average_states_over_policies(last_belief, self.q_pi) # average the earliest marginals together using posterior over policies (`self.q_pi`)
         else:
             self.latest_belief = last_belief
@@ -338,11 +340,15 @@ class Agent(object):
             **self.inference_params
             )
         elif self.inference_algo is "MMP":
+
+            self.prev_obs.append(observation)
+            if len(self.prev_obs) > self.inference_horizon:
+                self.prev_obs = self.prev_obs[:self.inference_horizon]
             
             qs, F = inference.update_posterior_states_v2(
-                self.A, 
-                self.B, 
-                prev_obs, 
+                utils.to_numpy(self.A),
+                utils.to_numpy(self.B), 
+                self.prev_obs, 
                 self.policies, 
                 self.prev_actions, 
                 prior = self.latest_belief, 
@@ -370,6 +376,26 @@ class Agent(object):
             self.gamma,
             return_numpy=False,
         )
+
+        # q_pi, efe = update_posterior_policies_v2(
+        #     qs_seq_pi,
+        #     A,
+        #     B,
+        #     C,
+        #     policies,
+        #     use_utility=True,
+        #     use_states_info_gain=True,
+        #     use_param_info_gain=False,
+        #     prior=None,
+        #     pA=None,
+        #     pB=None,
+        #     F = None,
+        #     E = None,
+        #     gamma=16.0,
+        #     return_numpy=True,
+        # ):  
+
+        
         self.q_pi = q_pi
         self.efe = efe
         return q_pi, efe

@@ -171,7 +171,9 @@ def update_posterior_states(A, obs, prior=None, return_numpy=True, method=VANILL
         n_modalities = 1
         n_observations = [A.shape[0]]
 
+
     obs = utils.process_observation(obs, n_modalities, n_observations)
+
     if prior is not None:
         prior = utils.process_prior(prior, n_factors)
 
