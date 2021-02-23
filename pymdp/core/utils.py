@@ -169,7 +169,7 @@ def process_observation_seq(obs_seq, n_modalities, n_observations):
     
     @TODO maybe provide error messaging about observation format
     """
-    proc_obs_seq = np.empty(len(obs_seq), dtype=object)
+    proc_obs_seq = obj_array(len(obs_seq))
     for t in range(len(obs_seq)):
         proc_obs_seq[t] = process_observation(obs_seq[t], n_modalities, n_observations)
     return proc_obs_seq
@@ -179,7 +179,7 @@ def process_observation(obs, n_modalities, n_observations):
     Helper function for formatting observations    
 
         Observations can either be `Categorical`, `int` (converted to one-hot)
-        or `tuple` (obs for each modality)
+        `tuple` (obs for each modality), or `list` (obs for each modality)
     
     @TODO maybe provide error messaging about observation format
     """
@@ -192,12 +192,14 @@ def process_observation(obs, n_modalities, n_observations):
                 obs[m] = obs[m].squeeze()
 
     if isinstance(obs, (int, np.integer)):
-        obs = np.eye(n_observations[0])[obs]
+        # obs = np.eye(n_observations[0])[obs]
+        obs = onehot(obs, n_observations[0])
 
-    if isinstance(obs, tuple):
+    if isinstance(obs, tuple) or isinstance(obs,list):
         obs_arr_arr = np.empty(n_modalities, dtype=object)
         for m in range(n_modalities):
-            obs_arr_arr[m] = np.eye(n_observations[m])[obs[m]]
+            # obs_arr_arr[m] = np.eye(n_observations[m])[obs[m]]
+            obs_arr_arr[m] = onehot(obs[m], n_observations[m])
         obs = obs_arr_arr
 
     return obs
