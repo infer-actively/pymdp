@@ -9,7 +9,7 @@ __author__: Conor Heins, Beren Millidge, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 from pymdp.core.maths import spm_dot, get_joint_likelihood, softmax, calc_free_energy
-
+from itertools import chain
 
 def run_fpi(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, dF_tol=0.001):
     """
@@ -116,16 +116,23 @@ def run_fpi(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, d
             # Initialise variational free energy
             vfe = 0
 
+            arg_list = [likelihood, list(range(n_factors))]
+            arg_list = arg_list + list(chain(*([qs_i,[i]] for i, qs_i in enumerate(qs)))) + [list(range(n_factors))]
+            LL_tensor = np.einsum(*arg_list)
+            for factor, qs_i in enumerate(qs):
+                qL = np.einsum(LL_tensor, list(range(n_factors)), 1.0/qs_i, [factor], [factor])
+                qs[factor] = softmax(qL + prior[factor])
+
             # List of orders in which marginal posteriors are sequentially multiplied into the joint likelihood:
             # First order loops over factors starting at index = 0, second order goes in reverse
-            factor_orders = [range(n_factors), range((n_factors - 1), -1, -1)]
+            # factor_orders = [range(n_factors), range((n_factors - 1), -1, -1)]
 
             # iteratively marginalize out each posterior marginal from the joint log-likelihood
             # except for the one associated with a given factor
-            for factor_order in factor_orders:
-                for factor in factor_order:
-                    qL = spm_dot(likelihood, qs, [factor])
-                    qs[factor] = softmax(qL + prior[factor])
+            # for factor_order in factor_orders:
+                # for factor in factor_order:
+                #     qL = spm_dot(likelihood, qs, [factor])
+                #     qs[factor] = softmax(qL + prior[factor])
 
             # calculate new free energy
             vfe = calc_free_energy(qs, prior, n_factors, likelihood)
