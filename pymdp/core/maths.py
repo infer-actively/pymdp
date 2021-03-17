@@ -11,10 +11,51 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import numpy as np
 from scipy import special
 from pymdp.core import utils
+from itertools import chain
 
 EPS_VAL = 1e-16 # global constant for use in spm_log() function
 
 def spm_dot(X, x, dims_to_omit=None):
+    """ Dot product of a multidimensional array with `x`. The dimensions in `dims_to_omit` 
+    will not be summed across during the dot product
+    
+    Parameters
+    ----------
+    - `x` [1D numpy.ndarray] - either vector or array of arrays
+        The alternative array to perform the dot product with
+    - `dims_to_omit` [list :: int] (optional)
+        Which dimensions to omit
+    
+    Returns 
+    -------
+    - `Y` [1D numpy.ndarray] - the result of the dot product
+    """
+
+    # Construct dims to perform dot product on
+    if utils.is_arr_of_arr(x):
+        # dims = list((np.arange(0, len(x)) + X.ndim - len(x)).astype(int))
+        dims = list(range(X.ndim - len(x),len(x)+X.ndim - len(x)))
+        # dims = list(range(X.ndim))
+    else:
+        dims = [1]
+        x = utils.to_arr_of_arr(x)
+
+    if dims_to_omit is not None:
+        arg_list = [X, list(range(X.ndim))] + list(chain(*([x[xdim_i],[dims[xdim_i]]] for xdim_i in range(len(x)) if xdim_i not in dims_to_omit))) + [dims_to_omit]
+    else:
+        arg_list = [X, list(range(X.ndim))] + list(chain(*([x[xdim_i],[dims[xdim_i]]] for xdim_i in range(len(x))))) + [[0]]
+
+    Y = np.einsum(*arg_list)
+
+    # check to see if `Y` is a scalar
+    if np.prod(Y.shape) <= 1.0:
+        Y = Y.item()
+        Y = np.array([Y]).astype("float64")
+
+    return Y
+
+
+def spm_dot_classic(X, x, dims_to_omit=None):
     """ Dot product of a multidimensional array with `x`. The dimensions in `dims_to_omit` 
     will not be summed across during the dot product
     

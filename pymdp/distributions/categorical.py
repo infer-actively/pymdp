@@ -124,7 +124,7 @@ class Categorical(object):
     def dot_old(self, x, dims_to_omit=None, return_numpy=False, obs_mode=False):
         """ Dot product of a this distribution with `x`
         
-            @NOTE see `spm_dot` in core.maths
+            @NOTE see `spm_dot_old` in core.maths
             @TODO create better workaround for `obs_mode`
 
             The dimensions in `dims_to_omit` will not be summed across during the dot product
@@ -150,9 +150,9 @@ class Categorical(object):
         if self.IS_AOA:
             y = np.empty(self.n_arrays, dtype=object)
             for i in range(self.n_arrays):
-                y[i] = maths.spm_dot(self[i].values, x, dims_to_omit, obs_mode)
+                y[i] = maths.spm_dot_old(self[i].values, x, dims_to_omit, obs_mode)
         else:
-            y = maths.spm_dot(self.values, x, dims_to_omit, obs_mode)
+            y = maths.spm_dot_old(self.values, x, dims_to_omit, obs_mode)
 
         if return_numpy:
             return y
@@ -162,7 +162,7 @@ class Categorical(object):
     def dot(self, x, dims_to_omit=None, return_numpy=False):
         """ Dot product of distribution encoded in self.values  with `x`
         
-            @NOTE see `spm_dot` in core.maths
+            @NOTE see `spm_dot_classic` in core.maths
 
             The dimensions in `dims_to_omit` will not be summed across during the dot product
         
@@ -181,9 +181,9 @@ class Categorical(object):
         if self.IS_AOA:
             y = np.empty(self.n_arrays, dtype=object)
             for i in range(self.n_arrays):
-                y[i] = maths.spm_dot(self[i].values, x, dims_to_omit)
+                y[i] = maths.spm_dot_classic(self[i].values, x, dims_to_omit)
         else:
-            y = maths.spm_dot(self.values, x, dims_to_omit)
+            y = maths.spm_dot_classic(self.values, x, dims_to_omit)
 
         if return_numpy:
             return y
