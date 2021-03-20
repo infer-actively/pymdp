@@ -59,13 +59,6 @@ def run_fpi(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, d
         onto a single joint likelihood over hidden factors [size n_states]
     """
 
-
-    # likelihood = np.ones(tuple(n_states))
-    # if n_modalities is 1:
-    #     likelihood *= spm_dot(A, obs, obs_mode=True)
-    # else:
-    #     for modality in range(n_modalities):
-    #         likelihood *= spm_dot(A[modality], obs[modality], obs_mode=True)
     likelihood = get_joint_likelihood(A, obs, n_states)
 
     likelihood = np.log(likelihood + 1e-16)
@@ -116,11 +109,18 @@ def run_fpi(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, d
             # Initialise variational free energy
             vfe = 0
 
-            arg_list = [likelihood, list(range(n_factors))]
-            arg_list = arg_list + list(chain(*([qs_i,[i]] for i, qs_i in enumerate(qs)))) + [list(range(n_factors))]
-            LL_tensor = np.einsum(*arg_list)
+            # arg_list = [likelihood, list(range(n_factors))]
+            # arg_list = arg_list + list(chain(*([qs_i,[i]] for i, qs_i in enumerate(qs)))) + [list(range(n_factors))]
+            # LL_tensor = np.einsum(*arg_list)
+
+            qs_all = qs[0]
+            for factor in range(n_factors-1):
+                qs_all = qs_all[...,None]*qs[factor+1]
+            LL_tensor = likelihood * qs_all
+
             for factor, qs_i in enumerate(qs):
-                qL = np.einsum(LL_tensor, list(range(n_factors)), 1.0/qs_i, [factor], [factor])
+                # qL = np.einsum(LL_tensor, list(range(n_factors)), 1.0/qs_i, [factor], [factor])
+                qL = np.einsum(LL_tensor, list(range(n_factors)), [factor])/qs_i
                 qs[factor] = softmax(qL + prior[factor])
 
             # List of orders in which marginal posteriors are sequentially multiplied into the joint likelihood:
@@ -130,9 +130,9 @@ def run_fpi(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, d
             # iteratively marginalize out each posterior marginal from the joint log-likelihood
             # except for the one associated with a given factor
             # for factor_order in factor_orders:
-                # for factor in factor_order:
-                #     qL = spm_dot(likelihood, qs, [factor])
-                #     qs[factor] = softmax(qL + prior[factor])
+            #     for factor in factor_order:
+            #         qL = spm_dot(likelihood, qs, [factor])
+            #         qs[factor] = softmax(qL + prior[factor])
 
             # calculate new free energy
             vfe = calc_free_energy(qs, prior, n_factors, likelihood)
