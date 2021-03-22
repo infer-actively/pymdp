@@ -53,6 +53,9 @@ def update_posterior_states_v2(
 
     lh_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
 
+    if prev_actions is not None:
+        prev_actions = np.stack(prev_actions,0)
+
     qs_seq_pi = utils.obj_array(len(policies))
     F = np.zeros(len(policies)) # variational free energy of policies
 
@@ -92,6 +95,8 @@ def average_states_over_policies(qs_pi, q_pi):
     ---------
     `qs_bma` - marginal posterior over hidden states for the current timepoint, averaged across policies according to their posterior probability given by `q_pi`
     """
+
+    q_pi = utils.to_numpy(q_pi)
 
     num_factors = len(qs_pi[0]) # get the number of hidden state factors using the shape of the first-policy-conditioned posterior
     num_states = [qs_f.shape[0] for qs_f in qs_pi[0]] # get the dimensionalities of each hidden state factor 
