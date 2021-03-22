@@ -14,7 +14,7 @@ from pymdp.core.maths import softmax, spm_dot, spm_wnorm, spm_MDP_G
 from pymdp.core import utils
 import copy
 
-def update_posterior_policies_v2(
+def update_posterior_policies_mmp(
     qs_seq_pi,
     A,
     B,
@@ -40,7 +40,7 @@ def update_posterior_policies_v2(
     `use_utility`: Boolean that determines whether expected utility should be incorporated into computation of EFE (default: `True`)
     `use_states_info_gain`: Boolean that determines whether state epistemic value (info gain about hidden states) should be incorporated into computation of EFE (default: `True`)
     `use_param_info_gain`: Boolean that determines whether parameter epistemic value (info gain about generative model parameters) should be incorporated into computation of EFE (default: `False`)
-    `prior`: numpy object array that stores priors over hidden states 
+    `prior`: numpy object array that stores priors over hidden states - this matters when computing the first value of the parameter info gain for the Dirichlet parameters over B
     `pA`: numpy object array that stores Dirichlet priors over likelihood mappings (one per modality)
     `pB`: numpy object array that stores Dirichlet priors over transition mappings (one per hidden state factor)
     `F` : 1D numpy array that stores variational free energy of each policy 
@@ -49,26 +49,22 @@ def update_posterior_policies_v2(
     `return_numpy`: Boolean that determines whether output should be a numpy array or an instance of the Categorical class (default: `True`)
     """
 
+    A = utils.to_numpy(A)
+    B = utils.to_numpy(B)
     num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A, B)
     horizon = len(qs_seq_pi[0])
     num_policies = len(qs_seq_pi)
 
-    # initialise `base_obs` and `obs_over_time` as object arrays to initially populate `qo_seq_pi`
-    
-    # base obs is the observation (potentially multi-modality) template for a single timepoint
-    base_obs = utils.obj_array(num_modalities)
-    for g in range(num_modalities):
-        base_obs[g] = np.zeros(num_obs[g])
-
-    # obs_over_time is the multi-timestep observation (potentially multi-modality) template at all timepoints
-    obs_over_time = utils.obj_array(horizon)
+    # initialise`qo_seq` as object arrays to initially populate `qo_seq_pi`
+    qo_seq = utils.obj_array(horizon)
     for t in range(horizon):
-        obs_over_time[t] = copy.deepcopy(base_obs)
+        qo_seq[t] = utils.obj_array_zeros(num_obs)
 
     # initialise expected observations
     qo_seq_pi = utils.obj_array(num_policies)
     for p_idx in range(num_policies):
-        qo_seq_pi[p_idx] = copy.deepcopy(obs_over_time)
+        # qo_seq_pi[p_idx] = copy.deepcopy(obs_over_time)
+        qo_seq_pi[p_idx] = qo_seq
 
     efe = np.zeros(num_policies)
 
@@ -82,12 +78,12 @@ def update_posterior_policies_v2(
         qs_seq_pi_i = qs_seq_pi[p_idx]
 
         for t in range(horizon):
-            # print(qs_seq_pi_i[t].shape)
+
             qo_pi_t = get_expected_obs(qs_seq_pi_i[t], A)
             qo_seq_pi[p_idx][t] = qo_pi_t
 
             if use_utility:
-               efe[p_idx] += calc_expected_utility(qo_seq_pi[p_idx][t], C[t])
+               efe[p_idx] += calc_expected_utility(qo_seq_pi[p_idx][t], C)
 
             if use_states_info_gain:
                 efe[p_idx] += calc_states_info_gain(A, qs_seq_pi_i[t])

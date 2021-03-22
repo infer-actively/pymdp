@@ -194,7 +194,7 @@ class Agent(object):
         else:
             self.inference_algo = inference_algo
             self.inference_params = self._get_default_params()
-            self.inference_horizon = 1
+            self.inference_horizon = inference_horizon
         
         self.prev_obs = []
         self.reset()
@@ -291,6 +291,11 @@ class Agent(object):
 
     def step_time(self):
 
+        if self.prev_actions is None:
+            self.prev_actions = [self.action]
+        else:
+            self.prev_actions.append(self.action)
+
         self.curr_timestep += 1
 
         if self.inference_algo == "MMP":
@@ -317,6 +322,21 @@ class Agent(object):
             self.latest_belief = last_belief
 
         return self.latest_belief
+    
+    def get_future_qs(self):
+        """
+        This method only gets the last `policy_len` timesteps of each policy-conditioned belief
+        over hidden states. This is a step of pre-processing that needs to be done before computing
+        the expected free energy of policies. We do this to avoid computing the expected free energy of 
+        policies using ('post-dictive') beliefs about hidden states in the past
+        """
+        
+        future_qs_seq = utils.obj_array(len(self.qs))
+        for p_idx in range(len(self.qs)):
+            future_qs_seq[p_idx] = self.qs[p_idx][-self.policy_len:] # this grabs only the last `policy_len` beliefs about hidden states, under each policy
+
+        return future_qs_seq
+
 
     def infer_states(self, observation):
         observation = tuple(observation)
@@ -343,7 +363,9 @@ class Agent(object):
 
             self.prev_obs.append(observation)
             if len(self.prev_obs) > self.inference_horizon:
-                self.prev_obs = self.prev_obs[:self.inference_horizon]
+                # print(len(self.prev_obs))
+                self.prev_obs = self.prev_obs[-self.inference_horizon:]
+                # print(len(self.prev_obs))
             
             qs, F = inference.update_posterior_states_v2(
                 utils.to_numpy(self.A),
@@ -354,7 +376,9 @@ class Agent(object):
                 prior = self.latest_belief, 
                 policy_sep_prior = self.edge_handling_params['policy_sep_prior'],
                 **self.inference_params
-            )  
+            )
+
+            self.F = F # variational free energy of each policy  
     
         self.qs = qs
 
@@ -362,40 +386,43 @@ class Agent(object):
 
     def infer_policies(self):
 
-        q_pi, efe = control.update_posterior_policies(
-            self.qs,
-            self.A,
-            self.B,
-            self.C,
-            self.policies,
-            self.use_utility,
-            self.use_states_info_gain,
-            self.use_param_info_gain,
-            self.pA,
-            self.pB,
-            self.gamma,
-            return_numpy=False,
-        )
+        if self.inference_algo is "VANILLA":
+            q_pi, efe = control.update_posterior_policies(
+                self.qs,
+                self.A,
+                self.B,
+                self.C,
+                self.policies,
+                self.use_utility,
+                self.use_states_info_gain,
+                self.use_param_info_gain,
+                self.pA,
+                self.pB,
+                self.gamma,
+                return_numpy=False,
+            )
+        elif self.inference_algo is "MMP":
 
-        # q_pi, efe = update_posterior_policies_v2(
-        #     qs_seq_pi,
-        #     A,
-        #     B,
-        #     C,
-        #     policies,
-        #     use_utility=True,
-        #     use_states_info_gain=True,
-        #     use_param_info_gain=False,
-        #     prior=None,
-        #     pA=None,
-        #     pB=None,
-        #     F = None,
-        #     E = None,
-        #     gamma=16.0,
-        #     return_numpy=True,
-        # ):  
+            future_qs_seq = self.get_future_qs()
 
-        
+            q_pi, efe = control.update_posterior_policies_mmp(
+                future_qs_seq,
+                self.A,
+                self.B,
+                self.C,
+                self.policies,
+                self.use_utility,
+                self.use_states_info_gain,
+                self.use_param_info_gain,
+                self.latest_belief,
+                self.pA,
+                self.pB,
+                self.F,
+                E = None,
+                gamma = self.gamma,
+                return_numpy=False,
+            )
+
         self.q_pi = q_pi
         self.efe = efe
         return q_pi, efe
