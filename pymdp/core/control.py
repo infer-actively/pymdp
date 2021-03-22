@@ -83,7 +83,7 @@ def update_posterior_policies_mmp(
             qo_seq_pi[p_idx][t] = qo_pi_t
 
             if use_utility:
-               efe[p_idx] += calc_expected_utility(qo_seq_pi[p_idx][t], C)
+                efe[p_idx] += calc_expected_utility(qo_seq_pi[p_idx][t], C)
 
             if use_states_info_gain:
                 efe[p_idx] += calc_states_info_gain(A, qs_seq_pi_i[t])
