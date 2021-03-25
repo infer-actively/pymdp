@@ -1,9 +1,10 @@
-%%% PSEUDO-CODE OVERVIEW OF MESSAGE PASSING SCHEME USED IN SPM_MDP_VB_X.m
+%%% PSEUDO-CODE VERSION OF SPM_MDP_VB_X.m
+
 clear all; close all; clc;
 
 cd .. % this brings you into the 'pymdp/tests/matlab_crossval/' super directory, since this file should be stored in 'pymdp/tests/matlab_crossval/generation'
 
-rng(1); % ensure the saved output file for inferactively is always the same
+rng(2); % ensure the saved output file for `pymdp` is always the same
 %% VARIABLE NAMES
 
 T = 10; % total length of time (generative process horizon)
@@ -29,16 +30,25 @@ actions = zeros(num_control, T); % history of actions along each control state f
 obs = zeros(num_modalities,T); % history of observations (separated by modality and timepoint) -- size (obs) == [num_modalities, T]
 vector_obs = cell(num_modalities,T); % history of observations expressed as one-hot vectors
 
-policy_matrix = zeros(policy_horizon, 1, num_control); % matrix of policies expressed in terms of time points, actions, and hidden state factors. size(policies) ==  [policy_horizon, num_policies, num_factors]. 
-                                                                  % This gets updated over time with the actual actions/policies taken in the past
-                                                                  
-U = zeros(1,1,num_factors); % matrix of allowable actions per policy at each move. size(U) == [1, num_policies, num_factors]
 
-U(1,1,:) = 1;
+% allowable policies (here, specified as the next action) U
+%--------------------------------------------------------------------------
+Np        = num_actions;
+U         = ones(1,Np,num_factors);
+U(:,:,1)  = 1:Np;
+
+policy_matrix = zeros(policy_horizon, Np, num_factors); % matrix of policies expressed in terms of time points, actions, and hidden state factors. size(policies) ==  [policy_horizon, num_policies, num_factors]. 
+                                                                  % This gets updated over time with the actual actions/policies taken in the past
+%                                                                   
+% U = zeros(1,num_actions,num_factors); % matrix of allowable actions per policy at each move. size(U) == [1, num_policies, num_factors]
+% 
+% for k = 1:num_actions
+%     U(1,k,:) = k;
+% end
 
 policy_matrix(1,:,:) = U;
 
-p = 1:size(policy_matrix,2);
+p = 1:Np;
 
 % likelihoods and priors
 
@@ -77,22 +87,28 @@ for f = 1:num_factors
     end
 end
 
+for f = 1:num_factors
+    Nu(f) = size(B{f},3);     % number of hidden controls
+end
 %% INITIALIZATION of beliefs
 
 % initialise different posterior beliefs used in message passing
+
 for f = 1:num_factors
     
-    xn{f} = zeros(num_iter,num_states(f),window_len,T,1);
+    xn{f} = zeros(num_iter,num_states(f),window_len,T,Np);
     
-    vn{f} = zeros(num_iter,num_states(f),window_len,T,1);
+    vn{f} = zeros(num_iter,num_states(f),window_len,T,Np);
     
-    x{f}  = zeros(num_states(f),T,1) + 1/num_states(f);    
-    qs_ppd{f}  = zeros(num_states(f), T, 1)      + 1/num_states(f);
+    x{f}  = zeros(num_states(f),T,Np) + 1/num_states(f);    
+    qs_ppd{f}  = zeros(num_states(f), T, Np)      + 1/num_states(f);
     
     qs_bma{f}  = repmat(D{f},1,T);
-
-    x{f}(:,1,1) = D{f};
-    qs_ppd{f}(:,1,1) = D{f};
+    
+    for k = 1:Np
+        x{f}(:,1,k) = D{f};
+        qs_ppd{f}(:,1,k) = D{f};
+    end
     
 end
 
@@ -131,7 +147,6 @@ for t = 1:T
         % if observation is not given
         %----------------------------------------------------------
         if ~obs(g,t)
-            
             % sample from likelihood given hidden state
             %--------------------------------------------------
             ind           = num2cell(states(:,t));
@@ -139,6 +154,7 @@ for t = 1:T
             obs(g,t) = find(rand < cumsum(p_obs),1);
             vector_obs{g,t} = sparse(obs(g,t),1,1,num_obs(g),1);
         end
+        
     end
     
     % Likelihood of observation under the various configurations of hidden states
@@ -154,58 +170,199 @@ for t = 1:T
         x{f} = spm_softmax(spm_log(x{f})/4);
     end
     
-    if t == 6
-        debug_flag = true;
-    end  
+    S     = size(policy_matrix,1) + 1;   % horizon
+    R = t;
     
-    [F, G, x, xq, vn, xn] = run_mmp(num_iter, window_len, policy_matrix, t, xq, x, L, D, b, b_t, xn, vn);
-    
+    F     = zeros(Np,1);
+    for k = p                % loop over plausible policies
+%     dF    = 1;                  % reset criterion for this policy
+        for iter = 1:num_iter       % iterate belief updates
+            F  = 0;                 % reset free energy for this policy
+            for j = max(1,t-window_len):S             % loop over future time points
+
+                % curent posterior over outcome factors
+                %--------------------------------------------------
+                if j <= t
+                    for f = 1:num_factors
+                        xq{f} = x{f}(:,j,k);
+                    end
+                end
+
+                for f = 1:num_factors
+
+                    % hidden states for this time and policy
+                    %----------------------------------------------
+                    sx = x{f}(:,j,k);
+                    qL = zeros(num_states(f),1);
+                    v  = zeros(num_states(f),1);
+
+                    % evaluate free energy and gradients (v = dFdx)
+                    %----------------------------------------------
+        %                 if dF > exp(-8) || iter > 4
+
+                    % marginal likelihood over outcome factors
+                    %------------------------------------------
+                    if j <= t
+                        qL = spm_dot(L{j},xq,f);
+                        qL = spm_log(qL(:));
+                    end                              
+
+                    % entropy
+                    %------------------------------------------
+                    qx  = spm_log(sx);
+
+                    % emprical priors (forward messages)
+                    %------------------------------------------
+                    if j < 2
+                        px = spm_log(D{f});
+                        v  = v + px + qL - qx;
+                    else
+                        px = spm_log(b{f}(:,:,policy_matrix(j - 1,k,f))*x{f}(:,j - 1,k));
+                        v  = v + px + qL - qx;
+                    end               
+
+
+                    % emprical priors (backward messages)
+                    %------------------------------------------
+                    if j < R
+                        px = log( b_t{f}(:,:,policy_matrix(j,k,f)) * x{f}(:,j+1,k) );
+        %                     if iter == num_iter
+        %                         fprintf('inference timestep: %d, factor: %d \n',j, f)
+        %                         disp(px)
+        %                     end
+                        v  = v + px + qL - qx;
+                    end
+
+                    % (negative) free energy
+                    %------------------------------------------
+                    if j == 1 || j == S
+                        F = F + sx'*0.5*v;
+                    else
+                        F = F  + sx'*(0.5*v - (num_factors-1)*qL/num_factors);
+                    end
+
+                    % update
+                    %-----------------------------------------                
+
+                    v    = v - mean(v);
+        %                 if iter == num_iter
+        %                     fprintf('inference timestep: %d, factor: %d \n',j, f)
+        %                     disp(v)
+        %                 end
+
+                    sx   = softmax(qx + v/4);
+
+        %                 else
+        %                     F = G;
+        %                 end
+
+                    % store update neuronal activity
+                    %----------------------------------------------
+                    x{f}(:,j,k)          = sx;
+                    xq{f}                = sx;
+                    xn{f}(iter,:,j,t,k)  = sx;
+                    vn{f}(iter,:,j,t,k)  = v;
+
+                end
+            end
+
+            % convergence
+            %------------------------------------------------------
+%             if iter > 1
+%                 dF = F - G;
+%             end
+%             G = F;
+
+        end
+    end
+        
     %% expected free energy of policies
     
     S     = size(policy_matrix,1) + 1;   % horizon
-    G   = zeros(length(p),1);            % expected free energy for each policy
+    Q   = zeros(length(p),1);            % expected free energy for each policy
 
     for k = p
                     
-        for j = t:S
+        for j = t:S % loop over future timepoints (starting from t = current_t to t = (current_t + future_horizon)
 
             % get expected states for this policy and time
             %--------------------------------------------------
             for f = 1:num_factors
-                xq{f} = x{m,f}(:,j,k);
+                xq{f} = x{f}(:,j,k);
             end
 
             % Bayesian surprise about states
             %--------------------------------------------------
-            G(k) = G(k) + spm_MDP_G(A,xq);
+            Q(k) = Q(k) + spm_MDP_G(A,xq);
 
             for g = 1:num_modalities
 
                 % prior preferences about outcomes
                 %----------------------------------------------
                 qo   = spm_dot(A{g},xq);
-                G(k) = G(k) + qo'*(C{g}(:,j));
+                Q(k) = Q(k) + qo'*(C{g}(:,j));
 
             end
         end
     end
+        
+    % this is how the policy posterior is ultimately calculated in
+    % original spm_MDP_VB_X:
+
+    % previous expected precision
+    %----------------------------------------------------------
+%     if t > 1
+%         w(t) = w(t - 1);
+%     end
+%     for i = 1:Ni
+% 
+%         % posterior and prior beliefs about policies
+%         %------------------------------------------------------
+%         qu = spm_softmax(qE + w(t)*Q + F);
+%         pu = spm_softmax(qE + w(t)*Q);
+% 
+%         % precision (w) with free energy gradients (v = -dF/dw)
+%         %------------------------------------------------------
+%         if OPTIONS.gamma
+%             w(t) = 1/beta;
+%         else
+%             eg      = (qu - pu)'*Q;
+%             dFdg    = qb - beta + eg;
+%             qb   = qb - dFdg/2;
+%             w(t) = 1/qb;
+%         end
+% 
+%         % simulated dopamine responses (expected precision)
+%         %------------------------------------------------------
+%         n             = (t - 1)*Ni + i;
+%         wn(n,1)    = w(t);
+%         un(:,n) = qu;
+%         u(:,t)  = qu;
+% 
+%     end
+   
     
-    q_pi = spm_softmax(G - F,16.0);
-    
+    q_pi = spm_softmax(Q - F,16.0); % copied how we do it in `pymdp` for comparison
     
     if t < T
         % marginal posterior over action (for each factor)
         %----------------------------------------------------------
         Pu    = zeros(num_actions,1);
-        for i = 1:length(p)
-            sub        = num2cell(policy_matrix(t,i,:));
-            Pu(sub{:}) = Pu(sub{:}) + q_pi(i);
+        for k = 1:length(p)
+            sub        = num2cell(policy_matrix(t,k,:));
+            Pu(sub{:}) = Pu(sub{:}) + q_pi(k);
         end
+         
+        ind           = find(rand < cumsum(Pu(:)),1);
+        actions(:,t) = spm_ind2sub(Nu,ind);
         
-        actions(u,t) = find(rand < cumsum(Pu(:)),1);
-        
-        if (t+1) < T
-            policy_matrix(t+1,1,:) = actions(:,t);
+        for f = 1:num_factors
+            policy_matrix(t,:,f) = actions(f,t);
+        end
+        for j = 1:size(U,1)
+            if (t + 1) < T
+                policy_matrix(t + 1,:,:) = U(:,:);
+            end
         end
         
         % and re-initialise expectations about hidden states
@@ -225,13 +382,14 @@ for t = 1:T
             
 end
 
-save_dir = 'output/vbx_test_a.mat';
-policy = squeeze(policy_matrix(end,1,:))';
-t_horizon = window_len;
-qs = x;
-obs_idx = obs;
-likelihoods = L;
-save(save_dir,'A','B','obs','policy','t','t_horizon','actions','qs','likelihoods')
+% %%
+% save_dir = 'output/vbx_test_a.mat';
+% policy = squeeze(policy_matrix(end,1,:))';
+% t_horizon = window_len;
+% qs = x;
+% obs_idx = obs;
+% likelihoods = L;
+% save(save_dir,'A','B','obs','policy','t','t_horizon','actions','qs','likelihoods')
 %%
 % auxillary functions
 %==========================================================================
@@ -366,3 +524,52 @@ end
 % subtract entropy of expectations: i.e., E[lnQ(o)]
 %--------------------------------------------------------------------------
 G  = G - qo'*spm_log(qo);
+
+
+end
+
+function [Y] = spm_cross(X,x,varargin)
+% Multidimensional cross (outer) product
+% FORMAT [Y] = spm_cross(X,x)
+% FORMAT [Y] = spm_cross(X)
+%
+% X  - numeric array
+% x  - numeric array
+%
+% Y  - outer product
+%
+% See also: spm_dot
+%__________________________________________________________________________
+% Copyright (C) 2015 Wellcome Trust Centre for Neuroimaging
+
+% Karl Friston
+% $Id: spm_cross.m 7527 2019-02-06 19:12:56Z karl $
+
+% handle single inputs
+%--------------------------------------------------------------------------
+if nargin < 2
+    if isnumeric(X)
+        Y = X;
+    else
+        Y = spm_cross(X{:});
+    end
+    return
+end
+
+% handle cell arrays
+%--------------------------------------------------------------------------
+if iscell(X), X = spm_cross(X{:}); end
+if iscell(x), x = spm_cross(x{:}); end
+
+% outer product of first pair of arguments (using bsxfun)
+%--------------------------------------------------------------------------
+A = reshape(full(X),[size(X) ones(1,ndims(x))]);
+B = reshape(full(x),[ones(1,ndims(X)) size(x)]);
+Y = squeeze(bsxfun(@times,A,B));
+
+% and handle remaining arguments
+%--------------------------------------------------------------------------
+for i = 1:numel(varargin)
+    Y = spm_cross(Y,varargin{i});
+end
+end
