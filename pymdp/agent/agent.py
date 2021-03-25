@@ -346,9 +346,12 @@ class Agent(object):
 
         if self.inference_algo is "VANILLA":
             if self.action is not None:
+                # empirical_prior = control.get_expected_states(
+                #     self.qs, self.B.log(), self.action.reshape(1, -1) #type: ignore
+                # )
                 empirical_prior = control.get_expected_states(
-                    self.qs, self.B.log(), self.action.reshape(1, -1) #type: ignore
-                )
+                    self.qs, self.B, self.action.reshape(1, -1) #type: ignore
+                ).log() # try logging afterwards
             else:
                 empirical_prior = self.D.log()
             qs = inference.update_posterior_states(
