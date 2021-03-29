@@ -382,14 +382,12 @@ for t = 1:T
             
 end
 
-% %%
-% save_dir = 'output/vbx_test_a.mat';
-% policy = squeeze(policy_matrix(end,1,:))';
-% t_horizon = window_len;
-% qs = x;
-% obs_idx = obs;
-% likelihoods = L;
-% save(save_dir,'A','B','obs','policy','t','t_horizon','actions','qs','likelihoods')
+save_dir = 'output/vbx_test_a.mat';
+policies = U;
+t_horizon = window_len;
+qs = x;
+likelihoods = L;
+save(save_dir,'A','B','C','obs','states','actions','policies','t_horizon','actions','qs','likelihoods')
 %%
 % auxillary functions
 %==========================================================================

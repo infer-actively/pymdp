@@ -25,7 +25,7 @@ For an illustrative tutorial for how to use the functionalities of the `Agent()`
 going through the Jupyter notebooks in the `pymdp/examples/` folder. `tmaze_demo.ipynb` is a good place to start, and provides a step-by-step walkthrough of how to build an instance
 of `Agent()`, sample observations from the generative process, and perform active inference. 
 
-THe `agent_demo.ipynb` notebook also provides a more 'naked' implementation of how to build and encode a generative model in terms of straight numpy arrays. Unlike the `tmaze_demo`, this doesn't rely on an environment constructor class, whose methods can build the `A`, `B`, etc. matrices for you.
+The `agent_demo.ipynb` notebook provides a more transparent implementation of how to build a generative model from the ground up, using straight numpy arrays to represent likelihood mappings and priors. Unlike the `tmaze_demo`, this doesn't rely on an environment constructor class, whose methods can be used to build the `A`, `B`, etc. matrices for you.
 
 ## Requirements 
 
