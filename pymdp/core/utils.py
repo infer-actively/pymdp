@@ -222,3 +222,48 @@ def process_prior(prior, n_factors):
 
     return prior
 
+def reduce_a_matrix(A):
+    """
+    Utility function for throwing away dimensions (lagging dimensions, hidden state factors)
+    of a particular A matrix that are independent of the observation. 
+    Parameters:
+    ==========
+    - `A` [np.ndarray]:
+        The A matrix or likelihood array that encodes probabilistic relationship
+        of the generative model between hidden state factors (lagging dimensions, columns, slices, etc...)
+        and observations (leading dimension, rows). 
+    Returns:
+    =========
+    - `A_reduced` [np.ndarray]:
+        The reduced A matrix, missing the lagging dimensions that correspond to hidden state factors
+        that are statistically independent of observations
+    - `original_factor_idx` [list]:
+        List of the indices (in terms of the original dimensionality) of the hidden state factors
+        that are maintained in the A matrix (and thus have an informative / non-degenerate relationship to observations
+    """
+
+    o_dim, num_states = A.shape[0], A.shape[1:]
+    idx_vec_s = [slice(0, o_dim)]  + [slice(ns) for _, ns in enumerate(num_states)]
+
+    original_factor_idx = []
+    excluded_factor_idx = [] # the indices of the hidden state factors that are independent of the observation and thus marginalized away
+    for factor_i, ns in enumerate(num_states):
+
+        level_counter = 0
+        break_flag = False
+        while level_counter < ns and break_flag is False:
+            idx_vec_i = idx_vec_s.copy()
+            idx_vec_i[factor_i+1] = slice(level_counter,level_counter+1,None)
+            if not np.isclose(A.mean(axis=factor_i+1), A[tuple(idx_vec_i)].squeeze()).all():
+                break_flag = True # this means they're not independent
+                original_factor_idx.append(factor_i)
+            else:
+                level_counter += 1
+        
+        if break_flag is False:
+            excluded_factor_idx.append(factor_i)
+    
+    A_reduced = A.mean(axis=tuple(excluded_factor_idx)).squeeze()
+
+    return A_reduced, original_factor_idx
+
