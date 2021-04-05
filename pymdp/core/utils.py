@@ -9,6 +9,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import numpy as np
 
 from pymdp.distributions import Categorical, Dirichlet
+import itertools
 
 def sample(probabilities):
     # TODO dont assume dist class
@@ -222,6 +223,11 @@ def process_prior(prior, n_factors):
 
     return prior
 
+def insert_multiple(s, indices, items):
+    for idx in range(len(items)):
+        s.insert(indices[idx], items[idx])
+    return s
+
 def reduce_a_matrix(A):
     """
     Utility function for throwing away dimensions (lagging dimensions, hidden state factors)
@@ -261,9 +267,52 @@ def reduce_a_matrix(A):
                 level_counter += 1
         
         if break_flag is False:
-            excluded_factor_idx.append(factor_i)
+            excluded_factor_idx.append(factor_i+1)
     
     A_reduced = A.mean(axis=tuple(excluded_factor_idx)).squeeze()
 
     return A_reduced, original_factor_idx
+
+def construct_full_a(A_reduced, original_factor_idx, num_states):
+    """
+    Utility function for reconstruction a full A matrix from a reduced A matrix, using known factor indices
+    to tile out the reduced A matrix along the 'non-informative' dimensions
+    Parameters:
+    ==========
+    - `A_reduced` [np.ndarray]:
+        The reduced A matrix or likelihood array that encodes probabilistic relationship
+        of the generative model between hidden state factors (lagging dimensions, columns, slices, etc...)
+        and observations (leading dimension, rows). 
+    - `original_factor_idx` [list]:
+        List of hidden state indices in terms of the full hidden state factor list, that comprise
+        the lagging dimensions of `A_reduced`
+    - `num_states` [list]:
+        The list of all the dimensionalities of hidden state factors in the full generative model.
+        `A_reduced.shape[1:]` should be equal to `num_states[original_factor_idx]`
+    Returns:
+    =========
+    - `A` [np.ndarray]:
+        The full A matrix, containing all the lagging dimensions that correspond to hidden state factors, including
+        those that are statistically independent of observations
+    
+    @ NOTE: This is the "inverse" of the reduce_a_matrix function, 
+    i.e. `reduce_a_matrix(construct_full_a(A_reduced, original_factor_idx, num_states)) == A_reduced, original_factor_idx`
+    """
+
+    o_dim = A_reduced.shape[0] # dimensionality of the support of the likelihood distribution (i.e. the number of observation levels)
+    full_dimensionality = [o_dim] + num_states # full dimensionality of the output (`A`)
+    fill_indices = [0] +  [f+1 for f in original_factor_idx] # these are the indices of the dimensions we need to fill for this modality
+    fill_dimensions = np.delete(full_dimensionality, fill_indices) 
+
+    original_factor_dims = [num_states[f] for f in original_factor_idx] # dimensionalities of the relevant factors
+    prefilled_slices = [slice(0, o_dim)] + [slice(0, ns) for ns in original_factor_dims] # these are the slices that are filled out by the provided `A_reduced`
+
+    A = np.zeros(full_dimensionality)
+
+    for item in itertools.product(*[list(range(d)) for d in fill_dimensions]):
+        slice_ = list(item)
+        A_indices = insert_multiple(slice_, fill_indices, prefilled_slices) #here we insert the correct values for the fill indices for this slice                    
+        A[tuple(A_indices)] = A_reduced
+    
+    return A
 
