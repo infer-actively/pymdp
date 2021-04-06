@@ -10,7 +10,8 @@ rng(2); % ensure the saved output file for `pymdp` is always the same
 T = 10; % total length of time (generative process horizon)
 window_len = 3; % length of inference window (in the past)
 policy_horizon = 1; % temporal horizon of policies
-num_iter = 5; % number of variational iterations
+tau = 0.25; % learning rate
+num_iter = 10; % number of variational iterations
 num_states = [3]; % hidden state dimensionalities
 num_factors = length(num_states); % number of hidden state factors
 num_obs = [2];   % observation modality dimensionalities
@@ -178,6 +179,11 @@ for t = 1:T
 %     dF    = 1;                  % reset criterion for this policy
         for iter = 1:num_iter       % iterate belief updates
             F  = 0;                 % reset free energy for this policy
+            
+            if k == 2
+                debug_flag = true;
+            end
+            
             for j = max(1,t-window_len):S             % loop over future time points
 
                 % curent posterior over outcome factors
@@ -225,7 +231,7 @@ for t = 1:T
                     % emprical priors (backward messages)
                     %------------------------------------------
                     if j < R
-                        px = log( b_t{f}(:,:,policy_matrix(j,k,f)) * x{f}(:,j+1,k) );
+                        px = spm_log( b_t{f}(:,:,policy_matrix(j,k,f)) * x{f}(:,j+1,k) );
         %                     if iter == num_iter
         %                         fprintf('inference timestep: %d, factor: %d \n',j, f)
         %                         disp(px)
@@ -250,7 +256,7 @@ for t = 1:T
         %                     disp(v)
         %                 end
 
-                    sx   = softmax(qx + v/4);
+                    sx   = softmax(qx + v * tau);
 
         %                 else
         %                     F = G;

@@ -12,11 +12,12 @@ from pymdp.core.utils import to_arr_of_arr, to_numpy
 import matplotlib.pyplot as plt
 
 # %%
-DATA_PATH = "test/matlab_crossval/output/"
 
 """
 Test against output of SPM_MDP_VB_X Case A - one hidden state factor, one observation modality, policy_len = 1
 """
+
+DATA_PATH = "test/matlab_crossval/output/"
 
 array_path = os.path.join(os.getcwd(), DATA_PATH + "vbx_test_a.mat")
 mat_contents = loadmat(file_name=array_path)

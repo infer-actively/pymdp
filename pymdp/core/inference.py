@@ -52,6 +52,7 @@ def update_posterior_states_v2(
             prior = utils.process_prior(prior, num_factors)
 
     lh_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
+    # print(lh_seq)
 
     if prev_actions is not None:
         prev_actions = np.stack(prev_actions,0)

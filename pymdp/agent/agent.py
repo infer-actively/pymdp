@@ -476,7 +476,7 @@ class Agent(object):
         if method == "VANILLA":
             default_params = {"num_iter": 10, "dF": 1.0, "dF_tol": 0.001}
         elif method == "MMP":
-            default_params = {"num_iter": 10, "grad_descent": False, "tau": 0.25, "save_vfe_seq": False}
+            default_params = {"num_iter": 10, "grad_descent": True, "tau": 0.25, "save_vfe_seq": False}
         elif method == "VMP":
             raise NotImplementedError("VMP is not implemented")
         elif method == "BP":

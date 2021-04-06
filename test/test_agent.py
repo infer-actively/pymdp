@@ -16,7 +16,7 @@ class TestAgent(unittest.TestCase):
         A = random_A_matrix(num_obs, num_states)
         B = random_B_matrix(num_states, num_control)
 
-        C = utils.obj_array_zeros([num_ob for num_ob in num_obs])
+        C = obj_array_zeros([num_ob for num_ob in num_obs])
         C[1][0] = 1.0  
         C[1][1] = -2.0  
 
@@ -35,7 +35,7 @@ class TestAgent(unittest.TestCase):
         A = random_A_matrix(num_obs, num_states)
         B = random_B_matrix(num_states, num_control)
 
-        C = utils.obj_array_zeros(num_obs)
+        C = obj_array_zeros(num_obs)
         C[1][0] = 1.0  
         C[1][1] = -2.0  
 
@@ -81,7 +81,7 @@ class TestAgent(unittest.TestCase):
         """
         Test against output of SPM_MDP_VB_X Case A - one hidden state factor, one observation modality, policy_len = 1
         """
-
+        pass
         
 
     def test_active_inference_SPM_b(self):
