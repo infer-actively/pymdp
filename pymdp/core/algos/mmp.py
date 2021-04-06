@@ -13,7 +13,7 @@ import copy
 
 
 def run_mmp(
-    lh_seq, B, policy, prev_actions=None, prior=None, num_iter=10, grad_descent=False, tau=0.25, last_timestep = False, save_vfe_seq=False):
+    lh_seq, B, policy, prev_actions=None, prior=None, num_iter=10, grad_descent=True, tau=0.25, last_timestep = False, save_vfe_seq=False):
     """
     Marginal message passing scheme for updating posterior beliefs about multi-factor hidden states over time, 
     conditioned on a particular policy.
@@ -80,9 +80,12 @@ def run_mmp(
         trans_B[f] = spm_norm(np.swapaxes(B[f],0,1))
 
     # full policy
-    if prev_actions is None:
-        prev_actions = np.zeros((past_len, policy.shape[1]))
-    policy = np.vstack((prev_actions, policy))
+    # if prev_actions is None:
+    #     prev_actions = np.zeros((past_len, policy.shape[1]))
+    # policy = np.vstack((prev_actions, policy))
+
+    if prev_actions is not None:
+        policy = np.vstack((prev_actions, policy))
 
     # initialise variational free energy of policy (accumulated over time)
 
@@ -117,16 +120,16 @@ def run_mmp(
                 
                 # inference
                 if grad_descent:
-                    lnqs = spm_log(qs_seq[t][f])
+                    sx = qs_seq[t][f] # save this as a separate variable to be used in VFE calculations
+                    lnqs = spm_log(sx)
                     coeff = 1 if (t >= future_cutoff) else 2
                     err = (coeff * lnA + lnB_past + lnB_future) - coeff * lnqs
-                    err -= err.mean()
-                    lnqs = lnqs + tau * err
+                    lnqs = lnqs + tau * (err - err.mean())
                     qs_seq[t][f] = softmax(lnqs)
                     if (t == 0) or (t == (infer_len-1)):
-                        F += + 0.5*lnqs.dot(0.5*err)
+                        F += sx.dot(0.5*err)
                     else:
-                        F += lnqs.dot(0.5*(err - (num_factors - 1)*lnA/num_factors)) # @NOTE: not sure why Karl does this in SPM_MDP_VB_X, we should look into this
+                        F += sx.dot(0.5*(err - (num_factors - 1)*lnA/num_factors)) # @NOTE: not sure why Karl does this in SPM_MDP_VB_X, we should look into this
                 else:
                     qs_seq[t][f] = softmax(lnA + lnB_past + lnB_future)
             
