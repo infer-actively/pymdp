@@ -18,7 +18,8 @@ num_obs = [2];   % observation modality dimensionalities
 num_modalities = length(num_obs); % number of hidden state factors
 num_actions = [3]; % control factor (action) dimensionalities
 num_control = length(num_actions);
-
+w = 16.0; % equivalent of 'gamma' parameter in pymdp
+ 
 qs_ppd = cell(1, num_factors); % variable to store posterior predictive density for current timestep. cell array of length num_factors, where each qs_ppd{f} is the PPD for a given factor (length [num_states(f), 1])
 qs_bma = cell(1, num_factors); % variable to store bayesian model average for current timestep. cell array of length num_factors, where each xq{f} is the BMA for a given factor (length [num_states(f), 1])
 
@@ -56,9 +57,10 @@ p = 1:Np;
 A = cell(1,num_modalities); % generative process observation likelihood (cell array of length num_modalities -- each A{g} is a matrix of size [num_modalities(g), num_states(:)]
 B = cell(1,num_factors); % generative process transition likelihood (cell array of length num_factors -- each B{f} is a matrix of size [num_states(f), num_states(f), num_actions(f)]
 C = cell(1,num_modalities);
+lnC = cell(1, num_modalities);
 for g= 1:num_modalities
-%     C{g} = rand(num_obs(g),T);
     C{g} = repmat(rand(num_obs(g),1),1,T);
+    lnC{g} = spm_log(spm_softmax(C{g}));
 end
 
 D = cell(1,num_factors); % prior over hidden states -- a cell array of size [1, num_factors] where each D{f} is a vector of length [num_states(f), 1]
@@ -178,7 +180,7 @@ for t = 1:T
     for k = p                % loop over plausible policies
 %     dF    = 1;                  % reset criterion for this policy
         for iter = 1:num_iter       % iterate belief updates
-            F  = 0;                 % reset free energy for this policy
+            F(k)  = 0;                 % reset free energy for this policy
             
             if k == 2
                 debug_flag = true;
@@ -242,9 +244,9 @@ for t = 1:T
                     % (negative) free energy
                     %------------------------------------------
                     if j == 1 || j == S
-                        F = F + sx'*0.5*v;
+                        F(k) = F(k) + sx'*0.5*v;
                     else
-                        F = F  + sx'*(0.5*v - (num_factors-1)*qL/num_factors);
+                        F(k) = F(k)  + sx'*(0.5*v - (num_factors-1)*qL/num_factors);
                     end
 
                     % update
@@ -306,7 +308,7 @@ for t = 1:T
                 % prior preferences about outcomes
                 %----------------------------------------------
                 qo   = spm_dot(A{g},xq);
-                Q(k) = Q(k) + qo'*(C{g}(:,j));
+                Q(k) = Q(k) + qo'*(lnC{g}(:,j));
 
             end
         end
@@ -347,8 +349,7 @@ for t = 1:T
 % 
 %     end
    
-    
-    q_pi = spm_softmax(Q - F,16.0); % copied how we do it in `pymdp` for comparison
+    q_pi = spm_softmax(w*Q - F); % copied how we do it in `pymdp` for comparison
     
     if t < T
         % marginal posterior over action (for each factor)
