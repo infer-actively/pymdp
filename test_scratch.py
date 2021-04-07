@@ -8,6 +8,7 @@ from scipy.io import loadmat
 from pymdp.agent import Agent
 from pymdp.core.utils import random_A_matrix, random_B_matrix, obj_array_zeros, get_model_dimensions, convert_observation_array
 from pymdp.core.utils import to_arr_of_arr, to_numpy
+from pymdp.core import control
 
 import matplotlib.pyplot as plt
 
@@ -47,8 +48,20 @@ for t in range(T):
     o_t = (np.where(obs[t])[0][0],)
     qx = agent.infer_states(o_t)
     agent.infer_policies()
-    action = agent.sample_action()
 
+    # action = agent.sample_action() # we're skipping this because it has randomness in it
+
+    # this is what happens in that line `agent.sample()` above
+    # action = control.sample_action(
+    #         agent.q_pi, agent.policies, agent.n_controls, agent.action_sampling
+    #     )
+    # agent.action = action
+    # agent.step_time()
+
+    # we're gonna set the action to the one given by SPM
+
+    agent.action = actions[:,t].T
+    agent.step_time()
 
 
 # %%
