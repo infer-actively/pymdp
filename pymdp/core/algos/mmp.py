@@ -13,7 +13,7 @@ import copy
 
 
 def run_mmp(
-    lh_seq, B, policy, prev_actions=None, prior=None, num_iter=10, grad_descent=True, tau=0.25, last_timestep = False, save_vfe_seq=False):
+    lh_seq, B, policy, prev_actions=None, prior=None, num_iter=10, grad_descent=True, tau=0.25, last_timestep = False):
     """
     Marginal message passing scheme for updating posterior beliefs about multi-factor hidden states over time, 
     conditioned on a particular policy.
@@ -31,19 +31,17 @@ def run_mmp(
     `prior`[None or numpy object array]:
         If provided, this a numpy object array with one sub-array per hidden state factor, that stores the prior beliefs about initial states (at t = 0, relative to `infer_len`).
     `num_iter`[Int]:
-        Number of variational iterations
+        Number of variational iterations.
     `grad_descent` [Bool]:
         Flag for whether to use gradient descent (predictive coding style)
     `tau` [Float]:
         Decay constant for use in `grad_descent` version
     `last_timestep` [Bool]:
         Flag for whether we are at the last timestep of belief updating
-    `save_vfe_seq` [Bool]:
-        Flag for whether to save the sequence of variational free energies over time (for this policy). If `False`, then VFE is integrated across time/iterations.
     Returns:
     --------------
     `qs_seq`[list]: the sequence of beliefs about the different hidden state factors over time, one multi-factor posterior belief per timestep in `infer_len`
-    `F`[Float or list, depending on setting of save_vfe_seq]
+    `F`[Float]: variational free energy for the given policy 
     """
 
     # window
@@ -87,15 +85,8 @@ def run_mmp(
     if prev_actions is not None:
         policy = np.vstack((prev_actions, policy))
 
-    # initialise variational free energy of policy (accumulated over time)
-
-    if save_vfe_seq:
-        F = []
-        F.append(0.0)
-    else:
-        F = 0.0
-
     for itr in range(num_iter):
+        F = 0.0 # reset variational free energy (accumulated over time and factors, but reset per iteration)
         for t in range(infer_len):
             for f in range(num_factors):
                 # likelihood
@@ -120,7 +111,7 @@ def run_mmp(
                 
                 # inference
                 if grad_descent:
-                    sx = qs_seq[t][f] # save this as a separate variable to be used in VFE calculations
+                    sx = qs_seq[t][f] # save this as a separate variable so that it can be used in VFE computation
                     lnqs = spm_log(sx)
                     coeff = 1 if (t >= future_cutoff) else 2
                     err = (coeff * lnA + lnB_past + lnB_future) - coeff * lnqs
@@ -135,15 +126,9 @@ def run_mmp(
             
             if not grad_descent:
 
-                if save_vfe_seq:
-                    if t < past_len:
-                        F.append(F[-1] + calc_free_energy(qs_seq[t], prior, num_factors, likelihood = spm_log(lh_seq[t]) )[0] )
-                    else:
-                        F.append(F[-1] + calc_free_energy(qs_seq[t], prior, num_factors)[0] )
+                if t < past_len:
+                    F += calc_free_energy(qs_seq[t], prior, num_factors, likelihood = spm_log(lh_seq[t]) )
                 else:
-                    if t < past_len:
-                        F += calc_free_energy(qs_seq[t], prior, num_factors, likelihood = spm_log(lh_seq[t]) )
-                    else:
-                        F += calc_free_energy(qs_seq[t], prior, num_factors)
+                    F += calc_free_energy(qs_seq[t], prior, num_factors)
 
     return qs_seq, F
