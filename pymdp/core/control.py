@@ -100,11 +100,8 @@ def update_posterior_policies_mmp(
 
 
     q_pi = softmax(efe * gamma - F + E)
-    if return_numpy:
-        q_pi = q_pi / q_pi.sum(axis=0)
-    else:
+    if not return_numpy:
         q_pi = utils.to_categorical(q_pi)
-        q_pi.normalize()
     return q_pi, efe
 
 
