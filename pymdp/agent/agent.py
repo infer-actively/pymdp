@@ -333,7 +333,7 @@ class Agent(object):
         
         future_qs_seq = utils.obj_array(len(self.qs))
         for p_idx in range(len(self.qs)):
-            future_qs_seq[p_idx] = self.qs[p_idx][-self.policy_len:] # this grabs only the last `policy_len` beliefs about hidden states, under each policy
+            future_qs_seq[p_idx] = self.qs[p_idx][-(self.policy_len+1):] # this grabs only the last `policy_len`+1 beliefs about hidden states, under each policy
 
         return future_qs_seq
 
@@ -476,7 +476,7 @@ class Agent(object):
         if method == "VANILLA":
             default_params = {"num_iter": 10, "dF": 1.0, "dF_tol": 0.001}
         elif method == "MMP":
-            default_params = {"num_iter": 10, "grad_descent": True, "tau": 0.25, "save_vfe_seq": False}
+            default_params = {"num_iter": 10, "grad_descent": True, "tau": 0.25}
         elif method == "VMP":
             raise NotImplementedError("VMP is not implemented")
         elif method == "BP":
