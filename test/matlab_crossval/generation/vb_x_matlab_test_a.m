@@ -360,7 +360,8 @@ for t = 1:T
             Pu(sub{:}) = Pu(sub{:}) + q_pi(k);
         end
          
-        ind           = find(rand < cumsum(Pu(:)),1);
+%         ind           = find(rand < cumsum(Pu(:)),1);
+        ind           = find(Pu(:) == max(Pu(:)),1);
         actions(:,t) = spm_ind2sub(Nu,ind);
         
         for f = 1:num_factors
@@ -375,7 +376,9 @@ for t = 1:T
         % and re-initialise expectations about hidden states
         %------------------------------------------------------
         for f = 1:num_factors
-            x{f}(:,:,1) = 1/num_states(f);
+            for k = 1:length(p)
+                x{f}(:,:,k) = 1/num_states(f);
+            end
         end
         
     end        
