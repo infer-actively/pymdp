@@ -42,26 +42,62 @@ agent = Agent(A=A, B=B, C=C, inference_algo="MMP", policy_len=1,
 
 T = len(obs)
 
-# %% Run loop over time
-for t in range(T):
+# %% Run loop
 
+all_actions = np.zeros(T)
+
+for t in range(T):
     o_t = (np.where(obs[t])[0][0],)
     qx = agent.infer_states(o_t)
-    agent.infer_policies()
+    q_pi = agent.infer_policies()
+    action = agent.sample_action()
+    all_actions[t] = action
 
-    # action = agent.sample_action() # we're skipping this because it has randomness in it
+# %% Run first timestep timesteps
 
-    # this is what happens in that line `agent.sample()` above
-    # action = control.sample_action(
-    #         agent.q_pi, agent.policies, agent.n_controls, agent.action_sampling
-    #     )
-    # agent.action = action
-    # agent.step_time()
+t = 0
 
-    # we're gonna set the action to the one given by SPM
+o_t = (np.where(obs[t])[0][0],)
+qx = agent.infer_states(o_t)
+q_pi = agent.infer_policies()
 
-    agent.action = actions[:,t].T
-    agent.step_time()
+action = agent.sample_action()
 
+# agent.action = actions[:,t].T
+# agent.step_time()
+
+# %% Run timesteps
+
+t = 1
+
+o_t = (np.where(obs[t])[0][0],)
+qx = agent.infer_states(o_t)
+q_pi = agent.infer_policies()
+action = agent.sample_action()
+
+# agent.action = actions[:,t].T
+# agent.step_time()
 
 # %%
+
+t = 2
+
+o_t = (np.where(obs[t])[0][0],)
+qx = agent.infer_states(o_t)
+q_pi = agent.infer_policies()
+action = agent.sample_action()
+
+# agent.action = actions[:,t].T
+# agent.step_time()
+
+# %%
+
+t = 3
+
+o_t = (np.where(obs[t])[0][0],)
+qx = agent.infer_states(o_t)
+q_pi = agent.infer_policies()
+action = agent.sample_action()
+
+# agent.action = actio
+
