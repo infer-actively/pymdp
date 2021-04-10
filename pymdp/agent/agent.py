@@ -260,7 +260,7 @@ class Agent(object):
 
     def reset(self, init_qs=None):
 
-        self.curr_timestep = 1
+        self.curr_timestep = 0
 
         if init_qs is None:
             if self.inference_algo == 'VANILLA':
