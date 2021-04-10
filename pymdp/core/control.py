@@ -690,10 +690,15 @@ def sample_action(q_pi, policies, n_control, sampling_type="marginal_action"):
             for t in range(policy.shape[0]):
                 for factor_i, action_i in enumerate(policy[t, :]):
                     action_marginals[factor_i][action_i] += q_pi[pol_idx]
+        
+        print(action_marginals[0])
+        selected_policy = np.zeros(n_factors)
+        for factor_i in range(n_factors):
+            selected_policy[factor_i] = np.argmax(action_marginals[factor_i])
 
-        action_marginals = Categorical(values=action_marginals)
-        action_marginals.normalize()
-        selected_policy = np.array(action_marginals.sample())
+        # action_marginals = Categorical(values=action_marginals)
+        # action_marginals.normalize()
+        # selected_policy = np.array(action_marginals.sample())
 
     elif sampling_type == "posterior_sample":
         if utils.is_distribution(q_pi):
