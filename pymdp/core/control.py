@@ -691,7 +691,7 @@ def sample_action(q_pi, policies, n_control, sampling_type="marginal_action"):
                 for factor_i, action_i in enumerate(policy[t, :]):
                     action_marginals[factor_i][action_i] += q_pi[pol_idx]
         
-        print(action_marginals[0])
+        # print(action_marginals[0])
         selected_policy = np.zeros(n_factors)
         for factor_i in range(n_factors):
             selected_policy[factor_i] = np.argmax(action_marginals[factor_i])

@@ -63,9 +63,6 @@ q_pi = agent.infer_policies()
 
 action = agent.sample_action()
 
-# agent.action = actions[:,t].T
-# agent.step_time()
-
 # %% Run timesteps
 
 t = 1
@@ -74,9 +71,6 @@ o_t = (np.where(obs[t])[0][0],)
 qx = agent.infer_states(o_t)
 q_pi = agent.infer_policies()
 action = agent.sample_action()
-
-# agent.action = actions[:,t].T
-# agent.step_time()
 
 # %%
 
@@ -87,9 +81,6 @@ qx = agent.infer_states(o_t)
 q_pi = agent.infer_policies()
 action = agent.sample_action()
 
-# agent.action = actions[:,t].T
-# agent.step_time()
-
 # %%
 
 t = 3
@@ -99,5 +90,4 @@ qx = agent.infer_states(o_t)
 q_pi = agent.infer_policies()
 action = agent.sample_action()
 
-# agent.action = actio
 

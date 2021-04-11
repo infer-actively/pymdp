@@ -69,6 +69,7 @@ for f = 1:num_factors
 end
 
 
+
 for g = 1:num_modalities
     A{g} = spm_norm(rand([num_obs(g),num_states]));
 end
@@ -103,7 +104,10 @@ for f = 1:num_factors
     
     vn{f} = zeros(num_iter,num_states(f),window_len,T,Np);
     
-    x{f}  = zeros(num_states(f),T,Np) + 1/num_states(f);    
+    x{f}  = zeros(num_states(f),T,Np) + 1/num_states(f);
+    
+    d_policy_sep{f} = zeros(num_states(f),Np) + 1/num_states(f);
+
     qs_ppd{f}  = zeros(num_states(f), T, Np)      + 1/num_states(f);
     
     qs_bma{f}  = repmat(D{f},1,T);
@@ -118,7 +122,7 @@ end
 %%
 for t = 1:T
     
-    
+ 
     % posterior predictive density over hidden (external) states
     %--------------------------------------------------------------
     for f = 1:num_factors       
@@ -176,6 +180,10 @@ for t = 1:T
     S     = size(policy_matrix,1) + 1;   % horizon
     R = t;
     
+%     if t == 3
+%         debug_flag = true;
+%     end
+    
     F     = zeros(Np,1);
     for k = p                % loop over plausible policies
 %     dF    = 1;                  % reset criterion for this policy
@@ -221,23 +229,26 @@ for t = 1:T
 
                     % emprical priors (forward messages)
                     %------------------------------------------
-                    if j < 2
+                    if j == 1
                         px = spm_log(D{f});
-                        v  = v + px + qL - qx;
+                    elseif j == (t-window_len+1)
+                        
+                        if f == 1 && iter == 1 && k == 1
+                            disp(t)
+                            fprintf('Using policy separated prior!')
+                        end
+                        px = spm_log(b{f}(:,:,policy_matrix(j - 1,k,f))*d_policy_sep{f}(:,k)); % policy separated prior
                     else
                         px = spm_log(b{f}(:,:,policy_matrix(j - 1,k,f))*x{f}(:,j - 1,k));
-                        v  = v + px + qL - qx;
-                    end               
+                    end    
+                    
+                    v  = v + px + qL - qx;
 
 
                     % emprical priors (backward messages)
                     %------------------------------------------
                     if j < R
                         px = spm_log( b_t{f}(:,:,policy_matrix(j,k,f)) * x{f}(:,j+1,k) );
-        %                     if iter == num_iter
-        %                         fprintf('inference timestep: %d, factor: %d \n',j, f)
-        %                         disp(px)
-        %                     end
                         v  = v + px + qL - qx;
                     end
 
@@ -372,6 +383,15 @@ for t = 1:T
                 policy_matrix(t + 1,:,:) = U(:,:);
             end
         end
+        
+        if (t - window_len) >= 0
+            for f = 1:num_factors
+                for k = 1:Np
+                    d_policy_sep{f}(:,k) = x{f}(:,t-window_len+1,k);
+                end
+            end
+        end
+             
         
         % and re-initialise expectations about hidden states
         %------------------------------------------------------
