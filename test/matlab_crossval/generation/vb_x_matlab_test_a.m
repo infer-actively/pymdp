@@ -96,6 +96,7 @@ for f = 1:num_factors
 end
 %% INITIALIZATION of beliefs
 
+
 % initialise different posterior beliefs used in message passing
 
 for f = 1:num_factors
@@ -120,6 +121,7 @@ for f = 1:num_factors
 end
 
 %%
+
 for t = 1:T
     
  
@@ -170,6 +172,8 @@ for t = 1:T
     for g = 1:num_modalities
         L{t} = L{t}.*spm_dot(a{g},vector_obs{g,t});
     end
+    
+%     lh_seq = L(max(1,t-window_len+1):end); % prune the likelihood sequence to only carry those likelihoods relevant to the current moment
    
     % reset
     %--------------------------------------------------------------
@@ -194,7 +198,7 @@ for t = 1:T
                 debug_flag = true;
             end
             
-            for j = max(1,t-window_len):S             % loop over future time points
+            for j = max(1,t-window_len+1):S             % loop over future time points
 
                 % curent posterior over outcome factors
                 %--------------------------------------------------
@@ -231,13 +235,9 @@ for t = 1:T
                     %------------------------------------------
                     if j == 1
                         px = spm_log(D{f});
-                    elseif j == (t-window_len+1)
-                        
-                        if f == 1 && iter == 1 && k == 1
-                            disp(t)
-                            fprintf('Using policy separated prior!')
-                        end
-                        px = spm_log(b{f}(:,:,policy_matrix(j - 1,k,f))*d_policy_sep{f}(:,k)); % policy separated prior
+                    elseif j == (t-window_len+1)                   
+%                         px = spm_log(b{f}(:,:,policy_matrix(j - 1,k,f))*d_policy_sep{f}(:,k)); % policy separated prior
+                        px = spm_log(d_policy_sep{f}(:,k)); % policy separated prior
                     else
                         px = spm_log(b{f}(:,:,policy_matrix(j - 1,k,f))*x{f}(:,j - 1,k));
                     end    
@@ -264,16 +264,9 @@ for t = 1:T
                     %-----------------------------------------                
 
                     v    = v - mean(v);
-        %                 if iter == num_iter
-        %                     fprintf('inference timestep: %d, factor: %d \n',j, f)
-        %                     disp(v)
-        %                 end
+ 
 
                     sx   = softmax(qx + v * tau);
-
-        %                 else
-        %                     F = G;
-        %                 end
 
                     % store update neuronal activity
                     %----------------------------------------------
@@ -384,14 +377,20 @@ for t = 1:T
             end
         end
         
+        disp(size(policy_matrix,1))
+        
         if (t - window_len) >= 0
             for f = 1:num_factors
                 for k = 1:Np
                     d_policy_sep{f}(:,k) = x{f}(:,t-window_len+1,k);
                 end
             end
+%             policy_matrix = policy_matrix((t-window_len):end,:,:);
         end
-             
+        
+        if t == (T-1)
+            debug_flag = true;
+        end
         
         % and re-initialise expectations about hidden states
         %------------------------------------------------------
