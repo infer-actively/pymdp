@@ -77,11 +77,6 @@ def run_mmp(
     for f in range(num_factors):
         trans_B[f] = spm_norm(np.swapaxes(B[f],0,1))
 
-    # full policy
-    # if prev_actions is None:
-    #     prev_actions = np.zeros((past_len, policy.shape[1]))
-    # policy = np.vstack((prev_actions, policy))
-
     if prev_actions is not None:
         policy = np.vstack((prev_actions, policy))
 
