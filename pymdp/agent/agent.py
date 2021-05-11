@@ -299,7 +299,7 @@ class Agent(object):
         self.curr_timestep += 1
 
         if self.inference_algo == "MMP":
-            if (self.curr_timestep - self.inference_horizon) > 0:
+            if (self.curr_timestep - self.inference_horizon) >= 0:
                 self.set_latest_beliefs()
         
         return self.curr_timestep
@@ -366,16 +366,18 @@ class Agent(object):
 
             self.prev_obs.append(observation)
             if len(self.prev_obs) > self.inference_horizon:
-                # print(len(self.prev_obs))
-                self.prev_obs = self.prev_obs[-self.inference_horizon:]
-                # print(len(self.prev_obs))
-            
+                latest_obs = self.prev_obs[-self.inference_horizon:]
+                latest_actions = self.prev_actions[-self.inference_horizon:]
+            else:
+                latest_obs = self.prev_obs
+                latest_actions = self.prev_actions
+
             qs, F = inference.update_posterior_states_v2(
                 utils.to_numpy(self.A),
                 utils.to_numpy(self.B), 
-                self.prev_obs, 
+                latest_obs,
                 self.policies, 
-                self.prev_actions, 
+                latest_actions, 
                 prior = self.latest_belief, 
                 policy_sep_prior = self.edge_handling_params['policy_sep_prior'],
                 **self.inference_params
@@ -487,3 +489,35 @@ class Agent(object):
             raise NotImplementedError("CV is not implemented")
 
         return default_params
+
+def build_belief_array(qx):
+
+    """
+    This function constructs array-ified (not nested) versions
+    of the posterior belief arrays, that are separated 
+    by policy, timepoint, and hidden state factor
+    """
+
+    num_policies = len(qx)
+    num_timesteps = len(qx[0])
+    num_factors = len(qx[0][0])
+
+    if num_factors > 1:
+        belief_array = utils.obj_array(num_factors)
+        for factor in range(num_factors):
+            belief_array[factor] = np.zeros( (num_policies, qx[0][0][factor].shape[0], num_timesteps) )
+        for policy_i in range(num_policies):
+            for timestep in range(num_timesteps):
+                for factor in range(num_factors):
+                    belief_array[factor][policy_i, :, timestep] = qx[policy_i][timestep][factor]
+    else:
+        n_states = qx[0][0][0].shape[0]
+        belief_array = np.zeros( (num_policies, n_states, num_timesteps) )
+        for policy_i in range(num_policies):
+            for timestep in range(num_timesteps):
+                belief_array[policy_i, :, timestep] = qx[policy_i][timestep][0]
+    
+    return belief_array
+
+    
+    
