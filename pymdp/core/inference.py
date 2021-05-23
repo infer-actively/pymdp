@@ -198,6 +198,9 @@ def update_posterior_states(A, obs, prior=None, return_numpy=True, method=VANILL
     else:
         raise ValueError(f"{method} is not implemented")
 
+    if not utils.is_arr_of_arr(qs):
+        qs = utils.to_arr_of_arr(qs)
+
     if return_numpy:
         return qs
     else:
