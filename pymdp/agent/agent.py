@@ -316,7 +316,7 @@ class Agent(object):
             for p_i, _ in enumerate(self.policies):
                 last_belief[p_i] = copy.deepcopy(self.qs[p_i][0])
 
-        if self.edge_handling_params['use_BMA'] and (self.curr_timestep - self.inference_horizon > 0):
+        if self.edge_handling_params['use_BMA'] and (self.curr_timestep - self.inference_horizon >= 0):
             self.latest_belief = inference.average_states_over_policies(last_belief, self.q_pi) # average the earliest marginals together using posterior over policies (`self.q_pi`)
         else:
             self.latest_belief = last_belief
