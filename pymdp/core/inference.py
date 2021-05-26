@@ -12,7 +12,7 @@ import numpy as np
 
 from pymdp.core import utils
 from pymdp.core.maths import get_joint_likelihood_seq
-from pymdp.core.algos import run_fpi, run_mmp
+from pymdp.core.algos import run_fpi, run_mmp, run_mmp_testing
 
 VANILLA = "VANILLA"
 VMP = "VMP"
@@ -20,7 +20,6 @@ MMP = "MMP"
 BP = "BP"
 EP = "EP"
 CV = "CV"
-
 
 def update_posterior_states_v2(
     A,
@@ -84,6 +83,71 @@ def update_posterior_states_v2(
             )
 
     return qs_seq_pi, F
+
+def update_posterior_states_v2_test(
+    A,
+    B,
+    prev_obs,
+    policies,
+    prev_actions=None,
+    prior=None,
+    return_numpy=True,
+    policy_sep_prior = True,
+    **kwargs,
+):
+    """
+    Update posterior over hidden states using marginal message passing
+    """
+    # safe convert to numpy
+    A = utils.to_numpy(A)
+
+    num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A, B)
+    A = utils.to_arr_of_arr(A)
+    B = utils.to_arr_of_arr(B)
+
+    prev_obs = utils.process_observation_seq(prev_obs, num_modalities, num_obs)
+    if prior is not None:
+        if policy_sep_prior:
+            for p_idx, policy in enumerate(policies):
+                prior[p_idx] = utils.process_prior(prior[p_idx], num_factors)
+        else:
+            prior = utils.process_prior(prior, num_factors)
+
+    lh_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
+    # print(lh_seq)
+
+    if prev_actions is not None:
+        prev_actions = np.stack(prev_actions,0)
+
+    qs_seq_pi = utils.obj_array(len(policies))
+    xn_seq_pi = utils.obj_array(len(policies))
+    vn_seq_pi = utils.obj_array(len(policies))
+    F = np.zeros(len(policies)) # variational free energy of policies
+
+    if policy_sep_prior:
+        for p_idx, policy in enumerate(policies):
+            # get sequence and the free energy for policy
+            qs_seq_pi[p_idx], F[p_idx], xn_seq_pi[p_idx], vn_seq_pi[p_idx] = run_mmp_testing(
+                lh_seq,
+                B,
+                policy,
+                prev_actions=prev_actions,
+                prior=prior[p_idx], 
+                **kwargs
+            )
+    else:
+        for p_idx, policy in enumerate(policies):
+            # get sequence and the free energy for policy
+            qs_seq_pi[p_idx], F[p_idx], xn_seq_pi[p_idx], vn_seq_pi[p_idx] = run_mmp_testing(
+                lh_seq,
+                B,
+                policy,
+                prev_actions=prev_actions,
+                prior=prior, 
+                **kwargs
+            )
+
+    return qs_seq_pi, F, xn_seq_pi, vn_seq_pi
 
 def average_states_over_policies(qs_pi, q_pi):
     """

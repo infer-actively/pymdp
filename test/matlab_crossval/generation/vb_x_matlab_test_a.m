@@ -1,10 +1,8 @@
 %%% PSEUDO-CODE VERSION OF SPM_MDP_VB_X.m
 
-clear all; close all; clc;
+clear all; close all; cd .. % this brings you into the 'pymdp/tests/matlab_crossval/' super directory, since this file should be stored in 'pymdp/tests/matlab_crossval/generation'
 
-cd .. % this brings you into the 'pymdp/tests/matlab_crossval/' super directory, since this file should be stored in 'pymdp/tests/matlab_crossval/generation'
-
-rng(2); % ensure the saved output file for `pymdp` is always the same
+rng(7); % ensure the saved output file for `pymdp` is always the same
 %% VARIABLE NAMES
 
 T = 10; % total length of time (generative process horizon)
@@ -14,7 +12,7 @@ tau = 0.25; % learning rate
 num_iter = 10; % number of variational iterations
 num_states = [3]; % hidden state dimensionalities
 num_factors = length(num_states); % number of hidden state factors
-num_obs = [2];   % observation modality dimensionalities
+num_obs = [4];   % observation modality dimensionalities
 num_modalities = length(num_obs); % number of hidden state factors
 num_actions = [3]; % control factor (action) dimensionalities
 num_control = length(num_actions);
@@ -41,12 +39,6 @@ U(:,:,1)  = 1:Np;
 
 policy_matrix = zeros(policy_horizon, Np, num_factors); % matrix of policies expressed in terms of time points, actions, and hidden state factors. size(policies) ==  [policy_horizon, num_policies, num_factors]. 
                                                                   % This gets updated over time with the actual actions/policies taken in the past
-%                                                                   
-% U = zeros(1,num_actions,num_factors); % matrix of allowable actions per policy at each move. size(U) == [1, num_policies, num_factors]
-% 
-% for k = 1:num_actions
-%     U(1,k,:) = k;
-% end
 
 policy_matrix(1,:,:) = U;
 
@@ -184,22 +176,20 @@ for t = 1:T
     S     = size(policy_matrix,1) + 1;   % horizon
     R = t;
     
-%     if t == 3
-%         debug_flag = true;
-%     end
-    
+    fprintf('Observations used for timestep %d\n',t)
+    fprintf('===================================\n')
+                        
     F     = zeros(Np,1);
     for k = p                % loop over plausible policies
 %     dF    = 1;                  % reset criterion for this policy
         for iter = 1:num_iter       % iterate belief updates
-            F(k)  = 0;                 % reset free energy for this policy
-            
-            if k == 2
-                debug_flag = true;
-            end
+            F(k)  = 0;                 % reset free energy for this policy           
             
             for j = max(1,t-window_len+1):S             % loop over future time points
-
+                
+                if t == 4 && j == S
+                    debug_flag = true;
+                end
                 % curent posterior over outcome factors
                 %--------------------------------------------------
                 if j <= t
@@ -221,8 +211,12 @@ for t = 1:T
         %                 if dF > exp(-8) || iter > 4
 
                     % marginal likelihood over outcome factors
-                    %------------------------------------------
+                    %------------------------------------------                   
+                    
                     if j <= t
+                        if iter == 1 && f == 1
+                            fprintf('obs from timestep: %d\n',j)
+                        end
                         qL = spm_dot(L{j},xq,f);
                         qL = spm_log(qL(:));
                     end                              
@@ -265,7 +259,6 @@ for t = 1:T
 
                     v    = v - mean(v);
  
-
                     sx   = softmax(qx + v * tau);
 
                     % store update neuronal activity
@@ -355,6 +348,8 @@ for t = 1:T
    
     q_pi = spm_softmax(w*Q - F); % copied how we do it in `pymdp` for comparison
     
+    disp(q_pi)
+    
     if t < T
         % marginal posterior over action (for each factor)
         %----------------------------------------------------------
@@ -377,7 +372,7 @@ for t = 1:T
             end
         end
         
-        disp(size(policy_matrix,1))
+%         disp(size(policy_matrix,1))
         
         if (t - window_len) >= 0
             for f = 1:num_factors
@@ -416,7 +411,7 @@ policies = U;
 t_horizon = window_len;
 qs = x;
 likelihoods = L;
-save(save_dir,'A','B','C','obs','states','actions','policies','t_horizon','actions','qs','likelihoods')
+save(save_dir,'A','B','C','obs','states','actions','policies','t_horizon','actions','qs','xn', 'vn', 'likelihoods')
 %%
 % auxillary functions
 %==========================================================================
