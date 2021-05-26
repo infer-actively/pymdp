@@ -351,7 +351,7 @@ class Agent(object):
                 # )
                 empirical_prior = control.get_expected_states(
                     self.qs, self.B, self.action.reshape(1, -1) #type: ignore
-                ).log() # try logging afterwards
+                ).log() 
             else:
                 empirical_prior = self.D.log()
             qs = inference.update_posterior_states(
@@ -367,7 +367,7 @@ class Agent(object):
             self.prev_obs.append(observation)
             if len(self.prev_obs) > self.inference_horizon:
                 latest_obs = self.prev_obs[-self.inference_horizon:]
-                latest_actions = self.prev_actions[-self.inference_horizon:]
+                latest_actions = self.prev_actions[-(self.inference_horizon-1):]
             else:
                 latest_obs = self.prev_obs
                 latest_actions = self.prev_actions
@@ -388,6 +388,54 @@ class Agent(object):
         self.qs = qs
 
         return qs
+
+    def infer_states_test(self, observation):
+        observation = tuple(observation)
+
+        if not hasattr(self, "qs"):
+            self.reset()
+
+        if self.inference_algo is "VANILLA":
+            if self.action is not None:
+                empirical_prior = control.get_expected_states(
+                    self.qs, self.B, self.action.reshape(1, -1) #type: ignore
+                ).log() 
+            else:
+                empirical_prior = self.D.log()
+            qs = inference.update_posterior_states(
+            self.A,
+            observation,
+            empirical_prior,
+            return_numpy=False,
+            method=self.inference_algo,
+            **self.inference_params
+            )
+        elif self.inference_algo is "MMP":
+
+            self.prev_obs.append(observation)
+            if len(self.prev_obs) > self.inference_horizon:
+                latest_obs = self.prev_obs[-self.inference_horizon:]
+                latest_actions = self.prev_actions[-(self.inference_horizon-1):]
+            else:
+                latest_obs = self.prev_obs
+                latest_actions = self.prev_actions
+
+            qs, F, xn, vn = inference.update_posterior_states_v2_test(
+                utils.to_numpy(self.A),
+                utils.to_numpy(self.B), 
+                latest_obs,
+                self.policies, 
+                latest_actions, 
+                prior = self.latest_belief, 
+                policy_sep_prior = self.edge_handling_params['policy_sep_prior'],
+                **self.inference_params
+            )
+
+            self.F = F # variational free energy of each policy  
+    
+        self.qs = qs
+
+        return qs, xn, vn
 
     def infer_policies(self):
 
@@ -518,6 +566,36 @@ def build_belief_array(qx):
                 belief_array[policy_i, :, timestep] = qx[policy_i][timestep][0]
     
     return belief_array
+
+def build_xn_vn_array(xn):
+
+    """
+    This function constructs array-ified (not nested) versions
+    of the posterior xn or vn arrays, that are separated 
+    by policy, timepoint, and hidden state factor
+    """
+
+    num_policies = len(xn)
+    num_itr = len(xn[0])
+    num_factors = len(xn[0][0])
+
+    if num_factors > 1:
+        xn_array = utils.obj_array(num_factors)
+        for factor in range(num_factors):
+            n_states, infer_len = xn[0][0][f].shape
+            xn_array[factor] = np.zeros( (num_itr, n_states, infer_len, num_policies) )
+        for policy_i in range(num_policies):
+            for itr in range(num_itr):
+                for factor in range(num_factors):
+                    xn_array[factor][itr,:,:,policy_i] = xn[policy_i][itr][factor]
+    else:
+        n_states, infer_len  = xn[0][0][0].shape
+        xn_array = np.zeros( (num_itr, n_states, infer_len, num_policies) )
+        for policy_i in range(num_policies):
+            for itr in range(num_itr):
+                xn_array[itr,:,:,policy_i] = xn[policy_i][itr][0] 
+    
+    return xn_array
 
     
     
