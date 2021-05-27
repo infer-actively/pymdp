@@ -260,7 +260,7 @@ class Agent(object):
 
     def reset(self, init_qs=None):
 
-        self.curr_timestep = 1
+        self.curr_timestep = 0
 
         if init_qs is None:
             if self.inference_algo == 'VANILLA':
@@ -299,7 +299,7 @@ class Agent(object):
         self.curr_timestep += 1
 
         if self.inference_algo == "MMP":
-            if (self.curr_timestep - self.inference_horizon) > 0:
+            if (self.curr_timestep - self.inference_horizon) >= 0:
                 self.set_latest_beliefs()
         
         return self.curr_timestep
@@ -316,7 +316,7 @@ class Agent(object):
             for p_i, _ in enumerate(self.policies):
                 last_belief[p_i] = copy.deepcopy(self.qs[p_i][0])
 
-        if self.edge_handling_params['use_BMA'] and (self.curr_timestep - self.inference_horizon > 0):
+        if self.edge_handling_params['use_BMA'] and (self.curr_timestep - self.inference_horizon >= 0):
             self.latest_belief = inference.average_states_over_policies(last_belief, self.q_pi) # average the earliest marginals together using posterior over policies (`self.q_pi`)
         else:
             self.latest_belief = last_belief
@@ -333,7 +333,7 @@ class Agent(object):
         
         future_qs_seq = utils.obj_array(len(self.qs))
         for p_idx in range(len(self.qs)):
-            future_qs_seq[p_idx] = self.qs[p_idx][-self.policy_len:] # this grabs only the last `policy_len` beliefs about hidden states, under each policy
+            future_qs_seq[p_idx] = self.qs[p_idx][-(self.policy_len+1):] # this grabs only the last `policy_len`+1 beliefs about hidden states, under each policy
 
         return future_qs_seq
 
@@ -351,7 +351,7 @@ class Agent(object):
                 # )
                 empirical_prior = control.get_expected_states(
                     self.qs, self.B, self.action.reshape(1, -1) #type: ignore
-                ).log() # try logging afterwards
+                ).log() 
             else:
                 empirical_prior = self.D.log()
             qs = inference.update_posterior_states(
@@ -366,16 +366,18 @@ class Agent(object):
 
             self.prev_obs.append(observation)
             if len(self.prev_obs) > self.inference_horizon:
-                # print(len(self.prev_obs))
-                self.prev_obs = self.prev_obs[-self.inference_horizon:]
-                # print(len(self.prev_obs))
-            
+                latest_obs = self.prev_obs[-self.inference_horizon:]
+                latest_actions = self.prev_actions[-(self.inference_horizon-1):]
+            else:
+                latest_obs = self.prev_obs
+                latest_actions = self.prev_actions
+
             qs, F = inference.update_posterior_states_v2(
                 utils.to_numpy(self.A),
                 utils.to_numpy(self.B), 
-                self.prev_obs, 
+                latest_obs,
                 self.policies, 
-                self.prev_actions, 
+                latest_actions, 
                 prior = self.latest_belief, 
                 policy_sep_prior = self.edge_handling_params['policy_sep_prior'],
                 **self.inference_params
@@ -386,6 +388,54 @@ class Agent(object):
         self.qs = qs
 
         return qs
+
+    def infer_states_test(self, observation):
+        observation = tuple(observation)
+
+        if not hasattr(self, "qs"):
+            self.reset()
+
+        if self.inference_algo is "VANILLA":
+            if self.action is not None:
+                empirical_prior = control.get_expected_states(
+                    self.qs, self.B, self.action.reshape(1, -1) #type: ignore
+                ).log() 
+            else:
+                empirical_prior = self.D.log()
+            qs = inference.update_posterior_states(
+            self.A,
+            observation,
+            empirical_prior,
+            return_numpy=False,
+            method=self.inference_algo,
+            **self.inference_params
+            )
+        elif self.inference_algo is "MMP":
+
+            self.prev_obs.append(observation)
+            if len(self.prev_obs) > self.inference_horizon:
+                latest_obs = self.prev_obs[-self.inference_horizon:]
+                latest_actions = self.prev_actions[-(self.inference_horizon-1):]
+            else:
+                latest_obs = self.prev_obs
+                latest_actions = self.prev_actions
+
+            qs, F, xn, vn = inference.update_posterior_states_v2_test(
+                utils.to_numpy(self.A),
+                utils.to_numpy(self.B), 
+                latest_obs,
+                self.policies, 
+                latest_actions, 
+                prior = self.latest_belief, 
+                policy_sep_prior = self.edge_handling_params['policy_sep_prior'],
+                **self.inference_params
+            )
+
+            self.F = F # variational free energy of each policy  
+    
+        self.qs = qs
+
+        return qs, xn, vn
 
     def infer_policies(self):
 
@@ -476,7 +526,7 @@ class Agent(object):
         if method == "VANILLA":
             default_params = {"num_iter": 10, "dF": 1.0, "dF_tol": 0.001}
         elif method == "MMP":
-            default_params = {"num_iter": 10, "grad_descent": False, "tau": 0.25, "save_vfe_seq": False}
+            default_params = {"num_iter": 10, "grad_descent": True, "tau": 0.25}
         elif method == "VMP":
             raise NotImplementedError("VMP is not implemented")
         elif method == "BP":
@@ -487,3 +537,65 @@ class Agent(object):
             raise NotImplementedError("CV is not implemented")
 
         return default_params
+
+def build_belief_array(qx):
+
+    """
+    This function constructs array-ified (not nested) versions
+    of the posterior belief arrays, that are separated 
+    by policy, timepoint, and hidden state factor
+    """
+
+    num_policies = len(qx)
+    num_timesteps = len(qx[0])
+    num_factors = len(qx[0][0])
+
+    if num_factors > 1:
+        belief_array = utils.obj_array(num_factors)
+        for factor in range(num_factors):
+            belief_array[factor] = np.zeros( (num_policies, qx[0][0][factor].shape[0], num_timesteps) )
+        for policy_i in range(num_policies):
+            for timestep in range(num_timesteps):
+                for factor in range(num_factors):
+                    belief_array[factor][policy_i, :, timestep] = qx[policy_i][timestep][factor]
+    else:
+        n_states = qx[0][0][0].shape[0]
+        belief_array = np.zeros( (num_policies, n_states, num_timesteps) )
+        for policy_i in range(num_policies):
+            for timestep in range(num_timesteps):
+                belief_array[policy_i, :, timestep] = qx[policy_i][timestep][0]
+    
+    return belief_array
+
+def build_xn_vn_array(xn):
+
+    """
+    This function constructs array-ified (not nested) versions
+    of the posterior xn (beliefs) or vn (prediction error) arrays, that are separated 
+    by iteration, hidden state factor, timepoint, and policy
+    """
+
+    num_policies = len(xn)
+    num_itr = len(xn[0])
+    num_factors = len(xn[0][0])
+
+    if num_factors > 1:
+        xn_array = utils.obj_array(num_factors)
+        for factor in range(num_factors):
+            n_states, infer_len = xn[0][0][f].shape
+            xn_array[factor] = np.zeros( (num_itr, n_states, infer_len, num_policies) )
+        for policy_i in range(num_policies):
+            for itr in range(num_itr):
+                for factor in range(num_factors):
+                    xn_array[factor][itr,:,:,policy_i] = xn[policy_i][itr][factor]
+    else:
+        n_states, infer_len  = xn[0][0][0].shape
+        xn_array = np.zeros( (num_itr, n_states, infer_len, num_policies) )
+        for policy_i in range(num_policies):
+            for itr in range(num_itr):
+                xn_array[itr,:,:,policy_i] = xn[policy_i][itr][0] 
+    
+    return xn_array
+
+    
+    

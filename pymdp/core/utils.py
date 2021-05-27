@@ -208,7 +208,7 @@ def process_observation(obs, n_modalities, n_observations):
 def process_prior(prior, n_factors):
     """
     Helper function for formatting prior beliefs  
-        """
+    """
     if is_distribution(prior):
         prior_arr = obj_array(n_factors)
         if n_factors == 1:
@@ -222,6 +222,54 @@ def process_prior(prior, n_factors):
         prior = to_arr_of_arr(prior)
 
     return prior
+
+def convert_observation_array(obs, num_obs):
+    """
+    Converts from SPM-style observation array to infer-actively one-hot object arrays.
+    
+    Parameters
+    ----------
+    - 'obs' [numpy 2-D nd.array]:
+        SPM-style observation arrays are of shape (num_modalities, T), where each row 
+        contains observation indices for a different modality, and columns indicate 
+        different timepoints. Entries store the indices of the discrete observations 
+        within each modality. 
+
+    - 'num_obs' [list]:
+        List of the dimensionalities of the observation modalities. `num_modalities` 
+        is calculated as `len(num_obs)` in the function to determine whether we're 
+        dealing with a single- or multi-modality 
+        case.
+
+    Returns
+    ----------
+    - `obs_t`[list]: 
+        A list with length equal to T, where each entry of the list is either a) an object 
+        array (in the case of multiple modalities) where each sub-array is a one-hot vector 
+        with the observation for the correspond modality, or b) a 1D numpy array (in the case
+        of one modality) that is a single one-hot vector encoding the observation for the 
+        single modality.
+    """
+
+    T = obs.shape[1]
+    num_modalities = len(num_obs)
+
+    # Initialise the output
+    obs_t = []
+    # Case of one modality
+    if num_modalities == 1:
+        for t in range(T):
+            obs_t.append(onehot(obs[0, t] - 1, num_obs[0]))
+    else:
+        for t in range(T):
+            obs_AoA = np.empty(num_modalities, dtype=object)
+            for g in range(num_modalities):
+                # Subtract obs[g,t] by 1 to account for MATLAB vs. Python indexing
+                # (MATLAB is 1-indexed)
+                obs_AoA[g] = onehot(obs[g, t] - 1, num_obs[g])
+            obs_t.append(obs_AoA)
+
+    return obs_t
 
 def insert_multiple(s, indices, items):
     for idx in range(len(items)):
