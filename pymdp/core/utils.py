@@ -384,15 +384,19 @@ def create_A_matrix_stub(model_labels):
 
     state_combinations = pd.MultiIndex.from_product(list(state_labels.values()), names=list(state_labels.keys()))
     num_state_combos = np.prod(num_states)
-    num_rows = (np.array(num_obs) * num_state_combos).sum()
+    # num_rows = (np.array(num_obs) * num_state_combos).sum()
+    num_rows = sum(num_obs)
+
     cell_values = np.zeros((num_rows, len(state_combinations)))
 
     obs_combinations = []
     for modality in obs_labels.keys():
         levels_to_combine = [[modality]] + [obs_labels[modality]]
-        obs_combinations += num_state_combos * list(itertools.product(*levels_to_combine))
+        # obs_combinations += num_state_combos * list(itertools.product(*levels_to_combine))
+        obs_combinations += list(itertools.product(*levels_to_combine))
 
-    obs_combinations = pd.MultiIndex.from_tuples(obs_combinations)
+
+    obs_combinations = pd.MultiIndex.from_tuples(obs_combinations, names = ["Modality", "Level"])
 
     A_matrix = pd.DataFrame(cell_values, index = obs_combinations, columns=state_combinations)
 
@@ -409,3 +413,21 @@ def read_A_matrix(path):
         index_col=list(range(level_counts["index"])),
         header=list(range(level_counts["header"]))
         ).astype(np.float64)
+
+def convert_stub_to_ndarray(A_stub, model_labels):
+    """
+    This function converts a multi-index pandas dataframe `A_stub` 
+    """
+
+    num_obs, num_modalities, num_states, num_factors = get_model_dimensions_from_labels(model_labels)
+
+    A = obj_array(num_modalities)
+
+    for g, modality_name in enumerate(model_labels['observations'].keys()):
+        A[g] = A_stub.loc[modality_name].to_numpy().reshape(num_obs[g], *num_states)
+        assert (A[g].sum(axis=0) == 1.0).all(), 'A matrix not normalized! Check your initialization....\n'
+
+    return A
+    
+   
+
