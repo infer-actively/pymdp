@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 
 DATA_PATH = "test/matlab_crossval/output/"
 
-array_path = os.path.join(os.getcwd(), DATA_PATH + "vbx_test_a.mat")
+array_path = os.path.join(os.getcwd(), DATA_PATH + "vbx_test_1a.mat")
 mat_contents = loadmat(file_name=array_path)
 
 A = mat_contents["A"][0]

@@ -406,7 +406,7 @@ for t = 1:T
             
 end
 
-save_dir = 'output/vbx_test_a.mat';
+save_dir = 'output/vbx_test_1a.mat';
 policies = U;
 t_horizon = window_len;
 qs = x;

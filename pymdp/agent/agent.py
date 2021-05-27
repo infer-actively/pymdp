@@ -571,8 +571,8 @@ def build_xn_vn_array(xn):
 
     """
     This function constructs array-ified (not nested) versions
-    of the posterior xn or vn arrays, that are separated 
-    by policy, timepoint, and hidden state factor
+    of the posterior xn (beliefs) or vn (prediction error) arrays, that are separated 
+    by iteration, hidden state factor, timepoint, and policy
     """
 
     num_policies = len(xn)
