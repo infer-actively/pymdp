@@ -7,6 +7,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
 import numpy as np
+import pandas as pd
 
 from pymdp.distributions import Categorical, Dirichlet
 import itertools
@@ -102,6 +103,17 @@ def get_model_dimensions(A=None, B=None):
     
     return num_obs, num_states, num_modalities, num_factors
 
+def get_model_dimensions_from_labels(model_labels):
+
+    modalities = model_labels['observations']
+    num_modalities = len(modalities.keys())
+    num_obs = [len(modalities[modality]) for modality in modalities.keys()]
+
+    factors = model_labels['states']
+    num_factors = len(factors.keys())
+    num_states = [len(factors[factor]) for factor in factors.keys()]
+
+    return num_obs, num_modalities, num_states, num_factors
 
 def norm_dist(dist):
     if len(dist.shape) == 3:
@@ -364,3 +376,36 @@ def construct_full_a(A_reduced, original_factor_idx, num_states):
     
     return A
 
+def create_A_matrix_stub(model_labels):
+
+    num_obs, _, num_states, _= get_model_dimensions_from_labels(model_labels)
+
+    obs_labels, state_labels = model_labels['observations'], model_labels['states']
+
+    state_combinations = pd.MultiIndex.from_product(list(state_labels.values()), names=list(state_labels.keys()))
+    num_state_combos = np.prod(num_states)
+    num_rows = (np.array(num_obs) * num_state_combos).sum()
+    cell_values = np.zeros((num_rows, len(state_combinations)))
+
+    obs_combinations = []
+    for modality in obs_labels.keys():
+        levels_to_combine = [[modality]] + [obs_labels[modality]]
+        obs_combinations += num_state_combos * list(itertools.product(*levels_to_combine))
+
+    obs_combinations = pd.MultiIndex.from_tuples(obs_combinations)
+
+    A_matrix = pd.DataFrame(cell_values, index = obs_combinations, columns=state_combinations)
+
+    return A_matrix
+
+def read_A_matrix(path):
+    raw_table = pd.read_excel(path, header=None)
+    level_counts = {
+        "index": raw_table.iloc[0, :].dropna().index[0] + 1,
+        "header": raw_table.iloc[0, :].dropna().index[0] + 1,
+    }
+    return pd.read_excel(
+        path,
+        index_col=list(range(level_counts["index"])),
+        header=list(range(level_counts["header"]))
+        ).astype(np.float64)
