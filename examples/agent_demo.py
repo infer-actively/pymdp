@@ -70,7 +70,7 @@ for t in range(T):
     action = agent.sample_action()
 
     for f, s_i in enumerate(s):
-        s[f] = utils.sample(B_gp[f][:, s_i, action[f]])
+        s[f] = utils.sample(B_gp[f][:, s_i, int(action[f])])
 
     for g, _ in enumerate(o):
         o[g] = utils.sample(A_gp[g][:, s[0], s[1]])
