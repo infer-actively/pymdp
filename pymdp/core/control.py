@@ -240,7 +240,7 @@ def get_expected_states(qs, B, policy, return_numpy=False):
 
         # initialise expected states after first action using current posterior (t = 0)
         for control_factor, control in enumerate(policy[0, :]):
-            qs_pi[0][control_factor] = spm_dot(B[control_factor][:, :, control], qs[control_factor])
+            qs_pi[0][control_factor] = spm_dot(B[control_factor][:, :, int(control)], qs[control_factor])
 
         # get expected states over time
         if n_steps > 1:
