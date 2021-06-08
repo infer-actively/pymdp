@@ -71,7 +71,7 @@ class TMazeEnv(Env):
         prob_states = np.empty(self.n_factors, dtype=object)
         for factor, state in enumerate(self._state):
             prob_states[factor] = (
-                self._transition_dist[factor][:, :, actions[factor]]
+                self._transition_dist[factor][:, :, int(actions[factor])]
                 .dot(state, return_numpy=True)
                 .flatten()
             )
