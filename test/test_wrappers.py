@@ -42,12 +42,14 @@ class TestWrappers(unittest.TestCase):
                 "sprinkler_state": ["on", "off"],
             },
         }
+
+        num_hidden_state_factors = len(model_labels["states"])
         
         expected_A_matrix_stub = create_A_matrix_stub(model_labels)
     
         temporary_file_path = (tmp_path / "A_matrix_stub.xlsx").resolve()
         expected_A_matrix_stub.to_excel(temporary_file_path)
-        actual_A_matrix_stub = read_A_matrix(temporary_file_path)
+        actual_A_matrix_stub = read_A_matrix(temporary_file_path, num_hidden_state_factors)
 
         os.remove(temporary_file_path)
 

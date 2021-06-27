@@ -441,11 +441,11 @@ def create_B_matrix_stubs(model_labels):
 
     return B_matrices
 
-def read_A_matrix(path):
+def read_A_matrix(path, num_hidden_state_factors):
     raw_table = pd.read_excel(path, header=None)
     level_counts = {
         "index": raw_table.iloc[0, :].dropna().index[0] + 1,
-        "header": raw_table.iloc[0, :].dropna().index[0] + 1,
+        "header": raw_table.iloc[0, :].dropna().index[0] + num_hidden_state_factors - 1,
     }
     return pd.read_excel(
         path,
