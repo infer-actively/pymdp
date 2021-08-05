@@ -585,26 +585,20 @@ def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
 
     return pB_infogain
 
+n_states = [5]
+control_fac_idx = [0]
 
-def construct_policies(n_states, n_control=None, policy_len=1, control_fac_idx=None):
+def construct_policies(n_states, n_control = None, policy_len=1, control_fac_idx=None):
     """Generate a set of policies
 
     Each policy is encoded as a numpy.ndarray of shape (n_steps, n_factors), where each 
-    value corresponds to
-    the index of an action for a given time step and control factor. The variable 
-    `policies` that is returned
-    is a list of each policy-specific numpy nd.array.
-
-    @NOTE: If the list of control state dimensionalities (`n_control`) is not provided, 
-    `n_control` defaults to being equal to n_states, except for the indices 
-    provided by control_fac_idx, where
-    the value of n_control for the indicated factor is 1.
-
-    @TODO think about returning n_control - required arg
+    value corresponds to the index of an action for a given time step and control factor. The variable 
+    `policies` that is returned is a list of each policy-specific numpy nd.array.
+.
     Arguments:
     -------
     - `n_states`: list of dimensionalities of hidden state factors
-    - `n_control`: list of dimensionalities of control state factors 
+    - `n_control`: list of dimensionalities of control state factors. If `None`, then defaults to being the dimensionality of each hidden state factor that is controllable
     - `policy_len`: temporal length ('horizon') of policies
     - `control_fac_idx`: list of indices of the hidden state factors 
     that are controllable (i.e. those whose n_control[i] > 1)
@@ -615,40 +609,32 @@ def construct_policies(n_states, n_control=None, policy_len=1, control_fac_idx=N
                     numpy.ndarray of shape (n_steps, n_factors).
                 Each value in a policy array corresponds to the index of an action for 
                 a given timestep and control factor.
-    - `n_control`: list of dimensionalities of actions along each hidden 
-                    state factor (i.e. control state dimensionalities). 
-                The dimensionality of control states whose index is not in control_fac_idx is set to 1.
-                This is only returned when n_control is not provided as argument.
     """
 
     n_factors = len(n_states)
     if control_fac_idx is None:
-        control_fac_idx = list(range(n_factors))
-    return_n_control = False
+        if n_control is not None:
+            control_fac_idx = [f for f, n_c in enumerate(n_control) if n_c > 1]
+        else:
+            control_fac_idx = list(range(n_factors))
 
     if n_control is None:
-        return_n_control = True
-        n_control = []
-        for c_idx in range(n_factors):
-            if c_idx in control_fac_idx:
-                n_control.append(n_states[c_idx])
-            else:
-                n_control.append(1)
-        n_control = list(np.array(n_control).astype(int))
+        n_control = [n_states[c_idx] if c_idx in control_fac_idx else 1 for c_idx in range(n_factors)]
+        
     x = n_control * policy_len
     policies = list(itertools.product(*[list(range(i)) for i in x]))
-    if policy_len > 1:
-        for pol_i in range(len(policies)):
-            policies[pol_i] = np.array(policies[pol_i]).reshape(policy_len, n_factors)
-    else:
-        for pol_i in range(len(policies)):
-            policies[pol_i] = np.array(policies[pol_i]).reshape(1, n_factors)
+    for pol_i in range(len(policies)):
+        policies[pol_i] = np.array(policies[pol_i]).reshape(policy_len, n_factors)
 
-    if return_n_control:
-        return policies, n_control
-    else:
-        return policies
+    return policies
+    
+def get_n_control_from_policies(policies):
+    """
+    This assumes a fully enumerated policy space (there is a policy that explores the maximum control state level for each control factor
+    """
 
+    return list(np.max(np.vstack(policies), axis = 0))
+    
 
 def sample_action(q_pi, policies, n_control, sampling_type="marginal_action"):
     """
