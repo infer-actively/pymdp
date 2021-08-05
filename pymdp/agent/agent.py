@@ -10,7 +10,7 @@ __author__: Conor Heins, Alexander Tschantz, Daphne Demekas, Brennan Klein
 import warnings
 import numpy as np
 from pymdp.core import inference, control, learning
-from pymdp.core import utils
+from pymdp.core import utils, maths
 import copy
 
 class Agent(object):
@@ -291,11 +291,11 @@ class Agent(object):
 
         if self.inference_algo is "VANILLA":
             if self.action is not None:
-                empirical_prior = control.get_expected_states(
+                empirical_prior = maths.spm_log_obj_array(control.get_expected_states(
                     self.qs, self.B, self.action.reshape(1, -1) #type: ignore
-                ).log() 
+                ))
             else:
-                empirical_prior = self.D.log()
+                empirical_prior = maths.spm_log_obj_array(self.D)
             qs = inference.update_posterior_states(
             self.A,
             observation,
