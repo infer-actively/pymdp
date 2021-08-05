@@ -3,7 +3,7 @@
 
 """ Agent Class
 
-__author__: Conor Heins, Alexander Tschantz, Brennan Klein
+__author__: Conor Heins, Alexander Tschantz, Daphne Demekas, Brennan Klein
 
 """
 
@@ -153,14 +153,13 @@ class Agent(object):
 
         # use_BMA and policy_sep_prior can both be False, but both cannot be simultaneously be True. If one of them is True, the other must be False
         if policy_sep_prior:
-            if not use_BMA:
+            if use_BMA:
                 warnings.warn(
                     "Inconsistent choice of `policy_sep_prior` and `use_BMA`.\
                     You have set `policy_sep_prior` to True, so we are setting `use_BMA` to False"
                 )
-                self.edge_handling_params['use_BMA'] = True
+                self.edge_handling_params['use_BMA'] = False
         
-
         if inference_algo is None:
             self.inference_algo = "VANILLA"
             self.inference_params = self._get_default_params()
@@ -245,9 +244,8 @@ class Agent(object):
 
         self.curr_timestep += 1
 
-        if self.inference_algo == "MMP":
-            if (self.curr_timestep - self.inference_horizon) >= 0:
-                self.set_latest_beliefs()
+        if self.inference_algo == "MMP" and (self.curr_timestep - self.inference_horizon) >= 0:
+            self.set_latest_beliefs()
         
         return self.curr_timestep
     
