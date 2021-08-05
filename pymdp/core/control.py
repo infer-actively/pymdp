@@ -588,7 +588,7 @@ def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
 n_states = [5]
 control_fac_idx = [0]
 
-def construct_policies(n_states, n_control = None, policy_len=1, control_fac_idx=None):
+def construct_policies(num_states, num_controls = None, policy_len=1, control_fac_idx=None):
     """Generate a set of policies
 
     Each policy is encoded as a numpy.ndarray of shape (n_steps, n_factors), where each 
@@ -597,8 +597,8 @@ def construct_policies(n_states, n_control = None, policy_len=1, control_fac_idx
 .
     Arguments:
     -------
-    - `n_states`: list of dimensionalities of hidden state factors
-    - `n_control`: list of dimensionalities of control state factors. If `None`, then defaults to being the dimensionality of each hidden state factor that is controllable
+    - `num_states`: list of dimensionalities of hidden state factors
+    - `num_controls`: list of dimensionalities of control state factors. If `None`, then defaults to being the dimensionality of each hidden state factor that is controllable
     - `policy_len`: temporal length ('horizon') of policies
     - `control_fac_idx`: list of indices of the hidden state factors 
     that are controllable (i.e. those whose n_control[i] > 1)
@@ -611,29 +611,29 @@ def construct_policies(n_states, n_control = None, policy_len=1, control_fac_idx
                 a given timestep and control factor.
     """
 
-    n_factors = len(n_states)
+    num_factors = len(num_states)
     if control_fac_idx is None:
-        if n_control is not None:
-            control_fac_idx = [f for f, n_c in enumerate(n_control) if n_c > 1]
+        if num_controls is not None:
+            control_fac_idx = [f for f, n_c in enumerate(num_controls) if n_c > 1]
         else:
-            control_fac_idx = list(range(n_factors))
+            control_fac_idx = list(range(num_factors))
 
-    if n_control is None:
-        n_control = [n_states[c_idx] if c_idx in control_fac_idx else 1 for c_idx in range(n_factors)]
+    if num_controls is None:
+        num_controls = [num_states[c_idx] if c_idx in control_fac_idx else 1 for c_idx in range(num_factors)]
         
-    x = n_control * policy_len
+    x = num_controls * policy_len
     policies = list(itertools.product(*[list(range(i)) for i in x]))
     for pol_i in range(len(policies)):
-        policies[pol_i] = np.array(policies[pol_i]).reshape(policy_len, n_factors)
+        policies[pol_i] = np.array(policies[pol_i]).reshape(policy_len, num_factors)
 
     return policies
     
-def get_n_control_from_policies(policies):
+def get_num_controls_from_policies(policies):
     """
     This assumes a fully enumerated policy space (there is a policy that explores the maximum control state level for each control factor
     """
 
-    return list(np.max(np.vstack(policies), axis = 0))
+    return list(np.max(np.vstack(policies), axis = 0) + 1)
     
 
 def sample_action(q_pi, policies, n_control, sampling_type="marginal_action"):
