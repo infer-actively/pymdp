@@ -8,7 +8,6 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
 import numpy as np
-from pymdp.distributions import Categorical, Dirichlet
 from pymdp.core import inference, control, learning
 from pymdp.core import utils
 import copy
@@ -26,9 +25,9 @@ class Agent(object):
         pB=None,
         C=None,
         D=None,
-        n_states=None,
-        n_observations=None,
-        n_controls=None,
+        num_states=None,
+        num_obs=None,
+        num_controls=None,
         policy_len=1,
         inference_horizon=1,
         control_fac_idx=None,
@@ -65,123 +64,91 @@ class Agent(object):
         self.lr_pB = lr_pB
 
         """ Initialise observation model (A matrices) """
-        if A is not None:
-            # Create `Categorical`
-            if not isinstance(A, Categorical):
-                self.A = Categorical(values=A)
-            else:
-                self.A = A
+        if not isinstance(A, np.ndarray):
+            raise TypeError(
+                'A matrix must be a numpy array'
+            )
+        self.A = A
 
-            # Determine number of modalities and observations
-            if self.A.IS_AOA:
-                self.n_modalities = self.A.shape[0]
-                self.n_observations = [
-                    self.A[modality].shape[0] for modality in range(self.n_modalities)
-                ]
-            else:
-                self.n_modalities = 1
-                self.n_observations = [self.A.shape[0]]
-            construct_A_flag = False
-        else:
+        A = utils.to_arr_of_arr(A)
 
-            # If A is none, we randomly initialise the matrix. This requires some information
-            if n_observations is None:
-                raise ValueError(
-                    "Must provide either `A` or `n_observations` to `Agent` constructor"
-                )
-            self.n_observations = n_observations
-            self.n_modalities = len(self.n_observations)
-            construct_A_flag = True
+        # Determine number of modalities and their dimensionaliti
+        self.num_obs = [A[m].shape[0] for m in range(len(A))]
+        self.num_modalities = len(self.num_obs)
 
-        """ Initialise prior Dirichlet parameters on observation model (pA matrices) """
-        if pA is not None:
-            if not isinstance(pA, Dirichlet):
-                self.pA = Dirichlet(values=pA)
-            else:
-                self.pA = pA
-        else:
-            self.pA = None
+        """ Assigning prior parameters on observation model (pA matrices) """
+        self.pA = pA
 
         """ Initialise transition model (B matrices) """
-        if B is not None:
-            if not isinstance(B, Categorical):
-                self.B = Categorical(values=B)
-            else:
-                self.B = B
+        if not isinstance(B, np.ndarray):
+            raise TypeError(
+                'B matrix must be a numpy array'
+            )
+        self.B = B
 
-            # Same logic as before, but here we need number of factors and states per factor
-            if self.B.IS_AOA:
-                self.n_factors = self.B.shape[0]
-                self.n_states = [self.B[f].shape[0] for f in range(self.n_factors)]
-            else:
-                self.n_factors = 1
-                self.n_states = [self.B.shape[0]]
-            construct_B_flag = False
-        else:
-            if n_states is None:
-                raise ValueError("Must provide either `B` or `n_states` to `Agent` constructor")
-            self.n_states = n_states
-            self.n_factors = len(self.n_factors) #type: ignore
-            construct_B_flag = True
+        B = utils.to_arr_of_arr(B)
 
-        """ Initialise prior Dirichlet parameters on transition model (pB matrices) """
-        if pB is not None:
-            if not isinstance(pB, Dirichlet):
-                self.pB = Dirichlet(values=pA)
-            else:
-                self.pB = pB
-        else:
-            self.pB = None
+        # Determine number of hidden state factors and their dimensionalities
+        self.num_states = [B[f].shape[0] for f in range(len(B))]
+        self.num_factors = len(self.num_states)
+
+        """ Assigning prior parameters on transition model (pB matrices) """
+        self.pB = pB
 
         # Users have the option to make only certain factors controllable.
         # default behaviour is to make all hidden state factors controllable
-        # (i.e. self.n_states == self.n_controls)
+        # (i.e. self.num_states == self.num_controls)
         if control_fac_idx is None:
-            self.control_fac_idx = list(range(self.n_factors))
+            self.control_fac_idx = [f for f in range(self.num_factors) if B[f].shape[2] > 1]
         else:
             self.control_fac_idx = control_fac_idx
 
-        # The user can specify the number of control states
-        # However, given the controllable factors, this can be inferred
-        if n_controls is None:
-            _, self.n_controls = self._construct_n_controls()
-        else:
-            self.n_controls = n_controls
+            for factor_idx in control_fac_idx:
+                assert B[factor_idx].shape[2] > 1, "B matrix dimensions are not consistent with control factors"
 
         # Again, the use can specify a set of possible policies, or
         # all possible combinations of actions and timesteps will be considered
         if policies is None:
-            self.policies, _ = self._construct_n_controls()
-        else:
-            self.policies = policies
+            policies = self._construct_policies()
+        self.policies = policies
+
+        # The user can specify the number of control states
+        # However, given the controllable factors, this can be inferred
+        if num_controls is None:
+            num_controls = self._construct_num_controls()
+        self.num_controls = num_controls
+
+        assert all([len(self.num_controls) == policy.shape[1] for policy in self.policies]), "Number of control states is not consistent with policy dimensionalities"
+        
+        all_policies = np.vstack(self.policies)
+
+        assert all([n_c == max_action for (n_c, max_action) in zip(self.num_controls, list(np.max(all_policies, axis =0)+1))]), "Maximum number of actions is not consistent with `num_controls`"
 
         # Construct prior preferences (uniform if not specified)
+        """ Initialise transition model (B matrices) """
         if C is not None:
-            if isinstance(C, Categorical):
-                self.C = C
-            else:
-                self.C = Categorical(values=C)
+            if not isinstance(C, np.ndarray):
+                raise TypeError(
+                    'C vector must be a numpy array'
+                )
+            self.C = utils.to_arr_of_arr(C)
         else:
             self.C = self._construct_C_prior()
 
         # Construct initial beliefs (uniform if not specified)
+    
         if D is not None:
-            if isinstance(D, Categorical):
-                self.D = D
-            else:
-                self.D = Categorical(values=D)
+            if not isinstance(D, np.ndarray):
+                raise TypeError(
+                    'D vector must be a numpy array'
+                )
+            self.D = utils.to_arr_of_arr(D)
         else:
             self.D = self._construct_D_prior()
 
-        # Build model
-        if construct_A_flag:
-            self.A = self._construct_A_distribution()
-        if construct_B_flag:
-            self.B = self._construct_B_distribution()
-
         self.edge_handling_params = {}
-        self.edge_handling_params['use_BMA'] = use_BMA
-        self.edge_handling_params['policy_sep_prior'] = policy_sep_prior
+        self.edge_handling_params['use_BMA'] = use_BMA # creates a 'D-like' moving prior
+        self.edge_handling_params['policy_sep_prior'] = policy_sep_prior # carries forward last timesteps posterior, in a policy-conditioned way
 
         if inference_algo is None:
             self.inference_algo = "VANILLA"
@@ -202,61 +169,31 @@ class Agent(object):
         self.action = None
         self.prev_actions = None
 
-    def _construct_A_distribution(self):
-        if self.n_modalities == 1:
-            A = Categorical(values=np.random.rand(*(self.n_observations[0] + self.n_states)))
-        else:
-            A = np.empty(self.n_modalities, dtype=object)
-            for modality, no in enumerate(self.n_observations):
-                A[modality] = np.random.rand(*([no] + self.n_states))
-            A = Categorical(values=A)
-        A.normalize()
-        return A
-
-    def _construct_B_distribution(self):
-        if self.n_factors == 1:
-            B = np.eye(*self.n_states)[:, :, np.newaxis]
-            if 0 in self.control_fac_idx:
-                B = np.tile(B, (1, 1, self.n_controls[0]))
-                B = B.transpose(1, 2, 0)
-        else:
-            B = np.empty(self.n_factors, dtype=object)
-
-            for factor, ns in enumerate(self.n_states):
-                B_basic = np.eye(ns)[:, :, np.newaxis]
-                if factor in self.control_fac_idx:
-                    B[factor] = np.tile(B_basic, (1, 1, self.n_controls[factor]))
-                    B[factor] = B[factor].transpose(1, 2, 0)
-                else:
-                    B[factor] = B_basic
-
-        B = Categorical(values=B)
-        B.normalize()
-        return B
-
     def _construct_C_prior(self):
-        if self.n_modalities == 1:
-            C = np.zeros(*self.n_observations)
-        else:
-            C = np.array([np.zeros(No) for No in self.n_observations])
+        
+        C = utils.obj_array_zeros(self.num_obs)
 
         return C
 
     def _construct_D_prior(self):
-        if self.n_factors == 1:
-            D = Categorical(values=np.ones(*self.n_states))
-        else:
-            D = Categorical(values=np.array([np.ones(Ns) for Ns in self.n_states]))
-        D.normalize()
+
+        D = utils.obj_array_uniform(self.num_states)
 
         return D
 
-    def _construct_n_controls(self):
-        policies, n_controls = control.construct_policies(
-            self.n_states, None, self.policy_len, self.control_fac_idx
+    def _construct_policies(self):
+        policies =  control.construct_policies(
+            self.num_states, None, self.policy_len, self.control_fac_idx
         )
 
-        return policies, n_controls
+        return policies
+
+    def _construct_num_controls(self):
+        num_controls = control.get_num_controls_from_policies(
+            self.policies
+        )
+        
+        return num_controls
 
     def reset(self, init_qs=None):
 
@@ -264,13 +201,12 @@ class Agent(object):
 
         if init_qs is None:
             if self.inference_algo == 'VANILLA':
-                self.qs = utils.obj_array_uniform(self.n_states)
+                self.qs = utils.obj_array_uniform(self.num_states)
             else: # in the case you're doing MMP (i.e. you have an inference_horizon > 1), we have to account for policy- and timestep-conditioned posterior beliefs
                 self.qs = utils.obj_array(len(self.policies))
                 for p_i, _ in enumerate(self.policies):
                     self.qs[p_i] = utils.obj_array(self.inference_horizon + self.policy_len + 1) # + 1 to include belief about current timestep
-                    # self.qs[p_i][0] = copy.deepcopy(self.D) # initialize the very first belief of the inference_horizon as the prior over initial hidden states
-                    self.qs[p_i][0] = utils.obj_array_uniform(self.n_states)
+                    self.qs[p_i][0] = utils.obj_array_uniform(self.num_states)
                 
                 first_belief = utils.obj_array(len(self.policies))
                 for p_i, _ in enumerate(self.policies):
@@ -282,10 +218,7 @@ class Agent(object):
                     self.set_latest_beliefs(last_belief = self.D)
             
         else:
-            if isinstance(init_qs, Categorical):
-                self.qs = init_qs
-            else:
-                self.qs = Categorical(values=init_qs)
+            self.qs = init_qs
 
         return self.qs
 
@@ -482,7 +415,7 @@ class Agent(object):
 
     def sample_action(self):
         action = control.sample_action(
-            self.q_pi, self.policies, self.n_controls, self.action_sampling
+            self.q_pi, self.policies, self.num_controls, self.action_sampling
         )
 
         self.action = action
@@ -559,8 +492,8 @@ def build_belief_array(qx):
                 for factor in range(num_factors):
                     belief_array[factor][policy_i, :, timestep] = qx[policy_i][timestep][factor]
     else:
-        n_states = qx[0][0][0].shape[0]
-        belief_array = np.zeros( (num_policies, n_states, num_timesteps) )
+        num_states = qx[0][0][0].shape[0]
+        belief_array = np.zeros( (num_policies, num_states, num_timesteps) )
         for policy_i in range(num_policies):
             for timestep in range(num_timesteps):
                 belief_array[policy_i, :, timestep] = qx[policy_i][timestep][0]
@@ -582,15 +515,15 @@ def build_xn_vn_array(xn):
     if num_factors > 1:
         xn_array = utils.obj_array(num_factors)
         for factor in range(num_factors):
-            n_states, infer_len = xn[0][0][f].shape
-            xn_array[factor] = np.zeros( (num_itr, n_states, infer_len, num_policies) )
+            num_states, infer_len = xn[0][0][f].shape
+            xn_array[factor] = np.zeros( (num_itr, num_states, infer_len, num_policies) )
         for policy_i in range(num_policies):
             for itr in range(num_itr):
                 for factor in range(num_factors):
                     xn_array[factor][itr,:,:,policy_i] = xn[policy_i][itr][factor]
     else:
-        n_states, infer_len  = xn[0][0][0].shape
-        xn_array = np.zeros( (num_itr, n_states, infer_len, num_policies) )
+        num_states, infer_len  = xn[0][0][0].shape
+        xn_array = np.zeros( (num_itr, num_states, infer_len, num_policies) )
         for policy_i in range(num_policies):
             for itr in range(num_itr):
                 xn_array[itr,:,:,policy_i] = xn[policy_i][itr][0] 
