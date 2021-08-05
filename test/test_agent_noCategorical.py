@@ -1,12 +1,19 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+""" Agent Class
+
+__author__: Conor Heins, Alexander Tschantz, Daphne Demekas, Brennan Klein
+
+"""
+
 import os
 import unittest
 
 import numpy as np
-from scipy.io import loadmat
 
-from pymdp.agent import Agent, build_belief_array, build_xn_vn_array
+from pymdp.agent import Agent
 from pymdp.core import utils
-from pymdp.core import control
 
 class TestAgent_noCat(unittest.TestCase):
    
@@ -92,7 +99,7 @@ class TestAgent_noCat(unittest.TestCase):
         A = utils.random_A_matrix(num_obs, num_states)
         B = utils.random_B_matrix(num_states, num_controls)
 
-        agent = Agent(A=A, B=B, inference_algo = "MMP", use_BMA = False, policy_sep_prior=True)
+        agent = Agent(A=A, B=B, inference_algo = "MMP", use_BMA = False, policy_sep_prior = True)
 
         self.assertEqual(len(agent.qs[0]) - agent.inference_horizon - 1, agent.policy_len)
 
