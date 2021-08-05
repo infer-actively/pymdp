@@ -260,12 +260,18 @@ def spm_norm(A):
     normed_A = np.divide(A, A.sum(axis=0))
     return normed_A
 
-def spm_log(arr):
+def spm_log_single(arr):
     """
     Adds small epsilon value to an array before natural logging it
     """
     return np.log(arr + EPS_VAL)
 
+def spm_log_obj_array(obj_arr):
+    """
+    Maps `spm_log_single` across multiple elements of a numpy object array
+    """
+
+    return np.array([spm_log_single(arr) for arr in obj_arr], dtype = object)
 
 def spm_wnorm(A):
     """ 
@@ -401,7 +407,7 @@ def spm_MDP_G(A, x):
 
     # Subtract negative entropy of expectations: i.e., E[lnQ(o)]
     # G = G - qo.dot(np.log(qo + np.exp(-16)))  # type: ignore
-    G = G - qo.dot(spm_log(qo))  # type: ignore
+    G = G - qo.dot(spm_log_single(qo))  # type: ignore
 
     return G
 

@@ -8,7 +8,7 @@ __author__: Conor Heins, Beren Millidge, Alexander Tschantz, Brennan Klein
 import numpy as np
 
 from pymdp.core.utils import to_arr_of_arr, get_model_dimensions, obj_array, obj_array_zeros, obj_array_uniform
-from pymdp.core.maths import spm_dot, spm_norm, softmax, calc_free_energy, spm_log
+from pymdp.core.maths import spm_dot, spm_norm, softmax, calc_free_energy, spm_log_single
 import copy
 
 
@@ -86,28 +86,28 @@ def run_mmp(
             for f in range(num_factors):
                 # likelihood
                 if t < past_len:
-                    lnA = spm_log(spm_dot(lh_seq[t], qs_seq[t], [f]))
+                    lnA = spm_log_single(spm_dot(lh_seq[t], qs_seq[t], [f]))
                 else:
                     lnA = np.zeros(num_states[f])
                 
                 # past message
                 if t == 0:
-                    lnB_past = spm_log(prior[f])
+                    lnB_past = spm_log_single(prior[f])
                 else:
                     past_msg = B[f][:, :, int(policy[t - 1, f])].dot(qs_seq[t - 1][f])
-                    lnB_past = spm_log(past_msg)
+                    lnB_past = spm_log_single(past_msg)
 
                 # future message
                 if t >= future_cutoff:
                     lnB_future = qs_T[f]
                 else:
                     future_msg = trans_B[f][:, :, int(policy[t, f])].dot(qs_seq[t + 1][f])
-                    lnB_future = spm_log(future_msg)
+                    lnB_future = spm_log_single(future_msg)
                 
                 # inference
                 if grad_descent:
                     sx = qs_seq[t][f] # save this as a separate variable so that it can be used in VFE computation
-                    lnqs = spm_log(sx)
+                    lnqs = spm_log_single(sx)
                     coeff = 1 if (t >= future_cutoff) else 2
                     err = (coeff * lnA + lnB_past + lnB_future) - coeff * lnqs
                     lnqs = lnqs + tau * (err - err.mean())
@@ -122,7 +122,7 @@ def run_mmp(
             if not grad_descent:
 
                 if t < past_len:
-                    F += calc_free_energy(qs_seq[t], prior, num_factors, likelihood = spm_log(lh_seq[t]) )
+                    F += calc_free_energy(qs_seq[t], prior, num_factors, likelihood = spm_log_single(lh_seq[t]) )
                 else:
                     F += calc_free_energy(qs_seq[t], prior, num_factors)
 
@@ -219,28 +219,28 @@ def run_mmp_testing(
                 if t < past_len:
                     if itr == 0:
                         print(f'obs from timestep {t}\n')
-                    lnA = spm_log(spm_dot(lh_seq[t], qs_seq[t], [f]))
+                    lnA = spm_log_single(spm_dot(lh_seq[t], qs_seq[t], [f]))
                 else:
                     lnA = np.zeros(num_states[f])
                 
                 # past message
                 if t == 0:
-                    lnB_past = spm_log(prior[f])
+                    lnB_past = spm_log_single(prior[f])
                 else:
                     past_msg = B[f][:, :, int(policy[t - 1, f])].dot(qs_seq[t - 1][f])
-                    lnB_past = spm_log(past_msg)
+                    lnB_past = spm_log_single(past_msg)
 
                 # future message
                 if t >= future_cutoff:
                     lnB_future = qs_T[f]
                 else:
                     future_msg = trans_B[f][:, :, int(policy[t, f])].dot(qs_seq[t + 1][f])
-                    lnB_future = spm_log(future_msg)
+                    lnB_future = spm_log_single(future_msg)
 
                 # inference
                 if grad_descent:
                     sx = qs_seq[t][f] # save this as a separate variable so that it can be used in VFE computation
-                    lnqs = spm_log(sx)
+                    lnqs = spm_log_single(sx)
                     coeff = 1 if (t >= future_cutoff) else 2
                     err = (coeff * lnA + lnB_past + lnB_future) - coeff * lnqs
                     vn_tmp = err - err.mean()
@@ -260,7 +260,7 @@ def run_mmp_testing(
             if not grad_descent:
 
                 if t < past_len:
-                    F += calc_free_energy(qs_seq[t], prior, num_factors, likelihood = spm_log(lh_seq[t]) )
+                    F += calc_free_energy(qs_seq[t], prior, num_factors, likelihood = spm_log_single(lh_seq[t]) )
                 else:
                     F += calc_free_energy(qs_seq[t], prior, num_factors)
         xn.append(xn_itr_all_factors)
