@@ -200,77 +200,38 @@ def update_posterior_policies(
 
     return q_pi, efe
 
-
-def get_expected_states(qs, B, policy, return_numpy=False):
+def get_expected_states(qs, B, policy):
     """
     Given a posterior density qs, a transition likelihood model B, and a policy, 
     get the state distribution expected under that policy's pursuit
 
     Parameters
     ----------
-    - `qs` [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or 
-    Categorical (either single-factor or AoA)]:
+    - `qs` [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array)]:
         Current posterior beliefs about hidden states
-    - `B` [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Categorical 
-        (either single-factor of AoA)]:
+    - `B` [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array)]:
         Transition likelihood mapping from states at t to states at t + 1, with different actions 
         (per factor) stored along the lagging dimension
    - `policy` [np.arrays]:
         np.array of size (policy_len x n_factors) where each value corrresponds to a control state
-    - `return_numpy` [Boolean]:
-        True/False flag to determine whether output of function is a numpy array or a Categorical
     Returns
     -------
-    - `qs_pi` [ list of np.arrays with len n_steps, where in case of multiple hidden state factors, 
-    each np.array in the list is a 1 x n_factors array-of-arrays, otherwise a list of 1D numpy arrays]:
-        Expected states under the given policy - also known as the 'posterior predictive density'
-
+    - `qs_pi` [ list of numpy object arrays where `len(qs_pi) == n_steps`]
+        Expected states under the given policy - also referred to in the literature as the 'posterior predictive density'
     """
     n_steps = policy.shape[0]
     n_factors = policy.shape[1]
-    qs = utils.to_numpy(qs, flatten=True)
-    B = utils.to_numpy(B)
 
-    # initialise beliefs over expected states
-    qs_pi = []
-    if utils.is_arr_of_arr(B):
-        for t in range(n_steps):
-            qs_pi_t = np.empty(n_factors, dtype=object)
-            qs_pi.append(qs_pi_t)
+    # initialise posterior predictive density as a list of beliefs over time, including current posterior beliefs about hidden states as the first element
+    qs_pi = [qs] + [utils.obj_array(n_factors) for t in range(n_steps)]
+    
+    # get expected states over time
+    for t in range(n_steps):
+        for control_factor, action in enumerate(policy[t,:]):
+            qs_pi[t+1][control_factor] = B[control_factor][:,:,action].dot(qs_pi[t][control_factor])
 
-        # initialise expected states after first action using current posterior (t = 0)
-        for control_factor, control in enumerate(policy[0, :]):
-            qs_pi[0][control_factor] = spm_dot(B[control_factor][:, :, int(control)], qs[control_factor])
-
-        # get expected states over time
-        if n_steps > 1:
-            for t in range(1, n_steps):
-                for control_factor, control in enumerate(policy[t, :]):
-                    qs_pi[t][control_factor] = spm_dot(
-                        B[control_factor][:, :, control], qs_pi[t - 1][control_factor]
-                    )
-    else:
-        # initialise expected states after first action using current posterior (t = 0)
-        qs_pi.append(spm_dot(B[:, :, policy[0, 0]], qs))
-
-        # then loop over future timepoints
-        if n_steps > 1:
-            for t in range(1, n_steps):
-                qs_pi.append(spm_dot(B[:, :, policy[t, 0]], qs_pi[t - 1]))
-
-    if return_numpy:
-        if len(qs_pi) == 1:
-            return qs_pi[0]
-        else:
-            return qs_pi
-    else:
-        if len(qs_pi) == 1:
-            return utils.to_categorical(qs_pi[0])
-        else:
-            for t in range(n_steps):
-                qs_pi[t] = utils.to_categorical(qs_pi[t])
-            return qs_pi
-
+    return qs_pi[1:]
+ 
 
 def get_expected_obs(qs_pi, A, return_numpy=False):
     """
