@@ -7,6 +7,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 """
 
+import warnings
 import numpy as np
 from pymdp.core import inference, control, learning
 from pymdp.core import utils
@@ -150,12 +151,25 @@ class Agent(object):
         self.edge_handling_params['use_BMA'] = use_BMA # creates a 'D-like' moving prior
         self.edge_handling_params['policy_sep_prior'] = policy_sep_prior # carries forward last timesteps posterior, in a policy-conditioned way
 
+        # use_BMA and policy_sep_prior can both be False, but both cannot be simultaneously be True. If one of them is True, the other must be False
+        if policy_sep_prior:
+            if not use_BMA:
+                warnings.warn(
+                    "Inconsistent choice of `policy_sep_prior` and `use_BMA`.\
+                    You have set `policy_sep_prior` to True, so we are setting `use_BMA` to False"
+                )
+                self.edge_handling_params['use_BMA'] = True
+        
+
         if inference_algo is None:
             self.inference_algo = "VANILLA"
             self.inference_params = self._get_default_params()
             if inference_horizon > 1:
-                print("WARNING: if `inference_algo` is VANILLA, then inference_horizon must be 1\n. \
-                    Setting inference_horizon to default value of 1...\n")
+                warnings.warn(
+                    "If `inference_algo` is VANILLA, then inference_horizon must be 1\n. \
+                    Setting inference_horizon to default value of 1...\n"
+                    )
+                self.inference_horizon = 1
             else:
                 self.inference_horizon = 1
         else:
@@ -279,9 +293,6 @@ class Agent(object):
 
         if self.inference_algo is "VANILLA":
             if self.action is not None:
-                # empirical_prior = control.get_expected_states(
-                #     self.qs, self.B.log(), self.action.reshape(1, -1) #type: ignore
-                # )
                 empirical_prior = control.get_expected_states(
                     self.qs, self.B, self.action.reshape(1, -1) #type: ignore
                 ).log() 
