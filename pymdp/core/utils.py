@@ -99,7 +99,11 @@ def get_model_dimensions(A=None, B=None):
         num_states = [b.shape[0] for b in B] if is_arr_of_arr(B) else [B.shape[0]]
         num_factors = len(num_states)
     else:
-        num_states, num_factors = None, None
+        if A is not None:
+            num_states = list(A[0].shape[1:]) if is_arr_of_arr(A) else list(A.shape[1:])
+            num_factors = len(num_states)
+        else:
+            num_states, num_factors = None, None
     
     return num_obs, num_states, num_modalities, num_factors
 
