@@ -163,10 +163,6 @@ def to_numpy(dist, flatten=False):
     return values
 
 
-def is_distribution(obj):
-    return isinstance(obj, (Categorical, Dirichlet))
-
-
 def is_arr_of_arr(arr):
     return arr.dtype == "object"
 
@@ -204,21 +200,13 @@ def process_observation(obs, n_modalities, n_observations):
     """
     Helper function for formatting observations    
 
-        Observations can either be `Categorical`, `int` (converted to one-hot)
+        Observations can either be `int` (converted to one-hot)
         `tuple` (obs for each modality), or `list` (obs for each modality)
     
     @TODO maybe provide error messaging about observation format
     """
-    if is_distribution(obs):
-        obs = to_numpy(obs)
-        if n_modalities == 1:
-            obs = obs.squeeze()
-        else:
-            for m in range(n_modalities):
-                obs[m] = obs[m].squeeze()
 
     if isinstance(obs, (int, np.integer)):
-        # obs = np.eye(n_observations[0])[obs]
         obs = onehot(obs, n_observations[0])
 
     if isinstance(obs, tuple) or isinstance(obs,list):
