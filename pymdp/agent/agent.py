@@ -291,11 +291,11 @@ class Agent(object):
 
         if self.inference_algo is "VANILLA":
             if self.action is not None:
-                empirical_prior = maths.spm_log_obj_array(control.get_expected_states(
+                empirical_prior = control.get_expected_states(
                     self.qs, self.B, self.action.reshape(1, -1) #type: ignore
-                ))
+                )
             else:
-                empirical_prior = maths.spm_log_obj_array(self.D)
+                empirical_prior = self.D
             qs = inference.update_posterior_states(
             self.A,
             observation,
