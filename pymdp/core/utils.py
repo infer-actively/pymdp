@@ -212,29 +212,10 @@ def process_observation(obs, n_modalities, n_observations):
     if isinstance(obs, tuple) or isinstance(obs,list):
         obs_arr_arr = np.empty(n_modalities, dtype=object)
         for m in range(n_modalities):
-            # obs_arr_arr[m] = np.eye(n_observations[m])[obs[m]]
             obs_arr_arr[m] = onehot(obs[m], n_observations[m])
         obs = obs_arr_arr
 
     return obs
-
-def process_prior(prior, n_factors):
-    """
-    Helper function for formatting prior beliefs  
-    """
-    if is_distribution(prior):
-        prior_arr = obj_array(n_factors)
-        if n_factors == 1:
-            prior_arr[0] = prior.values.squeeze()
-        else:
-            for factor in range(n_factors):
-                prior_arr[factor] = prior[factor].values.squeeze()
-        prior = prior_arr
-
-    elif not is_arr_of_arr(prior):
-        prior = to_arr_of_arr(prior)
-
-    return prior
 
 def convert_observation_array(obs, num_obs):
     """
