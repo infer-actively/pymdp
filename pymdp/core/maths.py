@@ -268,10 +268,14 @@ def spm_log_single(arr):
 
 def spm_log_obj_array(obj_arr):
     """
-    Maps `spm_log_single` across multiple elements of a numpy object array
+    Applies `spm_log_single` to multiple elements of a numpy object array
     """
 
-    return np.array([spm_log_single(arr) for arr in obj_arr], dtype = object)
+    obj_arr_logged = utils.obj_array(len(obj_arr))
+    for idx, arr in enumerate(obj_arr):
+        obj_arr_logged[idx] = spm_log_single(arr)
+
+    return obj_arr_logged
 
 def spm_wnorm(A):
     """ 
