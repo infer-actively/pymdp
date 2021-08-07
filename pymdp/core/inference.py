@@ -178,14 +178,17 @@ def average_states_over_policies(qs_pi, q_pi):
 
     return qs_bma
 
-def update_posterior_states(A, obs, prior=None, return_numpy=True, method=VANILLA, **kwargs):
+def update_posterior_states(A, obs, prior=None, **kwargs):
     """
-    Update marginal posterior over hidden states using variational inference
-        Can optionally set message passing algorithm used for inference
-
+    Update marginal posterior over hidden states using mean-field fixed point iteration 
+    FPI or Fixed point iteration
+            - http://www.cs.cmu.edu/~guestrin/Class/10708/recitations/r9/VI-view.pdf,
+            slides 13- 18
+            - http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.137.221&rep=rep1&type=pdf,
+            slides 24 - 38
     Parameters
     ----------
-    - 'A' [numpy nd.array (matrix or tensor or array-of-arrays) or Categorical]:
+    - 'A' [numpy nd.array (matrix or tensor or array-of-arrays)]:
         Observation likelihood of the generative model, mapping from hidden states to observations
         Used to invert generative model to obtain marginal likelihood over hidden states,
         given the observation
@@ -194,29 +197,15 @@ def update_posterior_states(A, obs, prior=None, return_numpy=True, method=VANILL
         (one-hot vector representation) or an int (observation index)
         If multi-modality, this can be an array of arrays (whose entries are 1D one-hot vectors)
         or a tuple (of observation indices)
-    - 'prior' [numpy 1D array, array of arrays (with 1D numpy array entries), Categorical, or None]:
+    - 'prior' [numpy 1D array, array of arrays (with 1D numpy array entries) or None]:
         Prior beliefs about hidden states, to be integrated with the marginal likelihood to obtain
          a posterior distribution.
         If None, prior is set to be equal to a flat categorical distribution (at the level of
         the individual inference functions).
         (optional)
-    - 'return_numpy' [bool]:
-        True/False flag to determine whether the posterior is returned as a numpy array or a Categorical
-    - 'method' [str]:
-        Algorithm used to perform the variational inference.
-        Options: 'FPI' - Fixed point iteration
-                    - http://www.cs.cmu.edu/~guestrin/Class/10708/recitations/r9/VI-view.pdf,
-                    slides 13- 18
-                    - http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.137.221&rep=rep1&type=pdf,
-                    slides 24 - 38
-                 'VMP  - Variational message passing (not implemented)
-                 'MMP' - Marginal message passing (not implemented)
-                 'BP'  - Belief propagation (not implemented)
-                 'EP'  - Expectation propagation (not implemented)
-                 'CV'  - CLuster variation method (not implemented)
     - **kwargs:
-        List of keyword/parameter arguments corresponding to parameter values for the respective
-        variational inference algorithm
+        List of keyword/parameter arguments corresponding to parameter values for the fixed-point iteration
+        algorithm.
 
     Returns
     ----------
@@ -224,52 +213,15 @@ def update_posterior_states(A, obs, prior=None, return_numpy=True, method=VANILL
         Marginal posterior beliefs over hidden states
     """
 
-    # safe convert to numpy
-    A = utils.to_numpy(A)
-
-    # collect model dimensions
-    if utils.is_arr_of_arr(A):
-        n_factors = A[0].ndim - 1
-        n_states = list(A[0].shape[1:])
-        n_modalities = len(A)
-        n_observations = []
-        for m in range(n_modalities):
-            n_observations.append(A[m].shape[0])
-    else:
-        n_factors = A.ndim - 1
-        n_states = list(A.shape[1:])
-        n_modalities = 1
-        n_observations = [A.shape[0]]
-
-
-    obs = utils.process_observation(obs, n_modalities, n_observations)
+    num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A = A)
+    
+    obs = utils.process_observation(obs, num_modalities, num_obs)
 
     if prior is not None:
-        prior = utils.process_prior(prior, n_factors)
+        prior = utils.to_arr_of_arr(prior)
 
-    if method is VANILLA:
-        qs = run_fpi(A, obs, n_observations, n_states, prior, **kwargs)
-    elif method is VMP:
-        raise NotImplementedError(f"{VMP} is not implemented")
-    elif method is MMP:
-        raise NotImplementedError(f"{MMP} is not implemented")
-    elif method is BP:
-        raise NotImplementedError(f"{BP} is not implemented")
-    elif method is EP:
-        raise NotImplementedError(f"{EP} is not implemented")
-    elif method is CV:
-        raise NotImplementedError(f"{CV} is not implemented")
-    else:
-        raise ValueError(f"{method} is not implemented")
-
-    if not utils.is_arr_of_arr(qs):
-        qs = utils.to_arr_of_arr(qs)
-
-    if return_numpy:
-        return qs
-    else:
-        return utils.to_categorical(qs)
-
+    return run_fpi(A, obs, num_obs, num_states, prior, **kwargs)
+   
 
 def print_inference_methods():
     print(f"Avaliable Inference methods: {FPI}, {MMP}")
