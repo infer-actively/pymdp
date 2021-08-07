@@ -81,6 +81,19 @@ def random_B_matrix(num_states, num_controls):
         B[factor] = norm_dist(factor_dist)
     return B
 
+def random_single_categorical(shape_list):
+    """
+    Creates a random 1-D categorical distribution (or set of 1-D categoricals, e.g. multiple marginals of different factors) and returns them in an object array 
+    """
+    
+    num_sub_arrays = len(shape_list)
+
+    out = obj_array(num_sub_arrays)
+
+    for arr_idx, shape_i  in enumerate(shape_list):
+        out[arr_idx] = norm_dist(np.random.rand(shape_i))
+    
+    return out
 
 def get_model_dimensions(A=None, B=None):
 
@@ -129,7 +142,8 @@ def get_model_dimensions_from_labels(model_labels):
 
 
 def norm_dist(dist):
-    if len(dist.shape) == 3:
+    """ Normalizes a Categorical probability distribution (or set of them) assuming sufficient statistics are stored in leading dimension"""
+    if dist.ndim == 3:
         new_dist = np.zeros_like(dist)
         for c in range(dist.shape[2]):
             new_dist[:, :, c] = np.divide(dist[:, :, c], dist[:, :, c].sum(axis=0))
@@ -144,22 +158,14 @@ def to_numpy(dist, flatten=False):
     flattened into row vectors(common operation when dealing with array of arrays 
     with 1D numpy array entries)
     """
-    if isinstance(dist, (Categorical, Dirichlet)):
-        values = np.copy(dist.values)
-        if flatten:
-            if dist.IS_AOA:
-                for idx, arr in enumerate(values):
-                    values[idx] = arr.flatten()
-            else:
-                values = values.flatten()
-    else:
-        values = dist
-        if flatten:
-            if is_arr_of_arr(values):
-                for idx, arr in enumerate(values):
-                    values[idx] = arr.flatten()
-            else:
-                values = values.flatten()
+    
+    values = dist
+    if flatten:
+        if is_arr_of_arr(values):
+            for idx, arr in enumerate(values):
+                values[idx] = arr.flatten()
+        else:
+            values = values.flatten()
     return values
 
 
@@ -174,13 +180,6 @@ def to_arr_of_arr(arr):
     arr_of_arr[0] = arr.squeeze()
     return arr_of_arr
 
-
-def to_categorical(values):
-    return Categorical(values=values)
-
-
-def to_dirichlet(values):
-    return Dirichlet(values=values)
 
 def process_observation_seq(obs_seq, n_modalities, n_observations):
     """
