@@ -136,5 +136,76 @@ class TestControl(unittest.TestCase):
 
             self.assertTrue((qo_pi[t_idx][modality_idx] == qo_pi_valid).all())
 
+        '''Test with multiple observation modalities, multiple hidden state factors and single timestep'''
+
+        num_obs = [3, 3]
+        num_states = [3, 3]
+        num_controls = [3, 2]
+
+        num_factors = len(num_states)
+        num_modalities = len(num_obs)
+
+        qs = utils.obj_array_uniform(num_states)
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=1)
+        
+        t_idx = 0
+
+        for idx, policy in enumerate(policies):
+
+            qs_pi = control.get_expected_states(qs, B, policy)
+
+            for factor_idx in range(num_factors):
+                # validation qs_pi
+                qs_pi_valid = B[factor_idx][:,:,policies[idx][t_idx,factor_idx]].dot(qs[factor_idx])
+                self.assertTrue((qs_pi[t_idx][factor_idx] == qs_pi_valid).all())
+
+            qo_pi = control.get_expected_obs(qs_pi, A)
+
+            for modality_idx in range(num_modalities):
+                # validation qo_pi
+                qo_pi_valid = maths.spm_dot(A[modality_idx],qs_pi[t_idx])
+                self.assertTrue((qo_pi[t_idx][modality_idx] == qo_pi_valid).all())
+        
+        '''Test with multiple observation modalities, multiple hidden state factors and multiple timesteps'''
+
+        num_obs = [3, 3]
+        num_states = [3, 3]
+        num_controls = [3, 2]
+
+        num_factors = len(num_states)
+        num_modalities = len(num_obs)
+
+        qs = utils.obj_array_uniform(num_states)
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=3)
+        
+
+        for idx, policy in enumerate(policies):
+
+            qs_pi = control.get_expected_states(qs, B, policy)
+
+            for t_idx in range(3):
+                for factor_idx in range(num_factors):
+                    # validation qs_pi
+                    if t_idx == 0:
+                        qs_pi_valid = B[factor_idx][:,:,policies[idx][t_idx,factor_idx]].dot(qs[factor_idx])
+                    else:
+                        qs_pi_valid = B[factor_idx][:,:,policies[idx][t_idx,factor_idx]].dot(qs_pi[t_idx-1][factor_idx])
+
+                    self.assertTrue((qs_pi[t_idx][factor_idx] == qs_pi_valid).all())
+
+            qo_pi = control.get_expected_obs(qs_pi, A)
+
+            for t_idx in range(3):
+                for modality_idx in range(num_modalities):
+                    # validation qo_pi
+                    qo_pi_valid = maths.spm_dot(A[modality_idx],qs_pi[t_idx])
+                    self.assertTrue((qo_pi[t_idx][modality_idx] == qo_pi_valid).all())
+
 if __name__ == "__main__":
     unittest.main()
