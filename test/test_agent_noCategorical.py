@@ -14,6 +14,7 @@ import numpy as np
 
 from pymdp.agent import Agent
 from pymdp.core import utils
+from pymdp.core import inference
 
 class TestAgent_noCat(unittest.TestCase):
    
@@ -102,6 +103,47 @@ class TestAgent_noCat(unittest.TestCase):
         agent = Agent(A=A, B=B, inference_algo = "MMP", use_BMA = False, policy_sep_prior = True)
 
         self.assertEqual(len(agent.qs[0]) - agent.inference_horizon - 1, agent.policy_len)
+    
+    def test_agent_infer_states(self):
+        """
+        Test `infer_states` method of the Agent() class
+        """
+
+        ''' VANILLA method (fixed point iteration) with one hidden state factor and one observation modality '''
+        num_obs = [5]
+        num_states = [3]
+        num_controls = [1]
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+
+        agent = Agent(A=A, B=B, inference_algo = "VANILLA")
+
+        o = tuple([np.random.randint(obs_dim) for obs_dim in num_obs])
+        qs_out = agent.infer_states(o)
+
+        qs_validation = inference.update_posterior_states(A, o, prior=agent.D)
+
+        for f in range(len(num_states)):
+            self.assertTrue(np.isclose(qs_validation[f], qs_out[f]).all())
+
+        ''' VANILLA method (fixed point iteration) with multiple hidden state factors and multiple observation modalities '''
+        num_obs = [2, 4]
+        num_states = [2, 3]
+        num_controls = [2, 3]
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+
+        agent = Agent(A=A, B=B, inference_algo = "VANILLA")
+
+        o = tuple([np.random.randint(obs_dim) for obs_dim in num_obs])
+        qs_out = agent.infer_states(o)
+
+        qs_validation = inference.update_posterior_states(A, o, prior=agent.D)
+
+        for f in range(len(num_states)):
+            self.assertTrue(np.isclose(qs_validation[f], qs_out[f]).all())
+
+        ''' MMP method with one hidden state factor and one observation modality '''
 
 
 if __name__ == "__main__":
