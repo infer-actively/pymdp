@@ -10,14 +10,14 @@ import unittest
 
 import numpy as np
 
-from pymdp.core import utils
+from pymdp.core import utils, maths
 from pymdp.core import control
 
 class TestControl(unittest.TestCase):
 
     def test_get_expected_states(self):
         """
-        Tests the latest version of `get_expected_states`
+        Tests the refactored (Categorical-less) version of `get_expected_states`
         """
 
         '''Test with single hidden state factor and single timestep'''
@@ -99,6 +99,42 @@ class TestControl(unittest.TestCase):
                     else:
                         self.assertTrue((qs_pi[p_idx][t_idx][factor_idx] == B[factor_idx][:,:,policies[p_idx][t_idx,factor_idx]].dot(qs_pi[p_idx][t_idx-1][factor_idx])).all())
 
+    def test_get_expected_states_and_obs(self):
+        """
+        Tests the refactored (Categorical-less) versions of `get_expected_states` and `get_expected_obs` together
+        """
+
+        '''Test with single observation modality, single hidden state factor and single timestep'''
+
+        num_obs = [3]
+        num_states = [3]
+        num_controls = [3]
+
+        qs = utils.obj_array_uniform(num_states)
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=1)
+        
+        factor_idx = 0
+        modality_idx = 0
+        t_idx = 0
+
+        for idx, policy in enumerate(policies):
+
+            qs_pi = control.get_expected_states(qs, B, policy)
+
+            # validation qs_pi
+            qs_pi_valid = B[factor_idx][:,:,policies[idx][t_idx,factor_idx]].dot(qs[factor_idx])
+
+            self.assertTrue((qs_pi[t_idx][factor_idx] == qs_pi_valid).all())
+
+            qo_pi = control.get_expected_obs(qs_pi, A)
+
+            # validation qo_pi
+            qo_pi_valid = maths.spm_dot(A[modality_idx],utils.to_arr_of_arr(qs_pi_valid))
+
+            self.assertTrue((qo_pi[t_idx][modality_idx] == qo_pi_valid).all())
 
 if __name__ == "__main__":
     unittest.main()
