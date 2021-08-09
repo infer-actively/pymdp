@@ -116,8 +116,7 @@ def update_posterior_policies(
     use_param_info_gain=False,
     pA=None,
     pB=None,
-    gamma=16.0,
-    return_numpy=True,
+    gamma=16.0
 ):
     """ Updates the posterior beliefs about policies based on expected free energy prior
 
@@ -190,13 +189,7 @@ def update_posterior_policies(
             if pB is not None:
                 efe[idx] += calc_pB_info_gain(pB, qs_pi, qs, policy)
 
-    q_pi = softmax(efe * gamma)
-
-    if return_numpy:
-        q_pi = q_pi / q_pi.sum(axis=0)  # type: ignore
-    else:
-        q_pi = utils.to_categorical(q_pi)
-        q_pi.normalize()
+    q_pi = softmax(efe * gamma)    
 
     return q_pi, efe
 
@@ -233,75 +226,44 @@ def get_expected_states(qs, B, policy):
     return qs_pi[1:]
  
 
-def get_expected_obs(qs_pi, A, return_numpy=False):
+def get_expected_obs(qs_pi, A):
     """
     Given a posterior predictive density Qs_pi and an observation likelihood model A,
     get the expected observations given the predictive posterior.
 
     Parameters
     ----------
-    qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), Categorical 
-    (either single-factor or AoA), or list]:
+    qs_pi [numpy object array (where each entry is a numpy 1D array), or list of numpy object arrays]:
         Posterior predictive density over hidden states. If a list, each entry of the list is the 
         posterior predictive for a given timepoint of an expected trajectory
-    A [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or Categorical 
-    (either single-factor of AoA)]:
+    A [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array)]:
         Observation likelihood mapping from hidden states to observations, with different modalities 
         (if there are multiple) stored in different arrays
-    return_numpy [Boolean]:
-        True/False flag to determine whether output of function is a numpy array or a Categorical
     Returns
     -------
-    qo_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), Categorical 
-    (either single-factor or AoA), or list]:
+    qo_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or list]:
         Expected observations under the given policy. If a list, a list of the expected observations 
-        over the time horizon of policy evaluation, where
-        each entry is the expected observations at a given timestep. 
+        over the time horizon of policy evaluation, where each entry is the expected observations at a given timestep. 
     """
+
+    # wrap the predictive posterior density into a list, if it's not already in that form
+    if not isinstance(qs_pi, list):
+        qs_pi = [qs_pi]
+    n_steps = len(qs_pi) # each element of the list is the PPD at a different timestep
 
     # initialise expected observations
     qo_pi = []
-    A = utils.to_numpy(A)
 
-    if isinstance(qs_pi, list):
-        n_steps = len(qs_pi)
-        for t in range(n_steps):
-            qs_pi[t] = utils.to_numpy(qs_pi[t], flatten=True)
-    else:
-        n_steps = 1
-        qs_pi = [utils.to_numpy(qs_pi, flatten=True)]
+    for t in range(n_steps):
+        qo_pi_t = utils.obj_array(len(A))
+        qo_pi.append(qo_pi_t)
 
-    if utils.is_arr_of_arr(A):
+    # compute expected observations over time
+    for t in range(n_steps):
+        for modality, A_m in enumerate(A):
+            qo_pi[t][modality] = spm_dot(A_m, qs_pi[t])
 
-        num_modalities = len(A)
-
-        for t in range(n_steps):
-            qo_pi_t = np.empty(num_modalities, dtype=object)
-            qo_pi.append(qo_pi_t)
-
-        # get expected observations over time
-        for t in range(n_steps):
-            for modality in range(num_modalities):
-                qo_pi[t][modality] = spm_dot(A[modality], qs_pi[t])
-
-    else:
-        # get expected observations over time
-        for t in range(n_steps):
-            qo_pi.append(spm_dot(A, qs_pi[t]))
-
-    if return_numpy:
-        if n_steps == 1:
-            return qo_pi[0]
-        else:
-            return qo_pi
-    else:
-        if n_steps == 1:
-            return utils.to_categorical(qo_pi[0])
-        else:
-            for t in range(n_steps):
-                qo_pi[t] = utils.to_categorical(qo_pi[t])
-            return qo_pi
-
+    return qo_pi
 
 def calc_expected_utility(qo_pi, C):
     """
