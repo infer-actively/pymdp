@@ -300,8 +300,6 @@ class Agent(object):
             self.A,
             observation,
             empirical_prior,
-            return_numpy=False,
-            method=self.inference_algo,
             **self.inference_params
             )
         elif self.inference_algo is "MMP":
