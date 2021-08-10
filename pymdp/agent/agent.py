@@ -339,15 +339,13 @@ class Agent(object):
             if self.action is not None:
                 empirical_prior = control.get_expected_states(
                     self.qs, self.B, self.action.reshape(1, -1) #type: ignore
-                ).log() 
+                )
             else:
-                empirical_prior = self.D.log()
+                empirical_prior = self.D
             qs = inference.update_posterior_states(
             self.A,
             observation,
             empirical_prior,
-            return_numpy=False,
-            method=self.inference_algo,
             **self.inference_params
             )
         elif self.inference_algo is "MMP":
@@ -391,8 +389,7 @@ class Agent(object):
                 self.use_param_info_gain,
                 self.pA,
                 self.pB,
-                self.gamma,
-                return_numpy=False,
+                self.gamma
             )
         elif self.inference_algo is "MMP":
 
