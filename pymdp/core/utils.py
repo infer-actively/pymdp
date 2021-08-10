@@ -180,10 +180,9 @@ def is_arr_of_arr(arr):
 def to_arr_of_arr(arr):
     if is_arr_of_arr(arr):
         return arr
-    arr_of_arr = np.empty(1, dtype=object)
+    arr_of_arr = obj_array(1)
     arr_of_arr[0] = arr.squeeze()
     return arr_of_arr
-
 
 def process_observation_seq(obs_seq, n_modalities, n_observations):
     """
@@ -199,23 +198,21 @@ def process_observation_seq(obs_seq, n_modalities, n_observations):
         proc_obs_seq[t] = process_observation(obs_seq[t], n_modalities, n_observations)
     return proc_obs_seq
 
-def process_observation(obs, n_modalities, n_observations):
+def process_observation(obs, num_modalities, num_observations):
     """
     Helper function for formatting observations    
 
         Observations can either be `int` (converted to one-hot)
         `tuple` (obs for each modality), or `list` (obs for each modality)
-    
-    @TODO maybe provide error messaging about observation format
     """
 
     if isinstance(obs, (int, np.integer)):
-        obs = onehot(obs, n_observations[0])
+        obs = onehot(obs, num_observations[0])
 
     if isinstance(obs, tuple) or isinstance(obs,list):
-        obs_arr_arr = np.empty(n_modalities, dtype=object)
-        for m in range(n_modalities):
-            obs_arr_arr[m] = onehot(obs[m], n_observations[m])
+        obs_arr_arr = obj_array(num_modalities)
+        for m in range(num_modalities):
+            obs_arr_arr[m] = onehot(obs[m], num_observations[m])
         obs = obs_arr_arr
 
     return obs
