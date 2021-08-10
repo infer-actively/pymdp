@@ -7,84 +7,49 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
 import numpy as np
-from pymdp.core import utils
+from pymdp.core import utils, maths
 import copy
 
-
-def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, modalities="all", return_numpy=True):
+def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, modalities="all"):
     """ Update Dirichlet parameters of the likelihood distribution 
 
     Parameters
     -----------
-    - pA [numpy nd.array, array-of-arrays (with np.ndarray entries), or Dirichlet 
-    (either single-modality or AoA)]:
+    - pA [numpy object array]:
         The prior Dirichlet parameters of the generative model, parameterizing the 
         agent's beliefs about the observation likelihood. 
-    - A [numpy nd.array, object-like array of arrays, or Categorical (either single-modality or AoA)]:
+    - A [numpy object array]:
         The observation likelihood of the generative model. 
-    - obs [numpy 1D array, array-of-arrays (with 1D numpy array entries), int or tuple]:
+    - obs [numpy 1D array, array-of-arrays (with 1D numpy array entries), int, list, or tuple]:
         A discrete observation (possible multi-modality) used in the update equation
-    - qs [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), 
-    or Categorical (either single-factor or AoA)]:
+    - qs [numpy object array (where each entry is a numpy 1D array)]:
         Current marginal posterior beliefs about hidden state factors
     - lr [float, optional]:
         Learning rate.
-    - return_numpy [bool, optional]:
-        Logical flag to determine whether output is a numpy array or a Dirichlet
     - modalities [list, optional]:
         Indices (in terms of range(n_modalities)) of the observation modalities to include 
         in learning.Defaults to 'all', meaning that observation likelihood matrices 
         for all modalities are updated using their respective observations.
     """
 
-    pA = utils.to_numpy(pA)
-    A = utils.to_numpy(A)
 
-    if utils.is_arr_of_arr(pA):
-        n_modalities = len(pA)
-        n_observations = [pA[modality].shape[0] for modality in range(n_modalities)]
-    else:
-        n_modalities = 1
-        n_observations = [pA.shape[0]]
+    num_modalities = len(pA)
+    num_observations = [pA[modality].shape[0] for modality in range(num_modalities)]
 
-    if return_numpy:
-        pA_updated = copy.deepcopy(pA)
-    else:
-        pA_updated = utils.to_dirichlet(copy.deepcopy(pA))
-
-    # observation index
-    if isinstance(obs, (int, np.integer)):
-        obs = np.eye(A.shape[0])[obs]
-
-    # observation indices
-    elif isinstance(obs, tuple):
-        obs = np.array(
-            [np.eye(n_observations[modality])[obs[modality]] for modality in range(n_modalities)],
-            dtype=object,
-        )
-
-    # convert to Categorical to make the cross product easier
-    obs = utils.to_categorical(obs)
+    obs_processed = utils.process_observation(obs, num_modalities, num_observations)
+    obs = utils.to_arr_of_arr(obs_processed)
 
     if modalities == "all":
-        if n_modalities == 1:
-            dfda = obs.cross(qs, return_numpy=True)
-            dfda = dfda * (A > 0).astype("float")
-            pA_updated = pA_updated + (lr * dfda)
+        modalities = list(range(num_modalities))
 
-        elif n_modalities > 1:
-            for modality in range(n_modalities):
-                dfda = obs[modality].cross(qs, return_numpy=True)
-                dfda = dfda * (A[modality] > 0).astype("float")
-                pA_updated[modality] = pA_updated[modality] + (lr * dfda)
-    else:
-        for modality in modalities:
-            dfda = obs[modality].cross(qs, return_numpy=True)
-            dfda = dfda * (A[modality] > 0).astype("float")
-            pA_updated[modality] = pA_updated[modality] + (lr * dfda)
+    pA_updated = copy.deepcopy(pA)
+        
+    for modality in modalities:
+        dfda = maths.spm_cross(obs[modality], qs)
+        dfda = dfda * (A[modality] > 0).astype("float")
+        pA_updated[modality] = pA_updated[modality] + (lr * dfda)
 
     return pA_updated
-
 
 def update_transition_dirichlet(
     pB, B, actions, qs, qs_prev, lr=1.0, factors="all", return_numpy=True
