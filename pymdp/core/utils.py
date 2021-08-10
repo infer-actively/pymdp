@@ -13,9 +13,6 @@ from pymdp.distributions import Categorical, Dirichlet
 import itertools
 
 def sample(probabilities):
-    # TODO dont assume dist class
-    # if probabilities.shape[1] > 1:
-    #     raise ValueError("Can only currently sample from [n x 1] distribution")
     sample_onehot = np.random.multinomial(1, probabilities.squeeze())
     return np.where(sample_onehot == 1)[0][0]
 
@@ -41,9 +38,16 @@ def obj_array_uniform(shape_list):
     Creates a numpy object array whose sub-arrays are uniform Categorical
     distributions with shapes given by shape_list[i]
     """
-    arr = np.empty(len(shape_list), dtype=object)
+    arr = obj_array(len(shape_list))
     for i, shape in enumerate(shape_list):
-        arr[i] = np.ones(shape)/shape
+        arr[i] = norm_dist(np.ones(shape))
+    return arr
+
+def obj_array_ones(shape_list, scale = 1.0):
+    arr = obj_array(len(shape_list))
+    for i, shape in enumerate(shape_list):
+        arr[i] = scale * np.ones(shape)
+    
     return arr
 
 def onehot(value, num_values):
