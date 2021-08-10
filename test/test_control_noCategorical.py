@@ -489,7 +489,7 @@ class TestControl(unittest.TestCase):
 
     def test_update_posterior_policies_pA_infogain(self):
         """
-        Tests the refactored (Categorical-less) version of `update_posterior_policies`, using only the information gain (about parameters) component of the expected free energy
+        Tests the refactored (Categorical-less) version of `update_posterior_policies`, using only the information gain (about likelihood parameters) component of the expected free energy
         """
 
         '''Test with single observation modality, single hidden state factor and single timestep'''
@@ -626,7 +626,268 @@ class TestControl(unittest.TestCase):
 
         self.assertTrue(np.allclose(efe, efe_valid))
         self.assertTrue(np.allclose(q_pi, q_pi_valid))
+    
+    def test_update_posterior_policies_pB_infogain(self):
+        """
+        Tests the refactored (Categorical-less) version of `update_posterior_policies`, using only the information gain (about transition likelihood parameters) component of the expected free energy
+        """
+
+        '''Test with single observation modality, single hidden state factor and single timestep'''
+
+        num_obs = [3]
+        num_states = [3]
+        num_controls = [3]
+
+        qs = utils.obj_array_uniform(num_states)
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+        pB = utils.obj_array_ones([B_f.shape for B_f in B])
+
+        C = utils.obj_array_zeros(num_obs)
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=1)
+
+        q_pi, efe = control.update_posterior_policies(
+            qs,
+            A,
+            B,
+            C,
+            policies,
+            use_utility = False,
+            use_states_info_gain = False,
+            use_param_info_gain = True,
+            pA=None,
+            pB=pB,
+            gamma=16.0
+        )
+
+        factor_idx = 0
+        modality_idx = 0
+        t_idx = 0
+
+        efe_valid = np.zeros(len(policies))
+
+        for idx, policy in enumerate(policies):
+
+            qs_pi = control.get_expected_states(qs, B, policy)
             
+            efe_valid[idx] += control.calc_pB_info_gain(pB, qs_pi, qs, policy)
+        
+        q_pi_valid = maths.softmax(efe_valid * 16.0)
+
+        self.assertTrue(np.allclose(efe, efe_valid))
+        self.assertTrue(np.allclose(q_pi, q_pi_valid))
+
+        '''Test with multiple observation modalities, multiple hidden state factors and single timestep'''
+
+        num_obs = [3, 3]
+        num_states = [3, 2]
+        num_controls = [3, 1]
+
+        qs = utils.random_single_categorical(num_states)
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+        pB = utils.obj_array_ones([B_f.shape for B_f in B])
+        
+        C = utils.obj_array_zeros(num_obs)
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=1)
+
+        q_pi, efe = control.update_posterior_policies(
+            qs,
+            A,
+            B,
+            C,
+            policies,
+            use_utility = False,
+            use_states_info_gain = False,
+            use_param_info_gain = True,
+            pA=None,
+            pB=pB,
+            gamma=16.0
+        )
+
+        t_idx = 0
+
+        efe_valid = np.zeros(len(policies))
+
+        for idx, policy in enumerate(policies):
+
+            qs_pi = control.get_expected_states(qs, B, policy)
+            
+            efe_valid[idx] += control.calc_pB_info_gain(pB, qs_pi, qs, policy)
+        
+        q_pi_valid = maths.softmax(efe_valid * 16.0)
+
+        self.assertTrue(np.allclose(efe, efe_valid))
+        self.assertTrue(np.allclose(q_pi, q_pi_valid))
+
+        '''Test with multiple observation modalities, multiple hidden state factors and multiple timesteps'''
+
+        num_obs = [3, 3]
+        num_states = [3, 2]
+        num_controls = [3, 1]
+
+        qs = utils.random_single_categorical(num_states)
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+        pB = utils.obj_array_ones([B_f.shape for B_f in B])
+
+        C = utils.obj_array_zeros(num_obs) 
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=3)
+
+        q_pi, efe = control.update_posterior_policies(
+            qs,
+            A,
+            B,
+            C,
+            policies,
+            use_utility = False,
+            use_states_info_gain = False,
+            use_param_info_gain = True,
+            pA=None,
+            pB=pB,
+            gamma=16.0
+        )
+
+        efe_valid = np.zeros(len(policies))
+
+        for idx, policy in enumerate(policies):
+
+            qs_pi = control.get_expected_states(qs, B, policy)
+
+            efe_valid[idx] += control.calc_pB_info_gain(pB, qs_pi, qs, policy)
+    
+        q_pi_valid = maths.softmax(efe_valid * 16.0)
+
+        self.assertTrue(np.allclose(efe, efe_valid))
+        self.assertTrue(np.allclose(q_pi, q_pi_valid))
+
+    def test_sample_action(self):
+        """
+        Tests the refactored (Categorical-less) version of `sample_action`
+        """
+
+        '''Test with single observation modality, single hidden state factor and single timestep'''
+
+        num_obs = [3]
+        num_states = [3]
+        num_controls = [3]
+
+        qs = utils.obj_array_uniform(num_states)
+        A = utils.random_A_matrix(num_obs, num_states)
+        pA = utils.obj_array_ones([A_m.shape for A_m in A])
+
+        B = utils.random_B_matrix(num_states, num_controls)
+        pB = utils.obj_array_ones([B_f.shape for B_f in B])
+
+        C = utils.obj_array_zeros(num_obs)
+        C[0][0] = 1.0  
+        C[0][1] = -2.0
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=1)
+
+        q_pi, efe = control.update_posterior_policies(
+            qs,
+            A,
+            B,
+            C,
+            policies,
+            use_utility = True,
+            use_states_info_gain = True,
+            use_param_info_gain = True,
+            pA=pA,
+            pB=pB,
+            gamma=16.0
+        )
+
+        factor_idx = 0
+        modality_idx = 0
+        t_idx = 0
+
+        chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
+        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic", alpha = 1.0)
+
+        self.assertEqual(chosen_action.shape, sampled_action.shape)
+
+        '''Test with multiple observation modalities, multiple hidden state factors and single timestep'''
+
+        num_obs = [3, 4]
+        num_states = [3, 4]
+        num_controls = [3, 3]
+
+        qs = utils.random_single_categorical(num_states)
+        A = utils.random_A_matrix(num_obs, num_states)
+        pA = utils.obj_array_ones([A_m.shape for A_m in A])
+
+        B = utils.random_B_matrix(num_states, num_controls)
+        pB = utils.obj_array_ones([B_f.shape for B_f in B])
+
+        C = utils.obj_array_zeros(num_obs)
+        C[0][0] = 1.0  
+        C[0][1] = -2.0
+        C[1][3] = 3.0
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=1)
+
+        q_pi, efe = control.update_posterior_policies(
+            qs,
+            A,
+            B,
+            C,
+            policies,
+            use_utility = True,
+            use_states_info_gain = True,
+            use_param_info_gain = True,
+            pA=pA,
+            pB=pB,
+            gamma=16.0
+        )
+
+        chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
+        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic", alpha = 1.0)
+
+        self.assertEqual(chosen_action.shape, sampled_action.shape)
+
+        '''Test with multiple observation modalities, multiple hidden state factors and multiple timesteps'''
+
+        num_obs = [3, 4]
+        num_states = [3, 4]
+        num_controls = [3, 3]
+
+        qs = utils.random_single_categorical(num_states)
+        A = utils.random_A_matrix(num_obs, num_states)
+        pA = utils.obj_array_ones([A_m.shape for A_m in A])
+
+        B = utils.random_B_matrix(num_states, num_controls)
+        pB = utils.obj_array_ones([B_f.shape for B_f in B])
+
+        C = utils.obj_array_zeros(num_obs)
+        C[0][0] = 1.0  
+        C[0][1] = -2.0
+        C[1][3] = 3.0
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=3)
+
+        q_pi, efe = control.update_posterior_policies(
+            qs,
+            A,
+            B,
+            C,
+            policies,
+            use_utility = True,
+            use_states_info_gain = True,
+            use_param_info_gain = True,
+            pA=pA,
+            pB=pB,
+            gamma=16.0
+        )
+
+        chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
+        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic", alpha = 1.0)
+
+        self.assertEqual(chosen_action.shape, sampled_action.shape)
 
 if __name__ == "__main__":
     unittest.main()
