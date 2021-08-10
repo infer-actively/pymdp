@@ -10,7 +10,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import itertools
 import numpy as np
 from pymdp.distributions import Categorical, Dirichlet
-from pymdp.core.maths import softmax, spm_dot, spm_wnorm, spm_MDP_G
+from pymdp.core.maths import softmax, spm_dot, spm_wnorm, spm_MDP_G, spm_log_single, spm_log_obj_array
 from pymdp.core import utils
 import copy
 
@@ -120,21 +120,15 @@ def update_posterior_policies(
 ):
     """ Updates the posterior beliefs about policies based on expected free energy prior
 
-        @TODO: Needs to be amended for use with multi-step policies (where possible_policies is a 
-        list of np.arrays (n_step x n_factor), not just a list of tuples as it is now)
-
         Parameters
         ----------
-        - `qs` [1D numpy array, array-of-arrays, or Categorical (either single- or multi-factor)]:
-            Current marginal beliefs about hidden state factors
-        - `A` [numpy ndarray, array-of-arrays (in case of multiple modalities), or Categorical 
-                (both single and multi-modality)]:
-            Observation likelihood model (beliefs about the likelihood mapping entertained by the agent)
-        - `B` [numpy ndarray, array-of-arrays (in case of multiple hidden state factors), or Categorical 
-                (both single and multi-factor)]:
-                Transition likelihood model (beliefs about the likelihood mapping entertained by the agent)
-        - `C` [numpy 1D-array, array-of-arrays (in case of multiple modalities), or Categorical 
-                (both single and multi-modality)]:
+        - `qs` [numpy object array]:
+            Current marginal beliefs about (single or multiple) hidden state factors
+        - `A` [numpy object array (both single and multi-modality)]:
+            Observation likelihood model
+        - `B` [numpy object array (both single and multi-factor)]:
+                Transition likelihood model
+        - `C` [numpy object array (both single and multi-modality)]:
             Prior beliefs about outcomes (prior preferences)
         - `policies` [list of tuples]:
             A list of all the possible policies, each expressed as a tuple of indices, where a given 
@@ -157,16 +151,13 @@ def update_posterior_policies(
         - `gamma` [float, defaults to 16.0]:
             Precision over policies, used as the inverse temperature parameter of a softmax transformation 
             of the expected free energies of each policy
-        - `return_numpy` [Boolean]:
-            True/False flag to determine whether output of function is a numpy array or a Categorical
-        
         Returns
         --------
-        - `qp` [1D numpy array or Categorical]:
+        - `qp` [1D numpy array]:
             Posterior beliefs about policies, defined here as a softmax function of the 
-            expected free energies of policies
-        - `efe` - [1D numpy array or Categorical]:
-            The expected free energies of policies
+            (gamma-weighted) expected free energies of policies
+        - `efe` - [1D numpy array]:
+            A vector containing the expected free energies of each policy
 
     """
     n_policies = len(policies)
@@ -272,46 +263,28 @@ def calc_expected_utility(qo_pi, C):
 
     Parameters
     ----------
-    qo_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), 
-    Categorical (either single-factor or AoA), or list]:
-        Expected observations under the given policy (predictive posterior over outcomes). 
-        If a list, a list of the expected observations
-        over the time horizon of policy evaluation, where each entry is the expected 
-        observations at a given timestep. 
-    C [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array):
-        Prior beliefs over outcomes, expressed in terms of relative log probabilities
+    qo_pi [list of numpy object arrays (both single and multi-modality)]:
+        Expected observations under the given policy (predictive posterior over outcomes), for each timestep of planning
+        Each entry is the expected observations at a given timestep of the forward horizon. 
+    C [numpy object array (both single and multi-modality)]:
+        Prior beliefs over outcomes (e.g. preferences), encoded in terms of relative log probabilities. This is softmaxed to form
+        a proper probability distribution before being used to compute the expected utility.
     Returns
     -------
     expected_util [scalar]:
         Utility (reward) expected under the policy in question
     """
-    if isinstance(qo_pi, list):
-        n_steps = len(qo_pi)
-        for t in range(n_steps):
-            qo_pi[t] = utils.to_numpy(qo_pi[t], flatten=True)
-    else:
-        n_steps = 1
-        qo_pi = [utils.to_numpy(qo_pi, flatten=True)]
-
-    C = utils.to_numpy(C, flatten=True)
-
+    n_steps = len(qo_pi)
+    
     # initialise expected utility
     expected_util = 0
 
-    # in case of multiple observation modalities, loop over time points and modalities
-    if utils.is_arr_of_arr(C):
-        num_modalities = len(C)
-        for t in range(n_steps):
-            for modality in range(num_modalities):
-                lnC = np.log(softmax(C[modality][:, np.newaxis]) + 1e-16)
-                expected_util += qo_pi[t][modality].dot(lnC)
-
-    # else, just loop over time (since there's only one modality)
-    else:
-        lnC = np.log(softmax(C[:, np.newaxis]) + 1e-16)
-        for t in range(n_steps):
-            lnC = np.log(softmax(C[:, np.newaxis] + 1e-16))
-            expected_util += qo_pi[t].dot(lnC)
+    # loop over time points and modalities
+    num_modalities = len(C)
+    for t in range(n_steps):
+        for modality in range(num_modalities):
+            lnC = spm_log_single(softmax(C[modality][:, np.newaxis]))
+            expected_util += qo_pi[t][modality].dot(lnC)
 
     return expected_util
 
@@ -322,29 +295,20 @@ def calc_states_info_gain(A, qs_pi):
     compute the Bayesian surprise (about states) expected under that policy
     Parameters
     ----------
-    A [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or 
-    Categorical (either single-factor of AoA)]:
+    A [numpy object array (both single and multi-modality)]:
         Observation likelihood mapping from hidden states to observations, with 
-        different modalities (if there are multiple) stored in different arrays
-    qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), 
-    Categorical (either single-factor or AoA), or list]:
-        Posterior predictive density over hidden states. If a list, each entry of 
-        the list is the posterior predictive for a given timepoint of an expected trajectory
+        different modalities (if there are multiple) stored in different sub-arrays of the object array.
+    qs_pi [list of [numpy object array (both single and multi-factor)]:
+        Posterior predictive density over hidden states. Each entry of 
+        the list is the posterior predictive density over hidden states for a given timepoint 
+        of an expected trajectory.
     Returns
     -------
     states_surprise [scalar]:
-        Surprise (about states) expected under the policy in question
+        Bayesian surprise (about states) or salience expected under the policy in question
     """
 
-    A = utils.to_numpy(A)
-
-    if isinstance(qs_pi, list):
-        n_steps = len(qs_pi)
-        for t in range(n_steps):
-            qs_pi[t] = utils.to_numpy(qs_pi[t], flatten=True)
-    else:
-        n_steps = 1
-        qs_pi = [utils.to_numpy(qs_pi, flatten=True)]
+    n_steps = len(qs_pi)
 
     states_surprise = 0
     for t in range(n_steps):
