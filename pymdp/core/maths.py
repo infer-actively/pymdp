@@ -369,17 +369,26 @@ def spm_MDP_G(A, x):
     qo = 0
     idx = np.array(np.where(qx > np.exp(-16))).T
 
-    # Accumulate expectation of entropy: i.e., E_{Q(o, s)}[lnP(o|x)]
-    for i in idx:
-        # Probability over outcomes for this combination of causes
-        po = np.ones(1)
-        for g in range(num_modalities):
-            index_vector = [slice(0, A[g].shape[0])] + list(i)
-            po = spm_cross(po, A[g][tuple(index_vector)])
+    if utils.is_arr_of_arr(A):
+        # Accumulate expectation of entropy: i.e., E_{Q(o, s)}[lnP(o|x)]
+        for i in idx:
+            # Probability over outcomes for this combination of causes
+            po = np.ones(1)
+            for modality_idx, A_m in enumerate(A):
+                index_vector = [slice(0, A_m.shape[0])] + list(i)
+                po = spm_cross(po, A_m[tuple(index_vector)])
 
-        po = po.ravel()
-        qo += qx[tuple(i)] * po
-        G += qx[tuple(i)] * po.dot(np.log(po + np.exp(-16)))
+            po = po.ravel()
+            qo += qx[tuple(i)] * po
+            G += qx[tuple(i)] * po.dot(np.log(po + np.exp(-16)))
+    else:
+        for i in idx:
+            po = np.ones(1)
+            index_vector = [slice(0, A.shape[0])] + list(i)
+            po = spm_cross(po, A[tuple(index_vector)])
+            po = po.ravel()
+            qo += qx[tuple(i)] * po
+            G += qx[tuple(i)] * po.dot(np.log(po + np.exp(-16)))
    
     # Subtract negative entropy of expectations: i.e., E_{Q(o)}[lnQ(o)]
     G = G - qo.dot(spm_log_single(qo))  # type: ignore
