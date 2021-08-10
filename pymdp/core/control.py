@@ -9,7 +9,6 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import itertools
 import numpy as np
-from pymdp.distributions import Categorical, Dirichlet
 from pymdp.core.maths import softmax, spm_dot, spm_wnorm, spm_MDP_G, spm_log_single, spm_log_obj_array
 from pymdp.core import utils
 import copy
@@ -322,67 +321,34 @@ def calc_pA_info_gain(pA, qo_pi, qs_pi):
     Compute expected Dirichlet information gain about parameters pA under a policy
     Parameters
     ----------
-    pA [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), or 
-    Dirichlet (either single-factor of AoA)]:
+    pA [numpy object array]:
         Prior dirichlet parameters parameterizing beliefs about the likelihood 
-        mapping from hidden states to observations, 
-        with different modalities (if there are multiple) stored in different arrays.
-    qo_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array),
-     Categorical (either single-factor or AoA), or list]:
-        Expected observations. If a list, each entry of the list is the posterior 
-        predictive for a given timepoint of an expected trajectory
-    qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), 
-    Categorical (either single-factor or AoA), or list]:
-        Posterior predictive density over hidden states. If a list, each entry of 
-        the list is the posterior predictive for a given timepoint of an expected trajectory
+        mapping from hidden states to observations, with each modality-specific Dirichlet prior stored in different arrays.
+    qo_pi [list of numpy object arrays]:
+        Expected observations. Each element of the list is the posterior 
+        predictive density over observations for a given timepoint of an expected trajectory
+    qs_pi list of numpy object arrays]:
+        Posterior predictive density over hidden states. Each element of the list 
+        is the posterior predictive for a given timepoint of an expected trajectory
     Returns
     -------
     infogain_pA [scalar]:
         Surprise (about dirichlet parameters) expected under the policy in question
     """
 
-    if isinstance(qo_pi, list):
-        n_steps = len(qo_pi)
-        for t in range(n_steps):
-            qo_pi[t] = utils.to_numpy(qo_pi[t], flatten=True)
-    else:
-        n_steps = 1
-        qo_pi = [utils.to_numpy(qo_pi, flatten=True)]
+    n_steps = len(qo_pi)
+    
+    num_modalities = len(pA)
+    wA = utils.obj_array(num_modalities)
+    for modality, pA_m in enumerate(pA):
+        wA[modality] = spm_wnorm(pA[modality])
 
-    if isinstance(qs_pi, list):
-        for t in range(n_steps):
-            qs_pi[t] = utils.to_numpy(qs_pi[t], flatten=True)
-    else:
-        n_steps = 1
-        qs_pi = [utils.to_numpy(qs_pi, flatten=True)]
-
-    if isinstance(pA, Dirichlet):
-        if pA.IS_AOA:
-            num_modalities = pA.n_arrays
-        else:
-            num_modalities = 1
-        wA = pA.expectation_of_log()
-    else:
-        if utils.is_arr_of_arr(pA):
-            num_modalities = len(pA)
-            wA = np.empty(num_modalities, dtype=object)
-            for modality in range(num_modalities):
-                wA[modality] = spm_wnorm(pA[modality])
-        else:
-            num_modalities = 1
-            wA = spm_wnorm(pA)
-
-    pA = utils.to_numpy(pA)
     pA_infogain = 0
-    if num_modalities == 1:
-        wA = wA * (pA > 0).astype("float")
+    
+    for modality in range(num_modalities):
+        wA_modality = wA[modality] * (pA[modality] > 0).astype("float")
         for t in range(n_steps):
-            pA_infogain = -qo_pi[t].dot(spm_dot(wA, qs_pi[t])[:, np.newaxis])
-    else:
-        for modality in range(num_modalities):
-            wA_modality = wA[modality] * (pA[modality] > 0).astype("float")
-            for t in range(n_steps):
-                pA_infogain -= qo_pi[t][modality].dot(spm_dot(wA_modality, qs_pi[t])[:, np.newaxis])
+            pA_infogain -= qo_pi[t][modality].dot(spm_dot(wA_modality, qs_pi[t])[:, np.newaxis])
 
     return pA_infogain
 
@@ -392,17 +358,13 @@ def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
     Compute expected Dirichlet information gain about parameters pB under a given policy
     Parameters
     ----------
-    pB [numpy nd-array, array-of-arrays (where each entry is a numpy nd-array), 
-    or Dirichlet (either single-factor of AoA)]:
+    pB [numpy object array]:
         Prior dirichlet parameters parameterizing beliefs about the likelihood 
-        describing transitions bewteen hidden states,
-        with different factors (if there are multiple) stored in different arrays.
-    qs_pi [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), 
-    Categorical (either single-factor or AoA), or list]:
-        Posterior predictive density over hidden states. If a list, each entry of 
-        the list is the posterior predictive for a given timepoint of an expected trajectory
-    qs_prev [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), 
-    or Categorical (either single-factor or AoA)]:
+        describing transitions between hidden states, with each factor-specific Dirichlet prior stored in different arrays.
+    qs_pi [list numpy object arrays]:
+        Posterior predictive density over hidden states. Each element of the list 
+        is the posterior predictive for a given timepoint of an expected trajectory.
+    qs_prev [numpy object array]:
         Posterior over hidden states (before getting observations)
     policy [numpy 2D ndarray, of size n_steps x n_control_factors]:
         Policy to consider. Each row of the matrix encodes the action index 
@@ -413,67 +375,33 @@ def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
         Surprise (about dirichlet parameters) expected under the policy in question
     """
 
-    if isinstance(qs_pi, list):
-        n_steps = len(qs_pi)
-        for t in range(n_steps):
-            qs_pi[t] = utils.to_numpy(qs_pi[t], flatten=True)
-    else:
-        n_steps = 1
-        qs_pi = [utils.to_numpy(qs_pi, flatten=True)]
+    n_steps = len(qs_pi)
 
-    if isinstance(qs_prev, Categorical):
-        qs_prev = utils.to_numpy(qs_prev, flatten=True)
+    num_factors = len(pB)
+    wB = utils.obj_array(num_factors)
+    for factor, pB_f in enumerate(pB):
+        wB[factor] = spm_wnorm(pB_f)
 
-    if isinstance(pB, Dirichlet):
-        if pB.IS_AOA:
-            num_factors = pB.n_arrays
-        else:
-            num_factors = 1
-        wB = pB.expectation_of_log()
-    else:
-        if utils.is_arr_of_arr(pB):
-            num_factors = len(pB)
-            wB = np.empty(num_factors, dtype=object)
-            for factor in range(num_factors):
-                wB[factor] = spm_wnorm(pB[factor])
-        else:
-            num_factors = 1
-            wB = spm_wnorm(pB)
-
-    pB = utils.to_numpy(pB)
     pB_infogain = 0
-    if num_factors == 1:
-        for t in range(n_steps):
-            if t == 0:
-                previous_qs = qs_prev
-            else:
-                previous_qs = qs_pi[t - 1]
-            a_i = policy[t, 0]
-            wB_t = wB[:, :, a_i] * (pB[:, :, a_i] > 0).astype("float")
-            pB_infogain = -qs_pi[t].dot(wB_t.dot(qs_prev))
-    else:
 
-        for t in range(n_steps):
-            # the 'past posterior' used for the information gain about pB here is the posterior
-            # over expected states at the timestep previous to the one under consideration
-            # if we're on the first timestep, we just use the latest posterior in the
-            # entire action-perception cycle as the previous posterior
-            if t == 0:
-                previous_qs = qs_prev
-            # otherwise, we use the expected states for the timestep previous to the timestep under consideration
-            else:
-                previous_qs = qs_pi[t - 1]
+    for t in range(n_steps):
+        # the 'past posterior' used for the information gain about pB here is the posterior
+        # over expected states at the timestep previous to the one under consideration
+        # if we're on the first timestep, we just use the latest posterior in the
+        # entire action-perception cycle as the previous posterior
+        if t == 0:
+            previous_qs = qs_prev
+        # otherwise, we use the expected states for the timestep previous to the timestep under consideration
+        else:
+            previous_qs = qs_pi[t - 1]
 
-            # get the list of action-indices for the current timestep
-            policy_t = policy[t, :]
-            for factor, a_i in enumerate(policy_t):
-                wB_factor_t = wB[factor][:, :, a_i] * (pB[factor][:, :, a_i] > 0).astype("float")
-                pB_infogain -= qs_pi[t][factor].dot(wB_factor_t.dot(previous_qs[factor]))
+        # get the list of action-indices for the current timestep
+        policy_t = policy[t, :]
+        for factor, a_i in enumerate(policy_t):
+            wB_factor_t = wB[factor][:, :, int(a_i)] * (pB[factor][:, :, int(a_i)] > 0).astype("float")
+            pB_infogain -= qs_pi[t][factor].dot(wB_factor_t.dot(previous_qs[factor]))
 
     return pB_infogain
-
-n_states = [5]
-control_fac_idx = [0]
 
 def construct_policies(num_states, num_controls = None, policy_len=1, control_fac_idx=None):
     """Generate a set of policies
@@ -523,65 +451,51 @@ def get_num_controls_from_policies(policies):
     return list(np.max(np.vstack(policies), axis = 0) + 1)
     
 
-def sample_action(q_pi, policies, n_control, sampling_type="marginal_action"):
+def sample_action(q_pi, policies, num_controls, action_selection="deterministic", alpha = 16.0):
     """
     Samples action from posterior over policies, using one of two methods. 
     Parameters
     ----------
-    q_pi [1D numpy.ndarray or Categorical]:
+    q_pi [1D numpy.ndarray]:
         Posterior beliefs about (possibly multi-step) policies.
     policies [list of numpy ndarrays]:
         List of arrays that indicate the policies under consideration. Each element 
         within the list is a matrix that stores the 
         the indices of the actions  upon the separate hidden state factors, at 
         each timestep (n_step x n_control_factor)
-    n_control [list of integers]:
+    num_controls [list of integers]:
         List of the dimensionalities of the different (controllable)) hidden state factors
-    sampling_type [string, 'marginal_action' or 'posterior_sample']:
+    action_selection [string, `deterministic` or `stochastic`]:
         Indicates whether the sampled action for a given hidden state factor is given by 
         the evidence for that action, marginalized across different policies ('marginal_action')
         or simply the action entailed by a sample from the posterior over policies
+    alpha [np.float64]:
+        Action selection precision -- the inverse temperature of the softmax that is used to scale the 
+        action marginals before sampling.
     Returns
     ----------
     selected_policy [1D numpy ndarray]:
         Numpy array containing the indices of the actions along each control factor
     """
 
-    n_factors = len(n_control)
+    num_factors = len(num_controls)
 
-    if sampling_type == "marginal_action":
+    action_marginals = utils.obj_array_zeros(num_controls)
+    
+    # weight each action according to its integrated posterior probability over policies and timesteps
+    for pol_idx, policy in enumerate(policies):
+        for t in range(policy.shape[0]):
+            for factor_i, action_i in enumerate(policy[t, :]):
+                action_marginals[factor_i][action_i] += q_pi[pol_idx]
+    
+    selected_policy = np.zeros(num_factors)
+    for factor_i in range(num_factors):
 
-        if utils.is_distribution(q_pi):
-            q_pi = utils.to_numpy(q_pi)
-
-        action_marginals = np.empty(n_factors, dtype=object)
-        for c_idx in range(n_factors):
-            action_marginals[c_idx] = np.zeros(n_control[c_idx])
-
-        # weight each action according to its integrated posterior probability over policies and timesteps
-        for pol_idx, policy in enumerate(policies):
-            for t in range(policy.shape[0]):
-                for factor_i, action_i in enumerate(policy[t, :]):
-                    action_marginals[factor_i][action_i] += q_pi[pol_idx]
-        
-        # print(action_marginals[0])
-        selected_policy = np.zeros(n_factors)
-        for factor_i in range(n_factors):
+        # Either you do this:
+        if action_selection == 'deterministic':
             selected_policy[factor_i] = np.argmax(action_marginals[factor_i])
-
-        # action_marginals = Categorical(values=action_marginals)
-        # action_marginals.normalize()
-        # selected_policy = np.array(action_marginals.sample())
-
-    elif sampling_type == "posterior_sample":
-        if utils.is_distribution(q_pi):
-            policy_index = q_pi.sample()
-            selected_policy = policies[policy_index]
-        else:
-            q_pi = Categorical(values=q_pi)
-            policy_index = q_pi.sample()
-            selected_policy = policies[policy_index]
-    else:
-        raise ValueError(f"{sampling_type} not supported")
+        elif action_selection == 'stochastic':
+            p_actions = softmax(action_marginals[factor_i] * alpha)
+            selected_policy[factor_i] = utils.sample(p_actions)
 
     return selected_policy
