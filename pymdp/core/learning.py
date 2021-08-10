@@ -52,7 +52,7 @@ def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, modalities="all"):
     return pA_updated
 
 def update_transition_dirichlet(
-    pB, B, actions, qs, qs_prev, lr=1.0, factors="all", return_numpy=True
+    pB, B, actions, qs, qs_prev, lr=1.0, factors="all"
 ):
     """
     Update Dirichlet parameters that parameterize the transition model of the generative model 
@@ -60,66 +60,36 @@ def update_transition_dirichlet(
 
     Parameters
     -----------
-   -  pB [numpy nd.array, array-of-arrays (with np.ndarray entries), or Dirichlet 
-   (either single-modality or AoA)]:
+   -  pB [numpy object array]:
         The prior Dirichlet parameters of the generative model, parameterizing the agent's 
         beliefs about the transition likelihood. 
-    - B [numpy nd.array, object-like array of arrays, or Categorical (either single-modality or AoA)]:
+    - B [numpy object array]:
         The transition likelihood of the generative model. 
     - actions [numpy 1D array]:
         A 1D numpy array of shape (num_control_factors,) containing the action(s) performed at 
         a given timestep.
-    - qs [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or Categorical 
-    (either single-factor or AoA)]:
+    - qs [numpy object array (where each entry is a numpy 1D array)]:
         Current marginal posterior beliefs about hidden state factors
-    - qs_prev [numpy 1D array, array-of-arrays (where each entry is a numpy 1D array), or 
-    Categorical (either single-factor or AoA)]:
+    - qs_prev [numpy object array (where each entry is a numpy 1D array)]:
         Past marginal posterior beliefs about hidden state factors
     - lr [float, optional]:
         Learning rate.
-    - return_numpy [bool, optional]:
-        Logical flag to determine whether output is a numpy array or a Dirichlet
     - factors [list, optional]:
-        Indices (in terms of range(Nf)) of the hidden state factors to include in learning.
+        Indices (in terms of range(num_factors)) of the hidden state factors to include in learning.
         Defaults to 'all', meaning that transition likelihood matrices for all hidden state factors
         are updated as a function of transitions in the different control factors (i.e. actions)
     """
 
-    pB = utils.to_numpy(pB)
-    B = utils.to_numpy(B)
+    num_factors = len(pB)
 
-    if utils.is_arr_of_arr(pB):
-        n_factors = len(pB)
-    else:
-        n_factors = 1
-
-    if return_numpy:
-        pB_updated = copy.deepcopy(pB)
-    else:
-        pB_updated = utils.to_dirichlet(copy.deepcopy(pB))
-
-    if not utils.is_distribution(qs):
-        qs = utils.to_categorical(qs)
-
+    pB_updated = copy.deepcopy(pB)
+   
     if factors == "all":
-        if n_factors == 1:
-            dfdb = qs.cross(qs_prev, return_numpy=True)
-            dfdb = dfdb * (B[:, :, actions[0]] > 0).astype("float")
-            pB_updated[:, :, actions[0]] = pB_updated[:, :, actions[0]] + (lr * dfdb)
+        factors = list(range(num_factors))
 
-        elif n_factors > 1:
-            for factor in range(n_factors):
-                dfdb = qs[factor].cross(qs_prev[factor], return_numpy=True)
-                dfdb = dfdb * (B[factor][:, :, actions[factor]] > 0).astype("float")
-                pB_updated[factor][:, :, actions[factor]] = pB_updated[factor][
-                    :, :, actions[factor]
-                ] + (lr * dfdb)
-    else:
-        for factor in factors:
-            dfdb = qs[factor].cross(qs_prev[factor], return_numpy=True)
-            dfdb = dfdb * (B[factor][:, :, actions[factor]] > 0).astype("float")
-            pB_updated[factor][:, :, actions[factor]] = pB_updated[factor][
-                :, :, actions[factor]
-            ] + (lr * dfdb)
+    for factor in factors:
+        dfdb = maths.spm_cross(qs[factor], qs_prev[factor])
+        dfdb *= (B[factor][:, :, actions[factor]] > 0).astype("float")
+        pB_updated[factor][:,:,int(actions[factor])] += (lr*dfdb)
 
     return pB_updated
