@@ -196,7 +196,7 @@ def get_expected_states(qs, B, policy):
     # get expected states over time
     for t in range(n_steps):
         for control_factor, action in enumerate(policy[t,:]):
-            qs_pi[t+1][control_factor] = B[control_factor][:,:,action].dot(qs_pi[t][control_factor])
+            qs_pi[t+1][control_factor] = B[control_factor][:,:,int(action)].dot(qs_pi[t][control_factor])
 
     return qs_pi[1:]
  
