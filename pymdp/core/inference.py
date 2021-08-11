@@ -9,7 +9,6 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 
-
 from pymdp.core import utils
 from pymdp.core.maths import get_joint_likelihood_seq
 from pymdp.core.algos import run_fpi, run_mmp, run_mmp_testing
@@ -34,24 +33,24 @@ def update_posterior_states_v2(
 ):
     """
     Update posterior over hidden states using marginal message passing
+     Parameters
+    ----------
+    `A` [type]:
+        -Description
+    `B` [type]:
+        -Description
+
+    Returns:
+    ---------
+    `qs_seq_pi` [numpy object array]:
+        - posterior beliefs over hidden states for each policy. 
     """
-    # safe convert to numpy
-    A = utils.to_numpy(A)
 
     num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A, B)
-    A = utils.to_arr_of_arr(A)
-    B = utils.to_arr_of_arr(B)
-
+    
     prev_obs = utils.process_observation_seq(prev_obs, num_modalities, num_obs)
-    if prior is not None:
-        if policy_sep_prior:
-            for p_idx, policy in enumerate(policies):
-                prior[p_idx] = utils.process_prior(prior[p_idx], num_factors)
-        else:
-            prior = utils.process_prior(prior, num_factors)
-
+   
     lh_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
-    # print(lh_seq)
 
     if prev_actions is not None:
         prev_actions = np.stack(prev_actions,0)
@@ -99,22 +98,12 @@ def update_posterior_states_v2_test(
     Update posterior over hidden states using marginal message passing
     """
     # safe convert to numpy
-    A = utils.to_numpy(A)
 
     num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A, B)
-    A = utils.to_arr_of_arr(A)
-    B = utils.to_arr_of_arr(B)
 
     prev_obs = utils.process_observation_seq(prev_obs, num_modalities, num_obs)
-    if prior is not None:
-        if policy_sep_prior:
-            for p_idx, policy in enumerate(policies):
-                prior[p_idx] = utils.process_prior(prior[p_idx], num_factors)
-        else:
-            prior = utils.process_prior(prior, num_factors)
-
+    
     lh_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
-    # print(lh_seq)
 
     if prev_actions is not None:
         prev_actions = np.stack(prev_actions,0)
@@ -160,8 +149,6 @@ def average_states_over_policies(qs_pi, q_pi):
     ---------
     `qs_bma` - marginal posterior over hidden states for the current timepoint, averaged across policies according to their posterior probability given by `q_pi`
     """
-
-    q_pi = utils.to_numpy(q_pi)
 
     num_factors = len(qs_pi[0]) # get the number of hidden state factors using the shape of the first-policy-conditioned posterior
     num_states = [qs_f.shape[0] for qs_f in qs_pi[0]] # get the dimensionalities of each hidden state factor 
