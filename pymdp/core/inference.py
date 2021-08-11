@@ -27,23 +27,34 @@ def update_posterior_states_v2(
     policies,
     prev_actions=None,
     prior=None,
-    return_numpy=True,
     policy_sep_prior = True,
     **kwargs,
 ):
     """
     Update posterior over hidden states using marginal message passing
-     Parameters
+    Parameters
     ----------
-    `A` [type]:
-        -Description
-    `B` [type]:
-        -Description
+    `A` [numpy object array]:
+        - Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element A[m] of
+        this object array stores an np.ndarray multidimensional array that stores the mapping from hidden states to observations. 
+    `B` [numpy object array]:
+        - Dynamics likelihood mapping or 'transition model', mapping from hidden states at `t` to hidden states at `t+1`, given some control state `u`.
+        Each element B[f] of this object array stores a 3-D tensor that stores the mapping between hidden states and actions at `t` to hidden states at `t+1`.
+    `prev_obs` [list]:
+        - List of observations over time. Each observation in the list can be an int, a list of ints, a tuple of ints, a one-hot vector or an object array of one-hot vectors.
+    `prior` [numpy object array or None]:
+        - If provided, this a numpy object array with one sub-array per hidden state factor, that stores the prior beliefs about initial states (at t = 0, relative to `infer_len`). If `None`, this defaults
+        to a flat (uninformative) prior over hidden states.
+    `policy_sep_prior` [Bool, default True]:s
+        - Flag determining whether the prior beliefs from the past are unconditioned on policy, or separated by /conditioned on the policy variable.
+    **kwargs [optional keyword arguments to `run_mmp`]:
+        - Optional keyword arguments for the function `run_mmp`
 
     Returns:
     ---------
     `qs_seq_pi` [numpy object array]:
-        - posterior beliefs over hidden states for each policy. 
+        - posterior beliefs over hidden states for each policy. Structure is policies --> timepoints --> factors/marginals,
+        e.g. `qs_seq_pi[p][t][f]` gets the marginal belief about factor `f` at timepoint `t` under policy `p`
     """
 
     num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A, B)
@@ -90,12 +101,34 @@ def update_posterior_states_v2_test(
     policies,
     prev_actions=None,
     prior=None,
-    return_numpy=True,
     policy_sep_prior = True,
     **kwargs,
 ):
     """
     Update posterior over hidden states using marginal message passing
+    Parameters
+    ----------
+    `A` [numpy object array]:
+        - Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element A[m] of
+        this object array stores an np.ndarray multidimensional array that stores the mapping from hidden states to observations. 
+    `B` [numpy object array]:
+        - Dynamics likelihood mapping or 'transition model', mapping from hidden states at `t` to hidden states at `t+1`, given some control state `u`.
+        Each element B[f] of this object array stores a 3-D tensor that stores the mapping between hidden states and actions at `t` to hidden states at `t+1`.
+    `prev_obs` [list]:
+        - List of observations over time. Each observation in the list can be an int, a list of ints, a tuple of ints, a one-hot vector or an object array of one-hot vectors.
+    `prior` [numpy object array or None]:
+        - If provided, this a numpy object array with one sub-array per hidden state factor, that stores the prior beliefs about initial states (at t = 0, relative to `infer_len`). If `None`, this defaults
+        to a flat (uninformative) prior over hidden states.
+    `policy_sep_prior` [Bool, default True]:s
+        - Flag determining whether the prior beliefs from the past are unconditioned on policy, or separated by /conditioned on the policy variable.
+    **kwargs [optional keyword arguments to `run_mmp`]:
+        - Optional keyword arguments for the function `run_mmp`
+
+    Returns:
+    ---------
+    `qs_seq_pi` [numpy object array]:
+        - posterior beliefs over hidden states for each policy. Structure is policies --> timepoints --> factors/marginals,
+        e.g. `qs_seq_pi[p][t][f]` gets the marginal belief about factor `f` at timepoint `t` under policy `p`
     """
     # safe convert to numpy
 
