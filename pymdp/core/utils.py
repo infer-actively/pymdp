@@ -28,7 +28,7 @@ def obj_array_zeros(shape_list):
     Creates a numpy object array whose sub-arrays are 1-D vectors
     filled with zeros, with shapes given by shape_list[i]
     """
-    arr = np.empty(len(shape_list), dtype=object)
+    arr = obj_array(len(shape_list))
     for i, shape in enumerate(shape_list):
         arr[i] = np.zeros(shape)
     return arr
@@ -173,6 +173,13 @@ def norm_dist(dist):
     else:
         return np.divide(dist, dist.sum(axis=0))
 
+def norm_dist_obj_arr(obj_arr):
+
+    normed_obj_array = obj_array(len(obj_arr))
+    for i, arr in enumerate(obj_arr):
+        normed_obj_array[i] = norm_dist(arr)
+    
+    return normed_obj_array
 
 def to_numpy(dist, flatten=False):
     """
@@ -206,10 +213,10 @@ def process_observation_seq(obs_seq, n_modalities, n_observations):
     """
     Helper function for formatting observations    
 
-        Observations can either be `Categorical`, `int` (converted to one-hot)
-        or `tuple` (obs for each modality)
-    
-    @TODO maybe provide error messaging about observation format
+        Observations can either be `int` (converted to one-hot)
+        or `tuple` (obs for each modality), or `list` (obs for each modality)
+        If list, the entries could be object arrays of one-hots, in which
+        case this function returns `obs_seq` as is.
     """
     proc_obs_seq = obj_array(len(obs_seq))
     for t in range(len(obs_seq)):
