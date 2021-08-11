@@ -212,6 +212,8 @@ class TestControl(unittest.TestCase):
         where there are imbalances in the preferences for different outcomes. Test for both single
         timestep policy horizons and multiple timestep policy horizons (planning)
         """
+
+        '''1-step policies'''
         num_states = [2]
         num_controls = [2]
 
@@ -240,9 +242,9 @@ class TestControl(unittest.TestCase):
 
         self.assertGreater(expected_utilities[1], expected_utilities[0])
 
-        # 3-step policies 
+        '''3-step policies'''
         # One policy entails going to state 0 two times in a row, and then state 2 at the end
-        # One involves going to state 1 three times in a row
+        # Another policy entails going to state 1 three times in a row
 
         num_states = [3]
         num_controls = [3]
@@ -274,6 +276,162 @@ class TestControl(unittest.TestCase):
 
         self.assertGreater(expected_utilities[1], expected_utilities[0])
     
+    def test_state_info_gain(self):
+        """
+        Test the states_info_gain function. 
+        Function is tested by manipulating uncertainty in the likelihood matrices (A or B)
+        in a ways that alternatively change the resolvability of uncertainty
+        This is done with A) an imprecise expected state and a precise sensory mapping, 
+        and B) high ambiguity and imprecise sensory mapping.
+        """
+
+        num_states = [2]
+        num_controls = [2]
+
+        # start with a precise initial state
+        qs = utils.to_arr_of_arr(utils.onehot(0, num_states[0]))
+
+        '''Case study 1: Uncertain states, unambiguous observations'''
+        # add some uncertainty into the consequences of the second policy, which
+        # leads to increased epistemic value of observations, in case of pursuing
+        # that policy -- this of course depends on a precise observation likelihood model
+        B = utils.construct_controllable_B(num_states, num_controls)
+        B[0][:, :, 1] = maths.softmax(B[0][:, :, 1]) # "noise-ify" the consequences of the 1-th action
+
+        # single timestep
+        n_step = 1
+        policies = control.construct_policies(num_states, num_controls, policy_len=n_step)
+
+        # single observation modality
+        num_obs = [2]
+
+        # create noiseless identity A matrix
+        A = utils.to_arr_of_arr(np.eye(num_obs[0]))
+
+        state_info_gains = np.zeros(len(policies)) # store the Bayesian surprise / epistemic values of states here (AKA state info gain)
+        for idx, policy in enumerate(policies):
+            qs_pi = control.get_expected_states(qs, B, policy)
+            state_info_gains[idx] += control.calc_states_info_gain(A, qs_pi)
+        self.assertGreater(state_info_gains[1], state_info_gains[0])
+
+        '''Case study 2: Uncertain states, ambiguous observations (for all states)'''
+        # now we 'undo' the epistemic bonus of the second policy by making the A matrix
+        # totally ambiguous; thus observations cannot resolve uncertainty about hidden states.
+        # In this case, uncertainty in the posterior beliefs induced by Policy 1 doesn't tip the balance
+        # of epistemic value, because uncertainty is irresolveable either way.
+        A = utils.obj_array_uniform([ [num_obs[0], num_states[0]] ])
+
+        state_info_gains = np.zeros(len(policies))
+        for idx, policy in enumerate(policies):
+            qs_pi = control.get_expected_states(qs, B, policy)
+            state_info_gains[idx] += control.calc_states_info_gain(A, qs_pi)
+        self.assertEqual(state_info_gains[0], state_info_gains[1])
+
+        '''Case study 2: Uncertain states, ambiguous observations (for particular states)'''
+
+        # create noiseless identity A matrix
+        A = utils.to_arr_of_arr(np.eye(num_obs[0]))
+
+        # add some uncertainty into the consequences of the both policies
+        B = utils.construct_controllable_B(num_states, num_controls)
+
+        B[0][:, :, 0] = maths.softmax(B[0][:, :, 0]*2.0) # "noise-ify" the consequences of the 0-th action, but to a lesser extent than the 1-th action
+        B[0][:, :, 1] = maths.softmax(B[0][:, :, 1]) # "noise-ify" the consequences of the 1-th action
+
+        # Although in the presence of a precise likelihood mapping, 
+        # Policy 1 would be preferred (due to higher resolve-able uncertainty, introduced by a noisier action-dependent B matrix),
+        # if the expected observation likelihood of being in state 1 (the most likely consequence of Policy 1) is not precise, then 
+        # Policy 0 (which has more probability loaded over state 0) will have more resolveable uncertainty, due to the
+        # higher precision of the A matrix over that column (column 0, which is identity). Even though the expected density over states
+        # is less noisy for policy 0.
+        A[0][:,1] = maths.softmax(A[0][:,1]) 
+
+        state_info_gains = np.zeros(len(policies))
+        for idx, policy in enumerate(policies):
+            qs_pi = control.get_expected_states(qs, B, policy)
+            state_info_gains[idx] += control.calc_states_info_gain(A, qs_pi)
+        self.assertGreater(state_info_gains[1], state_info_gains[0])
+    
+    def test_pA_info_gain(self):
+
+        """
+        Test the pA_info_gain function. Demonstrates operation
+        by manipulating shape of the Dirichlet priors over likelihood parameters
+        (pA), which affects information gain for different expected observations
+        """
+
+        num_states = [2]
+        num_controls = [2]
+
+        # start with a precise initial state
+        qs = utils.to_arr_of_arr(utils.onehot(0, num_states[0]))
+
+        B = utils.construct_controllable_B(num_states, num_controls)
+
+        # single timestep
+        n_step = 1
+        policies = control.construct_policies(num_states, num_controls, policy_len=n_step)
+
+        # single observation modality
+        num_obs = [2]
+
+        # create noiseless identity A matrix
+        A = utils.to_arr_of_arr(np.eye(num_obs[0]))
+
+        # create prior over dirichlets such that there is a skew
+        # in the parameters about the likelihood mapping from the
+        # second hidden state (index 1) to observations, such that
+        # Observation 0 is believed to be more likely than the other, conditioned on State 1.
+        # Therefore sampling observations conditioned on State 1 would afford high info gain
+        # about parameters, for that part of the likelhood distribution.
+
+        pA = utils.obj_array_ones([ [num_obs[0], num_states[0]]] )
+        pA[0][0, 1] += 1.0
+
+        pA_info_gains = np.zeros(len(policies))
+        for idx, policy in enumerate(policies):
+            qs_pi = control.get_expected_states(qs, B, policy)
+            qo_pi = control.get_expected_obs(qs_pi, A)
+            pA_info_gains[idx] += control.calc_pA_info_gain(pA, qo_pi, qs_pi)
+
+        self.assertGreater(pA_info_gains[1], pA_info_gains[0])
+    
+    def test_pB_info_gain(self):
+        """
+        Test the pB_info_gain function. Demonstrates operation
+        by manipulating shape of the Dirichlet priors over likelihood parameters
+        (pB), which affects information gain for different states
+        """
+        num_states = [2]
+        num_controls = [2]
+
+        # start with a precise initial state
+        qs = utils.to_arr_of_arr(utils.onehot(0, num_states[0]))
+
+        B = utils.construct_controllable_B(num_states, num_controls)
+
+        pB = utils.obj_array_ones([ [num_states[0], num_states[0], num_controls[0]] ])
+
+        # create prior over dirichlets such that there is a skew
+        # in the parameters about the likelihood mapping from the
+        # hidden states to hidden states under the second action,
+        # such that hidden state 0 is considered to be more likely than the other,
+        # given the action in question
+        # Therefore taking that action would yield an expected state that afford
+        # high information gain about that part of the likelihood distribution.
+        #
+        pB[0][0, :, 1] += 1.0
+
+        # single timestep
+        n_step = 1
+        policies = control.construct_policies(num_states, num_controls, policy_len=n_step)
+
+        pB_info_gains = np.zeros(len(policies))
+        for idx, policy in enumerate(policies):
+            qs_pi = control.get_expected_states(qs, B, policy)
+            pB_info_gains[idx] += control.calc_pB_info_gain(pB, qs_pi, qs, policy)
+        self.assertGreater(pB_info_gains[1], pB_info_gains[0])
+
     def test_update_posterior_policies_utility(self):
         """
         Tests the refactored (Categorical-less) version of `update_posterior_policies`, using only the expected utility component of the expected free energy
@@ -956,6 +1114,49 @@ class TestControl(unittest.TestCase):
         sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic", alpha = 1.0)
 
         self.assertEqual(chosen_action.shape, sampled_action.shape)
+
+
+        '''Single observation modality, single (controllable) hidden state factor, 3-step policies. Using utility only'''
+        # One policy entails going to state 0 two times in a row, and then state 2 at the end
+        # Another policy entails going to state 1 three times in a row
+
+        num_obs = [3]
+        num_states = [3]
+        num_controls = [3]
+
+        qs = utils.random_single_categorical(num_states)
+        B = utils.construct_controllable_B(num_states, num_controls)
+
+        policies = [np.array([0, 0, 2]).reshape(-1, 1), np.array([1, 1, 1]).reshape(-1, 1)]
+
+        # create noiseless identity A matrix
+        A = utils.to_arr_of_arr(np.eye(num_obs[0]))
+
+        # create imbalance in preferences for observations
+        # This test is designed to illustrate the emergence of planning by
+        # using the time-integral of the expected free energy.
+        # Even though the first observation (index 0) is the most preferred, the policy
+        # that frequents this observation the most is actually not optimal, because that policy
+        # terminates in a less preferred state by timestep 3.
+        C = utils.to_arr_of_arr(np.array([1.2, 1.0, 0.55]))
+
+        q_pi, efe = control.update_posterior_policies(
+            qs,
+            A,
+            B,
+            C,
+            policies,
+            use_utility = True,
+            use_states_info_gain = False,
+            use_param_info_gain = False,
+            pA=None,
+            pB=None,
+            gamma=16.0
+        )
+
+        chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
+        self.assertEqual(int(chosen_action[0]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
