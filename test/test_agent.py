@@ -43,14 +43,16 @@ class TestAgent(unittest.TestCase):
         C[1][0] = 1.0  
         C[1][1] = -2.0  
 
-        agent = Agent(A=A, B=B, C=C, control_fac_idx=[1], inference_algo="MMP", policy_len=5, inference_horizon=1)
+        planning_horizon = 5
+        backwards_horizon = 1
+        agent = Agent(A=A, B=B, C=C, control_fac_idx=[1], inference_algo="MMP", policy_len=planning_horizon, inference_horizon=backwards_horizon)
         o = [0, 2]
-        qx = agent.infer_states(o)
+        qs_pi = agent.infer_states(o)
 
-        print(qx[0].shape)
-        print(qx[1].shape)
+        for qs_pi_i in qs_pi:
+            self.assertEqual(len(qs_pi_i), planning_horizon + backwards_horizon)
 
-    
+
     def test_mmp_active_inference(self):
         """
         Tests to make sure whole active inference loop works (with various past and future
