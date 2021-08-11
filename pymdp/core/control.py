@@ -27,12 +27,14 @@ def update_posterior_policies_mmp(
     pB=None,
     F = None,
     E = None,
-    gamma=16.0,
-    return_numpy=True,
+    gamma=16.0
 ):  
     """
-    `qs_seq_pi`: numpy object array that stores posterior marginals beliefs over hidden states for each policy. 
-                The structure is nested as policies --> timesteps --> hidden state factors. So qs_seq_pi[p_idx][t][f] is the belief about factor `f` at time `t`, under policy `p_idx`
+    `qs_seq_pi` [numpy object array]:
+                Posterior marginals beliefs over hidden states for each policy. 
+                The data structure is nested as policies --> timesteps --> hidden state factors. 
+                So qs_seq_pi[p_idx][t][f] is the belief about factor `f` at time `t`, under policy `p_idx`.
+                @TODO: Clarify whether this can also be lists, or must it be object arrays?
     `A`: numpy object array that stores likelihood mappings for each modality.
     `B`: numpy object array that stores transition matrices (possibly action-conditioned) for each hidden state factor
     `policies`: numpy object array that stores each (potentially-multifactorial) policy in `policies[p_idx]`. Shape of `policies[p_idx]` is `(num_timesteps, num_factors)`
@@ -45,25 +47,18 @@ def update_posterior_policies_mmp(
     `F` : 1D numpy array that stores variational free energy of each policy 
     `E` : 1D numpy array that stores prior probability each policy (e.g. 'habits')
     `gamma`: Float that encodes the precision over policies
-    `return_numpy`: Boolean that determines whether output should be a numpy array or an instance of the Categorical class (default: `True`)
     """
 
-    A = utils.to_numpy(A)
-    B = utils.to_numpy(B)
     num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A, B)
     horizon = len(qs_seq_pi[0])
     num_policies = len(qs_seq_pi)
 
-    # initialise`qo_seq` as object arrays to initially populate `qo_seq_pi`
     qo_seq = utils.obj_array(horizon)
     for t in range(horizon):
         qo_seq[t] = utils.obj_array_zeros(num_obs)
 
     # initialise expected observations
     qo_seq_pi = utils.obj_array(num_policies)
-    for p_idx in range(num_policies):
-        # qo_seq_pi[p_idx] = copy.deepcopy(obs_over_time)
-        qo_seq_pi[p_idx] = qo_seq
 
     efe = np.zeros(num_policies)
 
@@ -74,33 +69,23 @@ def update_posterior_policies_mmp(
 
     for p_idx, policy in enumerate(policies):
 
-        qs_seq_pi_i = qs_seq_pi[p_idx]
+        qo_seq_pi[p_idx] = get_expected_obs(qs_seq_pi[p_idx], A)
 
-        for t in range(horizon):
+        if use_utility:
+            efe[p_idx] += calc_expected_utility(qo_seq_pi[p_idx], C)
+        
+        if use_states_info_gain:
+            efe[p_idx] += calc_states_info_gain(A, qs_seq_pi[p_idx])
+        
+        if use_param_info_gain:
+            if pA is not None:
+                efe[p_idx] += calc_pA_info_gain(pA, qo_seq_pi[p_idx], qs_seq_pi[p_idx])
+            if pB is not None:
+                efe[p_idx] += calc_pB_info_gain(pB, qs_seq_pi[p_idx], prior, policy)
 
-            qo_pi_t = get_expected_obs(qs_seq_pi_i[t], A)
-            qo_seq_pi[p_idx][t] = qo_pi_t
-
-            if use_utility:
-                efe[p_idx] += calc_expected_utility(qo_seq_pi[p_idx][t], C)
-
-            if use_states_info_gain:
-                efe[p_idx] += calc_states_info_gain(A, qs_seq_pi_i[t])
-
-            if use_param_info_gain:
-                if pA is not None:
-                    efe[p_idx] += calc_pA_info_gain(pA, qo_seq_pi[p_idx][t], qs_seq_pi_i[t])
-                if pB is not None:
-                    if t > 0:
-                        efe[p_idx] += calc_pB_info_gain(pB, qs_seq_pi_i[t], qs_seq_pi_i[t-1], policy)
-                    else:
-                        if prior is not None:
-                            efe[p_idx] += calc_pB_info_gain(pB, qs_seq_pi_i[t], prior, policy)
-
-
+        
     q_pi = softmax(efe * gamma - F + E)
-    if not return_numpy:
-        q_pi = utils.to_categorical(q_pi)
+   
     return q_pi, efe
 
 
@@ -236,9 +221,6 @@ def get_expected_obs(qs_pi, A):
         over the time horizon of policy evaluation, where each entry is the expected observations at a given timestep. 
     """
 
-    # wrap the predictive posterior density into a list, if it's not already in that form
-    if not isinstance(qs_pi, list):
-        qs_pi = [qs_pi]
     n_steps = len(qs_pi) # each element of the list is the PPD at a different timestep
 
     # initialise expected observations
@@ -445,7 +427,11 @@ def construct_policies(num_states, num_controls = None, policy_len=1, control_fa
     
 def get_num_controls_from_policies(policies):
     """
-    This assumes a fully enumerated policy space (there is a policy that explores the maximum control state level for each control factor
+    This calculates the list of dimensionalities of control factors
+    from the policy array.
+    @NOTE: 
+    This assumes a policy space such that for each control factor, there is at least
+    one policy that entails taking the action with the maximum index along that control factor.
     """
 
     return list(np.max(np.vstack(policies), axis = 0) + 1)
