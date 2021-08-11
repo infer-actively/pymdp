@@ -20,7 +20,7 @@ def run_mmp(
     Parameters:
     --------------
     `lh_seq`[numpy object array]:
-        Likelihoods of hidden state factors given a sequence of observations over time. This is logged beforehand
+        (log) Likelihoods of hidden state factors given a sequence of observations over time. This is assumed to already be log-transformed.
     `B`[numpy object array]:
         Transition likelihood of the generative model, mapping from hidden states at T to hidden states at T+1. One B matrix per modality (e.g. `B[f]` corresponds to f-th factor's B matrix)
         This is used in inference to compute the 'forward' and 'backward' messages conveyed between beliefs about temporally-adjacent timepoints.
@@ -29,7 +29,8 @@ def run_mmp(
     `prev_actions` [None or 2-D numpy.ndarray]:
         If provided, should be a matrix of previous actions of shape (infer_len, num_control_factors) that indicates the indices of each action (control state index) taken in the past (up until the current timestep).
     `prior`[None or numpy object array]:
-        If provided, this a numpy object array with one sub-array per hidden state factor, that stores the prior beliefs about initial states (at t = 0, relative to `infer_len`).
+        If provided, this a numpy object array with one sub-array per hidden state factor, that stores the prior beliefs about initial states (at t = 0, relative to `infer_len`). IF None, this defaults
+        to a flat (uninformative) prior over hidden states.
     `num_iter`[Int]:
         Number of variational iterations.
     `grad_descent` [Bool]:
@@ -135,7 +136,7 @@ def run_mmp_testing(
     Parameters:
     --------------
     `lh_seq`[numpy object array]:
-        Likelihoods of hidden state factors given a sequence of observations over time. This is logged beforehand
+        (log) Likelihoods of hidden state factors given a sequence of observations over time. This is assumed to already be log-transformed.
     `B`[numpy object array]:
         Transition likelihood of the generative model, mapping from hidden states at T to hidden states at T+1. One B matrix per modality (e.g. `B[f]` corresponds to f-th factor's B matrix)
         This is used in inference to compute the 'forward' and 'backward' messages conveyed between beliefs about temporally-adjacent timepoints.
@@ -215,8 +216,8 @@ def run_mmp_testing(
             for f in range(num_factors):
                 # likelihood
                 if t < past_len:
-                    if itr == 0:
-                        print(f'obs from timestep {t}\n')
+                    # if itr == 0:
+                    #     print(f'obs from timestep {t}\n')
                     lnA = spm_log_single(spm_dot(lh_seq[t], qs_seq[t], [f]))
                 else:
                     lnA = np.zeros(num_states[f])
