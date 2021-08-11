@@ -36,7 +36,8 @@ def obj_array_zeros(shape_list):
 def obj_array_uniform(shape_list):
     """ 
     Creates a numpy object array whose sub-arrays are uniform Categorical
-    distributions with shapes given by shape_list[i]
+    distributions with shapes given by shape_list[i]. The shapes (elements of shape_list)
+    can either be tuples or lists.
     """
     arr = obj_array(len(shape_list))
     for i, shape in enumerate(shape_list):
@@ -113,7 +114,7 @@ def construct_controllable_B(num_states, num_controls):
         tmp = np.eye(c_dim)[:, :, np.newaxis]
         tmp = np.tile(tmp, (1, 1, c_dim))
         B[factor] = tmp.transpose(1, 2, 0)
-        
+
     return B
 
 def get_model_dimensions(A=None, B=None):
