@@ -2,7 +2,6 @@ import numpy as np
 from pymdp.agent import Agent
 from pymdp.core import utils
 from pymdp.core.maths import softmax
-from pymdp.distributions import Categorical, Dirichlet
 import copy
 
 obs_names = ["state_observation", "reward", "decision_proprioceptive"]
