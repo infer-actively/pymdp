@@ -309,7 +309,7 @@ class Agent(object):
             if self.action is not None:
                 empirical_prior = control.get_expected_states(
                     self.qs, self.B, self.action.reshape(1, -1) #type: ignore
-                )
+                )[0]
             else:
                 empirical_prior = self.D
             qs = inference.update_posterior_states(
