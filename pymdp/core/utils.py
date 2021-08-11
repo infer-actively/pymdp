@@ -180,22 +180,6 @@ def norm_dist_obj_arr(obj_arr):
     
     return normed_obj_array
 
-def to_numpy(dist, flatten=False):
-    """
-    If flatten is True, then the individual entries of the object array will be 
-    flattened into row vectors(common operation when dealing with array of arrays 
-    with 1D numpy array entries)
-    """
-    
-    values = dist
-    if flatten:
-        if is_arr_of_arr(values):
-            for idx, arr in enumerate(values):
-                values[idx] = arr.flatten()
-        else:
-            values = values.flatten()
-    return values
-
 
 def is_arr_of_arr(arr):
     return arr.dtype == "object"
