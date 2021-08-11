@@ -245,9 +245,9 @@ def get_joint_likelihood(A, obs, num_states):
 
 
 def get_joint_likelihood_seq(A, obs, num_states):
-    ll_seq = np.empty(len(obs), dtype=object)
-    for t in range(len(obs)):
-        ll_seq[t] = get_joint_likelihood(A, obs[t], num_states)
+    ll_seq = utils.obj_array(len(obs))
+    for t, obs_t in enumerate(obs):
+        ll_seq[t] = get_joint_likelihood(A, obs_t, num_states)
     return ll_seq
 
 
