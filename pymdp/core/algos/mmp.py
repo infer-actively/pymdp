@@ -27,7 +27,7 @@ def run_mmp(
     `policy` [2-D numpy.ndarray]:
         Matrix of shape (policy_len, num_control_factors) that indicates the indices of each action (control state index) upon timestep t and control_factor f in the element `policy[t,f]` for a given policy.
     `prev_actions` [None or 2-D numpy.ndarray]:
-        If provided, should be a matrix of previous actions of shape (infer_len, num_control_factors) taht indicates the indices of each action (control state index) taken in the past (up until the current timestep).
+        If provided, should be a matrix of previous actions of shape (infer_len, num_control_factors) that indicates the indices of each action (control state index) taken in the past (up until the current timestep).
     `prior`[None or numpy object array]:
         If provided, this a numpy object array with one sub-array per hidden state factor, that stores the prior beliefs about initial states (at t = 0, relative to `infer_len`).
     `num_iter`[Int]:
@@ -57,7 +57,6 @@ def run_mmp(
 
     # dimensions
     _, num_states, _, num_factors = get_model_dimensions(A=None, B=B)
-    B = to_arr_of_arr(B)
 
     # beliefs
     qs_seq = obj_array(infer_len)
@@ -175,7 +174,6 @@ def run_mmp_testing(
 
     # dimensions
     _, num_states, _, num_factors = get_model_dimensions(A=None, B=B)
-    B = to_arr_of_arr(B)
 
     # beliefs
     qs_seq = obj_array(infer_len)
