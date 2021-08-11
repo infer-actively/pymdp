@@ -9,7 +9,6 @@ setuptools.setup(
     packages=[
         "pymdp",
         "pymdp.core",
-        "pymdp.distributions",
         "pymdp.agent",
         "pymdp.envs",
     ],

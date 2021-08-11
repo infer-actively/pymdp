@@ -8,7 +8,6 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
 from pymdp.envs import Env
-from pymdp.distributions import Categorical
 import numpy as np
 
 LOCATION_FACTOR_ID = 0

@@ -9,7 +9,6 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import numpy as np
 import pandas as pd
 
-from pymdp.distributions import Categorical, Dirichlet
 import itertools
 
 def sample(probabilities):
@@ -219,8 +218,8 @@ def process_observation_seq(obs_seq, n_modalities, n_observations):
         case this function returns `obs_seq` as is.
     """
     proc_obs_seq = obj_array(len(obs_seq))
-    for t in range(len(obs_seq)):
-        proc_obs_seq[t] = process_observation(obs_seq[t], n_modalities, n_observations)
+    for t, obs_t in enumerate(obs_seq):
+        proc_obs_seq[t] = process_observation(obs_t, n_modalities, n_observations)
     return proc_obs_seq
 
 def process_observation(obs, num_modalities, num_observations):
@@ -281,7 +280,7 @@ def convert_observation_array(obs, num_obs):
             obs_t.append(onehot(obs[0, t] - 1, num_obs[0]))
     else:
         for t in range(T):
-            obs_AoA = np.empty(num_modalities, dtype=object)
+            obs_AoA = obj_array(num_modalities)
             for g in range(num_modalities):
                 # Subtract obs[g,t] by 1 to account for MATLAB vs. Python indexing
                 # (MATLAB is 1-indexed)
@@ -507,6 +506,65 @@ def convert_B_stubs_to_ndarray(B_stubs, model_labels):
         assert (B[f].sum(axis=0) == 1.0).all(), 'B matrix not normalized! Check your initialization....\n'
 
     return B
+
+def build_belief_array(qx):
+
+    """
+    This function constructs array-ified (not nested) versions
+    of the posterior belief arrays, that are separated 
+    by policy, timepoint, and hidden state factor
+    """
+
+    num_policies = len(qx)
+    num_timesteps = len(qx[0])
+    num_factors = len(qx[0][0])
+
+    if num_factors > 1:
+        belief_array = utils.obj_array(num_factors)
+        for factor in range(num_factors):
+            belief_array[factor] = np.zeros( (num_policies, qx[0][0][factor].shape[0], num_timesteps) )
+        for policy_i in range(num_policies):
+            for timestep in range(num_timesteps):
+                for factor in range(num_factors):
+                    belief_array[factor][policy_i, :, timestep] = qx[policy_i][timestep][factor]
+    else:
+        num_states = qx[0][0][0].shape[0]
+        belief_array = np.zeros( (num_policies, num_states, num_timesteps) )
+        for policy_i in range(num_policies):
+            for timestep in range(num_timesteps):
+                belief_array[policy_i, :, timestep] = qx[policy_i][timestep][0]
+    
+    return belief_array
+
+def build_xn_vn_array(xn):
+
+    """
+    This function constructs array-ified (not nested) versions
+    of the posterior xn (beliefs) or vn (prediction error) arrays, that are separated 
+    by iteration, hidden state factor, timepoint, and policy
+    """
+
+    num_policies = len(xn)
+    num_itr = len(xn[0])
+    num_factors = len(xn[0][0])
+
+    if num_factors > 1:
+        xn_array = utils.obj_array(num_factors)
+        for factor in range(num_factors):
+            num_states, infer_len = xn[0][0][f].shape
+            xn_array[factor] = np.zeros( (num_itr, num_states, infer_len, num_policies) )
+        for policy_i in range(num_policies):
+            for itr in range(num_itr):
+                for factor in range(num_factors):
+                    xn_array[factor][itr,:,:,policy_i] = xn[policy_i][itr][factor]
+    else:
+        num_states, infer_len  = xn[0][0][0].shape
+        xn_array = np.zeros( (num_itr, num_states, infer_len, num_policies) )
+        for policy_i in range(num_policies):
+            for itr in range(num_itr):
+                xn_array[itr,:,:,policy_i] = xn[policy_i][itr][0] 
+    
+    return xn_array
 
 
     

@@ -8,7 +8,6 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
 from pymdp.envs import Env
-from pymdp.distributions import Categorical
 import pymdp.core as core
 import numpy as np
 
