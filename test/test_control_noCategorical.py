@@ -206,6 +206,74 @@ class TestControl(unittest.TestCase):
                     qo_pi_valid = maths.spm_dot(A[modality_idx],qs_pi[t_idx])
                     self.assertTrue((qo_pi[t_idx][modality_idx] == qo_pi_valid).all())
 
+    def test_expected_utility(self):
+        """
+        Test for the expected utility function, for a simple single factor generative model 
+        where there are imbalances in the preferences for different outcomes. Test for both single
+        timestep policy horizons and multiple timestep policy horizons (planning)
+        """
+        num_states = [2]
+        num_controls = [2]
+
+        qs = utils.random_single_categorical(num_states)
+        B = utils.construct_controllable_B(num_states, num_controls)
+
+        # Single timestep
+        n_step = 1
+        policies = control.construct_policies(num_states, num_controls, policy_len=n_step)
+
+        # Single observation modality
+        num_obs = [2]
+
+        # Create noiseless identity A matrix
+        A = utils.to_arr_of_arr(np.eye(num_obs[0]))
+
+        # Create imbalance in preferences for observations
+        C = utils.to_arr_of_arr(utils.onehot(1, num_obs[0]))
+        
+        # Compute expected utility of policies
+        expected_utilities = np.zeros(len(policies))
+        for idx, policy in enumerate(policies):
+            qs_pi = control.get_expected_states(qs, B, policy)
+            qo_pi = control.get_expected_obs(qs_pi, A)
+            expected_utilities[idx] += control.calc_expected_utility(qo_pi, C)
+
+        self.assertGreater(expected_utilities[1], expected_utilities[0])
+
+        # 3-step policies 
+        # One policy entails going to state 0 two times in a row, and then state 2 at the end
+        # One involves going to state 1 three times in a row
+
+        num_states = [3]
+        num_controls = [3]
+
+        qs = utils.random_single_categorical(num_states)
+        B = utils.construct_controllable_B(num_states, num_controls)
+
+        policies = [np.array([0, 0, 2]).reshape(-1, 1), np.array([1, 1, 1]).reshape(-1, 1)]
+
+        # single observation modality
+        num_obs = [3]
+
+        # create noiseless identity A matrix
+        A = utils.to_arr_of_arr(np.eye(num_obs[0]))
+
+        # create imbalance in preferences for observations
+        # This test is designed to illustrate the emergence of planning by
+        # using the time-integral of the expected free energy.
+        # Even though the first observation (index 0) is the most preferred, the policy
+        # that frequents this observation the most is actually not optimal, because that policy
+        # terminates in a less preferred state by timestep 3.
+        C = utils.to_arr_of_arr(np.array([1.2, 1.0, 0.55]))
+
+        expected_utilities = np.zeros(len(policies))
+        for idx, policy in enumerate(policies):
+            qs_pi = control.get_expected_states(qs, B, policy)
+            qo_pi = control.get_expected_obs(qs_pi, A)
+            expected_utilities[idx] += control.calc_expected_utility(qo_pi, C)
+
+        self.assertGreater(expected_utilities[1], expected_utilities[0])
+    
     def test_update_posterior_policies_utility(self):
         """
         Tests the refactored (Categorical-less) version of `update_posterior_policies`, using only the expected utility component of the expected free energy
