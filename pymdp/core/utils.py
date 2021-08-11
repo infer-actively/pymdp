@@ -99,6 +99,23 @@ def random_single_categorical(shape_list):
     
     return out
 
+def construct_controllable_B(num_states, num_controls):
+    """
+    Generates a fully controllable transition likelihood array, where each 
+    action (control state) corresponds to a move to the n-th state from any 
+    other state, for each control factor
+    """
+
+    num_factors = len(num_states)
+
+    B = obj_array(num_factors)
+    for factor, c_dim in enumerate(num_controls):
+        tmp = np.eye(c_dim)[:, :, np.newaxis]
+        tmp = np.tile(tmp, (1, 1, c_dim))
+        B[factor] = tmp.transpose(1, 2, 0)
+        
+    return B
+
 def get_model_dimensions(A=None, B=None):
 
     if A is None and B is None:
