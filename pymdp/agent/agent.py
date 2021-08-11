@@ -37,7 +37,7 @@ class Agent(object):
         use_utility=True,
         use_states_info_gain=True,
         use_param_info_gain=False,
-        action_sampling="marginal_action",
+        action_selection="deterministic",
         inference_algo="VANILLA",
         inference_params=None,
         modalities_to_learn="all",
@@ -53,7 +53,7 @@ class Agent(object):
         # policy parameters
         self.policy_len = policy_len
         self.gamma = gamma
-        self.action_sampling = action_sampling
+        self.action_selection = action_selection
         self.use_utility = use_utility
         self.use_states_info_gain = use_states_info_gain
         self.use_param_info_gain = use_param_info_gain
@@ -313,8 +313,8 @@ class Agent(object):
                 latest_actions = self.prev_actions
 
             qs, F = inference.update_posterior_states_v2(
-                utils.to_numpy(self.A),
-                utils.to_numpy(self.B), 
+                self.A,
+                self.B,
                 latest_obs,
                 self.policies, 
                 latest_actions, 
@@ -359,8 +359,8 @@ class Agent(object):
                 latest_actions = self.prev_actions
 
             qs, F, xn, vn = inference.update_posterior_states_v2_test(
-                utils.to_numpy(self.A),
-                utils.to_numpy(self.B), 
+                self.A,
+                self.B, 
                 latest_obs,
                 self.policies, 
                 latest_actions, 
@@ -409,8 +409,7 @@ class Agent(object):
                 self.pB,
                 self.F,
                 E = None,
-                gamma = self.gamma,
-                return_numpy=False,
+                gamma = self.gamma
             )
 
         self.q_pi = q_pi
@@ -419,7 +418,7 @@ class Agent(object):
 
     def sample_action(self):
         action = control.sample_action(
-            self.q_pi, self.policies, self.num_controls, self.action_sampling
+            self.q_pi, self.policies, self.num_controls, self.action_selection
         )
 
         self.action = action
@@ -431,11 +430,16 @@ class Agent(object):
     def update_A(self, obs):
 
         pA_updated = learning.update_likelihood_dirichlet(
-            self.pA, self.A, obs, self.qs, self.lr_pA, self.modalities_to_learn, return_numpy=False
+            self.pA, 
+            self.A, 
+            obs, 
+            self.qs, 
+            self.lr_pA, 
+            self.modalities_to_learn
         )
 
         self.pA = pA_updated
-        self.A = pA_updated.mean() 
+        self.A = utils.norm_dist_obj_arr(self.pA) 
 
         return pA_updated
 
@@ -448,12 +452,11 @@ class Agent(object):
             self.qs,
             qs_prev,
             self.lr_pB,
-            self.factors_to_learn,
-            return_numpy=False,
+            self.factors_to_learn
         )
 
         self.pB = pB_updated
-        self.A = pB_updated.mean()
+        self.B = utils.norm_dist_obj_arr(self.pB) 
 
         return pB_updated
 
