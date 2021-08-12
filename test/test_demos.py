@@ -24,7 +24,7 @@ class TestDemos(unittest.TestCase):
         B_gp = copy.deepcopy(B)
 
         # initial state
-        T = 20 # number of timesteps in the simulation
+        T = 5 # number of timesteps in the simulation
         observation = [2, 2, 0] # initial observation -- no evidence for which arm is rewarding, neutral reward observation, and see themselves in the starting state
         state = [0, 0] # initial (true) state -- the reward condition is highly rewarding, and the true position in the 'start' position
 
@@ -46,11 +46,6 @@ class TestDemos(unittest.TestCase):
             for g, _ in enumerate(observation):
                 observation[g] = utils.sample(A_gp[g][:, state[0], state[1]])
         
-        # actions_matrix = np.stack(action_history, axis =0)
-
-        # print(f'Proportion of time spent playing the arm: {(actions_matrix[:,1] == 1).sum(axis=0) / T}' )
-        # print(f'Proportion of time spent sampling the arm: {(actions_matrix[:,1] == 2).sum(axis=0) / T}' )
-
         # make sure the first action is sampling
         self.assertEqual(action_history[0][-1], 2)
 
