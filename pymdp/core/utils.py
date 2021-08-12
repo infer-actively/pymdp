@@ -9,6 +9,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import numpy as np
 import pandas as pd
 
+import warnings
 import itertools
 
 def sample(probabilities):
@@ -69,7 +70,6 @@ def random_A_matrix(num_obs, num_states):
         A[modality] = norm_dist(modality_dist)
     return A
 
-
 def random_B_matrix(num_states, num_controls):
     if type(num_states) is int:
         num_states = [num_states]
@@ -115,6 +115,27 @@ def construct_controllable_B(num_states, num_controls):
         B[factor] = tmp.transpose(1, 2, 0)
 
     return B
+
+def dirichlet_like(template_categorical, scale = 1.0):
+    """
+    Helper function to construct a Dirichlet distribution based on an existing Categorical distribution
+    """ 
+
+    if not is_arr_of_arr(template_categorical):
+        warnings.warn(
+                    "Input array is not an object array...\
+                    Casting the input to an object array"
+                )
+        template_categorical = to_arr_of_arr(template_categorical)
+
+    n_sub_arrays = len(template_categorical)
+
+    dirichlet_out = obj_array(n_sub_arrays)
+    
+    for i, arr in enumerate(template_categorical):
+        dirichlet_out[i] = scale * arr
+
+    return dirichlet_out
 
 def get_model_dimensions(A=None, B=None):
 
