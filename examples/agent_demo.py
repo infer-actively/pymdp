@@ -39,7 +39,7 @@ for f, ns in enumerate(num_states):
     else:
         B[f] = B[f].reshape(ns, ns, 1)
 
-C = utils.obj_array_zeros([num_ob for num_ob in num_obs])
+C = utils.obj_array_zeros(num_obs)
 C[1][0] = 1.0  # put a 'reward' over first observation
 C[1][1] = -2.0  # put a 'punishment' over first observation
 # this implies that C[1][2] is 'neutral'
@@ -63,7 +63,7 @@ for t in range(T):
     qx = agent.infer_states(o)
 
     for f in range(num_factors):
-        print(f"{t}: Beliefs about {state_names[f]}: {qx[f].values}")
+        print(f"{t}: Beliefs about {state_names[f]}: {qx[f]}")
 
     agent.infer_policies()
     action = agent.sample_action()
