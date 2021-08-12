@@ -99,7 +99,7 @@ class Agent(object):
         # Users have the option to make only certain factors controllable.
         # default behaviour is to make all hidden state factors controllable
         # (i.e. self.num_states == self.num_controls)
-        if control_fac_idx is None:
+        if control_fac_idx == None:
             self.control_fac_idx = [f for f in range(self.num_factors) if B[f].shape[2] > 1]
         else:
             self.control_fac_idx = control_fac_idx
@@ -109,13 +109,13 @@ class Agent(object):
 
         # Again, the use can specify a set of possible policies, or
         # all possible combinations of actions and timesteps will be considered
-        if policies is None:
+        if policies == None:
             policies = self._construct_policies()
         self.policies = policies
 
         # The user can specify the number of control states
         # However, given the controllable factors, this can be inferred
-        if num_controls is None:
+        if num_controls == None:
             num_controls = self._construct_num_controls()
         self.num_controls = num_controls
 
@@ -160,7 +160,7 @@ class Agent(object):
                 )
                 self.edge_handling_params['use_BMA'] = False
         
-        if inference_algo is None:
+        if inference_algo == None:
             self.inference_algo = "VANILLA"
             self.inference_params = self._get_default_params()
             if inference_horizon > 1:
@@ -305,7 +305,7 @@ class Agent(object):
         if not hasattr(self, "qs"):
             self.reset()
 
-        if self.inference_algo is "VANILLA":
+        if self.inference_algo == "VANILLA":
             if self.action is not None:
                 empirical_prior = control.get_expected_states(
                     self.qs, self.B, self.action.reshape(1, -1) #type: ignore
@@ -318,7 +318,7 @@ class Agent(object):
             empirical_prior,
             **self.inference_params
             )
-        elif self.inference_algo is "MMP":
+        elif self.inference_algo == "MMP":
 
             self.prev_obs.append(observation)
             if len(self.prev_obs) > self.inference_horizon:
@@ -351,7 +351,7 @@ class Agent(object):
         if not hasattr(self, "qs"):
             self.reset()
 
-        if self.inference_algo is "VANILLA":
+        if self.inference_algo == "VANILLA":
             if self.action is not None:
                 empirical_prior = control.get_expected_states(
                     self.qs, self.B, self.action.reshape(1, -1) #type: ignore
@@ -364,7 +364,7 @@ class Agent(object):
             empirical_prior,
             **self.inference_params
             )
-        elif self.inference_algo is "MMP":
+        elif self.inference_algo == "MMP":
 
             self.prev_obs.append(observation)
             if len(self.prev_obs) > self.inference_horizon:
@@ -393,7 +393,7 @@ class Agent(object):
 
     def infer_policies(self):
 
-        if self.inference_algo is "VANILLA":
+        if self.inference_algo == "VANILLA":
             q_pi, efe = control.update_posterior_policies(
                 self.qs,
                 self.A,
@@ -407,7 +407,7 @@ class Agent(object):
                 self.pB,
                 self.gamma
             )
-        elif self.inference_algo is "MMP":
+        elif self.inference_algo == "MMP":
 
             future_qs_seq = self.get_future_qs()
 
