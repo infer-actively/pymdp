@@ -4,4 +4,4 @@ from . import control
 from . import inference
 from . import learning
 from . import algos
-from . import test_models
+from . import default_models
