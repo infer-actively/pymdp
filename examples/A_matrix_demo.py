@@ -1,4 +1,4 @@
-# %%
+# %% This notebook is supposed to be stepped through cell-by-cell, like a jupyter notebook
 
 import os
 import sys
@@ -81,6 +81,7 @@ if not read_from_excel:
 A = utils.convert_A_stub_to_ndarray(A_stub, model_labels)
 
 obs_idx = [np.random.randint(o_dim) for o_dim in num_obs]
+# obs_idx = [0, 1] # wet and rainy
 
 observation = utils.obj_array_zeros(num_obs)
 
