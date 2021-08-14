@@ -207,6 +207,11 @@ class TestDemos(unittest.TestCase):
             prob_reward_left = agent.A[1][REWARD,LEFT_ARM,REWARD_ON_LEFT]
             prob_punishment_left = agent.A[1][PUNISHMENT,LEFT_ARM,REWARD_ON_LEFT]
             self.assertGreater(prob_reward_left, prob_punishment_left)
+
+    def test_gridworld_genmodel_construction(self):
+        """
+        This unit test runs the a concise version of the code in the `gridworld_tutorial_1.ipynb` tutorial notebook to make sure it works if things are changed
+        """
         
 
 
