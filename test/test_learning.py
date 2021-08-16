@@ -2,7 +2,7 @@
 import unittest
 
 import numpy as np
-from pymdp.core import utils, maths, learning
+from pymdp import utils, maths, learning
 
 class TestLearning(unittest.TestCase):
 

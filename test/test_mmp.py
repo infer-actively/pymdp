@@ -13,10 +13,9 @@ import unittest
 import numpy as np
 from scipy.io import loadmat
 
-from pymdp import core
-from pymdp.core.utils import get_model_dimensions, convert_observation_array
-from pymdp.core.algos import run_mmp
-from pymdp.core.maths import get_joint_likelihood_seq
+from pymdp.utils import get_model_dimensions, convert_observation_array
+from pymdp.algos import run_mmp
+from pymdp.maths import get_joint_likelihood_seq
 
 DATA_PATH = "test/matlab_crossval/output/"
 

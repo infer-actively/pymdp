@@ -7,7 +7,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
 import numpy as np
-from pymdp.core import utils, maths
+from pymdp import utils, maths
 import copy
 
 def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, modalities="all"):

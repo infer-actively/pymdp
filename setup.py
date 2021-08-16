@@ -6,13 +6,9 @@ setuptools.setup(
     description=("A Python-based implementation of Active Inference for Markov Decision Processes"),
     license='MIT',
     url="https://github.com/infer-actively/pymdp",
-    author = "Conor Heins, Beren Millidge, Daphne Demekas, Alec Tschantz, Brennan Klein",
-    author_email="conor.heins@gmail.com",
     python_requires='>3.7',
     packages=[
         "pymdp",
-        "pymdp.core",
-        "pymdp.agent",
         "pymdp.envs",
     ],
     install_requires=[

@@ -8,13 +8,12 @@ import itertools
 import pandas as pd
 from pandas import ExcelWriter
 
-
 path = pathlib.Path(os.getcwd())
 module_path = str(path.parent) + '/'
 sys.path.append(module_path)
 
-import pymdp.core.utils as utils
-from pymdp.core.utils import create_B_matrix_stubs, get_model_dimensions_from_labels
+import pymdp.utils as utils
+from pymdp.utils import create_B_matrix_stubs, get_model_dimensions_from_labels
 # %% Create an empty B matrix
 
 model_labels = {

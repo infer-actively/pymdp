@@ -8,7 +8,6 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
 from pymdp.envs import Env
-import pymdp.core as core
 import numpy as np
 
 LOCATION_ID = 0

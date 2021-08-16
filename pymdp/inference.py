@@ -9,9 +9,9 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 
-from pymdp.core import utils
-from pymdp.core.maths import get_joint_likelihood_seq
-from pymdp.core.algos import run_fpi, run_mmp, run_mmp_testing
+from pymdp import utils
+from pymdp.maths import get_joint_likelihood_seq
+from pymdp.algos import run_fpi, run_mmp, run_mmp_testing
 
 VANILLA = "VANILLA"
 VMP = "VMP"

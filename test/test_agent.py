@@ -13,8 +13,8 @@ import unittest
 import numpy as np
 
 from pymdp.agent import Agent
-from pymdp.core import utils
-from pymdp.core import inference, control
+from pymdp import utils
+from pymdp import inference, control
 
 class TestAgent(unittest.TestCase):
    

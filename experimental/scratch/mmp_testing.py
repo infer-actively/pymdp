@@ -6,10 +6,9 @@ import copy
 from scipy.io import loadmat
 import os
 
+from pymdp import algos
 sys.path.append(str(pathlib.Path(__file__).parent.parent.parent))
 
-from pymdp.distributions import Categorical, Dirichlet
-from pymdp import core
 # %% define some auxiliary functions that help generate likelihoods and other variables useful for testing
 
 def construct_generic_A(num_obs, n_states):
@@ -98,10 +97,10 @@ curr_t = 0
 t_horizon = 1
 T = 1
 
-qs1, qss, F, F_pol = core.algos.run_mmp(A, B, obs_t, policy, curr_t, t_horizon,T)
+qs1, qss, F, F_pol = algos.run_mmp(A, B, obs_t, policy, curr_t, t_horizon,T)
 print(f"qs1 len {len(qs1)} qs1 {qs1[0]} qss len {len(qss)} qss [0] {qss[0]} F {F} F_pol {F_pol}")
 
-qs2 = core.algos.run_fpi(A, obs_t[0], num_obs, num_states, prior=None, num_iter=10, dF=1.0, dF_tol=0.001)
+qs2 = algos.run_fpi(A, obs_t[0], num_obs, num_states, prior=None, num_iter=10, dF=1.0, dF_tol=0.001)
 print(f"qs2 len {len(qs2)} qs2 {qs2}")
 
 

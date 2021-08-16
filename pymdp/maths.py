@@ -10,7 +10,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 from scipy import special
-from pymdp.core import utils
+from pymdp import utils
 from itertools import chain
 
 EPS_VAL = 1e-16 # global constant for use in spm_log() function

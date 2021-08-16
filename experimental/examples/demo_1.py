@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 
 from pymdp.distributions import Categorical, Dirichlet
 from pymdp.envs import GridWorldEnv
-from pymdp.core import control
-from pymdp.core import maths
+from pymdp import control
+from pymdp import maths
 
 PLOT = False
 

@@ -10,8 +10,8 @@ import unittest
 
 import numpy as np
 
-from pymdp.core import utils, maths
-from pymdp.core import inference
+from pymdp import utils, maths
+from pymdp import inference
 
 class TestInference(unittest.TestCase):
 

@@ -5,7 +5,7 @@ import numpy as np
 from scipy.io import loadmat
 
 from pymdp.agent import Agent
-from pymdp.core.utils import to_arr_of_arr, build_belief_array, build_xn_vn_array, get_model_dimensions, convert_observation_array
+from pymdp.utils import to_arr_of_arr, build_belief_array, build_xn_vn_array, get_model_dimensions, convert_observation_array
 
 DATA_PATH = "test/matlab_crossval/output/"
 

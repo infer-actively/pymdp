@@ -8,8 +8,8 @@ __author__: Conor Heins, Beren Millidge, Alexander Tschantz, Brennan Klein
 """
 
 import numpy as np
-from pymdp.core.maths import spm_dot, get_joint_likelihood, softmax, calc_free_energy, spm_log_single, spm_log_obj_array
-from pymdp.core.utils import to_arr_of_arr, obj_array_uniform
+from pymdp.maths import spm_dot, get_joint_likelihood, softmax, calc_free_energy, spm_log_single, spm_log_obj_array
+from pymdp.utils import to_arr_of_arr, obj_array_uniform
 from itertools import chain
 
 def run_fpi(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, dF_tol=0.001):

@@ -12,9 +12,9 @@ path = pathlib.Path(os.getcwd())
 module_path = str(path.parent) + '/'
 sys.path.append(module_path)
 
-import pymdp.core.utils as utils
-from pymdp.core.utils import create_A_matrix_stub, read_A_matrix
-from pymdp.core.algos import run_fpi
+from pymdp import utils
+from pymdp.utils import create_A_matrix_stub, read_A_matrix
+from pymdp.algos import run_fpi
 
 # %% Create an empty A matrix
 model_labels = {

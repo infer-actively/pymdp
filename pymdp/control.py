@@ -9,8 +9,8 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import itertools
 import numpy as np
-from pymdp.core.maths import softmax, spm_dot, spm_wnorm, spm_MDP_G, spm_log_single, spm_log_obj_array
-from pymdp.core import utils
+from pymdp.maths import softmax, spm_dot, spm_wnorm, spm_MDP_G, spm_log_single, spm_log_obj_array
+from pymdp import utils
 import copy
 
 def update_posterior_policies_mmp(

@@ -1,8 +1,8 @@
 import numpy as np
 
-from pymdp.core.utils import random_A_matrix, random_B_matrix, obj_array, onehot
-from pymdp.core.maths import get_joint_likelihood_seq
-from pymdp.core.algos import run_mmp
+from pymdp.utils import random_A_matrix, random_B_matrix, obj_array, onehot
+from pymdp.maths import get_joint_likelihood_seq
+from pymdp.algos import run_mmp
 
 
 def rand_onehot_obs(num_obs):

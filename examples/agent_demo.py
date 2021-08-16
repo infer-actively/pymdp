@@ -1,7 +1,7 @@
 import numpy as np
 from pymdp.agent import Agent
-from pymdp.core import utils
-from pymdp.core.maths import softmax
+from pymdp import utils
+from pymdp.maths import softmax
 import copy
 
 obs_names = ["state_observation", "reward", "decision_proprioceptive"]

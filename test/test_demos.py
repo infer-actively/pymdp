@@ -5,8 +5,8 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 from pymdp.agent import Agent
-from pymdp.core import utils, maths, default_models
-from pymdp.core import control
+from pymdp import utils, maths, default_models
+from pymdp import control
 from pymdp.envs import TMazeEnv, TMazeEnvNullOutcome
 from copy import deepcopy
 
@@ -285,7 +285,7 @@ class TestDemos(unittest.TestCase):
         This unit test runs the a concise version of the code in the `gridworld_tutorial_1.ipynb` tutorial notebook to make sure it works if things are changed
         """
 
-        from pymdp.core.maths import spm_log_single as log_stable # @NOTE: we use the `spm_log_single` helper function from the `maths` sub-library of pymdp. This is a numerically stable version of np.log()
+        from pymdp.maths import spm_log_single as log_stable # @NOTE: we use the `spm_log_single` helper function from the `maths` sub-library of pymdp. This is a numerically stable version of np.log()
 
         state_mapping = {0: (0,0), 1: (1,0), 2: (2,0), 3: (0,1), 4: (1,1), 5:(2,1), 6: (0,2), 7:(1,2), 8:(2,2)}
 
