@@ -9,10 +9,9 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 
-
-from pymdp.core import utils
-from pymdp.core.maths import get_joint_likelihood_seq
-from pymdp.core.algos import run_fpi, run_mmp, run_mmp_testing
+from pymdp import utils
+from pymdp.maths import get_joint_likelihood_seq
+from pymdp.algos import run_fpi, run_mmp, run_mmp_testing
 
 VANILLA = "VANILLA"
 VMP = "VMP"
@@ -28,30 +27,41 @@ def update_posterior_states_v2(
     policies,
     prev_actions=None,
     prior=None,
-    return_numpy=True,
     policy_sep_prior = True,
     **kwargs,
 ):
     """
     Update posterior over hidden states using marginal message passing
+    Parameters
+    ----------
+    `A` [numpy object array]:
+        - Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element A[m] of
+        this object array stores an np.ndarray multidimensional array that stores the mapping from hidden states to observations. 
+    `B` [numpy object array]:
+        - Dynamics likelihood mapping or 'transition model', mapping from hidden states at `t` to hidden states at `t+1`, given some control state `u`.
+        Each element B[f] of this object array stores a 3-D tensor that stores the mapping between hidden states and actions at `t` to hidden states at `t+1`.
+    `prev_obs` [list]:
+        - List of observations over time. Each observation in the list can be an int, a list of ints, a tuple of ints, a one-hot vector or an object array of one-hot vectors.
+    `prior` [numpy object array or None]:
+        - If provided, this a numpy object array with one sub-array per hidden state factor, that stores the prior beliefs about initial states (at t = 0, relative to `infer_len`). If `None`, this defaults
+        to a flat (uninformative) prior over hidden states.
+    `policy_sep_prior` [Bool, default True]:s
+        - Flag determining whether the prior beliefs from the past are unconditioned on policy, or separated by /conditioned on the policy variable.
+    **kwargs [optional keyword arguments to `run_mmp`]:
+        - Optional keyword arguments for the function `run_mmp`
+
+    Returns:
+    ---------
+    `qs_seq_pi` [numpy object array]:
+        - posterior beliefs over hidden states for each policy. Structure is policies --> timepoints --> factors/marginals,
+        e.g. `qs_seq_pi[p][t][f]` gets the marginal belief about factor `f` at timepoint `t` under policy `p`
     """
-    # safe convert to numpy
-    A = utils.to_numpy(A)
 
     num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A, B)
-    A = utils.to_arr_of_arr(A)
-    B = utils.to_arr_of_arr(B)
-
+    
     prev_obs = utils.process_observation_seq(prev_obs, num_modalities, num_obs)
-    if prior is not None:
-        if policy_sep_prior:
-            for p_idx, policy in enumerate(policies):
-                prior[p_idx] = utils.process_prior(prior[p_idx], num_factors)
-        else:
-            prior = utils.process_prior(prior, num_factors)
-
+   
     lh_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
-    # print(lh_seq)
 
     if prev_actions is not None:
         prev_actions = np.stack(prev_actions,0)
@@ -91,30 +101,42 @@ def update_posterior_states_v2_test(
     policies,
     prev_actions=None,
     prior=None,
-    return_numpy=True,
     policy_sep_prior = True,
     **kwargs,
 ):
     """
     Update posterior over hidden states using marginal message passing
+    Parameters
+    ----------
+    `A` [numpy object array]:
+        - Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element A[m] of
+        this object array stores an np.ndarray multidimensional array that stores the mapping from hidden states to observations. 
+    `B` [numpy object array]:
+        - Dynamics likelihood mapping or 'transition model', mapping from hidden states at `t` to hidden states at `t+1`, given some control state `u`.
+        Each element B[f] of this object array stores a 3-D tensor that stores the mapping between hidden states and actions at `t` to hidden states at `t+1`.
+    `prev_obs` [list]:
+        - List of observations over time. Each observation in the list can be an int, a list of ints, a tuple of ints, a one-hot vector or an object array of one-hot vectors.
+    `prior` [numpy object array or None]:
+        - If provided, this a numpy object array with one sub-array per hidden state factor, that stores the prior beliefs about initial states (at t = 0, relative to `infer_len`). If `None`, this defaults
+        to a flat (uninformative) prior over hidden states.
+    `policy_sep_prior` [Bool, default True]:s
+        - Flag determining whether the prior beliefs from the past are unconditioned on policy, or separated by /conditioned on the policy variable.
+    **kwargs [optional keyword arguments to `run_mmp`]:
+        - Optional keyword arguments for the function `run_mmp`
+
+    Returns:
+    ---------
+    `qs_seq_pi` [numpy object array]:
+        - posterior beliefs over hidden states for each policy. Structure is policies --> timepoints --> factors/marginals,
+        e.g. `qs_seq_pi[p][t][f]` gets the marginal belief about factor `f` at timepoint `t` under policy `p`
     """
     # safe convert to numpy
-    A = utils.to_numpy(A)
 
     num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A, B)
-    A = utils.to_arr_of_arr(A)
-    B = utils.to_arr_of_arr(B)
 
     prev_obs = utils.process_observation_seq(prev_obs, num_modalities, num_obs)
-    if prior is not None:
-        if policy_sep_prior:
-            for p_idx, policy in enumerate(policies):
-                prior[p_idx] = utils.process_prior(prior[p_idx], num_factors)
-        else:
-            prior = utils.process_prior(prior, num_factors)
-
+    
     lh_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
-    # print(lh_seq)
 
     if prev_actions is not None:
         prev_actions = np.stack(prev_actions,0)
@@ -161,8 +183,6 @@ def average_states_over_policies(qs_pi, q_pi):
     `qs_bma` - marginal posterior over hidden states for the current timepoint, averaged across policies according to their posterior probability given by `q_pi`
     """
 
-    q_pi = utils.to_numpy(q_pi)
-
     num_factors = len(qs_pi[0]) # get the number of hidden state factors using the shape of the first-policy-conditioned posterior
     num_states = [qs_f.shape[0] for qs_f in qs_pi[0]] # get the dimensionalities of each hidden state factor 
 
@@ -178,14 +198,17 @@ def average_states_over_policies(qs_pi, q_pi):
 
     return qs_bma
 
-def update_posterior_states(A, obs, prior=None, return_numpy=True, method=VANILLA, **kwargs):
+def update_posterior_states(A, obs, prior=None, **kwargs):
     """
-    Update marginal posterior over hidden states using variational inference
-        Can optionally set message passing algorithm used for inference
-
+    Update marginal posterior over hidden states using mean-field fixed point iteration 
+    FPI or Fixed point iteration
+            - http://www.cs.cmu.edu/~guestrin/Class/10708/recitations/r9/VI-view.pdf,
+            slides 13- 18
+            - http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.137.221&rep=rep1&type=pdf,
+            slides 24 - 38
     Parameters
     ----------
-    - 'A' [numpy nd.array (matrix or tensor or array-of-arrays) or Categorical]:
+    - 'A' [numpy nd.array (matrix or tensor or array-of-arrays)]:
         Observation likelihood of the generative model, mapping from hidden states to observations
         Used to invert generative model to obtain marginal likelihood over hidden states,
         given the observation
@@ -194,29 +217,15 @@ def update_posterior_states(A, obs, prior=None, return_numpy=True, method=VANILL
         (one-hot vector representation) or an int (observation index)
         If multi-modality, this can be an array of arrays (whose entries are 1D one-hot vectors)
         or a tuple (of observation indices)
-    - 'prior' [numpy 1D array, array of arrays (with 1D numpy array entries), Categorical, or None]:
+    - 'prior' [numpy 1D array, array of arrays (with 1D numpy array entries) or None]:
         Prior beliefs about hidden states, to be integrated with the marginal likelihood to obtain
          a posterior distribution.
         If None, prior is set to be equal to a flat categorical distribution (at the level of
         the individual inference functions).
         (optional)
-    - 'return_numpy' [bool]:
-        True/False flag to determine whether the posterior is returned as a numpy array or a Categorical
-    - 'method' [str]:
-        Algorithm used to perform the variational inference.
-        Options: 'FPI' - Fixed point iteration
-                    - http://www.cs.cmu.edu/~guestrin/Class/10708/recitations/r9/VI-view.pdf,
-                    slides 13- 18
-                    - http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.137.221&rep=rep1&type=pdf,
-                    slides 24 - 38
-                 'VMP  - Variational message passing (not implemented)
-                 'MMP' - Marginal message passing (not implemented)
-                 'BP'  - Belief propagation (not implemented)
-                 'EP'  - Expectation propagation (not implemented)
-                 'CV'  - CLuster variation method (not implemented)
     - **kwargs:
-        List of keyword/parameter arguments corresponding to parameter values for the respective
-        variational inference algorithm
+        List of keyword/parameter arguments corresponding to parameter values for the fixed-point iteration
+        algorithm.
 
     Returns
     ----------
@@ -224,52 +233,15 @@ def update_posterior_states(A, obs, prior=None, return_numpy=True, method=VANILL
         Marginal posterior beliefs over hidden states
     """
 
-    # safe convert to numpy
-    A = utils.to_numpy(A)
-
-    # collect model dimensions
-    if utils.is_arr_of_arr(A):
-        n_factors = A[0].ndim - 1
-        n_states = list(A[0].shape[1:])
-        n_modalities = len(A)
-        n_observations = []
-        for m in range(n_modalities):
-            n_observations.append(A[m].shape[0])
-    else:
-        n_factors = A.ndim - 1
-        n_states = list(A.shape[1:])
-        n_modalities = 1
-        n_observations = [A.shape[0]]
-
-
-    obs = utils.process_observation(obs, n_modalities, n_observations)
+    num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A = A)
+    
+    obs = utils.process_observation(obs, num_modalities, num_obs)
 
     if prior is not None:
-        prior = utils.process_prior(prior, n_factors)
+        prior = utils.to_arr_of_arr(prior)
 
-    if method is VANILLA:
-        qs = run_fpi(A, obs, n_observations, n_states, prior, **kwargs)
-    elif method is VMP:
-        raise NotImplementedError(f"{VMP} is not implemented")
-    elif method is MMP:
-        raise NotImplementedError(f"{MMP} is not implemented")
-    elif method is BP:
-        raise NotImplementedError(f"{BP} is not implemented")
-    elif method is EP:
-        raise NotImplementedError(f"{EP} is not implemented")
-    elif method is CV:
-        raise NotImplementedError(f"{CV} is not implemented")
-    else:
-        raise ValueError(f"{method} is not implemented")
-
-    if not utils.is_arr_of_arr(qs):
-        qs = utils.to_arr_of_arr(qs)
-
-    if return_numpy:
-        return qs
-    else:
-        return utils.to_categorical(qs)
-
+    return run_fpi(A, obs, num_obs, num_states, prior, **kwargs)
+   
 
 def print_inference_methods():
     print(f"Avaliable Inference methods: {FPI}, {MMP}")

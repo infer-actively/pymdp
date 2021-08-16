@@ -8,7 +8,8 @@ __author__: Conor Heins, Beren Millidge, Alexander Tschantz, Brennan Klein
 """
 
 import numpy as np
-from pymdp.core.maths import spm_dot, get_joint_likelihood, softmax, calc_free_energy
+from pymdp.maths import spm_dot, get_joint_likelihood, softmax, calc_free_energy, spm_log_single, spm_log_obj_array
+from pymdp.utils import to_arr_of_arr, obj_array_uniform
 from itertools import chain
 
 def run_fpi(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, dF_tol=0.001):
@@ -27,9 +28,9 @@ def run_fpi(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, d
         If multi-modality, this can be an array of arrays (whose entries are 1D one-hot vectors).
     - 'n_observations' [int or list of ints]
     - 'n_states' [int or list of ints]
-    - 'prior' [numpy 1D array, array of arrays (with 1D numpy array entries) or None]:
+    - 'prior' [array of arrays (with 1D numpy array entries) or None]:
         Prior beliefs of the agent, to be integrated with the marginal likelihood to obtain posterior. 
-        If absent, prior is set to be a uniform distribution over hidden states (identical to the 
+        If absent, prior is set to be the log uniform distribution over hidden states (identical to the 
         initialisation of the posterior)
     -'num_iter' [int]:
         Number of variational fixed-point iterations to run.
@@ -61,7 +62,7 @@ def run_fpi(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, d
 
     likelihood = get_joint_likelihood(A, obs, n_states)
 
-    likelihood = np.log(likelihood + 1e-16)
+    likelihood = spm_log_single(likelihood)
 
     """
     =========== Step 2 ===========
@@ -78,9 +79,10 @@ def run_fpi(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, d
     FPI algorithm below).
     """
     if prior is None:
-        prior = np.empty(n_factors, dtype=object)
-        for factor in range(n_factors):
-            prior[factor] = np.log(np.ones(n_states[factor]) / n_states[factor] + 1e-16)
+        prior = obj_array_uniform(n_states)
+        
+    prior = spm_log_obj_array(prior) # log the prior
+
 
     """
     =========== Step 3 ===========
@@ -90,13 +92,15 @@ def run_fpi(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, d
 
     """
     =========== Step 4 ===========
-        If we have a single factor, we can just add prior and likelihood,
-        otherwise we run FPI
+        If we have a single factor, we can just add prior and likelihood because there is a unique FE minimum that can reached instantaneously,
+        otherwise we run fixed point iteration
     """
 
     if n_factors == 1:
+
         qL = spm_dot(likelihood, qs, [0])
-        return softmax(qL + prior[0])
+
+        return to_arr_of_arr(softmax(qL + prior[0]))
 
     else:
         """

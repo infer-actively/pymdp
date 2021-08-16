@@ -9,13 +9,10 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import numpy as np
 import pandas as pd
 
-from pymdp.distributions import Categorical, Dirichlet
+import warnings
 import itertools
 
 def sample(probabilities):
-    # TODO dont assume dist class
-    # if probabilities.shape[1] > 1:
-    #     raise ValueError("Can only currently sample from [n x 1] distribution")
     sample_onehot = np.random.multinomial(1, probabilities.squeeze())
     return np.where(sample_onehot == 1)[0][0]
 
@@ -31,7 +28,7 @@ def obj_array_zeros(shape_list):
     Creates a numpy object array whose sub-arrays are 1-D vectors
     filled with zeros, with shapes given by shape_list[i]
     """
-    arr = np.empty(len(shape_list), dtype=object)
+    arr = obj_array(len(shape_list))
     for i, shape in enumerate(shape_list):
         arr[i] = np.zeros(shape)
     return arr
@@ -39,11 +36,19 @@ def obj_array_zeros(shape_list):
 def obj_array_uniform(shape_list):
     """ 
     Creates a numpy object array whose sub-arrays are uniform Categorical
-    distributions with shapes given by shape_list[i]
+    distributions with shapes given by shape_list[i]. The shapes (elements of shape_list)
+    can either be tuples or lists.
     """
-    arr = np.empty(len(shape_list), dtype=object)
+    arr = obj_array(len(shape_list))
     for i, shape in enumerate(shape_list):
-        arr[i] = np.ones(shape)/shape
+        arr[i] = norm_dist(np.ones(shape))
+    return arr
+
+def obj_array_ones(shape_list, scale = 1.0):
+    arr = obj_array(len(shape_list))
+    for i, shape in enumerate(shape_list):
+        arr[i] = scale * np.ones(shape)
+    
     return arr
 
 def onehot(value, num_values):
@@ -65,7 +70,6 @@ def random_A_matrix(num_obs, num_states):
         A[modality] = norm_dist(modality_dist)
     return A
 
-
 def random_B_matrix(num_states, num_controls):
     if type(num_states) is int:
         num_states = [num_states]
@@ -81,6 +85,57 @@ def random_B_matrix(num_states, num_controls):
         B[factor] = norm_dist(factor_dist)
     return B
 
+def random_single_categorical(shape_list):
+    """
+    Creates a random 1-D categorical distribution (or set of 1-D categoricals, e.g. multiple marginals of different factors) and returns them in an object array 
+    """
+    
+    num_sub_arrays = len(shape_list)
+
+    out = obj_array(num_sub_arrays)
+
+    for arr_idx, shape_i  in enumerate(shape_list):
+        out[arr_idx] = norm_dist(np.random.rand(shape_i))
+    
+    return out
+
+def construct_controllable_B(num_states, num_controls):
+    """
+    Generates a fully controllable transition likelihood array, where each 
+    action (control state) corresponds to a move to the n-th state from any 
+    other state, for each control factor
+    """
+
+    num_factors = len(num_states)
+
+    B = obj_array(num_factors)
+    for factor, c_dim in enumerate(num_controls):
+        tmp = np.eye(c_dim)[:, :, np.newaxis]
+        tmp = np.tile(tmp, (1, 1, c_dim))
+        B[factor] = tmp.transpose(1, 2, 0)
+
+    return B
+
+def dirichlet_like(template_categorical, scale = 1.0):
+    """
+    Helper function to construct a Dirichlet distribution based on an existing Categorical distribution
+    """ 
+
+    if not is_arr_of_arr(template_categorical):
+        warnings.warn(
+                    "Input array is not an object array...\
+                    Casting the input to an object array"
+                )
+        template_categorical = to_arr_of_arr(template_categorical)
+
+    n_sub_arrays = len(template_categorical)
+
+    dirichlet_out = obj_array(n_sub_arrays)
+    
+    for i, arr in enumerate(template_categorical):
+        dirichlet_out[i] = scale * arr
+
+    return dirichlet_out
 
 def get_model_dimensions(A=None, B=None):
 
@@ -99,7 +154,11 @@ def get_model_dimensions(A=None, B=None):
         num_states = [b.shape[0] for b in B] if is_arr_of_arr(B) else [B.shape[0]]
         num_factors = len(num_states)
     else:
-        num_states, num_factors = None, None
+        if A is not None:
+            num_states = list(A[0].shape[1:]) if is_arr_of_arr(A) else list(A.shape[1:])
+            num_factors = len(num_states)
+        else:
+            num_states, num_factors = None, None
     
     return num_obs, num_states, num_modalities, num_factors
 
@@ -125,7 +184,8 @@ def get_model_dimensions_from_labels(model_labels):
 
 
 def norm_dist(dist):
-    if len(dist.shape) == 3:
+    """ Normalizes a Categorical probability distribution (or set of them) assuming sufficient statistics are stored in leading dimension"""
+    if dist.ndim == 3:
         new_dist = np.zeros_like(dist)
         for c in range(dist.shape[2]):
             new_dist[:, :, c] = np.divide(dist[:, :, c], dist[:, :, c].sum(axis=0))
@@ -133,34 +193,13 @@ def norm_dist(dist):
     else:
         return np.divide(dist, dist.sum(axis=0))
 
+def norm_dist_obj_arr(obj_arr):
 
-def to_numpy(dist, flatten=False):
-    """
-    If flatten is True, then the individual entries of the object array will be 
-    flattened into row vectors(common operation when dealing with array of arrays 
-    with 1D numpy array entries)
-    """
-    if isinstance(dist, (Categorical, Dirichlet)):
-        values = np.copy(dist.values)
-        if flatten:
-            if dist.IS_AOA:
-                for idx, arr in enumerate(values):
-                    values[idx] = arr.flatten()
-            else:
-                values = values.flatten()
-    else:
-        values = dist
-        if flatten:
-            if is_arr_of_arr(values):
-                for idx, arr in enumerate(values):
-                    values[idx] = arr.flatten()
-            else:
-                values = values.flatten()
-    return values
-
-
-def is_distribution(obj):
-    return isinstance(obj, (Categorical, Dirichlet))
+    normed_obj_array = obj_array(len(obj_arr))
+    for i, arr in enumerate(obj_arr):
+        normed_obj_array[i] = norm_dist(arr)
+    
+    return normed_obj_array
 
 
 def is_arr_of_arr(arr):
@@ -170,79 +209,42 @@ def is_arr_of_arr(arr):
 def to_arr_of_arr(arr):
     if is_arr_of_arr(arr):
         return arr
-    arr_of_arr = np.empty(1, dtype=object)
+    arr_of_arr = obj_array(1)
     arr_of_arr[0] = arr.squeeze()
     return arr_of_arr
-
-
-def to_categorical(values):
-    return Categorical(values=values)
-
-
-def to_dirichlet(values):
-    return Dirichlet(values=values)
 
 def process_observation_seq(obs_seq, n_modalities, n_observations):
     """
     Helper function for formatting observations    
 
-        Observations can either be `Categorical`, `int` (converted to one-hot)
-        or `tuple` (obs for each modality)
-    
-    @TODO maybe provide error messaging about observation format
+        Observations can either be `int` (converted to one-hot)
+        or `tuple` (obs for each modality), or `list` (obs for each modality)
+        If list, the entries could be object arrays of one-hots, in which
+        case this function returns `obs_seq` as is.
     """
     proc_obs_seq = obj_array(len(obs_seq))
-    for t in range(len(obs_seq)):
-        proc_obs_seq[t] = process_observation(obs_seq[t], n_modalities, n_observations)
+    for t, obs_t in enumerate(obs_seq):
+        proc_obs_seq[t] = process_observation(obs_t, n_modalities, n_observations)
     return proc_obs_seq
 
-def process_observation(obs, n_modalities, n_observations):
+def process_observation(obs, num_modalities, num_observations):
     """
     Helper function for formatting observations    
 
-        Observations can either be `Categorical`, `int` (converted to one-hot)
+        Observations can either be `int` (converted to one-hot)
         `tuple` (obs for each modality), or `list` (obs for each modality)
-    
-    @TODO maybe provide error messaging about observation format
     """
-    if is_distribution(obs):
-        obs = to_numpy(obs)
-        if n_modalities == 1:
-            obs = obs.squeeze()
-        else:
-            for m in range(n_modalities):
-                obs[m] = obs[m].squeeze()
 
     if isinstance(obs, (int, np.integer)):
-        # obs = np.eye(n_observations[0])[obs]
-        obs = onehot(obs, n_observations[0])
+        obs = onehot(obs, num_observations[0])
 
     if isinstance(obs, tuple) or isinstance(obs,list):
-        obs_arr_arr = np.empty(n_modalities, dtype=object)
-        for m in range(n_modalities):
-            # obs_arr_arr[m] = np.eye(n_observations[m])[obs[m]]
-            obs_arr_arr[m] = onehot(obs[m], n_observations[m])
+        obs_arr_arr = obj_array(num_modalities)
+        for m in range(num_modalities):
+            obs_arr_arr[m] = onehot(obs[m], num_observations[m])
         obs = obs_arr_arr
 
     return obs
-
-def process_prior(prior, n_factors):
-    """
-    Helper function for formatting prior beliefs  
-    """
-    if is_distribution(prior):
-        prior_arr = obj_array(n_factors)
-        if n_factors == 1:
-            prior_arr[0] = prior.values.squeeze()
-        else:
-            for factor in range(n_factors):
-                prior_arr[factor] = prior[factor].values.squeeze()
-        prior = prior_arr
-
-    elif not is_arr_of_arr(prior):
-        prior = to_arr_of_arr(prior)
-
-    return prior
 
 def convert_observation_array(obs, num_obs):
     """
@@ -283,7 +285,7 @@ def convert_observation_array(obs, num_obs):
             obs_t.append(onehot(obs[0, t] - 1, num_obs[0]))
     else:
         for t in range(T):
-            obs_AoA = np.empty(num_modalities, dtype=object)
+            obs_AoA = obj_array(num_modalities)
             for g in range(num_modalities):
                 # Subtract obs[g,t] by 1 to account for MATLAB vs. Python indexing
                 # (MATLAB is 1-indexed)
@@ -509,6 +511,65 @@ def convert_B_stubs_to_ndarray(B_stubs, model_labels):
         assert (B[f].sum(axis=0) == 1.0).all(), 'B matrix not normalized! Check your initialization....\n'
 
     return B
+
+def build_belief_array(qx):
+
+    """
+    This function constructs array-ified (not nested) versions
+    of the posterior belief arrays, that are separated 
+    by policy, timepoint, and hidden state factor
+    """
+
+    num_policies = len(qx)
+    num_timesteps = len(qx[0])
+    num_factors = len(qx[0][0])
+
+    if num_factors > 1:
+        belief_array = utils.obj_array(num_factors)
+        for factor in range(num_factors):
+            belief_array[factor] = np.zeros( (num_policies, qx[0][0][factor].shape[0], num_timesteps) )
+        for policy_i in range(num_policies):
+            for timestep in range(num_timesteps):
+                for factor in range(num_factors):
+                    belief_array[factor][policy_i, :, timestep] = qx[policy_i][timestep][factor]
+    else:
+        num_states = qx[0][0][0].shape[0]
+        belief_array = np.zeros( (num_policies, num_states, num_timesteps) )
+        for policy_i in range(num_policies):
+            for timestep in range(num_timesteps):
+                belief_array[policy_i, :, timestep] = qx[policy_i][timestep][0]
+    
+    return belief_array
+
+def build_xn_vn_array(xn):
+
+    """
+    This function constructs array-ified (not nested) versions
+    of the posterior xn (beliefs) or vn (prediction error) arrays, that are separated 
+    by iteration, hidden state factor, timepoint, and policy
+    """
+
+    num_policies = len(xn)
+    num_itr = len(xn[0])
+    num_factors = len(xn[0][0])
+
+    if num_factors > 1:
+        xn_array = utils.obj_array(num_factors)
+        for factor in range(num_factors):
+            num_states, infer_len = xn[0][0][f].shape
+            xn_array[factor] = np.zeros( (num_itr, num_states, infer_len, num_policies) )
+        for policy_i in range(num_policies):
+            for itr in range(num_itr):
+                for factor in range(num_factors):
+                    xn_array[factor][itr,:,:,policy_i] = xn[policy_i][itr][factor]
+    else:
+        num_states, infer_len  = xn[0][0][0].shape
+        xn_array = np.zeros( (num_itr, num_states, infer_len, num_policies) )
+        for policy_i in range(num_policies):
+            for itr in range(num_itr):
+                xn_array[itr,:,:,policy_i] = xn[policy_i][itr][0] 
+    
+    return xn_array
 
 
     

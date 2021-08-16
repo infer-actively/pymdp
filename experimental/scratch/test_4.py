@@ -5,8 +5,6 @@ import numpy as np
 sys.path.append(str(pathlib.Path(__file__).parent.parent.parent))
 
 from pymdp.agent import Agent
-from pymdp import core
-from pymdp.distributions import Categorical, Dirichlet
 from pymdp.envs import TMazeEnv
 
 reward_probabilities = [0.6, 0.4]

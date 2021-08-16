@@ -7,8 +7,8 @@ __author__: Conor Heins, Beren Millidge, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 
-from pymdp.core.utils import to_arr_of_arr, get_model_dimensions, obj_array, obj_array_zeros, obj_array_uniform
-from pymdp.core.maths import spm_dot, spm_norm, softmax, calc_free_energy, spm_log
+from pymdp.utils import to_arr_of_arr, get_model_dimensions, obj_array, obj_array_zeros, obj_array_uniform
+from pymdp.maths import spm_dot, spm_norm, softmax, calc_free_energy, spm_log_single
 import copy
 
 
@@ -20,16 +20,17 @@ def run_mmp(
     Parameters:
     --------------
     `lh_seq`[numpy object array]:
-        Likelihoods of hidden state factors given a sequence of observations over time. This is logged beforehand
+        (log) Likelihoods of hidden state factors given a sequence of observations over time. This is assumed to already be log-transformed.
     `B`[numpy object array]:
         Transition likelihood of the generative model, mapping from hidden states at T to hidden states at T+1. One B matrix per modality (e.g. `B[f]` corresponds to f-th factor's B matrix)
         This is used in inference to compute the 'forward' and 'backward' messages conveyed between beliefs about temporally-adjacent timepoints.
     `policy` [2-D numpy.ndarray]:
         Matrix of shape (policy_len, num_control_factors) that indicates the indices of each action (control state index) upon timestep t and control_factor f in the element `policy[t,f]` for a given policy.
     `prev_actions` [None or 2-D numpy.ndarray]:
-        If provided, should be a matrix of previous actions of shape (infer_len, num_control_factors) taht indicates the indices of each action (control state index) taken in the past (up until the current timestep).
+        If provided, should be a matrix of previous actions of shape (infer_len, num_control_factors) that indicates the indices of each action (control state index) taken in the past (up until the current timestep).
     `prior`[None or numpy object array]:
-        If provided, this a numpy object array with one sub-array per hidden state factor, that stores the prior beliefs about initial states (at t = 0, relative to `infer_len`).
+        If provided, this a numpy object array with one sub-array per hidden state factor, that stores the prior beliefs about initial states (at t = 0, relative to `infer_len`). IF None, this defaults
+        to a flat (uninformative) prior over hidden states.
     `num_iter`[Int]:
         Number of variational iterations.
     `grad_descent` [Bool]:
@@ -57,7 +58,6 @@ def run_mmp(
 
     # dimensions
     _, num_states, _, num_factors = get_model_dimensions(A=None, B=B)
-    B = to_arr_of_arr(B)
 
     # beliefs
     qs_seq = obj_array(infer_len)
@@ -86,28 +86,28 @@ def run_mmp(
             for f in range(num_factors):
                 # likelihood
                 if t < past_len:
-                    lnA = spm_log(spm_dot(lh_seq[t], qs_seq[t], [f]))
+                    lnA = spm_log_single(spm_dot(lh_seq[t], qs_seq[t], [f]))
                 else:
                     lnA = np.zeros(num_states[f])
                 
                 # past message
                 if t == 0:
-                    lnB_past = spm_log(prior[f])
+                    lnB_past = spm_log_single(prior[f])
                 else:
                     past_msg = B[f][:, :, int(policy[t - 1, f])].dot(qs_seq[t - 1][f])
-                    lnB_past = spm_log(past_msg)
+                    lnB_past = spm_log_single(past_msg)
 
                 # future message
                 if t >= future_cutoff:
                     lnB_future = qs_T[f]
                 else:
                     future_msg = trans_B[f][:, :, int(policy[t, f])].dot(qs_seq[t + 1][f])
-                    lnB_future = spm_log(future_msg)
+                    lnB_future = spm_log_single(future_msg)
                 
                 # inference
                 if grad_descent:
                     sx = qs_seq[t][f] # save this as a separate variable so that it can be used in VFE computation
-                    lnqs = spm_log(sx)
+                    lnqs = spm_log_single(sx)
                     coeff = 1 if (t >= future_cutoff) else 2
                     err = (coeff * lnA + lnB_past + lnB_future) - coeff * lnqs
                     lnqs = lnqs + tau * (err - err.mean())
@@ -122,7 +122,7 @@ def run_mmp(
             if not grad_descent:
 
                 if t < past_len:
-                    F += calc_free_energy(qs_seq[t], prior, num_factors, likelihood = spm_log(lh_seq[t]) )
+                    F += calc_free_energy(qs_seq[t], prior, num_factors, likelihood = spm_log_single(lh_seq[t]) )
                 else:
                     F += calc_free_energy(qs_seq[t], prior, num_factors)
 
@@ -136,7 +136,7 @@ def run_mmp_testing(
     Parameters:
     --------------
     `lh_seq`[numpy object array]:
-        Likelihoods of hidden state factors given a sequence of observations over time. This is logged beforehand
+        (log) Likelihoods of hidden state factors given a sequence of observations over time. This is assumed to already be log-transformed.
     `B`[numpy object array]:
         Transition likelihood of the generative model, mapping from hidden states at T to hidden states at T+1. One B matrix per modality (e.g. `B[f]` corresponds to f-th factor's B matrix)
         This is used in inference to compute the 'forward' and 'backward' messages conveyed between beliefs about temporally-adjacent timepoints.
@@ -175,7 +175,6 @@ def run_mmp_testing(
 
     # dimensions
     _, num_states, _, num_factors = get_model_dimensions(A=None, B=B)
-    B = to_arr_of_arr(B)
 
     # beliefs
     qs_seq = obj_array(infer_len)
@@ -217,30 +216,30 @@ def run_mmp_testing(
             for f in range(num_factors):
                 # likelihood
                 if t < past_len:
-                    if itr == 0:
-                        print(f'obs from timestep {t}\n')
-                    lnA = spm_log(spm_dot(lh_seq[t], qs_seq[t], [f]))
+                    # if itr == 0:
+                    #     print(f'obs from timestep {t}\n')
+                    lnA = spm_log_single(spm_dot(lh_seq[t], qs_seq[t], [f]))
                 else:
                     lnA = np.zeros(num_states[f])
                 
                 # past message
                 if t == 0:
-                    lnB_past = spm_log(prior[f])
+                    lnB_past = spm_log_single(prior[f])
                 else:
                     past_msg = B[f][:, :, int(policy[t - 1, f])].dot(qs_seq[t - 1][f])
-                    lnB_past = spm_log(past_msg)
+                    lnB_past = spm_log_single(past_msg)
 
                 # future message
                 if t >= future_cutoff:
                     lnB_future = qs_T[f]
                 else:
                     future_msg = trans_B[f][:, :, int(policy[t, f])].dot(qs_seq[t + 1][f])
-                    lnB_future = spm_log(future_msg)
+                    lnB_future = spm_log_single(future_msg)
 
                 # inference
                 if grad_descent:
                     sx = qs_seq[t][f] # save this as a separate variable so that it can be used in VFE computation
-                    lnqs = spm_log(sx)
+                    lnqs = spm_log_single(sx)
                     coeff = 1 if (t >= future_cutoff) else 2
                     err = (coeff * lnA + lnB_past + lnB_future) - coeff * lnqs
                     vn_tmp = err - err.mean()
@@ -260,7 +259,7 @@ def run_mmp_testing(
             if not grad_descent:
 
                 if t < past_len:
-                    F += calc_free_energy(qs_seq[t], prior, num_factors, likelihood = spm_log(lh_seq[t]) )
+                    F += calc_free_energy(qs_seq[t], prior, num_factors, likelihood = spm_log_single(lh_seq[t]) )
                 else:
                     F += calc_free_energy(qs_seq[t], prior, num_factors)
         xn.append(xn_itr_all_factors)

@@ -9,7 +9,7 @@ import itertools
 import pandas as pd
 from pandas.testing import assert_frame_equal
 
-from pymdp.core.utils import create_A_matrix_stub, read_A_matrix, create_B_matrix_stubs, read_B_matrices
+from pymdp.utils import create_A_matrix_stub, read_A_matrix, create_B_matrix_stubs, read_B_matrices
 
 tmp_path = Path('tmp_dir')
 

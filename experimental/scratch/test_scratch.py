@@ -6,9 +6,9 @@ import numpy as np
 from scipy.io import loadmat
 
 from pymdp.agent import Agent, build_belief_array, build_xn_vn_array
-from pymdp.core.utils import random_A_matrix, random_B_matrix, obj_array_zeros, get_model_dimensions, convert_observation_array
-from pymdp.core.utils import to_arr_of_arr, to_numpy
-from pymdp.core import control
+from pymdp.utils import random_A_matrix, random_B_matrix, obj_array_zeros, get_model_dimensions, convert_observation_array
+from pymdp.utils import to_arr_of_arr
+from pymdp import control
 
 import matplotlib.pyplot as plt
 

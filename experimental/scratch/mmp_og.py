@@ -12,8 +12,8 @@ import sys
 import pathlib
 
 sys.path.append(str(pathlib.Path(__file__).parent.parent.parent.parent))
-from pymdp.core.maths import spm_dot, spm_norm, softmax, calc_free_energy
-from pymdp.core import utils
+from pymdp.maths import spm_dot, spm_norm, softmax, calc_free_energy
+from pymdp import utils
 
 
 def run_mmp(

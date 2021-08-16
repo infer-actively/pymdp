@@ -10,7 +10,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 from scipy import special
-from pymdp.core import utils
+from pymdp import utils
 from itertools import chain
 
 EPS_VAL = 1e-16 # global constant for use in spm_log() function
@@ -245,9 +245,9 @@ def get_joint_likelihood(A, obs, num_states):
 
 
 def get_joint_likelihood_seq(A, obs, num_states):
-    ll_seq = np.empty(len(obs), dtype=object)
-    for t in range(len(obs)):
-        ll_seq[t] = get_joint_likelihood(A, obs[t], num_states)
+    ll_seq = utils.obj_array(len(obs))
+    for t, obs_t in enumerate(obs):
+        ll_seq[t] = get_joint_likelihood(A, obs_t, num_states)
     return ll_seq
 
 
@@ -260,12 +260,22 @@ def spm_norm(A):
     normed_A = np.divide(A, A.sum(axis=0))
     return normed_A
 
-def spm_log(arr):
+def spm_log_single(arr):
     """
     Adds small epsilon value to an array before natural logging it
     """
     return np.log(arr + EPS_VAL)
 
+def spm_log_obj_array(obj_arr):
+    """
+    Applies `spm_log_single` to multiple elements of a numpy object array
+    """
+
+    obj_arr_logged = utils.obj_array(len(obj_arr))
+    for idx, arr in enumerate(obj_arr):
+        obj_arr_logged[idx] = spm_log_single(arr)
+
+    return obj_arr_logged
 
 def spm_wnorm(A):
     """ 
@@ -286,27 +296,15 @@ def spm_betaln(z):
     return np.sum(special.gammaln(z), axis=0) - special.gammaln(np.sum(z, axis=0))
 
 
-def softmax(dist, return_numpy=True):
-    """ Computes the softmax function on a set of values
-
+def softmax(dist):
+    """ 
+    Computes the softmax function on a set of values
     """
-    if utils.is_distribution(dist):
-        if dist.IS_AOA:
-            output = []
-            for i in range(len(dist.values)):
-                output[i] = softmax(dist.values[i], return_numpy=True)
-            output = utils.to_categorical(np.array(output))
-        else:
-            dist = np.copy(dist.values)
 
     output = dist - dist.max(axis=0)
     output = np.exp(output)
     output = output / np.sum(output, axis=0)
-    if return_numpy:
-        return output
-    else:
-        return utils.to_categorical(output)
-
+    return output
 
 def calc_free_energy(qs, prior, n_factors, likelihood=None):
     """ Calculate variational free energy
@@ -363,14 +361,7 @@ def spm_MDP_G(A, x):
         about hidden states x, were it to be observed. 
     """
 
-    # if A.dtype == "object":
-    #     Ng = len(A)
-    #     AOA_flag = True
-    # else:
-    #     Ng = 1
-    #     AOA_flag = False
-
-    _, _, Ng, _ = utils.get_model_dimensions(A=A)
+    num_modalities = len(A)
 
     # Probability distribution over the hidden causes: i.e., Q(x)
     qx = spm_cross(x)
@@ -379,13 +370,13 @@ def spm_MDP_G(A, x):
     idx = np.array(np.where(qx > np.exp(-16))).T
 
     if utils.is_arr_of_arr(A):
-        # Accumulate expectation of entropy: i.e., E[lnP(o|x)]
+        # Accumulate expectation of entropy: i.e., E_{Q(o, s)}[lnP(o|x)]
         for i in idx:
             # Probability over outcomes for this combination of causes
             po = np.ones(1)
-            for g in range(Ng):
-                index_vector = [slice(0, A[g].shape[0])] + list(i)
-                po = spm_cross(po, A[g][tuple(index_vector)])
+            for modality_idx, A_m in enumerate(A):
+                index_vector = [slice(0, A_m.shape[0])] + list(i)
+                po = spm_cross(po, A_m[tuple(index_vector)])
 
             po = po.ravel()
             qo += qx[tuple(i)] * po
@@ -398,10 +389,9 @@ def spm_MDP_G(A, x):
             po = po.ravel()
             qo += qx[tuple(i)] * po
             G += qx[tuple(i)] * po.dot(np.log(po + np.exp(-16)))
-
-    # Subtract negative entropy of expectations: i.e., E[lnQ(o)]
-    # G = G - qo.dot(np.log(qo + np.exp(-16)))  # type: ignore
-    G = G - qo.dot(spm_log(qo))  # type: ignore
+   
+    # Subtract negative entropy of expectations: i.e., E_{Q(o)}[lnQ(o)]
+    G = G - qo.dot(spm_log_single(qo))  # type: ignore
 
     return G
 

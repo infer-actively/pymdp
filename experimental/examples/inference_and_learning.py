@@ -1,12 +1,10 @@
 """
-CORE Implementation:
+Mid-Level Implementation:
 
-Implementation of active inference using pymdp. Here, we implement
+Implementation of active inference using `pymdp`. Here, we implement
 the necessary computations for hidden state inference and learning (updating parameters
-of the generative model) using functions from the `core` module of pymdp. 
+of the generative model) using functions from the inference, control and learning libraries of `pymdp`. 
 
-This ends up being simple mathematical manipulations of instances of the Categorical and Dirichlet classes, 
-which represent the various distributions encoding posterior and prior beliefs of the agent.
 """
 
 """
@@ -25,23 +23,21 @@ import matplotlib.pyplot as plt
 sys.path.append(str(pathlib.Path(__file__).parent.parent))
 
 from pymdp.envs import GridWorldEnv
-from pymdp.distributions import Categorical, Dirichlet
-from pymdp.core import maths
+from pymdp import maths, utils
 
 """
 ## Plotting functions (come in handy later on)
 # """
 
 def plot_beliefs(belief_dist, title=""):
-    values = belief_dist.values[:, 0]
     plt.grid(zorder=0)
-    plt.bar(range(belief_dist.shape[0]), values, color='r', zorder=3)
+    plt.bar(range(belief_dist.shape[0]), belief_dist, color='r', zorder=3)
     plt.xticks(range(belief_dist.shape[0]))
     plt.title(title)
     plt.show()
     
 def plot_likelihood(A, title=""):
-    ax = sns.heatmap(A.values, cmap="OrRd", linewidth=2.5)
+    ax = sns.heatmap(A, cmap="OrRd", linewidth=2.5)
     plt.xticks(range(A.shape[1]))
     plt.yticks(range(A.shape[0]))
     plt.title(title)
@@ -98,19 +94,15 @@ on the true, evidence-supported location.
 """
 
 likelihood_matrix = env.get_likelihood_dist()
-A = Categorical(values=likelihood_matrix)
-A.remove_zeros()
 plot_likelihood(A,'Observation likelihood')
 
-b = Dirichlet(values = np.ones((n_states,n_states)))      
-B = b.mean()
+b = np.ones((n_states,n_states)) 
+B = utils.norm_dist(b)
 plot_likelihood(B,'Initial transition likelihood')
 
-D = Categorical(values = np.ones(n_states)) 
-D.normalize()
+D = utils.norm_dist(np.ones(n_states))
 
-qs = Categorical(dims=[env.n_states])
-qs.normalize()
+qs = utils.norm_dist(np.ones(n_states))
 
 
 """
@@ -131,12 +123,10 @@ print("Initial Location {}".format(first_state))
 print("Initial Observation {}".format(first_obs))
 
 # infer initial state, given first observation
-qs = maths.softmax(A[first_obs, :].log() + D.log(), return_numpy=False)
+qs = maths.softmax(maths.spm_log_single(A[first_obs, :]) + maths.spm_log_single(D))
 
 # loop over time
 for t in range(T):
-
-    qs_past = qs.copy()
 
     s_t = env.set_state(s[t+1])
 
@@ -144,17 +134,17 @@ for t in range(T):
     obs = gp_likelihood[:,s_t]
 
     # turn observation into an index
-    obs = np.where(obs)[0][0]
+    o_idx = np.where(obs)[0][0]
 
     # get transition likelihood
-    B = b.mean()
+    B = utils.norm_dist(b)
 
     # infer new hidden state
-    qs = maths.softmax(A[obs, :].log() + B.dot(qs_past).log(), return_numpy=False)
+    qs = maths.softmax(maths.spm_log_single(A[o_idx, :]) + maths.spm_log_single(B.dot(qs_past)))
 
     # update beliefs about the transition likelihood (i.e. 'learning')
 
-    b += qs.cross(qs_past,return_numpy=True) # update transition likelihood
+    b += maths.spm_cross(qs, qs_past)# update transition likelihood
 
     # print information
     print("Time step {} Location {}".format(t, env.state))
@@ -162,7 +152,7 @@ for t in range(T):
     # env.render()
     plot_beliefs(qs, "Beliefs (Qs) at time {}".format(t))
 
-B = b.mean()
+B = utils.norm_dist(b)
 plot_likelihood(B,'Final transition likelihood')
 
 
