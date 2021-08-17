@@ -3,15 +3,13 @@ import setuptools
 setuptools.setup(
     name="inferactively-pymdp",
     version="0.0.1",
-    description=("A Python-based implementation of Active Inference for Markov Decision Processes"),
+    author="infer-actively",
+    author_email="conor.heins@gmail.com",
+    description= ("A Python package for solving Markov Decision Processes with Active Inference"),
     license='MIT',
     url="https://github.com/infer-actively/pymdp",
     python_requires='>3.7',
-    packages=[
-        "pymdp",
-        "pymdp.envs",
-    ],
-    install_requires=[
+    install_requires =[
     'attrs==20.3.0',
     'cycler==0.10.0',
     'iniconfig==1.1.1',
@@ -34,8 +32,26 @@ setuptools.setup(
     'toml==0.10.2',
     'typing-extensions==3.7.4.3',
     'xlsxwriter==1.4.3'
-  ],
-  classifiers=[
+    ],
+    packages=[
+        "pymdp",
+        "pymdp.envs",
+        "pymdp.algos"
+    ],
+    include_package_data=True,
+    keywords=[
+        "artificial intelligence",
+        "active inference",
+        "free energy principle"
+        "information theory",
+        "decision-making",
+        "MDP",
+        "Markov Decision Process",
+        "Bayesian inference",
+        "variational inference",
+        "reinforcement learning"
+    ],
+    classifiers=[
     'Development Status :: 4 - Beta',
     'Intended Audience :: Developers',
     'Topic :: Scientific/Engineering :: Artificial Intelligence',
