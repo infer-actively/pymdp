@@ -5,7 +5,7 @@
   </a> 
 </p>
 
-An Python package for simulating Active Inference agents in Markov Decision Process environments. 
+A Python package for simulating Active Inference agents in Markov Decision Process environments. 
 This package is hosted on the [`infer-actively`](https://github.com/infer-actively) GitHub organization, which was built with the intention of hosting open-source active inference and free-energy-principle related software.
 
 Most of the low-level mathematical operations are [NumPy](https://github.com/numpy/numpy) ports of their equivalent functions from the `SPM` [implementation](https://www.fil.ion.ucl.ac.uk/spm/doc/) in MATLAB. We have benchmarked and validated most of these functions against their SPM counterparts.
