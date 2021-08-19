@@ -16,26 +16,29 @@ Most of the low-level mathematical operations are [NumPy](https://github.com/num
 
 ## Installation and Usage
 
-In order to use `pymdp` to build and develop active inference agents, we recommending using `pip` to install the package:
+In order to use `pymdp` to build and develop active inference agents, we recommend installing it with the the package installer [`pip`](https://pip.pypa.io/en/stable/), which will install `pymdp` locally as well as its dependencies. This can also be done in a virtual environment (e.g. with `venv`). 
+
+When pip installing `pymdp`, use the package name `inferactively-pymdp`:
 
 ```bash
 pip install inferactively-pymdp
 ```
 
-Then in Python you can directly import `pymdp` and start working with its functions.
+Once in Python, you can then directly import `pymdp`, its sub-packages, and functions.
 
 ```bash
 
 import pymdp
+from pymdp import utils
 from pymdp.agent import Agent
 
 num_obs = [3, 5] # observation modality dimensions
 num_states = [3, 2, 2] # hidden state factor dimensions
 num_controls = [3, 1, 1] # control state factor dimensions
-A_matrix = pymdp.utils.random_A_matrix(num_obs, num_states) # create sensory likelihood (A matrix)
-B_matrix = pymdp.utils.random_B_matrix(num_states, num_controls) # create transition likelihood (B matrix)
+A_matrix = utils.random_A_matrix(num_obs, num_states) # create sensory likelihood (A matrix)
+B_matrix = utils.random_B_matrix(num_states, num_controls) # create transition likelihood (B matrix)
 
-C_vector = pymdp.utils.obj_array_uniform(num_obs) # uniform preferences
+C_vector = utils.obj_array_uniform(num_obs) # uniform preferences
 
 # instantiate a quick agent using your A, B and C arrays
 my_agent = Agent( A = A_matrix, B = B_matrix, C = C_vector)
@@ -58,7 +61,9 @@ action = my_agent.sample_action() # sample an action
 
 ## Getting started / pedagogical materials
 
-For an illustrative tutorial for how to use the functionalities of the `Agent()` class, which is used to perform active inference using the core functionality of `pymdp`, we recommend going through the Jupyter notebooks in the `pymdp/examples/` folder. The `gridworld_tutorial_1.ipynb` notebook and the `gridworld_tutorial_2.ipynb` notebooks are a good place to start. Special thanks to [@BerenMillidge](https://github.com/BerenMillidge) and [@daphnedemekas](https://github.com/daphnedemekas) for their help constructing the gridworld tutorials, which were based on a set of tutorial notebooks developed by [@alec-tschantz](https://github.com/alec-tschantz).
+The highest level API that `pymdp` currently offers is the `Agent()` class - this is a class whose methods abstract the core mathematical operations involved in active inference, which are lower level libraries within `pymdp` (e.g. `pymdp.inference`). 
+
+For an illustrative tutorial on how to instantiate and use an `Agent()`, we recommend going through the Jupyter notebooks in the `pymdp/examples/` folder - the `gridworld_tutorial_1.ipynb` notebook and the `gridworld_tutorial_2.ipynb` notebooks are a good place to start. Special thanks to [Beren Millidge](https://github.com/BerenMillidge) and [Daphne Demekas](https://github.com/daphnedemekas) for their help constructing the gridworld tutorials, which were originally based on a set of tutorial notebooks written by [Alec Tschantz](https://github.com/alec-tschantz).
 
 In order to go through these pedagogical materials (which are not included if you `pip install` the package), we recommend following these steps:
 
