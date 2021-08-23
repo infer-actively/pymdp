@@ -59,7 +59,7 @@ action = my_agent.sample_action() # sample an action
 ```
 
 
-## Getting started / pedagogical materials
+## Getting started / introductory material
 
 For a gentle, pedagogical introduction to active inference in discrete state-spaces, we recommend starting with two tutorial notebooks hosted on Google Colab, that provide a step-by-step walkthrough of simulating active inference agents in partially-observed Markov Decision Processes (POMDPs). 
 
@@ -69,11 +69,13 @@ The second notebook [**Simulating active inference from scratch**](https://colab
 
 Special thanks to [Beren Millidge](https://github.com/BerenMillidge) and [Daphne Demekas](https://github.com/daphnedemekas) for their help in constructing these tutorials, which were originally based on a set of tutorial notebooks written by [Alec Tschantz](https://github.com/alec-tschantz).
 
-The highest level API that `pymdp` currently offers is the `Agent()` class - this is a class whose methods abstract the core mathematical operations involved in active inference, which are lower level libraries within `pymdp` (e.g. `pymdp.inference`). 
+## Other `pymdp` material
+
+The highest level API that `pymdp` currently offers is the `Agent()` class - this is a class whose methods abstract the core mathematical operations involved in active inference, which themselves have been abstracted by `pymdp`'s lower level libraries (e.g. `pymdp.inference`). 
 
 For an illustrative tutorial on how to instantiate and use an `Agent()`, we recommend going through the Jupyter notebooks in the `pymdp/examples/` folder - the `agent_demo.ipynb` notebook and the `tmaze_demo.ipynb` notebooks are a good place to start for tutorials related to using the agent.
 
-In order to go through these pedagogical materials (which are not included if you `pip install` the package), we recommend following these steps:
+In order to go through these demos (which are not included if you `pip install` the package), we recommend following these steps:
 
 1. Clone (`git clone https://github.com/infer-actively/pymdp.git`) or download the repository locally and then `cd` into it.
 2. Start a virtual environment (with either `venv` or `conda`) & install the requirements.
