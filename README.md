@@ -61,9 +61,17 @@ action = my_agent.sample_action() # sample an action
 
 ## Getting started / pedagogical materials
 
+For a gentle, pedagogical introduction to active inference in discrete state-spaces, we recommend starting with two tutorial notebooks hosted on Google Colab, that provide a step-by-step walkthrough of simulating active inference agents in partially-observed Markov Decision Processes (POMDPs). 
+
+The first notebook [**Introduction to Active Inference and Grid-world**](https://colab.research.google.com/drive/1m9Hhd7GnJEsbMrKf5khCh3EQnbjoCahw?usp=sharing) relies only on `numpy` and some plotting libraries. The purpose of this tutorial is to give a pedagogical overview of active inference, and a technical introduction to representing Categorical distributions (both marginal and conditional) with multidimensional `numpy` arrays.
+
+The second notebook [**Simulating active inference from scratch**](https://colab.research.google.com/drive/13XfDDh2m-nHf8I_BPbQHhwUGxPgQLpjv?usp=sharing) walks the user through the construction of a generative model through the `A`, `B`, `C`, and `D` arrays - the key Categorical distributions that characterize an active inference agent's "mind". The notebook also goes through the mathematical operations (both formally and in code) required to perform inference and planning in a simple gridworld navigation task.
+
+Special thanks to [Beren Millidge](https://github.com/BerenMillidge) and [Daphne Demekas](https://github.com/daphnedemekas) for their help in constructing these tutorials, which were originally based on a set of tutorial notebooks written by [Alec Tschantz](https://github.com/alec-tschantz).
+
 The highest level API that `pymdp` currently offers is the `Agent()` class - this is a class whose methods abstract the core mathematical operations involved in active inference, which are lower level libraries within `pymdp` (e.g. `pymdp.inference`). 
 
-For an illustrative tutorial on how to instantiate and use an `Agent()`, we recommend going through the Jupyter notebooks in the `pymdp/examples/` folder - the `gridworld_tutorial_1.ipynb` notebook and the `gridworld_tutorial_2.ipynb` notebooks are a good place to start. Special thanks to [Beren Millidge](https://github.com/BerenMillidge) and [Daphne Demekas](https://github.com/daphnedemekas) for their help constructing the gridworld tutorials, which were originally based on a set of tutorial notebooks written by [Alec Tschantz](https://github.com/alec-tschantz).
+For an illustrative tutorial on how to instantiate and use an `Agent()`, we recommend going through the Jupyter notebooks in the `pymdp/examples/` folder - the `agent_demo.ipynb` notebook and the `tmaze_demo.ipynb` notebooks are a good place to start for tutorials related to using the agent.
 
 In order to go through these pedagogical materials (which are not included if you `pip install` the package), we recommend following these steps:
 
