@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name="inferactively-pymdp",
-    version="0.0.1",
+    version="0.0.2",
     author="infer-actively",
     author_email="conor.heins@gmail.com",
     description= ("A Python package for solving Markov Decision Processes with Active Inference"),
@@ -14,7 +14,7 @@ setuptools.setup(
     'cycler==0.10.0',
     'iniconfig==1.1.1',
     'kiwisolver==1.3.1',
-    'matplotlib==3.3.3',
+    'matplotlib==3.1.3',
     'nose==1.3.7',
     'numpy==1.19.5',
     'openpyxl==3.0.7',
