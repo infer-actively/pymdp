@@ -45,7 +45,7 @@ def update_posterior_policies_mmp(
     `pA`: numpy object array that stores Dirichlet priors over likelihood mappings (one per modality)
     `pB`: numpy object array that stores Dirichlet priors over transition mappings (one per hidden state factor)
     `F` : 1D numpy array that stores variational free energy of each policy 
-    `E` : 1D numpy array that stores prior probability each policy (e.g. 'habits')
+    `E` : 1D numpy array that stores (log) prior probability each policy (e.g. 'habits')
     `gamma`: Float that encodes the precision over policies
     """
 
@@ -100,6 +100,7 @@ def update_posterior_policies(
     use_param_info_gain=False,
     pA=None,
     pB=None,
+    E = None,
     gamma=16.0
 ):
     """ Updates the posterior beliefs about policies based on expected free energy prior
@@ -132,6 +133,7 @@ def update_posterior_policies(
             Dirichlet (both single and multi-factor)]:
             Prior dirichlet parameters for B. Defaults to none, in which case info gain w.r.t. 
             Dirichlet parameters over A is skipped.
+        - `E` : 1D numpy array that stores (log) prior probability each policy (e.g. 'habits')
         - `gamma` [float, defaults to 16.0]:
             Precision over policies, used as the inverse temperature parameter of a softmax transformation 
             of the expected free energies of each policy
@@ -147,6 +149,9 @@ def update_posterior_policies(
     n_policies = len(policies)
     efe = np.zeros(n_policies)
     q_pi = np.zeros((n_policies, 1))
+
+    if E is None:
+        E = np.zeros(n_policies)
 
     for idx, policy in enumerate(policies):
         qs_pi = get_expected_states(qs, B, policy)
@@ -164,7 +169,7 @@ def update_posterior_policies(
             if pB is not None:
                 efe[idx] += calc_pB_info_gain(pB, qs_pi, qs, policy)
 
-    q_pi = softmax(efe * gamma)    
+    q_pi = softmax(efe * gamma + E)    
 
     return q_pi, efe
 
