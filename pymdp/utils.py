@@ -16,6 +16,14 @@ def sample(probabilities):
     sample_onehot = np.random.multinomial(1, probabilities.squeeze())
     return np.where(sample_onehot == 1)[0][0]
 
+def sample_obj_array(arr):
+    """ 
+    Sample from set of Categorical distributions, stored in the sub-arrays of an object array 
+    """
+    
+    samples = [sample(arr_i) for arr_i in arr]
+
+    return samples
 
 def obj_array(num_arr):
     """
