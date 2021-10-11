@@ -11,10 +11,11 @@ import os
 import unittest
 
 import numpy as np
+from copy import deepcopy
 
 from pymdp.agent import Agent
-from pymdp import utils
-from pymdp import inference, control
+from pymdp import utils, maths
+from pymdp import inference, control, learning
 
 class TestAgent(unittest.TestCase):
    
@@ -214,6 +215,171 @@ class TestAgent(unittest.TestCase):
         
         self.assertEqual(len(agent.prev_obs), T)
         self.assertEqual(len(agent.prev_actions), T)
+    
+    def test_agent_with_D_learning_vanilla(self):
+        """
+        Test updating prior Dirichlet parameters over initial hidden states (pD) with the agent class,
+        in the case that you're using "vanilla" inference. 
+        """
+
+        num_obs = [2, 4]
+        num_states = [2, 3]
+        num_controls = [1, 1] # HMM mode
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+        pD = utils.dirichlet_like(utils.random_single_categorical(num_states))
+
+        # 1. Test that the updating works when `save_belief_hist` is True, and you don't need to pass in the beliefs about first hidden states
+        agent = Agent(A=A, B=B, pD = pD, inference_algo = "VANILLA", save_belief_hist=True)
+
+        T = 10
+
+        qs_history = []
+
+        for t in range(T):
+
+            # get some random hidden state distribution
+            p_states = utils.random_single_categorical(num_states)
+            observation = [utils.sample(maths.spm_dot(A_g, p_states)) for A_g in A]
+
+            qs_t = agent.infer_states(observation)
+
+            qs_history.append(qs_t)
+
+        pD_validation = learning.update_state_prior_dirichlet(agent.pD, qs_history[0], agent.lr_pD, factors = agent.factors_to_learn)
+
+        pD_test = agent.update_D()
+
+        for factor in range(len(num_states)):
+
+            self.assertTrue(np.allclose(pD_test[factor], pD_validation[factor]))
+        
+        # 2. Test that the updating works when `save_belief_hist` is False, and you do have to pass in the beliefs about first hidden states
+        agent = Agent(A=A, B=B, pD = pD, inference_algo = "VANILLA", save_belief_hist=False)
+
+        T = 10
+
+        qs_history = []
+
+        for t in range(T):
+
+            # get some random hidden state distribution
+            p_states = utils.random_single_categorical(num_states)
+            observation = [utils.sample(maths.spm_dot(A_g, p_states)) for A_g in A]
+
+            qs_t = agent.infer_states(observation)
+
+            qs_history.append(qs_t)
+
+        pD_validation = learning.update_state_prior_dirichlet(agent.pD, qs_history[0], agent.lr_pD, factors = agent.factors_to_learn)
+
+        pD_test = agent.update_D(qs_t0=qs_history[0])
+
+        for factor in range(len(num_states)):
+
+            self.assertTrue(np.allclose(pD_test[factor], pD_validation[factor]))
+        
+        # 3. Same as test #1, except with learning on only certain hidden state factors. Also passed in a different learning rate
+        agent = Agent(A=A, B=B, pD = pD, lr_pD = 2.0, inference_algo = "VANILLA", save_belief_hist=True, factors_to_learn= [0])
+
+        T = 10
+
+        qs_history = []
+
+        for t in range(T):
+
+            # get some random hidden state distribution
+            p_states = utils.random_single_categorical(num_states)
+            observation = [utils.sample(maths.spm_dot(A_g, p_states)) for A_g in A]
+
+            qs_t = agent.infer_states(observation)
+
+            qs_history.append(qs_t)
+
+        pD_validation = learning.update_state_prior_dirichlet(agent.pD, qs_history[0], agent.lr_pD, factors = agent.factors_to_learn)
+
+        pD_test = agent.update_D()
+
+        for factor in range(len(num_states)):
+
+            self.assertTrue(np.allclose(pD_test[factor], pD_validation[factor]))
+    
+    def test_agent_with_D_learning_MMP(self):
+        """
+        Test updating prior Dirichlet parameters over initial hidden states (pD) with the agent class,
+        in the case that you're using MMP inference and various combinations of Bayesian model averaging at the edge of the inference horizon vs. other possibilities
+        """
+
+        num_obs = [2]
+        num_states = [2, 3, 3]
+        num_controls = [2, 3, 1]
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+        pD = utils.dirichlet_like(utils.random_single_categorical(num_states))
+
+        # 1. Using Bayesian model average over hidden states at the edge of the inference horizon
+        agent = Agent(A=A, B=B, pD = pD, inference_algo = "MMP", use_BMA = True, policy_sep_prior = False, inference_horizon = 10, save_belief_hist = True)
+
+        T = 10
+
+        for t in range(T):
+
+            # get some random hidden state distribution
+            p_states = utils.random_single_categorical(num_states)
+            observation = [utils.sample(maths.spm_dot(A_g, p_states)) for A_g in A]
+
+            agent.infer_states(observation)
+            agent.infer_policies()
+            agent.sample_action()
+
+        qs_t0 = agent.latest_belief
+
+        pD_validation = learning.update_state_prior_dirichlet(pD, qs_t0, agent.lr_pD, factors = agent.factors_to_learn)
+
+        pD_test = agent.update_D()
+
+        for factor in range(len(num_states)):
+
+            self.assertTrue(np.allclose(pD_test[factor], pD_validation[factor]))
+
+        # 2. Using policy-conditioned prior over hidden states at the edge of the inference horizon
+        agent = Agent(A=A, B=B, pD = pD, inference_algo = "MMP", use_BMA = False, policy_sep_prior = True, inference_horizon = 10, save_belief_hist = True)
+
+        T = 10
+
+        q_pi_hist = []
+        for t in range(T):
+
+            # get some random hidden state distribution
+            p_states = utils.random_single_categorical(num_states)
+            observation = [utils.sample(maths.spm_dot(A_g, p_states)) for A_g in A]
+
+            qs_final = agent.infer_states(observation)
+            q_pi, _ = agent.infer_policies()
+            q_pi_hist.append(q_pi)
+            agent.sample_action()
+
+        # get beliefs about policies at the time at the beginning of the inference horizon
+        
+        qs_pi_t0 = utils.obj_array(len(agent.policies))
+        for p_i in range(len(qs_pi_t0)):
+            qs_pi_t0[p_i] = qs_final[p_i][0]
+
+        qs_t0 = inference.average_states_over_policies(qs_pi_t0,q_pi_hist[0]) # beliefs about hidden states at the first timestep of the inference horizon
+     
+        pD_validation = learning.update_state_prior_dirichlet(pD, qs_t0, agent.lr_pD, factors = agent.factors_to_learn)
+
+        pD_test = agent.update_D()
+
+        for factor in range(len(num_states)):
+
+            self.assertTrue(np.allclose(pD_test[factor], pD_validation[factor]))
+        
+        
+
+
+
+
 
 if __name__ == "__main__":
     unittest.main()

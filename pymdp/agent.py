@@ -26,6 +26,7 @@ class Agent(object):
         pB=None,
         C=None,
         D=None,
+        pD = None,
         num_states=None,
         num_obs=None,
         num_controls=None,
@@ -44,8 +45,10 @@ class Agent(object):
         lr_pA=1.0,
         factors_to_learn="all",
         lr_pB=1.0,
+        lr_pD=1.0,
         use_BMA = True,
-        policy_sep_prior = False
+        policy_sep_prior = False,
+        save_belief_hist = False
     ):
 
         ### Constant parameters ###
@@ -63,6 +66,7 @@ class Agent(object):
         self.lr_pA = lr_pA
         self.factors_to_learn = factors_to_learn
         self.lr_pB = lr_pB
+        self.lr_pD = lr_pD
 
         """ Initialise observation model (A matrices) """
         if not isinstance(A, np.ndarray):
@@ -145,7 +149,13 @@ class Agent(object):
                 )
             self.D = utils.to_arr_of_arr(D)
         else:
-            self.D = self._construct_D_prior()
+            if pD is not None:
+                self.D = utils.norm_dist_obj_arr(pD)
+            else:
+                self.D = self._construct_D_prior()
+        
+        """ Assigning prior parameters on initial hidden states (pD vectors) """
+        self.pD = pD
 
         self.edge_handling_params = {}
         self.edge_handling_params['use_BMA'] = use_BMA # creates a 'D-like' moving prior
@@ -175,6 +185,10 @@ class Agent(object):
             self.inference_algo = inference_algo
             self.inference_params = self._get_default_params()
             self.inference_horizon = inference_horizon
+
+        if save_belief_hist:
+            self.qs_hist = []
+            self.q_pi_hist = []
         
         self.prev_obs = []
         self.reset()
@@ -261,8 +275,12 @@ class Agent(object):
             for p_i, _ in enumerate(self.policies):
                 last_belief[p_i] = copy.deepcopy(self.qs[p_i][0])
 
-        if self.edge_handling_params['use_BMA'] and (self.curr_timestep - self.inference_horizon >= 0):
-            self.latest_belief = inference.average_states_over_policies(last_belief, self.q_pi) # average the earliest marginals together using posterior over policies (`self.q_pi`)
+        begin_horizon_step = self.curr_timestep - self.inference_horizon
+        if self.edge_handling_params['use_BMA'] and (begin_horizon_step >= 0):
+            if hasattr(self, "q_pi_hist"):
+                self.latest_belief = inference.average_states_over_policies(last_belief, self.q_pi_hist[begin_horizon_step]) # average the earliest marginals together using contemporaneous posterior over policies (`self.q_pi_hist[0]`)
+            else:
+                self.latest_belief = inference.average_states_over_policies(last_belief, self.q_pi) # average the earliest marginals together using posterior over policies (`self.q_pi`)
         else:
             self.latest_belief = last_belief
 
@@ -340,7 +358,9 @@ class Agent(object):
             )
 
             self.F = F # variational free energy of each policy  
-    
+
+        if hasattr(self, "qs_hist"):
+            self.qs_hist.append(qs)
         self.qs = qs
 
         return qs
@@ -386,7 +406,10 @@ class Agent(object):
             )
 
             self.F = F # variational free energy of each policy  
-    
+
+        if hasattr(self, "qs_hist"):
+            self.qs_hist.append(qs)
+
         self.qs = qs
 
         return qs, xn, vn
@@ -428,6 +451,11 @@ class Agent(object):
                 gamma = self.gamma
             )
 
+        if hasattr(self, "q_pi_hist"):
+            self.q_pi_hist.append(q_pi)
+            if len(self.q_pi_hist) > self.inference_horizon:
+                self.q_pi_hist = self.q_pi_hist[-(self.inference_horizon-1):]
+
         self.q_pi = q_pi
         self.efe = efe
         return q_pi, efe
@@ -444,6 +472,9 @@ class Agent(object):
         return action
 
     def update_A(self, obs):
+        """
+        Update posterior beliefs about Dirichlet parameters that parameterise the observation likelihood 
+        """
 
         pA_updated = learning.update_likelihood_dirichlet(
             self.pA, 
@@ -460,6 +491,9 @@ class Agent(object):
         return pA_updated
 
     def update_B(self, qs_prev):
+        """
+        Update posterior beliefs about Dirichlet parameters that parameterise the transition likelihood 
+        """
 
         pB_updated = learning.update_transition_dirichlet(
             self.pB,
@@ -475,6 +509,44 @@ class Agent(object):
         self.B = utils.norm_dist_obj_arr(self.pB) 
 
         return pB_updated
+    
+    def update_D(self, qs_t0 = None):
+        """
+        Update posterior beliefs about Dirichlet parameters that parameterise the prior over initial hidden states
+        """
+        
+        if self.inference_algo == "VANILLA":
+            
+            if qs_t0 is None:
+                
+                try:
+                    qs_t0 = self.qs_hist[0]
+                except ValueError:
+                    print("qs_t0 must either be passed as argument to `update_D` or `save_belief_hist` must be set to True!")             
+
+        elif self.inference_algo == "MMP":
+            
+            if self.edge_handling_params['use_BMA']:
+                qs_t0 = self.latest_belief
+            elif self.edge_handling_params['policy_sep_prior']:
+              
+                qs_pi_t0 = self.latest_belief
+
+                # get beliefs about policies at the time at the beginning of the inference horizon
+                if hasattr(self, "q_pi_hist"):
+                    begin_horizon_step = max(0, self.curr_timestep - self.inference_horizon)
+                    q_pi_t0 = np.copy(self.q_pi_hist[begin_horizon_step])
+                else:
+                    q_pi_t0 = np.copy(self.q_pi)
+            
+                qs_t0 = inference.average_states_over_policies(qs_pi_t0,q_pi_t0) # beliefs about hidden states at the first timestep of the inference horizon
+        
+        pD_updated = learning.update_state_prior_dirichlet(self.pD, qs_t0, self.lr_pD, factors = self.factors_to_learn)
+        
+        self.pD = pD_updated
+        self.D = utils.norm_dist_obj_arr(self.pD)
+
+        return pD_updated
 
     def _get_default_params(self):
         method = self.inference_algo

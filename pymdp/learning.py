@@ -93,3 +93,38 @@ def update_transition_dirichlet(
         pB_updated[factor][:,:,int(actions[factor])] += (lr*dfdb)
 
     return pB_updated
+
+def update_state_prior_dirichlet(
+    pD, qs, lr=1.0, factors="all"
+):
+    """
+    Update Dirichlet parameters that parameterize the hidden state prior of the generative model 
+    (prior beliefs about hidden states at the beginning of the inference window).
+
+    Parameters
+    -----------
+   -  pD [numpy object array]:
+        The prior Dirichlet parameters of the generative model, parameterizing the agent's 
+        beliefs about initial hidden states
+    - qs [numpy object array (where each entry is a numpy 1D array)]:
+        Current marginal posterior beliefs about hidden state factors
+    - lr [float, optional]:
+        Learning rate.
+    - factors [list, optional]:
+        Indices (in terms of range(num_factors)) of the hidden state factors to include in learning.
+        Defaults to 'all', meaning that the priors over initial hidden states for all hidden state factors
+        are updated.
+    """
+
+    num_factors = len(pD)
+
+    pD_updated = copy.deepcopy(pD)
+   
+    if factors == "all":
+        factors = list(range(num_factors))
+
+    for factor in factors:
+        idx = pD[factor] > 0 # only update those state level indices that have some prior probability
+        pD_updated[factor][idx] += (lr * qs[factor][idx])
+       
+    return pD_updated

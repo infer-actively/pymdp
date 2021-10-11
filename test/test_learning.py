@@ -4,6 +4,8 @@ import unittest
 import numpy as np
 from pymdp import utils, maths, learning
 
+from copy import deepcopy
+
 class TestLearning(unittest.TestCase):
 
     def test_update_pA_single_factor_all(self):
@@ -490,6 +492,74 @@ class TestLearning(unittest.TestCase):
                     * (B[factor][:, :, action_i] > 0)
                 )
             self.assertTrue(np.all(pB_updated[factor] == validation_pB[factor]))
+    
+    def test_update_pD(self):
+        """
+        Test updating prior Dirichlet parameters over initial hidden states (pD). 
+        Tests different cases
+        1. Multiple vs. single hidden state factor
+        2. One factor vs. several factors vs. all factors learned
+        """
+
+        # 1. Single hidden state factor
+        num_states = [3]
+
+        pD = utils.dirichlet_like(utils.random_single_categorical(num_states), scale = 0.5)
+        qs = utils.random_single_categorical(num_states)
+        l_rate = 1.0
+
+        pD_test= learning.update_state_prior_dirichlet(
+                        pD, qs, lr=l_rate, factors="all"
+                    )
+        
+        for factor in range(len(num_states)):
+            pD_validation_f = pD[factor].copy()
+            idx = pD_validation_f > 0
+            pD_validation_f[idx] += l_rate * qs[factor][idx]
+            self.assertTrue(np.allclose(pD_test[factor], pD_validation_f))
+
+        # 2. Multiple hidden state factors
+        num_states = [3, 4, 5]
+
+        pD = utils.dirichlet_like(utils.random_single_categorical(num_states), scale = 0.5)
+        qs = utils.random_single_categorical(num_states)
+        l_rate = 1.0
+
+        pD_test= learning.update_state_prior_dirichlet(
+                        pD, qs, lr=l_rate, factors="all"
+                    )
+        
+        for factor in range(len(num_states)):
+            pD_validation_f = pD[factor].copy()
+            idx = pD_validation_f > 0
+            pD_validation_f[idx] += l_rate * qs[factor][idx]
+            self.assertTrue(np.allclose(pD_test[factor], pD_validation_f))
+        
+        # 3. Multiple hidden state factors, only some learned
+        num_states = [3, 4, 5]
+
+        factors_to_learn = [0, 2]
+
+        pD = utils.dirichlet_like(utils.random_single_categorical(num_states), scale = 0.5)
+        qs = utils.random_single_categorical(num_states)
+        l_rate = 1.0
+
+        pD_test= learning.update_state_prior_dirichlet(
+                        pD, qs, lr=l_rate, factors=factors_to_learn
+                    )
+        
+        pD_validation = deepcopy(pD)
+
+        for factor in range(len(num_states)):
+
+            if factor in factors_to_learn:
+                idx = pD_validation[factor] > 0
+                pD_validation[factor][idx] += l_rate * qs[factor][idx]
+
+            self.assertTrue(np.allclose(pD_test[factor], pD_validation[factor]))
+
+
+
         
 if __name__ == "__main__":
     unittest.main()
