@@ -277,9 +277,9 @@ class Agent(object):
 
         begin_horizon_step = self.curr_timestep - self.inference_horizon
         if self.edge_handling_params['use_BMA'] and (begin_horizon_step >= 0):
-            try:
+            if hasattr(self, "q_pi_hist"):
                 self.latest_belief = inference.average_states_over_policies(last_belief, self.q_pi_hist[begin_horizon_step]) # average the earliest marginals together using contemporaneous posterior over policies (`self.q_pi_hist[0]`)
-            except:
+            else:
                 self.latest_belief = inference.average_states_over_policies(last_belief, self.q_pi) # average the earliest marginals together using posterior over policies (`self.q_pi`)
         else:
             self.latest_belief = last_belief
@@ -529,18 +529,14 @@ class Agent(object):
             if self.edge_handling_params['use_BMA']:
                 qs_t0 = self.latest_belief
             elif self.edge_handling_params['policy_sep_prior']:
-                # get beliefs about hidden states at the time at the beginning of the inference horizon
-                # qs_pi_t0 = utils.obj_array(len(self.policies))
-                # for p_i, _ in enumerate(self.policies):
-                #     qs_pi_t0[p_i] = copy.deepcopy(self.qs[p_i][0])
-
+              
                 qs_pi_t0 = self.latest_belief
 
                 # get beliefs about policies at the time at the beginning of the inference horizon
-                try:
+                if hasattr(self, "q_pi_hist"):
                     begin_horizon_step = max(0, self.curr_timestep - self.inference_horizon)
                     q_pi_t0 = np.copy(self.q_pi_hist[begin_horizon_step])
-                except:
+                else:
                     q_pi_t0 = np.copy(self.q_pi)
             
                 qs_t0 = inference.average_states_over_policies(qs_pi_t0,q_pi_t0) # beliefs about hidden states at the first timestep of the inference horizon
