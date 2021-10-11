@@ -81,11 +81,14 @@ In order to go through these demos (which are not included if you `pip install` 
 2. Start a virtual environment (with either `venv` or `conda`) & install the requirements.
    1. If you're using `conda`:
       ```bash
-      conda env create -f environment.yml
+      cd <path_to_local_clone_of_repo>
+      conda env create -n my_env
+      conda activate my_env
+      pip install -r requirements.txt
       ```
    2. If you're using `venv`
       ```bash
-      cd <path_to_repo_fork>
+      cd <path_to_local_clone_of_repo>
       python3 -m venv env
       source env/bin/activate
       pip install -r requirements.txt
