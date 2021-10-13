@@ -293,8 +293,35 @@ def spm_betaln(z):
     """ Log of the multivariate beta function of a vector.
      @NOTE this function computes across columns if `z` is a matrix
     """
-    return np.sum(special.gammaln(z), axis=0) - special.gammaln(np.sum(z, axis=0))
+    return special.gammaln(z).sum(axis=0) - special.gammaln(z.sum(axis=0))
 
+def dirichlet_log_evidence(q_dirichlet, p_dirichlet, r_dirichlet):
+    """
+    Bayesian model reduction and log evidence calculations for Dirichlet hyperparameters
+    This is a NumPY translation of the MATLAB function `spm_MDP_log_evidence.m` from the
+    DEM package of spm. 
+
+    Description (adapted from MATLAB docstring)
+    This function computes the negative log evidence of a reduced model of a
+    Categorical distribution parameterised in terms of Dirichlet hyperparameters 
+    (i.e., concentration parameters encoding probabilities). It uses Bayesian model reduction 
+    to evaluate the evidence for models with and without a particular parameter.
+    Arguments:
+    ===========
+    `qA` [1D np.ndarray]: sufficient statistics of posterior of full model
+    `pA` [1D np.ndarray]: sufficient statistics of prior of full model
+    `rA` [1D np.ndarray]: sufficient statistics of prior of reduced model
+    Returns:
+    ==========
+    `F` [float]: free energy or (negative) log evidence of reduced model
+    `sA` [1D np.ndarray]: sufficient statistics of reduced posterior
+    """
+
+    # change in free energy or log model evidence
+    sA = qA + rA - pA
+    F  = spm_betaln(qA) + spm_betaln(rA) - spm_betaln(pA) - spm_betaln(sA)
+
+    return F, sA
 
 def softmax(dist):
     """ 
