@@ -6,6 +6,7 @@ from scipy.io import loadmat
 
 from pymdp.agent import Agent
 from pymdp.utils import to_arr_of_arr, build_belief_array, build_xn_vn_array, get_model_dimensions, convert_observation_array
+from pymdp.maths import dirichlet_log_evidence
 
 DATA_PATH = "test/matlab_crossval/output/"
 
@@ -67,6 +68,30 @@ class TestSPM(unittest.TestCase):
             self.assertTrue(np.isclose(vn_python, vn_validation).all())
         
         self.assertTrue(np.isclose(actions_matlab[0,:],actions_python[:-1]).all())
+
+    def test_BMR_SPM_a(self):
+        """
+        Validate output of pymdp's `dirichlet_log_evidence` function 
+        against output of `spm_MDP_log_evidence` from DEM in SPM (MATLAB)
+        """
+        array_path = os.path.join(os.getcwd(), DATA_PATH + "bmr_test_a.mat")
+        mat_contents = loadmat(file_name=array_path)
+        F_valid = mat_contents["F"]
+
+        # create BMR example from MATLAB
+        x = np.linspace(1, 32, 128)
+
+        p_dir    = np.ones(2)
+        r_dir    = p_dir.copy()
+        r_dir[1] = 8.
+
+        F_out = np.zeros( (len(x), len(x)) )
+        for i in range(len(x)):
+            for j in range(len(x)):
+                q_dir = np.array([x[i], x[j]])
+                F_out[i,j] = dirichlet_log_evidence(q_dir, p_dir, r_dir)[0]
+
+        self.assertTrue(np.allclose(F_valid, F_out))
 
 
 if __name__ == "__main__":
