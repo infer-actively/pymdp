@@ -295,7 +295,7 @@ def spm_betaln(z):
     """
     return special.gammaln(z).sum(axis=0) - special.gammaln(z.sum(axis=0))
 
-def dirichlet_log_evidence(q_dirichlet, p_dirichlet, r_dirichlet):
+def dirichlet_log_evidence(q_dir, p_dir, r_dir):
     """
     Bayesian model reduction and log evidence calculations for Dirichlet hyperparameters
     This is a NumPY translation of the MATLAB function `spm_MDP_log_evidence.m` from the
@@ -308,20 +308,20 @@ def dirichlet_log_evidence(q_dirichlet, p_dirichlet, r_dirichlet):
     to evaluate the evidence for models with and without a particular parameter.
     Arguments:
     ===========
-    `qA` [1D np.ndarray]: sufficient statistics of posterior of full model
-    `pA` [1D np.ndarray]: sufficient statistics of prior of full model
-    `rA` [1D np.ndarray]: sufficient statistics of prior of reduced model
+    `q_dir` [1D np.ndarray]: sufficient statistics of posterior of full model
+    `p_dir` [1D np.ndarray]: sufficient statistics of prior of full model
+    `r_dir` [1D np.ndarray]: sufficient statistics of prior of reduced model
     Returns:
     ==========
     `F` [float]: free energy or (negative) log evidence of reduced model
-    `sA` [1D np.ndarray]: sufficient statistics of reduced posterior
+    `s_dir` [1D np.ndarray]: sufficient statistics of reduced posterior
     """
 
     # change in free energy or log model evidence
-    sA = qA + rA - pA
-    F  = spm_betaln(qA) + spm_betaln(rA) - spm_betaln(pA) - spm_betaln(sA)
+    s_dir = q_dir + r_dir - p_dir
+    F  = spm_betaln(q_dir) + spm_betaln(r_dir) - spm_betaln(p_dir) - spm_betaln(s_dir)
 
-    return F, sA
+    return F, s_dir
 
 def softmax(dist):
     """ 
