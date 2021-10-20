@@ -293,8 +293,35 @@ def spm_betaln(z):
     """ Log of the multivariate beta function of a vector.
      @NOTE this function computes across columns if `z` is a matrix
     """
-    return np.sum(special.gammaln(z), axis=0) - special.gammaln(np.sum(z, axis=0))
+    return special.gammaln(z).sum(axis=0) - special.gammaln(z.sum(axis=0))
 
+def dirichlet_log_evidence(q_dir, p_dir, r_dir):
+    """
+    Bayesian model reduction and log evidence calculations for Dirichlet hyperparameters
+    This is a NumPY translation of the MATLAB function `spm_MDP_log_evidence.m` from the
+    DEM package of spm. 
+
+    Description (adapted from MATLAB docstring)
+    This function computes the negative log evidence of a reduced model of a
+    Categorical distribution parameterised in terms of Dirichlet hyperparameters 
+    (i.e., concentration parameters encoding probabilities). It uses Bayesian model reduction 
+    to evaluate the evidence for models with and without a particular parameter.
+    Arguments:
+    ===========
+    `q_dir` [1D np.ndarray]: sufficient statistics of posterior of full model
+    `p_dir` [1D np.ndarray]: sufficient statistics of prior of full model
+    `r_dir` [1D np.ndarray]: sufficient statistics of prior of reduced model
+    Returns:
+    ==========
+    `F` [float]: free energy or (negative) log evidence of reduced model
+    `s_dir` [1D np.ndarray]: sufficient statistics of reduced posterior
+    """
+
+    # change in free energy or log model evidence
+    s_dir = q_dir + r_dir - p_dir
+    F  = spm_betaln(q_dir) + spm_betaln(r_dir) - spm_betaln(p_dir) - spm_betaln(s_dir)
+
+    return F, s_dir
 
 def softmax(dist):
     """ 
@@ -322,19 +349,6 @@ def calc_free_energy(qs, prior, n_factors, likelihood=None):
         accuracy = spm_dot(likelihood, qs)[0]
         free_energy -= accuracy
     return free_energy
-
-
-def kl_divergence(q, p):
-    """ Calculate KL divdivergence between two distributions
-
-    @TODO: make this work for multi-dimensional arrays
-    """
-    q.remove_zeros()
-    p.remove_zeros()
-    q = np.copy(q.values)
-    p = np.copy(p.values)
-    kl = np.sum(q * np.log(q / p), axis=0)[0]
-    return kl
 
 
 def spm_MDP_G(A, x):
@@ -395,99 +409,3 @@ def spm_MDP_G(A, x):
 
     return G
 
-
-"""
- def calc_free_energy_policy(A, B, obs_t, qs_policy, policy, curr_t, t_horizon, T, previous_actions=None):
-
-     Calculate variational free energy for a specific policy.
-
-     Parameters
-     ----------
-     - 'A' [numpy nd.array (matrix or tensor or array-of-arrays)]:
-         Observation likelihood of the generative model, mapping from hidden states to observations.
-         Used in inference to get the likelihood of an observation, under different hidden state configurations.
-     - 'B' [numpy.ndarray (tensor or array-of-arrays)]:
-         Transition likelihood of the generative model, mapping from hidden states at t to hidden states at t+1.
-         Used in inference to get expected future (or past) hidden states, given past (or future) hidden 
-         states (or expectations thereof).
-     - 'obs_t' [list of length t_horizon of numpy 1D array or array of arrays (with 1D numpy array entries)]:
-         Sequence of observations sampled from beginning of time horizon until the current timestep t. The 
-         first observation (the start of the time horizon)
-         is either the first timestep of the generative process or the first timestep of the policy horizon 
-         (whichever is closer to 'curr_t' in time).
-         The observations over time are stored as a list of numpy arrays, where in case of multi-modalities 
-         each numpy array is an array-of-arrays, with
-         one 1D numpy.ndarray for each modality. In the case of a single modality, each observation is a 
-         single 1D numpy.ndarray.
-     - 'qs_policy' [list of length T of numpy 1D arrays or array of arrays (with 1D numpy array entries):
-         Marginal posterior beliefs over hidden states (single- or multi-factor) under a given policy.
-     - 'policy' [2D np.ndarray]:
-         Array of actions constituting a single policy. Policy is a shape (n_steps, n_control_factors) 
-         numpy.ndarray, the values of which
-         indicate actions along a given control factor (column index) at a given timestep (row index).
-     - 'curr_t' [int]:
-         Current timestep (relative to the 'absolute' time of the generative process).
-     - 't_horizon'[int]:
-         Temporal horizon of inference for states and policies.
-     - 'T' [int]:
-         Temporal horizon of the generative process (absolute time)
-     -'previous_actions' [numpy.ndarray with shape (num_steps, n_control_factors) or None]:
-         Array of previous actions, which can be used to constrain the 'past' messages in inference to only 
-         consider states of affairs that were possible
-         under actions that are known to have been taken. The first dimension of previous-arrays 
-         (previous_actions.shape[0]) encodes how far back in time
-         the agent is considering. The first timestep of this either corresponds to either the first 
-         timestep of the generative process or the f
-         first timestep of the policy horizon (whichever is sooner in time).  (optional)
-
-     Returns
-     ----------
-     -'F_pol' [float]:
-         Total variational free energy of the policy under consideration.
-
-     # extract dimensions of observation modalities and number of levels per modality. 
-     # Do the same for hidden states
-     if utils.is_arr_of_arr(obs_t[0]):
-         n_observations = [ obs_t_m.shape[0] for obs_t_m in obs_t[0] ]
-     else:
-         n_observations = [obs_t[0].shape[0]]
-
-     if utils.is_arr_of_arr(qs_policy[0][0]):
-         n_states = [ qs_t_f.shape[0] for qs_t_f in qs_policy[0][0] ]
-     else:
-         n_states = [qs_policy[0][0].shape[0]]
-
-     n_modalities = len(n_observations)
-     n_factors = len(n_states)
-
-     # compute time-window, taking into account boundary conditions - this range goes from start of 
-     # time-window (in absolute time) to current absolute time index
-     obs_range = range(max(0,curr_t-t_horizon),curr_t)
-
-     # likelihood of observations under configurations of hidden causes (over time)
-     likelihood = np.empty(len(obs_range), dtype = object)
-     for t in range(len(obs_range)):
-         likelihood_t = np.ones(tuple(n_states))
-
-         if n_modalities is 1:
-             likelihood_t *= spm_dot(A, obs_t[obs_range[t]], obs_mode=True)
-         else:
-             for modality in range(n_modalities):
-                 likelihood_t *= spm_dot(A[modality], obs[obs_range[t]][modality], obs_mode=True)
-         likelihood[t] = np.log(likelihood_t + 1e-16)
-
-     if previous_actions is None:
-         full_policy = policy
-     else:
-         full_policy = np.vstack( (previous_actions, policy))
-     F_pol = 0.0
-     for t in range(1, len(qs_policy)):
-
-         lnBpast_tensor = np.empty(n_factors,dtype=object)
-         for f in range(n_factors):
-             lnBpast_tensor[f] = B[f][:,:,full_policy[t-1,f].dot(qs_policy[t-1][f])
-
-         F_pol += calc_free_energy(qs_policy[t], lnBpast_tensor, n_factors, likelihood[t])
-
-     return F_pol
-"""
