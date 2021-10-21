@@ -137,6 +137,8 @@ def prune_prior(prior, levels_to_remove):
     `prior` [1D np.ndarray or numpy object array with 1D entries]: The prior vector(s) containing the priors of a generative model, e.g. the prior over hidden states (D vector). 
     `levels_to_remove` [list]: a list of the hidden state or observation levels to remove. If the prior in question has multiple hidden state factors / multiple observation modalities, 
         then this will be a list of lists, where each sub-list within `levels_to_remove` will contain the levels to prune for a particular hidden state factor or modality 
+    `dirichlet` [bool]: a flag telling whether the input array is a Dirichlet and therefore should not be normalized at the end. @TODO: Instead, the dirichlet parameters from the
+                        pruned columns should somehow be re-distributed among the remaining columns
     Returns:
     =========
     `reduced_prior` [1D np.ndarray or numpy object array with 1D entries]: The prior vector(s), after pruning, lacks the hidden state or modality levels indexed by `levels_to_remove`
@@ -176,9 +178,9 @@ def prune_prior(prior, levels_to_remove):
 
     return reduced_prior
 
-def prune_A(A, obs_levels_to_prune, state_levels_to_prune):
+def prune_A(A, obs_levels_to_prune, state_levels_to_prune, dirichlet = False):
     """
-    Function for pruning a prior (with potentially multiple hidden state factors)
+    Function for pruning a observation likelihood (with potentially multiple hidden state factors)
     Arguments:
     =========
     `A` [np.ndarray or numpy object array]: The observation model or mapping from hidden states to observations (A matrix) of the generative model.
@@ -186,6 +188,8 @@ def prune_A(A, obs_levels_to_prune, state_levels_to_prune):
         then this will be a list of lists, where each sub-list within `obs_levels_to_prune` will contain the observation levels to prune for a particular observation modality 
     `state_levels_to_prune` [list]: a list of the hidden state levels to remove (this will be the same across modalities, so it won't matter whether the `likelihood` array that's
     passed in is an object array or not)
+    `dirichlet` [bool]: a flag telling whether the input array is a Dirichlet and therefore should not be normalized at the end. @TODO: Instead, the dirichlet parameters from the
+                        pruned columns should somehow be re-distributed among the remaining columns
     Returns:
     =========
     `reduced_A` [np.ndarray or numpy object array]: The observation model, after pruning, which lacks the observation or hidden state levels given by the arguments `obs_levels_to_prune` and `state_levels_to_prune`
@@ -216,7 +220,10 @@ def prune_A(A, obs_levels_to_prune, state_levels_to_prune):
             rows_to_keep = np.array(list(set(range(no)) - set(obs_levels_to_prune[m])), dtype = np.intp)
             
             reduced_A[m] = A_i[np.ix_(rows_to_keep, *columns_to_keep_list)]
-        reduced_A = utils.norm_dist_obj_arr(reduced_A)
+        if not dirichlet:    
+            reduced_A = utils.norm_dist_obj_arr(reduced_A)
+        else:
+            raise(NotImplementedError("Need to figure out how to re-distribute concentration parameters from pruned rows/columns, across remaining rows/columns"))
     else: # in case of one observation modality
 
         assert all([type(o_levels_i) == int for o_levels_i in obs_levels_to_prune])
@@ -226,7 +233,73 @@ def prune_A(A, obs_levels_to_prune, state_levels_to_prune):
             
         reduced_A = A[np.ix_(rows_to_keep, *columns_to_keep_list)]
 
-        reduced_A = utils.norm_dist(reduced_A)
+        if not dirichlet:
+            reduced_A = utils.norm_dist(reduced_A)
+        else:
+            raise(NotImplementedError("Need to figure out how to re-distribute concentration parameters from pruned rows/columns, across remaining rows/columns"))
 
     return reduced_A
 
+def prune_B(B, state_levels_to_prune, action_levels_to_prune, dirichlet = False):
+    """
+    Function for pruning a transition likelihood (with potentially multiple hidden state factors)
+    Arguments:
+    =========
+    `B` [np.ndarray or numpy object array]: The transition model or mapping from hidden states at time t to hidden states at time t+1 (B matrix) of the generative model.
+    `state_levels_to_prune` [list]: a list of the hidden state levels to remove, one per hidden state factor. Or just a list of integers if there's one hidden state factor
+    `action_levels_to_prune` [list]: a list of the action levels to remove, one per control state factor. Or just a list of integers if there's one control state factor
+    `dirichlet` [bool]: a flag telling whether the input array is a Dirichlet and therefore should not be normalized at the end. @TODO: Instead, the dirichlet parameters from the
+                        pruned columns should somehow be re-distributed among the remaining columns
+    Returns:
+    =========
+    `reduced_B` [np.ndarray or numpy object array]: The transition model, after pruning, which lacks the hidden state levels /action levels given by the arguments `state_levels_to_prune` and `action_levels_to_prune`
+    """
+
+    slices_to_keep_list = []
+
+    if utils.is_arr_of_arr(B):
+
+        num_controls = [B_arr.shape[2] for _, B_arr in enumerate(B)]
+
+        for c, nc in enumerate(num_controls):
+            indices_c = np.array( list(set(range(nc)) - set(action_levels_to_prune[c])), dtype = np.intp)
+            slices_to_keep_list.append(indices_c)
+    else:
+        num_controls = B.shape[2]
+        slices_to_keep = np.array( list(set(range(num_controls)) - set(action_levels_to_prune)), dtype = np.intp )
+
+    if utils.is_arr_of_arr(B): # in case of multiple hidden state factors
+
+        assert all([type(ns_f_levels) == list for ns_f_levels in state_levels_to_prune])
+
+        num_factors = len(B)
+
+        reduced_B = utils.obj_array(num_factors)
+        
+        for f, B_f in enumerate(B): # loop over modalities
+            
+            ns = B_f.shape[0]
+            states_to_keep = np.array(list(set(range(ns)) - set(state_levels_to_prune[f])), dtype = np.intp)
+            
+            reduced_B[f] = B_f[np.ix_(states_to_keep, states_to_keep, slices_to_keep_list[f])]
+
+        if not dirichlet:    
+            reduced_B = utils.norm_dist_obj_arr(reduced_B)
+        else:
+            raise(NotImplementedError("Need to figure out how to re-distribute concentration parameters from pruned rows/columns, across remaining rows/columns"))
+
+    else: # in case of one hidden state factor
+
+        assert all([type(state_level_i) == int for state_level_i in state_levels_to_prune])
+
+        ns = B.shape[0]
+        states_to_keep = np.array(list(set(range(ns)) - set(state_levels_to_prune)), dtype = np.intp)
+            
+        reduced_B = B[np.ix_(states_to_keep, states_to_keep, slices_to_keep)]
+
+        if not dirichlet:
+            reduced_B = utils.norm_dist(reduced_B)
+        else:
+            raise(NotImplementedError("Need to figure out how to re-distribute concentration parameters from pruned rows/columns, across remaining rows/columns"))
+
+    return reduced_B
