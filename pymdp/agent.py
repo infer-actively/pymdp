@@ -73,12 +73,13 @@ class Agent(object):
             raise TypeError(
                 'A matrix must be a numpy array'
             )
-        self.A = A
 
-        A = utils.to_arr_of_arr(A)
+        self.A = utils.to_arr_of_arr(A)
+
+        assert utils.is_normalized(self.A), "A matrix is not normalized (i.e. A.sum(axis = 0) must all equal 1.0"
 
         # Determine number of modalities and their dimensionaliti
-        self.num_obs = [A[m].shape[0] for m in range(len(A))]
+        self.num_obs = [self.A[m].shape[0] for m in range(len(self.A))]
         self.num_modalities = len(self.num_obs)
 
         """ Assigning prior parameters on observation model (pA matrices) """
@@ -89,39 +90,38 @@ class Agent(object):
             raise TypeError(
                 'B matrix must be a numpy array'
             )
-        self.B = B
 
-        B = utils.to_arr_of_arr(B)
+        self.B = utils.to_arr_of_arr(B)
+
+        assert utils.is_normalized(self.B), "A matrix is not normalized (i.e. A.sum(axis = 0) must all equal 1.0"
 
         # Determine number of hidden state factors and their dimensionalities
-        self.num_states = [B[f].shape[0] for f in range(len(B))]
+        self.num_states = [self.B[f].shape[0] for f in range(len(self.B))]
         self.num_factors = len(self.num_states)
 
         """ Assigning prior parameters on transition model (pB matrices) """
         self.pB = pB
 
+        # If no `num_controls` are given, then this is inferred from the shapes of the input B matrices
+        if num_controls == None:
+            self.num_controls = [B[f].shape[2] for f in range(self.num_factors)]
+
         # Users have the option to make only certain factors controllable.
         # default behaviour is to make all hidden state factors controllable
         # (i.e. self.num_states == self.num_controls)
         if control_fac_idx == None:
-            self.control_fac_idx = [f for f in range(self.num_factors) if B[f].shape[2] > 1]
+            self.control_fac_idx = [f for f in range(self.num_factors) if self.num_controls[f] > 1]
         else:
             self.control_fac_idx = control_fac_idx
 
             for factor_idx in control_fac_idx:
-                assert B[factor_idx].shape[2] > 1, "B matrix dimensions are not consistent with control factors"
+                assert self.num_controls[factor_idx] > 1, "Control factor (and B matrix) dimensions are not consistent with user-given control_fac_idx"
 
         # Again, the use can specify a set of possible policies, or
         # all possible combinations of actions and timesteps will be considered
         if policies == None:
             policies = self._construct_policies()
         self.policies = policies
-
-        # The user can specify the number of control states
-        # However, given the controllable factors, this can be inferred
-        if num_controls == None:
-            num_controls = self._construct_num_controls()
-        self.num_controls = num_controls
 
         assert all([len(self.num_controls) == policy.shape[1] for policy in self.policies]), "Number of control states is not consistent with policy dimensionalities"
         
@@ -140,6 +140,7 @@ class Agent(object):
         else:
             self.C = self._construct_C_prior()
 
+
         # Construct initial beliefs (uniform if not specified)
     
         if D is not None:
@@ -153,7 +154,9 @@ class Agent(object):
                 self.D = utils.norm_dist_obj_arr(pD)
             else:
                 self.D = self._construct_D_prior()
-        
+
+        assert utils.is_normalized(self.D), "A matrix is not normalized (i.e. A.sum(axis = 0) must all equal 1.0"
+
         """ Assigning prior parameters on initial hidden states (pD vectors) """
         self.pD = pD
 
@@ -209,8 +212,11 @@ class Agent(object):
         return D
 
     def _construct_policies(self):
+        # policies =  control.construct_policies(
+        #     self.num_states, None, self.policy_len, self.control_fac_idx
+        # )
         policies =  control.construct_policies(
-            self.num_states, None, self.policy_len, self.control_fac_idx
+            self.num_states, self.num_controls, self.policy_len, self.control_fac_idx
         )
 
         return policies
