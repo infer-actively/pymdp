@@ -646,6 +646,7 @@ class TestLearning(unittest.TestCase):
         expected_shape = (A.shape[0] - len(obs_levels_to_prune), A.shape[1] - len(state_levels_to_prune))
         self.assertTrue(A_pruned.shape == expected_shape)
         self.assertTrue(utils.is_normalized(A_pruned))
+
         """ Test 1d. Testing `prune_A()` in case of a multiple hidden state factors/modalities """
 
         num_obs = [3, 4, 5]
@@ -664,6 +665,61 @@ class TestLearning(unittest.TestCase):
             expected_shape = (no - len(obs_levels_to_prune[m]),) + tuple(expected_lagging_dimensions)
             self.assertTrue(A_pruned[m].shape == expected_shape)
             self.assertTrue(utils.is_normalized(A_pruned[m]))
+        
+        """ Test 2a. Testing `prune_B()` in case of a single hidden state factor / control state factor """
+
+        B = utils.random_B_matrix([4], [3])[0]
+
+        state_levels_to_prune = [1, 3]
+        action_levels_to_prune = [0, 1]
+
+        B_pruned = learning.prune_B(B, state_levels_to_prune, action_levels_to_prune)
+
+        expected_shape = (B.shape[0] - len(state_levels_to_prune), B.shape[1] - len(state_levels_to_prune), B.shape[2] - len(action_levels_to_prune))
+        self.assertTrue(B_pruned.shape == expected_shape)
+        self.assertTrue(utils.is_normalized(B_pruned))
+
+        """ Test 2b. Testing `prune_B()` in case of a single hidden state factor, where control state levels aren't pruned at all """
+
+        B = utils.random_B_matrix([4], [3])[0]
+
+        state_levels_to_prune = [1, 3]
+        action_levels_to_prune = []
+
+        B_pruned = learning.prune_B(B, state_levels_to_prune, action_levels_to_prune)
+
+        expected_shape = (B.shape[0] - len(state_levels_to_prune), B.shape[1] - len(state_levels_to_prune), B.shape[2] - len(action_levels_to_prune))
+        self.assertTrue(B_pruned.shape == expected_shape)
+        self.assertTrue(utils.is_normalized(B_pruned))
+
+        """ Test 1c. Testing `prune_B()` in case of a single hidden state factor, where hidden state levels aren't pruned at all """
+        
+        B = utils.random_B_matrix([4], [3])[0]
+
+        state_levels_to_prune = []
+        action_levels_to_prune = [0]
+
+        B_pruned = learning.prune_B(B, state_levels_to_prune, action_levels_to_prune)
+
+        expected_shape = (B.shape[0] - len(state_levels_to_prune), B.shape[1] - len(state_levels_to_prune), B.shape[2] - len(action_levels_to_prune))
+        self.assertTrue(B_pruned.shape == expected_shape)
+        self.assertTrue(utils.is_normalized(B_pruned))
+        
+        """ Test 1d. Testing `prune_B()` in case of a multiple hidden state factors """
+
+        num_states = [2, 10, 4]
+        num_controls = [5, 3, 4]
+        B = utils.random_B_matrix(num_states, num_controls)
+
+        state_levels_to_prune = [ [0, 1], [], [1, 2, 3]]
+        action_levels_to_prune = [[], [0, 1], [1]]
+
+        B_pruned = learning.prune_B(B, state_levels_to_prune, action_levels_to_prune)
+
+        for f, ns in enumerate(num_states):
+            expected_shape = (ns - len(state_levels_to_prune[f]), ns - len(state_levels_to_prune[f]), num_controls[f] - len(action_levels_to_prune[f]))
+            self.assertTrue(B_pruned[f].shape == expected_shape)
+            self.assertTrue(utils.is_normalized(B_pruned[f]))
 
     
 
