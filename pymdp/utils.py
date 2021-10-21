@@ -209,6 +209,24 @@ def norm_dist_obj_arr(obj_arr):
     
     return normed_obj_array
 
+def is_normalized(dist):
+    """
+    Utility function for checking whether a single distribution or set of conditional categorical distributions is normalized.
+    Returns True if all distributions integrate to 1.0
+    """
+
+    if is_arr_of_arr(dist):
+        normed_arrays = []
+        for i, arr in enumerate(dist):
+            column_sums = arr.sum(axis=0)
+            normed_arrays.append(np.allclose(column_sums, np.ones_like(column_sums)))
+        out = all(normed_arrays)
+    else:
+        column_sums = dist.sum(axis=0)
+        out = np.allclose(column_sums, np.ones_like(column_sums))
+    
+    return out
+
 
 def is_arr_of_arr(arr):
     return arr.dtype == "object"
