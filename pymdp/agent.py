@@ -104,7 +104,7 @@ class Agent(object):
 
         # If no `num_controls` are given, then this is inferred from the shapes of the input B matrices
         if num_controls == None:
-            self.num_controls = [B[f].shape[2] for f in range(self.num_factors)]
+            self.num_controls = [self.B[f].shape[2] for f in range(self.num_factors)]
 
         # Users have the option to make only certain factors controllable.
         # default behaviour is to make all hidden state factors controllable
@@ -112,9 +112,11 @@ class Agent(object):
         if control_fac_idx == None:
             self.control_fac_idx = [f for f in range(self.num_factors) if self.num_controls[f] > 1]
         else:
+
+            assert max(control_fac_idx) <= (self.num_factors - 1), "Check control_fac_idx - must be consistent with `num_states` and `num_factors`..."
             self.control_fac_idx = control_fac_idx
 
-            for factor_idx in control_fac_idx:
+            for factor_idx in self.control_fac_idx:
                 assert self.num_controls[factor_idx] > 1, "Control factor (and B matrix) dimensions are not consistent with user-given control_fac_idx"
 
         # Again, the use can specify a set of possible policies, or
@@ -129,14 +131,18 @@ class Agent(object):
 
         assert all([n_c == max_action for (n_c, max_action) in zip(self.num_controls, list(np.max(all_policies, axis =0)+1))]), "Maximum number of actions is not consistent with `num_controls`"
 
-        # Construct prior preferences (uniform if not specified)
-        """ Initialise transition model (B matrices) """
+        """ Construct prior preferences (uniform if not specified) """
         if C is not None:
             if not isinstance(C, np.ndarray):
                 raise TypeError(
                     'C vector must be a numpy array'
                 )
             self.C = utils.to_arr_of_arr(C)
+
+            assert len(self.C) == self.num_modalities, f"Check C vector: number of sub-arrays must be equal to number of observation modalities: {self.num_modalities}"
+
+            for modality, c_m in enumerate(self.C):
+                assert c_m.shape[0] == self.num_obs[modality], f"Check C vector: number of rows of C vector for modality {modality} should be equal to {self.num_obs[modality]}"
         else:
             self.C = self._construct_C_prior()
 
@@ -149,6 +155,11 @@ class Agent(object):
                     'D vector must be a numpy array'
                 )
             self.D = utils.to_arr_of_arr(D)
+
+            assert len(self.D) == self.num-factors, f"Check D vector: number of sub-arrays must be equal to number of hidden state factors: {self.num_factors}"
+
+            for f, d_f in enumerate(self.D):
+                assert d_f.shape[0] == self.num_factors[f], f"Check D vector: number of entries of D vector for factor {f} should be equal to {self.num_states[f]}"
         else:
             if pD is not None:
                 self.D = utils.norm_dist_obj_arr(pD)
@@ -212,9 +223,7 @@ class Agent(object):
         return D
 
     def _construct_policies(self):
-        # policies =  control.construct_policies(
-        #     self.num_states, None, self.policy_len, self.control_fac_idx
-        # )
+        
         policies =  control.construct_policies(
             self.num_states, self.num_controls, self.policy_len, self.control_fac_idx
         )
