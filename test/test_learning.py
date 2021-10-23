@@ -191,6 +191,65 @@ class TestLearning(unittest.TestCase):
                 validation_pA = pA[modality]
             self.assertTrue(np.all(pA_updated[modality] == validation_pA))
     
+    def test_update_pA_diff_observation_formats(self):
+        """
+        Test for updating prior Dirichlet parameters over sensory likelihood (pA)
+        in the case that observation is stored in various formats
+        """
+
+        num_states = [2, 6]
+        qs = utils.random_single_categorical(num_states)
+        l_rate = 1.0
+
+        # multiple observation modalities
+        num_obs = [3, 4, 5]
+        modalities_to_update = "all"
+        A = utils.random_A_matrix(num_obs, num_states)
+        pA = utils.obj_array_ones([A_m.shape for A_m in A])
+
+        observation_list = [0, 3, 2]
+
+        pA_updated_1 = learning.update_likelihood_dirichlet(
+            pA, A, observation_list, qs, lr=l_rate, modalities=modalities_to_update)
+
+        observation_tuple = (0, 3, 2)
+
+        pA_updated_2 = learning.update_likelihood_dirichlet(
+            pA, A, observation_tuple, qs, lr=l_rate, modalities=modalities_to_update)
+        
+        observation_obj_array = utils.process_observation((0, 3, 2), len(num_obs), num_obs)
+
+        pA_updated_3 = learning.update_likelihood_dirichlet(
+            pA, A, observation_obj_array, qs, lr=l_rate, modalities=modalities_to_update)
+
+        for modality, _ in enumerate(num_obs):
+            
+            self.assertTrue(np.allclose(pA_updated_1[modality], pA_updated_2[modality]))
+            self.assertTrue(np.allclose(pA_updated_1[modality], pA_updated_3[modality]))
+
+        # now do the same for case of single modality
+
+        num_states = [2, 6]
+        qs = utils.random_single_categorical(num_states)
+        l_rate = 1.0
+
+        num_obs = [3]
+        modalities_to_update = "all"
+        A = utils.random_A_matrix(num_obs, num_states)
+        pA = utils.dirichlet_like(A)
+
+        observation_int = 2
+
+        pA_updated_1 = learning.update_likelihood_dirichlet(
+            pA, A, observation_int, qs, lr=l_rate, modalities=modalities_to_update)
+
+        observation_onehot = utils.onehot(2, num_obs[0])
+
+        pA_updated_2 = learning.update_likelihood_dirichlet(
+            pA, A, observation_onehot, qs, lr=l_rate, modalities=modalities_to_update)
+        
+        self.assertTrue(np.allclose(pA_updated_1[0], pA_updated_2[0]))
+
     def test_update_pB_single_factor_no_actions(self):
         """
         Test for updating prior Dirichlet parameters over transition likelihood (pB)
