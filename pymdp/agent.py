@@ -20,15 +20,13 @@ class Agent(object):
 
     def __init__(
         self,
-        A=None,
-        pA=None,
-        B=None,
-        pB=None,
+        A,
+        B,
         C=None,
         D=None,
+        pA=None,
+        pB = None,
         pD = None,
-        num_states=None,
-        num_obs=None,
         num_controls=None,
         policy_len=1,
         inference_horizon=1,
@@ -145,7 +143,6 @@ class Agent(object):
                 assert c_m.shape[0] == self.num_obs[modality], f"Check C vector: number of rows of C vector for modality {modality} should be equal to {self.num_obs[modality]}"
         else:
             self.C = self._construct_C_prior()
-
 
         # Construct initial beliefs (uniform if not specified)
     
