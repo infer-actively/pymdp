@@ -227,10 +227,8 @@ def is_normalized(dist):
     
     return out
 
-
 def is_arr_of_arr(arr):
     return arr.dtype == "object"
-
 
 def to_arr_of_arr(arr):
     if is_arr_of_arr(arr):
@@ -256,10 +254,22 @@ def process_observation_seq(obs_seq, n_modalities, n_observations):
 def process_observation(obs, num_modalities, num_observations):
     """
     Helper function for formatting observations    
-
-        Observations can either be `int` (converted to one-hot)
-        `tuple` (obs for each modality), or `list` (obs for each modality)
+    USAGE NOTES:
+    - If `obs` is a 1D numpy array, it must be a one-hot vector, where one entry (the entry of the observation) is 1.0 
+    and all other entries are 0. This therefore assumes it's a single modality observation. If these conditions are met, then
+    this function will return `obs` unchanged. Otherwise, it'll throw an error.
+    - If `obs` is an int, it assumes this is a single modality observation, whose observation index is given by the value of `obs`. This function will convert
+    it to be a one hot vector.
+    - If `obs` is a list, it assumes this is a multiple modality observation, whose len is equal to the number of observation modalities,
+    and where each entry `obs[m]` is the index of the observation, for that modality. This function will convert it into an object array
+    of one-hot vectors.
+    - If `obs` is a tuple, same logic as applies for list (see above).
+    - if `obs` is a numpy object array (array of arrays), this function will return `obs` unchanged.
     """
+
+    if isinstance(obs, np.ndarray) and not is_arr_of_arr(obs):
+        assert num_modalities == 1, "If `obs` is a 1D numpy array, `num_modalities` must be equal to 1"
+        assert len(np.where(obs)[0]) == 1, "If `obs` is a 1D numpy array, it must be a one hot vector (e.g. np.array([0.0, 1.0, 0.0, ....]))"
 
     if isinstance(obs, (int, np.integer)):
         obs = onehot(obs, num_observations[0])
