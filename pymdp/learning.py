@@ -21,7 +21,16 @@ def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, modalities="all"):
     - A [numpy object array]:
         The observation likelihood of the generative model. 
     - obs [numpy 1D array, array-of-arrays (with 1D numpy array entries), int, list, or tuple]:
-        A discrete observation (possible multi-modality) used in the update equation
+        A discrete observation (possible multi-modality) used in the update equation.
+        @NOTE on input formats:
+        - If `obs` is a 1D numpy array, it must be a one-hot vector, where one entry (the entry of the observation) is 1.0 
+        and all other entries are 0. This therefore assumes it's a single modality observation. 
+        - If `obs` is an int, it assumes this is a single modality observation, whose observation index is given by the value of `obs`
+        - If `obs` is a list, it assumes this is a multiple modality observation, whose len is equal to the number of observation modalities,
+        and where each entry `obs[m]` is the index of the observation, for that modality.
+        - If `obs` is a tuple, same logic as applies for list (see above).
+        - if `obs` is a numpy object array (array of arrays), then this assumes the observation is a multiple modality observation, where each
+        sub-array of `obs` is a 1D numpy array with a 1.0 in one entry and 0 everywhere else -- i.e. an object array of onehots.
     - qs [numpy object array (where each entry is a numpy 1D array)]:
         Current marginal posterior beliefs about hidden state factors
     - lr [float, optional]:
