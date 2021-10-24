@@ -580,6 +580,163 @@ class TestControl(unittest.TestCase):
 
         self.assertTrue(np.allclose(efe, efe_valid))
         self.assertTrue(np.allclose(q_pi, q_pi_valid))
+    
+    def test_temporal_C_matrix(self):
+        """ Unit-tests for preferences that change over time """
+
+        '''Test with single observation modality, single hidden state factor and single timestep, and non-temporal C vector'''
+
+        num_obs = [3]
+        num_states = [3]
+        num_controls = [3]
+
+        qs = utils.obj_array_uniform(num_states)
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+        C = utils.obj_array_zeros(num_obs)
+        C[0][0] = 1.0  
+        C[0][1] = -2.0  
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=3)
+
+        q_pi, efe = control.update_posterior_policies(
+            qs,
+            A,
+            B,
+            C,
+            policies,
+            use_utility = True,
+            use_states_info_gain = False,
+            use_param_info_gain = False,
+            pA=None,
+            pB=None,
+            gamma=16.0
+        )
+
+        factor_idx = 0
+        modality_idx = 0
+        t_idx = 0
+
+        efe_valid = np.zeros(len(policies))
+
+        for idx, policy in enumerate(policies):
+
+            qs_pi = control.get_expected_states(qs, B, policy)
+            qo_pi = control.get_expected_obs(qs_pi, A)
+
+            for t_idx in range(3):
+                for modality_idx in range(len(A)):
+                    lnC = maths.spm_log_single(maths.softmax(C[modality_idx][:, np.newaxis]))
+                    efe_valid[idx] += qo_pi[t_idx][modality_idx].dot(lnC)
+
+        q_pi_valid = maths.softmax(efe_valid * 16.0)
+
+        self.assertTrue(np.allclose(efe, efe_valid))
+        self.assertTrue(np.allclose(q_pi, q_pi_valid))
+
+        '''Test with single observation modality, single hidden state factor and single timestep, and temporal C vector'''
+
+        num_obs = [3]
+        num_states = [3]
+        num_controls = [3]
+
+        qs = utils.obj_array_uniform(num_states)
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+        C = utils.obj_array_zeros([(3,3)])
+        C[0][0,:] = np.array([1.0, 2.0, 0.0])
+        C[0][1,:] = np.array([-2.0, -1.0, 0.0])  
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=3)
+
+        q_pi, efe = control.update_posterior_policies(
+            qs,
+            A,
+            B,
+            C,
+            policies,
+            use_utility = True,
+            use_states_info_gain = False,
+            use_param_info_gain = False,
+            pA=None,
+            pB=None,
+            gamma=16.0
+        )
+
+        factor_idx = 0
+        modality_idx = 0
+        t_idx = 0
+
+        efe_valid = np.zeros(len(policies))
+
+        for idx, policy in enumerate(policies):
+
+            qs_pi = control.get_expected_states(qs, B, policy)
+            qo_pi = control.get_expected_obs(qs_pi, A)
+
+            for t_idx in range(3):
+                for modality_idx in range(len(A)):
+                    lnC = maths.spm_log_single(maths.softmax(C[modality_idx][:, t_idx]))
+                    efe_valid[idx] += qo_pi[t_idx][modality_idx].dot(lnC)
+
+        q_pi_valid = maths.softmax(efe_valid * 16.0)
+
+        self.assertTrue(np.allclose(efe, efe_valid))
+        self.assertTrue(np.allclose(q_pi, q_pi_valid))
+
+        '''Test with multiple observation modalities, multiple hidden state factors and multiple timesteps'''
+
+        num_obs = [3, 3]
+        num_states = [3, 2]
+        num_controls = [3, 1]
+
+        qs = utils.random_single_categorical(num_states)
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+        C = utils.obj_array(len(num_obs))
+
+        # C vectors for modalities 0 is time-dependent
+        C[0] = np.random.rand(3, 3) 
+
+        # C vectors for modalities 1 is time-independent
+        C[1] = np.random.rand(3)
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=3)
+
+        q_pi, efe = control.update_posterior_policies(
+            qs,
+            A,
+            B,
+            C,
+            policies,
+            use_utility = True,
+            use_states_info_gain = False,
+            use_param_info_gain = False,
+            pA=None,
+            pB=None,
+            gamma=16.0
+        )
+
+        efe_valid = np.zeros(len(policies))
+
+        for idx, policy in enumerate(policies):
+
+            qs_pi = control.get_expected_states(qs, B, policy)
+            qo_pi = control.get_expected_obs(qs_pi, A)
+
+            for t_idx in range(3):
+                for modality_idx in range(len(A)):
+                    if modality_idx == 0:
+                        lnC = maths.spm_log_single(maths.softmax(C[modality_idx][:, t_idx]))
+                    elif modality_idx == 1:
+                        lnC = maths.spm_log_single(maths.softmax(C[modality_idx][:, np.newaxis]))
+                    efe_valid[idx] += qo_pi[t_idx][modality_idx].dot(lnC)
+        
+        q_pi_valid = maths.softmax(efe_valid * 16.0)
+
+        self.assertTrue(np.allclose(efe, efe_valid))
+        self.assertTrue(np.allclose(q_pi, q_pi_valid))
+
 
     def test_update_posterior_policies_states_infogain(self):
         """
