@@ -18,22 +18,6 @@ from pymdp import utils, maths
 from pymdp import inference, control, learning
 
 class TestAgent(unittest.TestCase):
-   
-    def test_agent_init_with_control_fac_idx(self):
-        """
-        Initialize instance of the agent class and pass in a custom `control_fac_idx`
-        """
-
-        num_obs = [2, 4]
-        num_states = [2, 2]
-        num_controls = [2, 2]
-        A = utils.random_A_matrix(num_obs, num_states)
-        B = utils.random_B_matrix(num_states, num_controls)
-
-        agent = Agent(A=A, B=B, control_fac_idx=[1])
-
-        self.assertEqual(agent.num_controls[0], 1)
-        self.assertEqual(agent.num_controls[1], 2)
     
     def test_agent_init_without_control_fac_idx(self):
         """
