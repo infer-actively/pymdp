@@ -1313,6 +1313,47 @@ class TestControl(unittest.TestCase):
 
         chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
         self.assertEqual(int(chosen_action[0]), 1)
+    
+    def test_update_posterior_policies_withE_vector(self):
+        """
+        Test update posterior policies in the case that there is a prior over policies
+        """
+
+        """ Construct an explicit example where policy 0 is preferred based on utility,
+        but action 2 also gets a bump in probability because of prior over policies
+        """
+        num_obs = [3]
+        num_states = [3]
+        num_controls = [3]
+
+        qs = utils.to_arr_of_arr(utils.onehot(0, num_states[0]))
+        A = utils.to_arr_of_arr(np.eye(num_obs[0]))
+        B = utils.construct_controllable_B(num_states, num_controls)
+        
+        C = utils.to_arr_of_arr(np.array([1.5, 1.0, 1.0]))
+
+        D = utils.to_arr_of_arr(utils.onehot(0, num_states[0]))
+        E = np.array([0.05, 0.05, 0.9])
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=1)
+
+        q_pi, efe = control.update_posterior_policies(
+            qs,
+            A,
+            B,
+            C,
+            policies,
+            use_utility = True,
+            use_states_info_gain = False,
+            use_param_info_gain = False,
+            pA=None,
+            pB=None,
+            E = E,
+            gamma=16.0
+        )
+
+        self.assertGreater(q_pi[0], q_pi[1])
+        self.assertGreater(q_pi[2], q_pi[1])
 
 
 if __name__ == "__main__":
