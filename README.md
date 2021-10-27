@@ -61,16 +61,26 @@ action = my_agent.sample_action() # sample an action
 
 ## Getting started / introductory material
 
-For a gentle, pedagogical introduction to active inference in discrete state-spaces, we recommend starting with two tutorial notebooks hosted on Google Colab, that provide a step-by-step walkthrough of simulating active inference agents in partially-observed Markov Decision Processes (POMDPs). 
+For a gentle, pedagogical introduction to active inference in discrete state-spaces, we recommend starting with two tutorial notebooks hosted on Google Colab, part of a series called:
 
-The first notebook [**Introduction to Active Inference and Grid-world**](https://colab.research.google.com/drive/1m9Hhd7GnJEsbMrKf5khCh3EQnbjoCahw?usp=sharing) relies only on `numpy` and some plotting libraries. The purpose of this tutorial is to give a pedagogical overview of active inference, and a technical introduction to representing Categorical distributions (both marginal and conditional) with multidimensional `numpy` arrays.
+###
+**Active Inference with `pymdp`**
 
-The second notebook [**Simulating active inference from scratch**](https://colab.research.google.com/drive/13XfDDh2m-nHf8I_BPbQHhwUGxPgQLpjv?usp=sharing) walks the user through the construction of a generative model through the `A`, `B`, `C`, and `D` arrays - the key Categorical distributions that characterize an active inference agent's "mind". The notebook also goes through the mathematical operations (both formally and in code) required to perform inference and planning in a simple gridworld navigation task.
+This series is (so far) separated into a [Part I](https://colab.research.google.com/drive/1Ux_jSFzXothHt6VKJRzLMXUBKvW8hdD8?usp=sharing) and a [Part II](https://colab.research.google.com/drive/1Q51jamhazOF0jHbB26TIwfujY5hBMEaf?usp=sharing). These two notebooks together provide a step-by-step walkthrough of simulating active inference agents in partially-observed Markov Decision Processes (POMDPs) using `pymdp`. We encourage you to step through these notebooks, cell-by-cell,  and fill out the suggested exercises as you go along. The solutions for each exercise are posted below as expandable hidden cells.
 
-Special thanks to [Beren Millidge](https://github.com/BerenMillidge) and [Daphne Demekas](https://github.com/daphnedemekas) for their help in constructing these tutorials, which were originally based on a set of tutorial notebooks written by [Alec Tschantz](https://github.com/alec-tschantz).
+- [Active inference with pymdp: Tutorial 1](https://colab.research.google.com/drive/1Ux_jSFzXothHt6VKJRzLMXUBKvW8hdD8?usp=sharing) walks you through representing Categorical distributions (both conditional and marginal) with `NumPy` NDarrays, building a generative model by writing down a set of likelihood and prior distributions, and finally simulating an active inference agent performing inference and action to successfully navigate to a desired location in a simple 2-D grid world.
+
+- [Active inference with pymdp: Tutorial 2](https://colab.research.google.com/drive/1Q51jamhazOF0jHbB26TIwfujY5hBMEaf?usp=sharing) introduces tools for constructing more complex generative models, notably by separating observations different *modalities* and hidden states into different *factors*. As an example, we construct a multi-modality and multi-factor model for use in a Multi-Armed Bandit task, stepping through each of the constituent arrays of the generative model and explaining the structure of the matrices. We then plug this model into the `Agent()` constructor to initialize an active inference agent, and demonstrate how to run an active inference loop using `Agent()` in a few simple lines. This notebook exemplifies most high-level and abstracted API offered by `pymdp`.  
 
 ## Other `pymdp` material
 
+-[**Introduction to Active Inference and Grid-world**](https://colab.research.google.com/drive/1m9Hhd7GnJEsbMrKf5khCh3EQnbjoCahw?usp=sharing) relies only on `numpy` and some plotting libraries. The purpose of this tutorial is to give a pedagogical overview of active inference, and a technical introduction to representing Categorical distributions (both marginal and conditional) with multidimensional `numpy` arrays.
+
+-[**Simulating active inference from scratch**](https://colab.research.google.com/drive/13XfDDh2m-nHf8I_BPbQHhwUGxPgQLpjv?usp=sharing) walks the user through the construction of a generative model through the `A`, `B`, `C`, and `D` arrays - the key Categorical distributions that characterize an active inference agent's "mind". The notebook also goes through the mathematical operations (both formally and in code) required to perform inference and planning in a simple gridworld navigation task.
+
+Special thanks to [Beren Millidge](https://github.com/BerenMillidge) and [Daphne Demekas](https://github.com/daphnedemekas) for their help in constructing these tutorials, which were originally based on a set of tutorial notebooks written by [Alec Tschantz](https://github.com/alec-tschantz).
+
+## The `Agent()` class
 The highest level API that `pymdp` currently offers is the `Agent()` class - this is a class whose methods abstract the core mathematical operations involved in active inference, which themselves have been abstracted by `pymdp`'s lower level libraries (e.g. `pymdp.inference`). 
 
 For an illustrative tutorial on how to instantiate and use an `Agent()`, we recommend going through the Jupyter notebooks in the `pymdp/examples/` folder - the `agent_demo.ipynb` notebook and the `tmaze_demo.ipynb` notebooks are a good place to start for tutorials related to using the agent.
