@@ -24,6 +24,7 @@ class Agent(object):
         B,
         C=None,
         D=None,
+        E = None,
         pA=None,
         pB = None,
         pD = None,
@@ -76,7 +77,7 @@ class Agent(object):
 
         assert utils.is_normalized(self.A), "A matrix is not normalized (i.e. A.sum(axis = 0) must all equal 1.0"
 
-        # Determine number of modalities and their dimensionaliti
+        """ Determine number of observation modalities and their respective dimensions """
         self.num_obs = [self.A[m].shape[0] for m in range(len(self.A))]
         self.num_modalities = len(self.num_obs)
 
@@ -130,6 +131,7 @@ class Agent(object):
         assert all([n_c == max_action for (n_c, max_action) in zip(self.num_controls, list(np.max(all_policies, axis =0)+1))]), "Maximum number of actions is not consistent with `num_controls`"
 
         """ Construct prior preferences (uniform if not specified) """
+
         if C is not None:
             if not isinstance(C, np.ndarray):
                 raise TypeError(
@@ -144,7 +146,7 @@ class Agent(object):
         else:
             self.C = self._construct_C_prior()
 
-        # Construct initial beliefs (uniform if not specified)
+        """ Construct prior over hidden states (uniform if not specified) """
     
         if D is not None:
             if not isinstance(D, np.ndarray):
@@ -168,6 +170,20 @@ class Agent(object):
         """ Assigning prior parameters on initial hidden states (pD vectors) """
         self.pD = pD
 
+        """ Construct prior over policies (uniform if not specified) """
+
+        if E is not None:
+            if not isinstance(E, np.ndarray):
+                raise TypeError(
+                    'E vector must be a numpy array'
+                )
+            self.E = E
+
+            assert len(self.E) == len(self.policies), f"Check E vector: length of E must be equal to number of policies: {len(self.policies)}"
+
+        else:
+            self.E = self._construct_E_prior()
+        
         self.edge_handling_params = {}
         self.edge_handling_params['use_BMA'] = use_BMA # creates a 'D-like' moving prior
         self.edge_handling_params['policy_sep_prior'] = policy_sep_prior # carries forward last timesteps posterior, in a policy-conditioned way
@@ -233,6 +249,10 @@ class Agent(object):
         )
         
         return num_controls
+    
+    def _construct_E_prior(self):
+        E = np.ones(len(self.policies)) / len(self.policies)
+        return E
 
     def reset(self, init_qs=None):
 
@@ -440,7 +460,8 @@ class Agent(object):
                 self.use_param_info_gain,
                 self.pA,
                 self.pB,
-                self.gamma
+                E = self.E,
+                gamma = self.gamma
             )
         elif self.inference_algo == "MMP":
 
@@ -458,8 +479,8 @@ class Agent(object):
                 self.latest_belief,
                 self.pA,
                 self.pB,
-                self.F,
-                E = None,
+                F = self.F,
+                E = self.E,
                 gamma = self.gamma
             )
 

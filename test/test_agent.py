@@ -359,10 +359,6 @@ class TestAgent(unittest.TestCase):
 
             self.assertTrue(np.allclose(pD_test[factor], pD_validation[factor]))
         
-        
-
-
-
 
 
 if __name__ == "__main__":

@@ -63,9 +63,13 @@ def update_posterior_policies_mmp(
     efe = np.zeros(num_policies)
 
     if F is None:
-        F = np.zeros(num_policies)
+        F = spm_log_single(np.ones(num_policies) / num_policies)
+
     if E is None:
-        E = np.zeros(num_policies)
+        lnE = spm_log_single(np.ones(num_policies) / num_policies)
+    else:
+        lnE = spm_log_single(E) 
+
 
     for p_idx, policy in enumerate(policies):
 
@@ -83,9 +87,8 @@ def update_posterior_policies_mmp(
             if pB is not None:
                 efe[p_idx] += calc_pB_info_gain(pB, qs_seq_pi[p_idx], prior, policy)
 
-        
-    q_pi = softmax(efe * gamma - F + E)
-   
+    q_pi = softmax(efe * gamma - F + lnE)
+    
     return q_pi, efe
 
 
@@ -151,7 +154,9 @@ def update_posterior_policies(
     q_pi = np.zeros((n_policies, 1))
 
     if E is None:
-        E = np.zeros(n_policies)
+        lnE = spm_log_single(np.ones(n_policies) / n_policies)
+    else:
+        lnE = spm_log_single(E) 
 
     for idx, policy in enumerate(policies):
         qs_pi = get_expected_states(qs, B, policy)
@@ -169,7 +174,7 @@ def update_posterior_policies(
             if pB is not None:
                 efe[idx] += calc_pB_info_gain(pB, qs_pi, qs, policy)
 
-    q_pi = softmax(efe * gamma + E)    
+    q_pi = softmax(efe * gamma + lnE)    
 
     return q_pi, efe
 
