@@ -12,7 +12,8 @@ Most of the low-level mathematical operations are [NumPy](https://github.com/num
 
 ## Status
 
-![status](https://img.shields.io/badge/status-development-orange)
+![status](https://img.shields.io/badge/status-active-green)
+![PyPI version](https://img.shields.io/pypi/v/inferactively-pymdp)
 
 ## Installation and Usage
 
