@@ -153,7 +153,7 @@ class Agent(object):
                 )
             self.D = utils.to_arr_of_arr(D)
 
-            assert len(self.D) == self.num-factors, f"Check D vector: number of sub-arrays must be equal to number of hidden state factors: {self.num_factors}"
+            assert len(self.D) == self.num_factors, f"Check D vector: number of sub-arrays must be equal to number of hidden state factors: {self.num_factors}"
 
             for f, d_f in enumerate(self.D):
                 assert d_f.shape[0] == self.num_factors[f], f"Check D vector: number of entries of D vector for factor {f} should be equal to {self.num_states[f]}"
