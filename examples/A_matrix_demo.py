@@ -45,7 +45,7 @@ A_stub = create_A_matrix_stub(model_labels)
 if read_from_excel:
     ## Option 1: fill out A matrix 'offline' (e.g. in an excel spreadsheet)
 
-    excel_dir = 'tmp_dir'
+    excel_dir = 'examples/tmp_dir'
     if not os.path.exists(excel_dir):
         os.mkdir(excel_dir)
 
@@ -93,3 +93,5 @@ qs = run_fpi(A, observation, num_obs, n_states, prior=None, num_iter=10, dF=1.0,
 
 print('Belief that it rained: %.2f'%(qs[0][0]))
 print('Belief that the sprinkler was on: %.2f'%(qs[1][0]))
+
+# %%
