@@ -333,6 +333,15 @@ def softmax(dist):
     output = output / np.sum(output, axis=0)
     return output
 
+def softmax_obj_arr(arr):
+
+    output = utils.obj_array(len(arr))
+
+    for i, arr_i in enumerate(arr):
+        output[i] = softmax(arr_i)
+    
+    return output
+
 def calc_free_energy(qs, prior, n_factors, likelihood=None):
     """ Calculate variational free energy
     @TODO Primarily used in FPI algorithm, needs to be made general

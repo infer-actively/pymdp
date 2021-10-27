@@ -9,7 +9,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import itertools
 import numpy as np
-from pymdp.maths import softmax, spm_dot, spm_wnorm, spm_MDP_G, spm_log_single, spm_log_obj_array
+from pymdp.maths import softmax, softmax_obj_arr, spm_dot, spm_wnorm, spm_MDP_G, spm_log_single, spm_log_obj_array
 from pymdp import utils
 import copy
 
@@ -267,9 +267,21 @@ def calc_expected_utility(qo_pi, C):
 
     # loop over time points and modalities
     num_modalities = len(C)
+
+    # reformat C to be tiled across timesteps, if it's not already
+    modalities_to_tile = [modality_i for modality_i in range(num_modalities) if C[modality_i].ndim == 1]
+
+    # make a deepcopy of C where it has been tiled across timesteps
+    C_tiled = copy.deepcopy(C)
+    for modality in modalities_to_tile:
+        C_tiled[modality] = np.tile(C[modality][:,None], (1, n_steps) )
+    
+    C_prob = softmax_obj_arr(C_tiled) # convert relative log probabilities into proper probability distribution
+
     for t in range(n_steps):
         for modality in range(num_modalities):
-            lnC = spm_log_single(softmax(C[modality][:, np.newaxis]))
+
+            lnC = spm_log_single(C_prob[modality][:, t])
             expected_util += qo_pi[t][modality].dot(lnC)
 
     return expected_util

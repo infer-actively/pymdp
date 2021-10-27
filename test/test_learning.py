@@ -226,7 +226,7 @@ class TestLearning(unittest.TestCase):
             
             self.assertTrue(np.allclose(pA_updated_1[modality], pA_updated_2[modality]))
             self.assertTrue(np.allclose(pA_updated_1[modality], pA_updated_3[modality]))
-
+       
         # now do the same for case of single modality
 
         num_states = [2, 6]
@@ -249,6 +249,7 @@ class TestLearning(unittest.TestCase):
             pA, A, observation_onehot, qs, lr=l_rate, modalities=modalities_to_update)
         
         self.assertTrue(np.allclose(pA_updated_1[0], pA_updated_2[0]))
+
 
     def test_update_pB_single_factor_no_actions(self):
         """
