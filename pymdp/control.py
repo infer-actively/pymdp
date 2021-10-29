@@ -3,8 +3,11 @@
 # pylint: disable=no-member
 # pylint: disable=not-an-iterable
 
-""" Functions
-__author__: Conor Heins, Alexander Tschantz, Brennan Klein
+"""
+control.py
+================================
+Functions for performing inference of policies (control states) in POMDP generative models,
+according to the expected free energy
 """
 
 import itertools
@@ -30,23 +33,41 @@ def update_posterior_policies_mmp(
     gamma=16.0
 ):  
     """
-    `qs_seq_pi` [numpy object array]:
-                Posterior marginals beliefs over hidden states for each policy. 
-                The data structure is nested as policies --> timesteps --> hidden state factors. 
-                So qs_seq_pi[p_idx][t][f] is the belief about factor `f` at time `t`, under policy `p_idx`.
-                @TODO: Clarify whether this can also be lists, or must it be object arrays?
-    `A`: numpy object array that stores likelihood mappings for each modality.
-    `B`: numpy object array that stores transition matrices (possibly action-conditioned) for each hidden state factor
-    `policies`: numpy object array that stores each (potentially-multifactorial) policy in `policies[p_idx]`. Shape of `policies[p_idx]` is `(num_timesteps, num_factors)`
-    `use_utility`: Boolean that determines whether expected utility should be incorporated into computation of EFE (default: `True`)
-    `use_states_info_gain`: Boolean that determines whether state epistemic value (info gain about hidden states) should be incorporated into computation of EFE (default: `True`)
-    `use_param_info_gain`: Boolean that determines whether parameter epistemic value (info gain about generative model parameters) should be incorporated into computation of EFE (default: `False`)
-    `prior`: numpy object array that stores priors over hidden states - this matters when computing the first value of the parameter info gain for the Dirichlet parameters over B
-    `pA`: numpy object array that stores Dirichlet priors over likelihood mappings (one per modality)
-    `pB`: numpy object array that stores Dirichlet priors over transition mappings (one per hidden state factor)
-    `F` : 1D numpy array that stores variational free energy of each policy 
-    `E` : 1D numpy array that stores (log) prior probability each policy (e.g. 'habits')
-    `gamma`: Float that encodes the precision over policies
+    Update posterior beliefs about policies by computing expected free energy of each policy and integrating that
+    with the variational free energy of policies `F` and prior over policies `E`.
+    qs_seq_pi: numpy ndarray of dtype object
+        Posterior beliefs over hidden states for each policy. Nesting structure is policies, timepoints, factors,
+        where e.g. `qs_seq_pi[p][t][f]` stores the marginal belief about factor `f` at timepoint `t` under policy `p`.
+    A: numpy ndarray of dtype object
+        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element `A[m]` of
+        stores an `np.ndarray` multidimensional array for observation modality `m`, whose entries `A[m][i, j, k, ...]` store 
+        the probability of observation level `i` given hidden state levels `j, k, ...`
+    B: numpy ndarray of dtype object
+        Dynamics likelihood mapping or 'transition model', mapping from hidden states at `t` to hidden states at `t+1`, given some control state `u`.
+        Each element B[f] of this object array stores a 3-D tensor for hidden state factor `f`, whose entries `B[f][s, v, u] store the probability
+        of hidden state level `s` at the current time, given hidden state level `v` and action `u` at the previous time.
+    policies: numpy ndarray of dtype object
+        Array that stores each policy in `policies[p_idx]`. Shape of `policies[p_idx]` is `(num_timesteps, num_factors)` where `num_factors` is the 
+        number of control factors.
+    use_utility: Bool, default True
+        Boolean flag that determines whether expected utility should be incorporated into computation of EFE
+    use_states_info_gain: Bool, default True
+        Boolean flag that determines whether state epistemic value (info gain about hidden states) should be incorporated into computation of EFE
+    use_param_info_gain: Bool, default False 
+        Boolean flag that determines whether parameter epistemic value (info gain about generative model parameters) should be incorporated into computation of EFE 
+    prior: numpy ndarray of dtype object, optional
+        If provided, this a `numpy` object array with one sub-array per hidden state factor, that stores the prior beliefs about initial states. 
+        If `None`, this defaults to a flat (uninformative) prior over hidden states.
+    pA: numpy ndarray of dtype object, optional
+        Dirichlet parameters over observation model (same shape as A)
+    pB: numpy ndarray of dtype object, optional
+        Dirichlet parameters over transition model (same shape as B)
+    F: 1D numpy ndarray, optional
+        Vector of variational free energies for each policy
+    E: 1D numpy ndarray, optional
+        Vector of prior probabilities of each policy (what's referred to in the active inference literature as "habits")
+    gamma: float, default 16.0
+        Prior precision over policies, scales the contribution of the expected free energy to the posterior over policies
     """
 
     num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A, B)

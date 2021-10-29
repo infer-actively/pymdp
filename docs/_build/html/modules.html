@@ -46,8 +46,7 @@
 <span id="modules"></span><h1>Modules<a class="headerlink" href="#module-pymdp.inference" title="Permalink to this headline">¶</a></h1>
 <section id="inference-py">
 <h2>inference.py<a class="headerlink" href="#inference-py" title="Permalink to this headline">¶</a></h2>
-<p>Functions for performing inference of hidden states in POMDP generative models
-__author__: Conor Heins, Alexander Tschantz</p>
+<p>Functions for performing inference of hidden states in POMDP generative models</p>
 <dl class="py function">
 <dt class="sig sig-object py" id="pymdp.inference.average_states_over_policies">
 <span class="sig-prename descclassname"><span class="pre">pymdp.inference.</span></span><span class="sig-name descname"><span class="pre">average_states_over_policies</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">qs_pi</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">q_pi</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pymdp.inference.average_states_over_policies" title="Permalink to this definition">¶</a></dt>
@@ -180,8 +179,10 @@ array of beliefs about hidden states at different time points of inference horiz
 </dd></dl>
 
 </section>
-<span class="target" id="module-pymdp.control"></span><p>Functions
-__author__: Conor Heins, Alexander Tschantz, Brennan Klein</p>
+<span class="target" id="module-pymdp.control"></span><section id="control-py">
+<h2>control.py<a class="headerlink" href="#control-py" title="Permalink to this headline">¶</a></h2>
+<p>Functions for performing inference of policies (control states) in POMDP generative models,
+according to the expected free energy</p>
 <dl class="py function">
 <dt class="sig sig-object py" id="pymdp.control.calc_expected_utility">
 <span class="sig-prename descclassname"><span class="pre">pymdp.control.</span></span><span class="sig-name descname"><span class="pre">calc_expected_utility</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">qo_pi</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">C</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pymdp.control.calc_expected_utility" title="Permalink to this definition">¶</a></dt>
@@ -488,29 +489,51 @@ of the expected free energies of each policy</p></li>
 <dl class="py function">
 <dt class="sig sig-object py" id="pymdp.control.update_posterior_policies_mmp">
 <span class="sig-prename descclassname"><span class="pre">pymdp.control.</span></span><span class="sig-name descname"><span class="pre">update_posterior_policies_mmp</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">qs_seq_pi</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">A</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">B</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">C</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">policies</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_utility</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_states_info_gain</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_param_info_gain</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prior</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pA</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pB</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">F</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">E</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gamma</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">16.0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pymdp.control.update_posterior_policies_mmp" title="Permalink to this definition">¶</a></dt>
-<dd><dl class="simple">
-<dt><cite>qs_seq_pi</cite> [numpy object array]:</dt><dd><p>Posterior marginals beliefs over hidden states for each policy.
-The data structure is nested as policies –&gt; timesteps –&gt; hidden state factors.
-So qs_seq_pi[p_idx][t][f] is the belief about factor <cite>f</cite> at time <cite>t</cite>, under policy <cite>p_idx</cite>.
-&#64;TODO: Clarify whether this can also be lists, or must it be object arrays?</p>
+<dd><p>Update posterior beliefs about policies by computing expected free energy of each policy and integrating that
+with the variational free energy of policies <cite>F</cite> and prior over policies <cite>E</cite>.
+qs_seq_pi: numpy ndarray of dtype object</p>
+<blockquote>
+<div><p>Posterior beliefs over hidden states for each policy. Nesting structure is policies, timepoints, factors,
+where e.g. <cite>qs_seq_pi[p][t][f]</cite> stores the marginal belief about factor <cite>f</cite> at timepoint <cite>t</cite> under policy <cite>p</cite>.</p>
+</div></blockquote>
+<dl class="simple">
+<dt>A: numpy ndarray of dtype object</dt><dd><p>Sensory likelihood mapping or ‘observation model’, mapping from hidden states to observations. Each element <cite>A[m]</cite> of
+stores an <cite>np.ndarray</cite> multidimensional array for observation modality <cite>m</cite>, whose entries <cite>A[m][i, j, k, …]</cite> store
+the probability of observation level <cite>i</cite> given hidden state levels <cite>j, k, …</cite></p>
+</dd>
+<dt>B: numpy ndarray of dtype object</dt><dd><p>Dynamics likelihood mapping or ‘transition model’, mapping from hidden states at <cite>t</cite> to hidden states at <cite>t+1</cite>, given some control state <cite>u</cite>.
+Each element B[f] of this object array stores a 3-D tensor for hidden state factor <cite>f</cite>, whose entries <cite>B[f][s, v, u] store the probability
+of hidden state level `s</cite> at the current time, given hidden state level <cite>v</cite> and action <cite>u</cite> at the previous time.</p>
+</dd>
+<dt>policies: numpy ndarray of dtype object</dt><dd><p>Array that stores each policy in <cite>policies[p_idx]</cite>. Shape of <cite>policies[p_idx]</cite> is <cite>(num_timesteps, num_factors)</cite> where <cite>num_factors</cite> is the
+number of control factors.</p>
+</dd>
+<dt>use_utility: Bool, default True</dt><dd><p>Boolean flag that determines whether expected utility should be incorporated into computation of EFE</p>
+</dd>
+<dt>use_states_info_gain: Bool, default True</dt><dd><p>Boolean flag that determines whether state epistemic value (info gain about hidden states) should be incorporated into computation of EFE</p>
+</dd>
+<dt>use_param_info_gain: Bool, default False</dt><dd><p>Boolean flag that determines whether parameter epistemic value (info gain about generative model parameters) should be incorporated into computation of EFE</p>
+</dd>
+<dt>prior: numpy ndarray of dtype object, optional</dt><dd><p>If provided, this a <cite>numpy</cite> object array with one sub-array per hidden state factor, that stores the prior beliefs about initial states.
+If <cite>None</cite>, this defaults to a flat (uninformative) prior over hidden states.</p>
+</dd>
+<dt>pA: numpy ndarray of dtype object, optional</dt><dd><p>Dirichlet parameters over observation model (same shape as A)</p>
+</dd>
+<dt>pB: numpy ndarray of dtype object, optional</dt><dd><p>Dirichlet parameters over transition model (same shape as B)</p>
+</dd>
+<dt>F: 1D numpy ndarray, optional</dt><dd><p>Vector of variational free energies for each policy</p>
+</dd>
+<dt>E: 1D numpy ndarray, optional</dt><dd><p>Vector of prior probabilities of each policy (what’s referred to in the active inference literature as “habits”)</p>
+</dd>
+<dt>gamma: float, default 16.0</dt><dd><p>Prior precision over policies, scales the contribution of the expected free energy to the posterior over policies</p>
 </dd>
 </dl>
-<p><cite>A</cite>: numpy object array that stores likelihood mappings for each modality.
-<cite>B</cite>: numpy object array that stores transition matrices (possibly action-conditioned) for each hidden state factor
-<cite>policies</cite>: numpy object array that stores each (potentially-multifactorial) policy in <cite>policies[p_idx]</cite>. Shape of <cite>policies[p_idx]</cite> is <cite>(num_timesteps, num_factors)</cite>
-<cite>use_utility</cite>: Boolean that determines whether expected utility should be incorporated into computation of EFE (default: <cite>True</cite>)
-<cite>use_states_info_gain</cite>: Boolean that determines whether state epistemic value (info gain about hidden states) should be incorporated into computation of EFE (default: <cite>True</cite>)
-<cite>use_param_info_gain</cite>: Boolean that determines whether parameter epistemic value (info gain about generative model parameters) should be incorporated into computation of EFE (default: <cite>False</cite>)
-<cite>prior</cite>: numpy object array that stores priors over hidden states - this matters when computing the first value of the parameter info gain for the Dirichlet parameters over B
-<cite>pA</cite>: numpy object array that stores Dirichlet priors over likelihood mappings (one per modality)
-<cite>pB</cite>: numpy object array that stores Dirichlet priors over transition mappings (one per hidden state factor)
-<cite>F</cite> : 1D numpy array that stores variational free energy of each policy
-<cite>E</cite> : 1D numpy array that stores (log) prior probability each policy (e.g. ‘habits’)
-<cite>gamma</cite>: Float that encodes the precision over policies</p>
 </dd></dl>
 
-<span class="target" id="module-pymdp.learning"></span><p>Functions
-__author__: Conor Heins, Alexander Tschantz, Brennan Klein</p>
+</section>
+<span class="target" id="module-pymdp.learning"></span><section id="learning-py">
+<h2>learning.py<a class="headerlink" href="#learning-py" title="Permalink to this headline">¶</a></h2>
+<p>Functions updating parameters of Dirichlet distributions in POMDP generative models</p>
 <dl class="py function">
 <dt class="sig sig-object py" id="pymdp.learning.prune_A">
 <span class="sig-prename descclassname"><span class="pre">pymdp.learning.</span></span><span class="sig-name descname"><span class="pre">prune_A</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">A</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">obs_levels_to_prune</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">state_levels_to_prune</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dirichlet</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pymdp.learning.prune_A" title="Permalink to this definition">¶</a></dt>
@@ -732,6 +755,7 @@ are updated as a function of transitions in the different control factors (i.e. 
 </dd></dl>
 
 </section>
+</section>
 
 
             <div class="clearer"></div>
@@ -744,6 +768,8 @@ are updated as a function of transitions in the different control factors (i.e. 
   <ul>
 <li><a class="reference internal" href="#">Modules</a><ul>
 <li><a class="reference internal" href="#inference-py">inference.py</a></li>
+<li><a class="reference internal" href="#control-py">control.py</a></li>
+<li><a class="reference internal" href="#learning-py">learning.py</a></li>
 </ul>
 </li>
 </ul>

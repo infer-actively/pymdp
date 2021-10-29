@@ -2,8 +2,10 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=no-member
 
-""" Functions
-__author__: Conor Heins, Alexander Tschantz, Brennan Klein
+"""
+learning.py
+================================
+Functions updating parameters of Dirichlet distributions in POMDP generative models
 """
 
 import numpy as np
