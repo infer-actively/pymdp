@@ -1,7 +1,7 @@
 
 <p align='center'>
   <a href='https://github.com/infer-actively/pymdp'>
-    <img src='.github/pymdp_logo.jpeg' />
+    <img src='.github/pymdp_logo_2.jpeg' />
   </a> 
 </p>
 
