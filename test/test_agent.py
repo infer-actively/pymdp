@@ -142,7 +142,7 @@ class TestAgent(unittest.TestCase):
 
         policies = control.construct_policies(num_states, num_controls, policy_len = 1)
 
-        qs_pi_validation, _ = inference.update_posterior_states_v2(A, B, [o], policies, prior = agent.D, policy_sep_prior = False)
+        qs_pi_validation, _ = inference.update_posterior_states_full(A, B, [o], policies, prior = agent.D, policy_sep_prior = False)
 
         for p_idx in range(len(policies)):
             for f in range(len(num_states)):
@@ -163,7 +163,7 @@ class TestAgent(unittest.TestCase):
 
         policies = control.construct_policies(num_states, num_controls, policy_len = planning_horizon)
 
-        qs_pi_validation, _ = inference.update_posterior_states_v2(A, B, [o], policies, prior = agent.D, policy_sep_prior = False)
+        qs_pi_validation, _ = inference.update_posterior_states_full(A, B, [o], policies, prior = agent.D, policy_sep_prior = False)
 
         for p_idx in range(len(policies)):
             for t in range(planning_horizon+backwards_horizon):

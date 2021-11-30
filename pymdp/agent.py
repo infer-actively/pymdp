@@ -378,7 +378,7 @@ class Agent(object):
                 latest_obs = self.prev_obs
                 latest_actions = self.prev_actions
 
-            qs, F = inference.update_posterior_states_v2(
+            qs, F = inference.update_posterior_states_full(
                 self.A,
                 self.B,
                 latest_obs,
@@ -426,7 +426,7 @@ class Agent(object):
                 latest_obs = self.prev_obs
                 latest_actions = self.prev_actions
 
-            qs, F, xn, vn = inference.update_posterior_states_v2_test(
+            qs, F, xn, vn = inference.update_posterior_states_full_test(
                 self.A,
                 self.B, 
                 latest_obs,
@@ -467,7 +467,7 @@ class Agent(object):
 
             future_qs_seq = self.get_future_qs()
 
-            q_pi, efe = control.update_posterior_policies_mmp(
+            q_pi, efe = control.update_posterior_policies_full(
                 future_qs_seq,
                 self.A,
                 self.B,

@@ -16,7 +16,7 @@ from pymdp.maths import softmax, softmax_obj_arr, spm_dot, spm_wnorm, spm_MDP_G,
 from pymdp import utils
 import copy
 
-def update_posterior_policies_mmp(
+def update_posterior_policies_full(
     qs_seq_pi,
     A,
     B,
@@ -34,7 +34,12 @@ def update_posterior_policies_mmp(
 ):  
     """
     Update posterior beliefs about policies by computing expected free energy of each policy and integrating that
-    with the variational free energy of policies `F` and prior over policies `E`.
+    with the variational free energy of policies `F` and prior over policies `E`. This is intended to be used in conjunction
+    with the `update_posterior_states_full` inference method, since the full posterior over future timesteps, under all policies, is
+    assumed to be provided in the input array `qs_seq_pi`.
+
+    Parameters
+    ----------
     qs_seq_pi: numpy ndarray of dtype object
         Posterior beliefs over hidden states for each policy. Nesting structure is policies, timepoints, factors,
         where e.g. `qs_seq_pi[p][t][f]` stores the marginal belief about factor `f` at timepoint `t` under policy `p`.
@@ -68,6 +73,13 @@ def update_posterior_policies_mmp(
         Vector of prior probabilities of each policy (what's referred to in the active inference literature as "habits")
     gamma: float, default 16.0
         Prior precision over policies, scales the contribution of the expected free energy to the posterior over policies
+
+    Returns
+    ----------
+    q_pi: 1D numpy ndarray
+        Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
+    G: 1D numpy ndarray
+        Negative expected free energies of each policy, i.e. a vector containing one negative expected free energy per policy.
     """
 
     num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A, B)
@@ -81,7 +93,8 @@ def update_posterior_policies_mmp(
     # initialise expected observations
     qo_seq_pi = utils.obj_array(num_policies)
 
-    efe = np.zeros(num_policies)
+    # initialize (negative) expected free energies for all policies
+    G = np.zeros(num_policies)
 
     if F is None:
         F = spm_log_single(np.ones(num_policies) / num_policies)
@@ -97,20 +110,20 @@ def update_posterior_policies_mmp(
         qo_seq_pi[p_idx] = get_expected_obs(qs_seq_pi[p_idx], A)
 
         if use_utility:
-            efe[p_idx] += calc_expected_utility(qo_seq_pi[p_idx], C)
+            G[p_idx] += calc_expected_utility(qo_seq_pi[p_idx], C)
         
         if use_states_info_gain:
-            efe[p_idx] += calc_states_info_gain(A, qs_seq_pi[p_idx])
+            G[p_idx] += calc_states_info_gain(A, qs_seq_pi[p_idx])
         
         if use_param_info_gain:
             if pA is not None:
-                efe[p_idx] += calc_pA_info_gain(pA, qo_seq_pi[p_idx], qs_seq_pi[p_idx])
+                G[p_idx] += calc_pA_info_gain(pA, qo_seq_pi[p_idx], qs_seq_pi[p_idx])
             if pB is not None:
-                efe[p_idx] += calc_pB_info_gain(pB, qs_seq_pi[p_idx], prior, policy)
+                G[p_idx] += calc_pB_info_gain(pB, qs_seq_pi[p_idx], prior, policy)
 
-    q_pi = softmax(efe * gamma - F + lnE)
+    q_pi = softmax(G * gamma - F + lnE)
     
-    return q_pi, efe
+    return q_pi, G
 
 
 def update_posterior_policies(

@@ -21,7 +21,7 @@ BP = "BP"
 EP = "EP"
 CV = "CV"
 
-def update_posterior_states_v2(
+def update_posterior_states_full(
     A,
     B,
     prev_obs,
@@ -98,7 +98,7 @@ def update_posterior_states_v2(
 
     return qs_seq_pi, F
 
-def update_posterior_states_v2_test(
+def update_posterior_states_full_test(
     A,
     B,
     prev_obs,
