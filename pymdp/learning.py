@@ -12,7 +12,7 @@ import numpy as np
 from pymdp import utils, maths
 import copy
 
-def update_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, modalities="all"):
+def update_obs_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, modalities="all"):
     """ Update Dirichlet parameters of the likelihood distribution 
 
     Parameters

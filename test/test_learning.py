@@ -24,7 +24,7 @@ class TestLearning(unittest.TestCase):
         
         observation = utils.sample(maths.spm_dot(A[0], qs))
 
-        pA_updated = learning.update_likelihood_dirichlet(
+        pA_updated = learning.update_obs_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities="all")
         validation_pA = pA[0] + l_rate * maths.spm_cross(utils.onehot(observation, num_obs[0]), qs)
         self.assertTrue(np.all(pA_updated[0] == validation_pA))
@@ -36,7 +36,7 @@ class TestLearning(unittest.TestCase):
         
         observation = [utils.sample(maths.spm_dot(A_m, qs)) for A_m in A]
 
-        pA_updated = learning.update_likelihood_dirichlet(
+        pA_updated = learning.update_obs_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities="all")
 
         for modality, obs_dim in enumerate(num_obs):
@@ -64,7 +64,7 @@ class TestLearning(unittest.TestCase):
         
         observation = [utils.sample(maths.spm_dot(A_m, qs)) for A_m in A]
 
-        pA_updated = learning.update_likelihood_dirichlet(
+        pA_updated = learning.update_obs_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities=modality_to_update)
 
         for modality, obs_dim in enumerate(num_obs):
@@ -93,7 +93,7 @@ class TestLearning(unittest.TestCase):
 
         observation = [utils.sample(maths.spm_dot(A_m, qs)) for A_m in A]
 
-        pA_updated = learning.update_likelihood_dirichlet(
+        pA_updated = learning.update_obs_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities=modalities_to_update)
 
         for modality, obs_dim in enumerate(num_obs):
@@ -119,7 +119,7 @@ class TestLearning(unittest.TestCase):
         A = utils.random_A_matrix(num_obs, num_states)
         pA = utils.obj_array_ones([A_m.shape for A_m in A])
         observation = [utils.sample(maths.spm_dot(A_m, qs)) for A_m in A]
-        pA_updated = learning.update_likelihood_dirichlet(
+        pA_updated = learning.update_obs_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities="all")
         update = maths.spm_cross(utils.onehot(observation[0], num_obs[0]), qs)
         validation_pA = pA[0] + l_rate * update
@@ -130,7 +130,7 @@ class TestLearning(unittest.TestCase):
         A = utils.random_A_matrix(num_obs, num_states)
         pA = utils.obj_array_ones([A_m.shape for A_m in A])
         observation = [utils.sample(maths.spm_dot(A_m, qs)) for A_m in A]
-        pA_updated = learning.update_likelihood_dirichlet(
+        pA_updated = learning.update_obs_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities="all")
         for modality, obs_dim in enumerate(num_obs):
             update = maths.spm_cross(utils.onehot(observation[modality], obs_dim), qs)
@@ -153,7 +153,7 @@ class TestLearning(unittest.TestCase):
         A = utils.random_A_matrix(num_obs, num_states)
         pA = utils.obj_array_ones([A_m.shape for A_m in A])
         observation = [utils.sample(maths.spm_dot(A_m, qs)) for A_m in A]
-        pA_updated = learning.update_likelihood_dirichlet(
+        pA_updated = learning.update_obs_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities=modality_to_update)
 
         for modality, obs_dim in enumerate(num_obs):
@@ -180,7 +180,7 @@ class TestLearning(unittest.TestCase):
         A = utils.random_A_matrix(num_obs, num_states)
         pA = utils.obj_array_ones([A_m.shape for A_m in A])
         observation = [utils.sample(maths.spm_dot(A_m, qs)) for A_m in A]
-        pA_updated = learning.update_likelihood_dirichlet(
+        pA_updated = learning.update_obs_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities=modalities_to_update)
 
         for modality, obs_dim in enumerate(num_obs):
@@ -209,17 +209,17 @@ class TestLearning(unittest.TestCase):
 
         observation_list = [0, 3, 2]
 
-        pA_updated_1 = learning.update_likelihood_dirichlet(
+        pA_updated_1 = learning.update_obs_likelihood_dirichlet(
             pA, A, observation_list, qs, lr=l_rate, modalities=modalities_to_update)
 
         observation_tuple = (0, 3, 2)
 
-        pA_updated_2 = learning.update_likelihood_dirichlet(
+        pA_updated_2 = learning.update_obs_likelihood_dirichlet(
             pA, A, observation_tuple, qs, lr=l_rate, modalities=modalities_to_update)
         
         observation_obj_array = utils.process_observation((0, 3, 2), len(num_obs), num_obs)
 
-        pA_updated_3 = learning.update_likelihood_dirichlet(
+        pA_updated_3 = learning.update_obs_likelihood_dirichlet(
             pA, A, observation_obj_array, qs, lr=l_rate, modalities=modalities_to_update)
 
         for modality, _ in enumerate(num_obs):
@@ -240,12 +240,12 @@ class TestLearning(unittest.TestCase):
 
         observation_int = 2
 
-        pA_updated_1 = learning.update_likelihood_dirichlet(
+        pA_updated_1 = learning.update_obs_likelihood_dirichlet(
             pA, A, observation_int, qs, lr=l_rate, modalities=modalities_to_update)
 
         observation_onehot = utils.onehot(2, num_obs[0])
 
-        pA_updated_2 = learning.update_likelihood_dirichlet(
+        pA_updated_2 = learning.update_obs_likelihood_dirichlet(
             pA, A, observation_onehot, qs, lr=l_rate, modalities=modalities_to_update)
         
         self.assertTrue(np.allclose(pA_updated_1[0], pA_updated_2[0]))

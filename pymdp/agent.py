@@ -509,7 +509,7 @@ class Agent(object):
         Update posterior beliefs about Dirichlet parameters that parameterise the observation likelihood 
         """
 
-        pA_updated = learning.update_likelihood_dirichlet(
+        pA_updated = learning.update_obs_likelihood_dirichlet(
             self.pA, 
             self.A, 
             obs, 
