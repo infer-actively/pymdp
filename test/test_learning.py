@@ -269,7 +269,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors="all"
         )
 
@@ -297,7 +297,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors="all"
         )
 
@@ -325,7 +325,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors="all"
         )
 
@@ -359,7 +359,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update
         )
 
@@ -395,7 +395,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update
         )
 
@@ -429,7 +429,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors="all"
         )
 
@@ -464,7 +464,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update
         )
 
@@ -500,7 +500,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update
         )
 
@@ -536,7 +536,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update
         )
 

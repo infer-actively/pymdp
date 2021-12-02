@@ -528,7 +528,7 @@ class Agent(object):
         Update posterior beliefs about Dirichlet parameters that parameterise the transition likelihood 
         """
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             self.pB,
             self.B,
             self.action,
