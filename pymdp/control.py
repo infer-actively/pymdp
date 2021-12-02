@@ -458,12 +458,11 @@ def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
     return pB_infogain
 
 def construct_policies(num_states, num_controls = None, policy_len=1, control_fac_idx=None):
-    """Generate a set of policies
-
-    The returned array `policies` is a list that stores one policy per entry.
+    """
+    Generate a list of policies. The returned array `policies` is a list that stores one policy per entry.
     The shape of a particular policy (`policies[i]`) is `(num_timesteps, num_factors)` 
     where `num_timesteps` is the temporal depth of the policy and `num_factors` is the number of control factors.
-.
+
     Parameters
     ----------
     num_states: list of int
