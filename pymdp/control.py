@@ -235,7 +235,7 @@ def get_expected_states(qs, B, policy):
     policy: 2D numpy ndarray
         Array that stores actions entailed by a policy over time. Shape is `(num_timesteps, num_factors)` where `num_timesteps` is the temporal
         depth of the policy and `num_factors` is the number of control factors.
-        
+
     Returns
     -------
     qs_pi: list of numpy ndarray of dtype object
@@ -308,7 +308,7 @@ def calc_expected_utility(qo_pi, C):
 
     Returns
     -------
-    expected_util [scalar]:
+    expected_util: scalar
         Utility (reward) expected under the policy in question
     """
     n_steps = len(qo_pi)
@@ -355,7 +355,7 @@ def calc_states_info_gain(A, qs_pi):
 
     Returns
     -------
-    states_surprise [scalar]:
+    states_surprise: scalar
         Bayesian surprise (about states) or salience expected under the policy in question
     """
 
@@ -385,7 +385,7 @@ def calc_pA_info_gain(pA, qo_pi, qs_pi):
 
     Returns
     -------
-    infogain_pA [scalar]:
+    infogain_pA: scalar
         Surprise (about Dirichlet parameters) expected under the policy in question
     """
 
@@ -425,7 +425,7 @@ def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
     
     Returns
     -------
-    infogain_pB [scalar]:
+    infogain_pB: scalar
         Surprise (about dirichlet parameters) expected under the policy in question
     """
 
