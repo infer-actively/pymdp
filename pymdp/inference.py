@@ -12,7 +12,7 @@ import numpy as np
 
 from pymdp import utils
 from pymdp.maths import get_joint_likelihood_seq
-from pymdp.algos import run_fpi, run_mmp, run_mmp_testing
+from pymdp.algos import run_vanilla_fpi, run_mmp, run_mmp_testing
 
 VANILLA = "VANILLA"
 VMP = "VMP"
@@ -224,12 +224,12 @@ def update_posterior_states(A, obs, prior=None, **kwargs):
         the individual inference functions).
     **kwargs: keyword arguments 
         List of keyword/parameter arguments corresponding to parameter values for the fixed-point iteration
-        algorithm `run_fpi.py`
+        algorithm `run_vanilla_fpi.py`
 
     Returns
     ----------
     qs: numpy 1D array, numpy ndarray of dtype object, optional
-        Marginal posterior beliefs over hidden states
+        Marginal posterior beliefs over hidden states at current timepoint
     """
 
     num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A = A)
@@ -239,5 +239,5 @@ def update_posterior_states(A, obs, prior=None, **kwargs):
     if prior is not None:
         prior = utils.to_arr_of_arr(prior)
 
-    return run_fpi(A, obs, num_obs, num_states, prior, **kwargs)
+    return run_vanilla_fpi(A, obs, num_obs, num_states, prior, **kwargs)
    

@@ -12,7 +12,7 @@ from pymdp.maths import spm_dot, get_joint_likelihood, softmax, calc_free_energy
 from pymdp.utils import to_arr_of_arr, obj_array_uniform
 from itertools import chain
 
-def run_fpi(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, dF_tol=0.001):
+def run_vanilla_fpi(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, dF_tol=0.001):
     """
     Update marginal posterior beliefs about hidden states using variational fixed point iteration (FPI).
    
@@ -150,7 +150,7 @@ def run_fpi(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, d
         return qs
 
 
-def run_fpi_faster(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, dF_tol=0.001):
+def run_vanilla_fpi_faster(A, obs, n_observations, n_states, prior=None, num_iter=10, dF=1.0, dF_tol=0.001):
     """
     Update marginal posterior beliefs about hidden states
     using a new version of variational fixed point iteration (FPI). 
@@ -164,7 +164,7 @@ def run_fpi_faster(A, obs, n_observations, n_states, prior=None, num_iter=10, dF
     @NOTE (Conor, 28.02.2020):
     After further testing, discovered interesting differences between this version and the 
     original version. It appears that the
-    original version (simple 'run_FPI') shows mean-field biases or 'explaining away' 
+    original version (simple 'run_vanilla_fpi') shows mean-field biases or 'explaining away' 
     effects, whereas this version spreads probabilities more 'fairly' among possibilities.
     To summarize: it actually matters what order you do the summing across the joint likelihood tensor. 
     In this verison, all marginals are multiplied into the likelihood tensor before summing out, 
