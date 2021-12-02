@@ -98,7 +98,7 @@ def update_posterior_states_full_test(
     **kwargs,
 ):
     """
-    Update posterior over hidden states using marginal message passing
+    Update posterior over hidden states using marginal message passing (TEST VERSION, with extra returns for benchmarking).
     Parameters
     ----------
     A: numpy ndarray of dtype object
@@ -150,26 +150,15 @@ def update_posterior_states_full_test(
     vn_seq_pi = utils.obj_array(len(policies))
     F = np.zeros(len(policies)) # variational free energy of policies
 
-    if policy_sep_prior:
-        for p_idx, policy in enumerate(policies):
+    for p_idx, policy in enumerate(policies):
+
             # get sequence and the free energy for policy
             qs_seq_pi[p_idx], F[p_idx], xn_seq_pi[p_idx], vn_seq_pi[p_idx] = run_mmp_testing(
                 lh_seq,
                 B,
                 policy,
                 prev_actions=prev_actions,
-                prior=prior[p_idx], 
-                **kwargs
-            )
-    else:
-        for p_idx, policy in enumerate(policies):
-            # get sequence and the free energy for policy
-            qs_seq_pi[p_idx], F[p_idx], xn_seq_pi[p_idx], vn_seq_pi[p_idx] = run_mmp_testing(
-                lh_seq,
-                B,
-                policy,
-                prev_actions=prev_actions,
-                prior=prior, 
+                prior=prior[p_idx] if policy_sep_prior else prior, 
                 **kwargs
             )
 
