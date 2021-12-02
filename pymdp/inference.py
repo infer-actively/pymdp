@@ -5,7 +5,7 @@
 """
 inference.py
 ================================
-Functions for performing inference of hidden states in POMDP generative models
+Functions for performing inference of hidden states in POMDP generative models.
 """
 
 import numpy as np

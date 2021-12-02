@@ -7,7 +7,7 @@
 control.py
 ================================
 Functions for performing inference of policies (control states) in POMDP generative models,
-according to the expected free energy
+according to the expected free energy.
 """
 
 import itertools
