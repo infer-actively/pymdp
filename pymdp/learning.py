@@ -62,7 +62,7 @@ def update_obs_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, modalities="all"):
 
     return pA_updated
 
-def update_transition_dirichlet(
+def update_state_likelihood_dirichlet(
     pB, B, actions, qs, qs_prev, lr=1.0, factors="all"
 ):
     """
