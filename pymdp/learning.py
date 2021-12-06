@@ -151,7 +151,7 @@ def update_state_prior_dirichlet(
        
     return qD
 
-def prune_prior(prior, levels_to_remove, dirichlet = False):
+def _prune_prior(prior, levels_to_remove, dirichlet = False):
     """
     Function for pruning a prior Categorical distribution (e.g. C, D)
 
@@ -213,10 +213,10 @@ def prune_prior(prior, levels_to_remove, dirichlet = False):
 
     return reduced_prior
 
-def prune_A(A, obs_levels_to_prune, state_levels_to_prune, dirichlet = False):
+def _prune_A(A, obs_levels_to_prune, state_levels_to_prune, dirichlet = False):
     """
     Function for pruning a observation likelihood model (with potentially multiple hidden state factors)
-
+    :meta private:
     Parameters
     -----------
     A: numpy ndarray with ndim >= 2, or numpy ndarray of dtype object
@@ -284,10 +284,10 @@ def prune_A(A, obs_levels_to_prune, state_levels_to_prune, dirichlet = False):
 
     return reduced_A
 
-def prune_B(B, state_levels_to_prune, action_levels_to_prune, dirichlet = False):
+def _prune_B(B, state_levels_to_prune, action_levels_to_prune, dirichlet = False):
     """
     Function for pruning a transition likelihood model (with potentially multiple hidden state factors)
-
+    :meta private:
     Parameters
     -----------
     B: numpy ndarray of ndim == 3 or numpy ndarray of dtype object
