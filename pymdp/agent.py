@@ -426,7 +426,7 @@ class Agent(object):
                 latest_obs = self.prev_obs
                 latest_actions = self.prev_actions
 
-            qs, F, xn, vn = inference.update_posterior_states_full_test(
+            qs, F, xn, vn = inference._update_posterior_states_full_test(
                 self.A,
                 self.B, 
                 latest_obs,

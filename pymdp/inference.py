@@ -87,7 +87,7 @@ def update_posterior_states_full(
 
     return qs_seq_pi, F
 
-def update_posterior_states_full_test(
+def _update_posterior_states_full_test(
     A,
     B,
     prev_obs,
@@ -99,6 +99,7 @@ def update_posterior_states_full_test(
 ):
     """
     Update posterior over hidden states using marginal message passing (TEST VERSION, with extra returns for benchmarking).
+
     Parameters
     ----------
     A: numpy ndarray of dtype object
@@ -117,7 +118,7 @@ def update_posterior_states_full_test(
     policy_sep_prior: Bool, default True
         -Flag determining whether the prior beliefs from the past are unconditioned on policy, or separated by /conditioned on the policy variable.
     **kwargs: keyword arguments
-        Optional keyword arguments for the function `run_mmp`
+        Optional keyword arguments for the function `run_mmp`.
 
     Returns
     --------
@@ -203,10 +204,8 @@ def update_posterior_states(A, obs, prior=None, **kwargs):
     """
     Update marginal posterior over hidden states using mean-field fixed point iteration 
     FPI or Fixed point iteration. See the following links for details:
-    http://www.cs.cmu.edu/~guestrin/Class/10708/recitations/r9/VI-view.pdf,
-            slides 13- 18
-    http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.137.221&rep=rep1&type=pdf,
-            slides 24 - 38
+    http://www.cs.cmu.edu/~guestrin/Class/10708/recitations/r9/VI-view.pdf, slides 13- 18, and http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.137.221&rep=rep1&type=pdf, slides 24 - 38.
+    
     Parameters
     ----------
     A: numpy ndarray of dtype object
