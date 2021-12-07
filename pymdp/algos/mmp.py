@@ -15,34 +15,41 @@ import copy
 def run_mmp(
     lh_seq, B, policy, prev_actions=None, prior=None, num_iter=10, grad_descent=True, tau=0.25, last_timestep = False):
     """
-    Marginal message passing scheme for updating posterior beliefs about multi-factor hidden states over time, 
+    Marginal message passing scheme for updating marginal posterior beliefs about hidden states over time, 
     conditioned on a particular policy.
-    Parameters:
-    --------------
-    `lh_seq`[numpy object array]:
-        (log) Likelihoods of hidden state factors given a sequence of observations over time. This is assumed to already be log-transformed.
-    `B`[numpy object array]:
-        Transition likelihood of the generative model, mapping from hidden states at T to hidden states at T+1. One B matrix per modality (e.g. `B[f]` corresponds to f-th factor's B matrix)
-        This is used in inference to compute the 'forward' and 'backward' messages conveyed between beliefs about temporally-adjacent timepoints.
-    `policy` [2-D numpy.ndarray]:
-        Matrix of shape (policy_len, num_control_factors) that indicates the indices of each action (control state index) upon timestep t and control_factor f in the element `policy[t,f]` for a given policy.
-    `prev_actions` [None or 2-D numpy.ndarray]:
-        If provided, should be a matrix of previous actions of shape (infer_len, num_control_factors) that indicates the indices of each action (control state index) taken in the past (up until the current timestep).
-    `prior`[None or numpy object array]:
-        If provided, this a numpy object array with one sub-array per hidden state factor, that stores the prior beliefs about initial states (at t = 0, relative to `infer_len`). IF None, this defaults
+
+    Parameters
+    ----------
+    lh_seq: ``numpy.ndarray`` of dtype object
+        Log likelihoods of hidden states under a sequence of observations over time. This is assumed to already be log-transformed. Each ``lh_seq[t]`` contains
+        the log likelihood of hidden states for a particular observation at time ``t``
+    B: ``numpy.ndarray`` of dtype object
+        Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
+        Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
+        of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
+    policy: 2D ``numpy.ndarray``
+        Matrix of shape ``(policy_len, num_control_factors)`` that indicates the indices of each action (control state index) upon timestep ``t`` and control_factor ``f` in the element ``policy[t,f]`` for a given policy.
+    prev_actions: ``numpy.ndarray``, default None
+        If provided, should be a matrix of previous actions of shape ``(infer_len, num_control_factors)`` that indicates the indices of each action (control state index) taken in the past (up until the current timestep).
+    prior: ``numpy.ndarray`` of dtype object, default None
+        If provided, the prior beliefs about initial states (at t = 0, relative to ``infer_len``). If ``None``, this defaults
         to a flat (uninformative) prior over hidden states.
-    `num_iter`[Int]:
+    numiter: int, default 10
         Number of variational iterations.
-    `grad_descent` [Bool]:
-        Flag for whether to use gradient descent (predictive coding style)
-    `tau` [Float]:
-        Decay constant for use in `grad_descent` version
-    `last_timestep` [Bool]:
+    grad_descent: Bool, default True
+        Flag for whether to use gradient descent (free energy gradient updates) instead of fixed point solution to the posterior beliefs
+    tau: float, default 0.25
+        Decay constant for use in ``grad_descent`` version. Tunes the size of the gradient descent updates to the posterior.
+    last_timestep: Bool, default False
         Flag for whether we are at the last timestep of belief updating
-    Returns:
-    --------------
-    `qs_seq`[list]: the sequence of beliefs about the different hidden state factors over time, one multi-factor posterior belief per timestep in `infer_len`
-    `F`[Float]: variational free energy for the given policy 
+        
+    Returns
+    ---------
+    qs_seq: ``numpy.ndarray`` of dtype object
+        Posterior beliefs over hidden states under the policy. Nesting structure is timepoints, factors,
+        where e.g. ``qs_seq[t][f]`` stores the marginal belief about factor ``f`` at timepoint ``t`` under the policy in question.
+    F: float
+        Variational free energy of the policy.
     """
 
     # window
@@ -128,38 +135,50 @@ def run_mmp(
 
     return qs_seq, F
 
-def run_mmp_testing(
+def _run_mmp_testing(
     lh_seq, B, policy, prev_actions=None, prior=None, num_iter=10, grad_descent=True, tau=0.25, last_timestep = False):
     """
-    Marginal message passing scheme for updating posterior beliefs about multi-factor hidden states over time, 
+    Marginal message passing scheme for updating marginal posterior beliefs about hidden states over time, 
     conditioned on a particular policy.
-    Parameters:
-    --------------
-    `lh_seq`[numpy object array]:
-        (log) Likelihoods of hidden state factors given a sequence of observations over time. This is assumed to already be log-transformed.
-    `B`[numpy object array]:
-        Transition likelihood of the generative model, mapping from hidden states at T to hidden states at T+1. One B matrix per modality (e.g. `B[f]` corresponds to f-th factor's B matrix)
-        This is used in inference to compute the 'forward' and 'backward' messages conveyed between beliefs about temporally-adjacent timepoints.
-    `policy` [2-D numpy.ndarray]:
-        Matrix of shape (policy_len, num_control_factors) that indicates the indices of each action (control state index) upon timestep t and control_factor f in the element `policy[t,f]` for a given policy.
-    `prev_actions` [None or 2-D numpy.ndarray]:
-        If provided, should be a matrix of previous actions of shape (infer_len, num_control_factors) taht indicates the indices of each action (control state index) taken in the past (up until the current timestep).
-    `prior`[None or numpy object array]:
-        If provided, this a numpy object array with one sub-array per hidden state factor, that stores the prior beliefs about initial states (at t = 0, relative to `infer_len`).
-    `num_iter`[Int]:
+
+    Parameters
+    ----------
+    lh_seq: ``numpy.ndarray`` of dtype object
+        Log likelihoods of hidden states under a sequence of observations over time. This is assumed to already be log-transformed. Each ``lh_seq[t]`` contains
+        the log likelihood of hidden states for a particular observation at time ``t``
+    B: ``numpy.ndarray`` of dtype object
+        Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
+        Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
+        of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
+    policy: 2D ``numpy.ndarray``
+        Matrix of shape ``(policy_len, num_control_factors)`` that indicates the indices of each action (control state index) upon timestep ``t`` and control_factor ``f` in the element ``policy[t,f]`` for a given policy.
+    prev_actions: ``numpy.ndarray``, default None
+        If provided, should be a matrix of previous actions of shape ``(infer_len, num_control_factors)`` that indicates the indices of each action (control state index) taken in the past (up until the current timestep).
+    prior: ``numpy.ndarray`` of dtype object, default None
+        If provided, the prior beliefs about initial states (at t = 0, relative to ``infer_len``). If ``None``, this defaults
+        to a flat (uninformative) prior over hidden states.
+    numiter: int, default 10
         Number of variational iterations.
-    `grad_descent` [Bool]:
-        Flag for whether to use gradient descent (predictive coding style)
-    `tau` [Float]:
-        Decay constant for use in `grad_descent` version
-    `last_timestep` [Bool]:
+    grad_descent: Bool, default True
+        Flag for whether to use gradient descent (free energy gradient updates) instead of fixed point solution to the posterior beliefs
+    tau: float, default 0.25
+        Decay constant for use in ``grad_descent`` version. Tunes the size of the gradient descent updates to the posterior.
+    last_timestep: Bool, default False
         Flag for whether we are at the last timestep of belief updating
-    Returns:
-    --------------
-    `qs_seq`[list]: the sequence of beliefs about the different hidden state factors over time, one multi-factor posterior belief per timestep in `infer_len`
-    `F`[Float]: variational free energy for the given policy 
-    `xn` [list]: the sequence of beliefs as they're computed across iterations of marginal message passing
-    `vn` [list]: the sequence of prediction errors as they're computed across iterations of marginal message passing
+        
+    Returns
+    ---------
+    qs_seq: ``numpy.ndarray`` of dtype object
+        Posterior beliefs over hidden states under the policy. Nesting structure is timepoints, factors,
+        where e.g. ``qs_seq[t][f]`` stores the marginal belief about factor ``f`` at timepoint ``t`` under the policy in question.
+    F: float
+        Variational free energy of the policy.
+    xn: list
+        The sequence of beliefs as they're computed across iterations of marginal message passing (used for benchmarking). Nesting structure is iteration, factor, so ``xn[itr][f]`` 
+        stores the ``num_states x infer_len`` array of beliefs about hidden states at different time points of inference horizon.
+    vn: list
+        The sequence of prediction errors as they're computed across iterations of marginal message passing (used for benchmarking). Nesting structure is iteration, factor, so ``vn[itr][f]`` 
+        stores the ``num_states x infer_len`` array of prediction errors for hidden states at different time points of inference horizon.
     """
 
     # window
