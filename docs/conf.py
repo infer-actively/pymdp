@@ -14,10 +14,6 @@ import os
 import sys
 sys.path.insert(0, os.path.abspath('..'))
 
-# import sys
-# import pathlib
-# sys.path.insert(0, pathlib.Path(__file__).parents[2].resolve().as_posix())
-
 # -- Project information -----------------------------------------------------
 
 project = 'pymdp'
@@ -36,8 +32,14 @@ extensions = ['sphinx.ext.autodoc',
               'sphinx.ext.doctest',
               'sphinx.ext.coverage', 
               'sphinx.ext.napoleon',
-              'sphinx.ext.autosummary'
+              'sphinx.ext.autosummary',
+              'myst_nb'
               ]
+
+source_suffix = {
+    '.rst': 'restructuredtext',
+    '.ipynb': 'myst-nb'
+    }
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -59,3 +61,6 @@ html_theme = 'sphinx_rtd_theme'
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
+
+# -- Options for myst ----------------------------------------------
+jupyter_execute_notebooks = "force"
