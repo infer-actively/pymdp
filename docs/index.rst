@@ -6,22 +6,33 @@
 Welcome to pymdp's documentation!
 =================================
 
-**pymdp** is a Python package for simulating active inference agents in
-discrete state-spaces and discrete time, using partially-observed Markov Decision Processes
+``pymdp`` is a Python package for simulating active inference agents in
+discrete space and time, using partially-observed Markov Decision Processes
 (POMDPs) as a generative model class. The package is designed to be modular and flexible, to
 enable users to design and simulate bespoke active inference models with varying levels of
 specificity to a given task.
 
 .. toctree::
    :maxdepth: 1
-   :caption: Installation Directions
-   usage
+   :caption: Installation & Usage
+
+   installation
+   quickstart
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Examples
+
+   notebooks/tmaze_demo
 
 .. toctree::
    :maxdepth: 2
-   :caption: API and Developer Reference
-   
-   modules
+   :caption: Modules
+
+   inference
+   control
+   learning
+   algos/index
 
 
 Indices and tables
