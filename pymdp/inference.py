@@ -46,6 +46,9 @@ def update_posterior_states_full(
         of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
     prev_obs: list
         List of observations over time. Each observation in the list can be an ``int``, a ``list`` of ints, a ``tuple`` of ints, a one-hot vector or an object array of one-hot vectors.
+    policies: list of 2D ``numpy.ndarray``s
+        List that stores each policy in ``policies[p_idx]``. Shape of ``policies[p_idx]`` is ``(num_timesteps, num_factors)`` where `num_timesteps` is the temporal
+        depth of the policy and ``num_factors`` is the number of control factors.
     prior: ``numpy.ndarray`` of dtype object, default None
         If provided, this a ``numpy.ndarray`` of dtype object, with one sub-array per hidden state factor, that stores the prior beliefs about initial states. 
         If ``None``, this defaults to a flat (uninformative) prior over hidden states.
