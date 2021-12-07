@@ -34,54 +34,54 @@ def update_posterior_policies_full(
 ):  
     """
     Update posterior beliefs about policies by computing expected free energy of each policy and integrating that
-    with the variational free energy of policies `F` and prior over policies `E`. This is intended to be used in conjunction
-    with the `update_posterior_states_full` inference method, since the full posterior over future timesteps, under all policies, is
-    assumed to be provided in the input array `qs_seq_pi`.
+    with the variational free energy of policies ``F`` and prior over policies ``E``. This is intended to be used in conjunction
+    with the ``update_posterior_states_full`` method of ``inference.py``, since the full posterior over future timesteps, under all policies, is
+    assumed to be provided in the input array ``qs_seq_pi``.
 
     Parameters
     ----------
-    qs_seq_pi: numpy ndarray of dtype object
+    qs_seq_pi: `numpy.ndarray` of dtype object
         Posterior beliefs over hidden states for each policy. Nesting structure is policies, timepoints, factors,
-        where e.g. `qs_seq_pi[p][t][f]` stores the marginal belief about factor `f` at timepoint `t` under policy `p`.
-    A: numpy ndarray of dtype object
-        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element `A[m]` of
-        stores an `np.ndarray` multidimensional array for observation modality `m`, whose entries `A[m][i, j, k, ...]` store 
-        the probability of observation level `i` given hidden state levels `j, k, ...`
-    B: numpy ndarray of dtype object
-        Dynamics likelihood mapping or 'transition model', mapping from hidden states at `t` to hidden states at `t+1`, given some control state `u`.
-        Each element B[f] of this object array stores a 3-D tensor for hidden state factor `f`, whose entries `B[f][s, v, u] store the probability
-        of hidden state level `s` at the current time, given hidden state level `v` and action `u` at the previous time.
-    C: numpy ndarray of dtype object
+        where e.g. ``qs_seq_pi[p][t][f]`` stores the marginal belief about factor ``f`` at timepoint ``t`` under policy ``p``.
+    A: ``numpy.ndarray`` of dtype object
+        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element ``A[m]`` of
+        stores an ``np.ndarray`` multidimensional array for observation modality ``m``, whose entries ``A[m][i, j, k, ...]`` store 
+        the probability of observation level ``i`` given hidden state levels ``j, k, ...``
+    B: ``numpy.ndarray`` of dtype object
+        Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
+        Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
+        of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
+    C: ``numpy.ndarray`` of dtype object
        Prior over observations or 'prior preferences', storing the "value" of each outcome in terms of relative log probabilities. 
        This is softmaxed to form a proper probability distribution before being used to compute the expected utility term of the expected free energy.
-    policies: numpy ndarray of dtype object
-        Array that stores each policy in `policies[p_idx]`. Shape of `policies[p_idx]` is `(num_timesteps, num_factors)` where `num_timesteps` is the temporal
-        depth of the policy and `num_factors` is the number of control factors.
+    policies: list of 2D ``numpy.ndarray``s
+        List that stores each policy in ``policies[p_idx]``. Shape of ``policies[p_idx]`` is ``(num_timesteps, num_factors)`` where `num_timesteps` is the temporal
+        depth of the policy and ``num_factors`` is the number of control factors.
     use_utility: Bool, default True
-        Boolean flag that determines whether expected utility should be incorporated into computation of EFE
+        Boolean flag that determines whether expected utility should be incorporated into computation of EFE.
     use_states_info_gain: Bool, default True
-        Boolean flag that determines whether state epistemic value (info gain about hidden states) should be incorporated into computation of EFE
+        Boolean flag that determines whether state epistemic value (info gain about hidden states) should be incorporated into computation of EFE.
     use_param_info_gain: Bool, default False 
-        Boolean flag that determines whether parameter epistemic value (info gain about generative model parameters) should be incorporated into computation of EFE 
-    prior: numpy ndarray of dtype object, optional
-        If provided, this a `numpy` object array with one sub-array per hidden state factor, that stores the prior beliefs about initial states. 
-        If `None`, this defaults to a flat (uninformative) prior over hidden states.
-    pA: numpy ndarray of dtype object, optional
-        Dirichlet parameters over observation model (same shape as A)
-    pB: numpy ndarray of dtype object, optional
-        Dirichlet parameters over transition model (same shape as B)
-    F: 1D numpy ndarray, optional
+        Boolean flag that determines whether parameter epistemic value (info gain about generative model parameters) should be incorporated into computation of EFE. 
+    prior: ``numpy.ndarray`` of dtype object, default ``None``
+        If provided, this is a ``numpy`` object array with one sub-array per hidden state factor, that stores the prior beliefs about initial states. 
+        If ``None``, this defaults to a flat (uninformative) prior over hidden states.
+    pA: ``numpy.ndarray`` of dtype object, default ``None``
+        Dirichlet parameters over observation model (same shape as ``A``)
+    pB: ``numpy.ndarray`` of dtype object, default ``None``
+        Dirichlet parameters over transition model (same shape as ``B``)
+    F: 1D ``numpy.ndarray``, default ``None``
         Vector of variational free energies for each policy
-    E: 1D numpy ndarray, optional
-        Vector of prior probabilities of each policy (what's referred to in the active inference literature as "habits")
+    E: 1D ``numpy.ndarray``, default ``None``
+        Vector of prior probabilities of each policy (what's referred to in the active inference literature as "habits"). If ``None``, this defaults to a flat (uninformative) prior over policies.
     gamma: float, default 16.0
         Prior precision over policies, scales the contribution of the expected free energy to the posterior over policies
 
     Returns
     ----------
-    q_pi: 1D numpy ndarray
+    q_pi: 1D ``numpy.ndarray``
         Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
-    G: 1D numpy ndarray
+    G: 1D ``numpy.ndarray``
         Negative expected free energies of each policy, i.e. a vector containing one negative expected free energy per policy.
     """
 
@@ -145,39 +145,39 @@ def update_posterior_policies(
 ):
     """
     Update posterior beliefs about policies by computing expected free energy of each policy and integrating that
-    with the prior over policies `E`. This is intended to be used in conjunction
-    with the `update_posterior_states` inference method, since only the posterior about the hidden states at the current timestep
-    `qs` is assumed to be provided. The predictive posterior over hidden states under all policies Q(s, pi) is computed in 
-    this function.
+    with the prior over policies ``E``. This is intended to be used in conjunction
+    with the ``update_posterior_states`` method of the ``inference`` module, since only the posterior about the hidden states at the current timestep
+    ``qs`` is assumed to be provided, unconditional on policies. The predictive posterior over hidden states under all policies Q(s, pi) is computed 
+    using the starting posterior about states at the current timestep ``qs`` and the generative model (e.g. ``A``, ``B``, ``C``)
 
     Parameters
     ----------
-    qs: numpy ndarray of dtype object
-        Marginal posterior beliefs over hidden states at current timepoint
-    A: numpy ndarray of dtype object
-        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element `A[m]` of
-        stores an `np.ndarray` multidimensional array for observation modality `m`, whose entries `A[m][i, j, k, ...]` store 
-        the probability of observation level `i` given hidden state levels `j, k, ...`
-    B: numpy ndarray of dtype object
-        Dynamics likelihood mapping or 'transition model', mapping from hidden states at `t` to hidden states at `t+1`, given some control state `u`.
-        Each element B[f] of this object array stores a 3-D tensor for hidden state factor `f`, whose entries `B[f][s, v, u] store the probability
-        of hidden state level `s` at the current time, given hidden state level `v` and action `u` at the previous time.
-    C: numpy ndarray of dtype object
+    qs: ``numpy.ndarray`` of dtype object
+        Marginal posterior beliefs over hidden states at current timepoint (unconditioned on policies)
+    A: ``numpy.ndarray`` of dtype object
+        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element ``A[m]`` of
+        stores an ``np.ndarray`` multidimensional array for observation modality ``m``, whose entries ``A[m][i, j, k, ...]`` store 
+        the probability of observation level ``i`` given hidden state levels ``j, k, ...``
+    B: ``numpy.ndarray`` of dtype object
+        Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
+        Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
+        of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
+    C: ``numpy.ndarray`` of dtype object
        Prior over observations or 'prior preferences', storing the "value" of each outcome in terms of relative log probabilities. 
        This is softmaxed to form a proper probability distribution before being used to compute the expected utility term of the expected free energy.
-    policies: numpy ndarray of dtype object
-        Array that stores each policy in `policies[p_idx]`. Shape of `policies[p_idx]` is `(num_timesteps, num_factors)` where `num_timesteps` is the temporal
-        depth of the policy and `num_factors` is the number of control factors.
+    policies: list of 2D ``numpy.ndarray``s
+        List that stores each policy in ``policies[p_idx]``. Shape of ``policies[p_idx]`` is ``(num_timesteps, num_factors)`` where `num_timesteps` is the temporal
+        depth of the policy and ``num_factors`` is the number of control factors.
     use_utility: Bool, default True
-        Boolean flag that determines whether expected utility should be incorporated into computation of EFE
+        Boolean flag that determines whether expected utility should be incorporated into computation of EFE.
     use_states_info_gain: Bool, default True
-        Boolean flag that determines whether state epistemic value (info gain about hidden states) should be incorporated into computation of EFE
+        Boolean flag that determines whether state epistemic value (info gain about hidden states) should be incorporated into computation of EFE.
     use_param_info_gain: Bool, default False 
-        Boolean flag that determines whether parameter epistemic value (info gain about generative model parameters) should be incorporated into computation of EFE 
+        Boolean flag that determines whether parameter epistemic value (info gain about generative model parameters) should be incorporated into computation of EFE.
     pA: numpy ndarray of dtype object, optional
-        Dirichlet parameters over observation model (same shape as A)
+        Dirichlet parameters over observation model (same shape as ``A``)
     pB: numpy ndarray of dtype object, optional
-        Dirichlet parameters over transition model (same shape as B)
+        Dirichlet parameters over transition model (same shape as ``B``)
     E: 1D numpy ndarray, optional
         Vector of prior probabilities of each policy (what's referred to in the active inference literature as "habits")
     gamma: float, default 16.0
@@ -185,9 +185,9 @@ def update_posterior_policies(
 
     Returns
     ----------
-    q_pi: 1D numpy ndarray
+    q_pi: 1D ``numpy.ndarray``
         Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
-    G: 1D numpy ndarray
+    G: 1D ``numpy.ndarray``
         Negative expected free energies of each policy, i.e. a vector containing one negative expected free energy per policy.
     """
 
@@ -226,21 +226,21 @@ def get_expected_states(qs, B, policy):
 
     Parameters
     ----------
-    qs: numpy ndarray of dtype object
-        Marginal posterior beliefs over hidden states at a given timepoint
-    B: numpy ndarray of dtype object
-        Dynamics likelihood mapping or 'transition model', mapping from hidden states at `t` to hidden states at `t+1`, given some control state `u`.
-        Each element B[f] of this object array stores a 3-D tensor for hidden state factor `f`, whose entries `B[f][s, v, u] store the probability
-        of hidden state level `s` at the current time, given hidden state level `v` and action `u` at the previous time.
-    policy: 2D numpy ndarray
-        Array that stores actions entailed by a policy over time. Shape is `(num_timesteps, num_factors)` where `num_timesteps` is the temporal
-        depth of the policy and `num_factors` is the number of control factors.
+    qs: ``numpy.ndarray`` of dtype object
+        Marginal posterior beliefs over hidden states at a given timepoint.
+    B: ``numpy.ndarray`` of dtype object
+        Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
+        Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
+        of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
+    policy: 2D ``numpy.ndarray``
+        Array that stores actions entailed by a policy over time. Shape is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
+        depth of the policy and ``num_factors`` is the number of control factors.
 
     Returns
     -------
-    qs_pi: list of numpy ndarray of dtype object
-        Predictive posterior beliefs over hidden states expected under the policy, where `qs_pi[t]` stores the beliefs about
-        hidden states expected under the policy at time `t`
+    qs_pi: list of ``numpy.ndarray`` of dtype object
+        Predictive posterior beliefs over hidden states expected under the policy, where ``qs_pi[t]`` stores the beliefs about
+        hidden states expected under the policy at time ``t``
     """
     n_steps = policy.shape[0]
     n_factors = policy.shape[1]
@@ -262,19 +262,19 @@ def get_expected_obs(qs_pi, A):
 
     Parameters
     ----------
-    qs_pi: list of numpy ndarray of dtype object
-        Predictive posterior beliefs over hidden states expected under the policy, where `qs_pi[t]` stores the beliefs about
-        hidden states expected under the policy at time `t`
-    A: numpy ndarray of dtype object
-        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element `A[m]` of
-        stores an `np.ndarray` multidimensional array for observation modality `m`, whose entries `A[m][i, j, k, ...]` store 
-        the probability of observation level `i` given hidden state levels `j, k, ...`
+    qs_pi: list of ``numpy.ndarray``s of dtype object
+        Predictive posterior beliefs over hidden states expected under the policy, where ``qs_pi[t]`` stores the beliefs about
+        hidden states expected under the policy at time ``t``
+    A: ``numpy.ndarray`` of dtype object
+        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element ``A[m]`` of
+        stores an ``np.ndarray`` multidimensional array for observation modality ``m``, whose entries ``A[m][i, j, k, ...]`` store 
+        the probability of observation level ``i`` given hidden state levels ``j, k, ...``
 
     Returns
     -------
-    qo_pi: list of numpy ndarray of dtype object
-        Predictive posterior beliefs over observations expected under the policy, where `qo_pi[t]` stores the beliefs about
-        observations expected under the policy at time `t`
+    qo_pi: list of ``numpy.ndarray``s of dtype object
+        Predictive posterior beliefs over observations expected under the policy, where ``qo_pi[t]`` stores the beliefs about
+        observations expected under the policy at time ``t``
     """
 
     n_steps = len(qs_pi) # each element of the list is the PPD at a different timestep
@@ -299,16 +299,16 @@ def calc_expected_utility(qo_pi, C):
 
     Parameters
     ----------
-    qo_pi: list of numpy ndarray of dtype object
-        Predictive posterior beliefs over observations expected under the policy, where `qo_pi[t]` stores the beliefs about
-        observations expected under the policy at time `t`
-    C: numpy ndarray of dtype object
+    qo_pi: list of ``numpy.ndarray``s of dtype object
+        Predictive posterior beliefs over observations expected under the policy, where ``qo_pi[t]`` stores the beliefs about
+        observations expected under the policy at time ``t``
+    C: ``numpy.ndarray`` of dtype object
        Prior over observations or 'prior preferences', storing the "value" of each outcome in terms of relative log probabilities. 
        This is softmaxed to form a proper probability distribution before being used to compute the expected utility.
 
     Returns
     -------
-    expected_util: scalar
+    expected_util: float
         Utility (reward) expected under the policy in question
     """
     n_steps = len(qo_pi)
@@ -345,17 +345,17 @@ def calc_states_info_gain(A, qs_pi):
 
     Parameters
     ----------
-    A: numpy ndarray of dtype object
-        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element `A[m]` of
-        stores an `np.ndarray` multidimensional array for observation modality `m`, whose entries `A[m][i, j, k, ...]` store 
-        the probability of observation level `i` given hidden state levels `j, k, ...`
-    qs_pi: list of numpy ndarray of dtype object
-        Predictive posterior beliefs over hidden states expected under the policy, where `qs_pi[t]` stores the beliefs about
-        hidden states expected under the policy at time `t`
+    A: ``numpy.ndarray`` of dtype object
+        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element ``A[m]`` of
+        stores an ``np.ndarray`` multidimensional array for observation modality ``m``, whose entries ``A[m][i, j, k, ...]`` store 
+        the probability of observation level ``i`` given hidden state levels ``j, k, ...``
+    qs_pi: list of ``numpy.ndarray``s of dtype object
+        Predictive posterior beliefs over hidden states expected under the policy, where ``qs_pi[t]`` stores the beliefs about
+        hidden states expected under the policy at time ``t``
 
     Returns
     -------
-    states_surprise: scalar
+    states_surprise: float
         Bayesian surprise (about states) or salience expected under the policy in question
     """
 
@@ -370,22 +370,22 @@ def calc_states_info_gain(A, qs_pi):
 
 def calc_pA_info_gain(pA, qo_pi, qs_pi):
     """
-    Compute expected Dirichlet information gain about parameters pA under a policy
+    Compute expected Dirichlet information gain about parameters ``pA`` under a policy
 
     Parameters
     ----------
-    pA: numpy ndarray of dtype object, optional
-        Dirichlet parameters over observation model (same shape as A)
-    qo_pi: list of numpy ndarray of dtype object
-        Predictive posterior beliefs over observations expected under the policy, where `qo_pi[t]` stores the beliefs about
-        observations expected under the policy at time `t`
-    qs_pi: list of numpy ndarray of dtype object
-        Predictive posterior beliefs over hidden states expected under the policy, where `qs_pi[t]` stores the beliefs about
-        hidden states expected under the policy at time `t`
+    pA: ``numpy.ndarray`` of dtype object
+        Dirichlet parameters over observation model (same shape as ``A``)
+    qo_pi: list of ``numpy.ndarray`` of dtype object
+        Predictive posterior beliefs over observations expected under the policy, where ``qo_pi[t]`` stores the beliefs about
+        observations expected under the policy at time ``t``
+    qs_pi: list of ``numpy.ndarray`` of dtype object
+        Predictive posterior beliefs over hidden states expected under the policy, where ``qs_pi[t]`` stores the beliefs about
+        hidden states expected under the policy at time ``t``
 
     Returns
     -------
-    infogain_pA: scalar
+    infogain_pA: float
         Surprise (about Dirichlet parameters) expected under the policy in question
     """
 
@@ -408,24 +408,24 @@ def calc_pA_info_gain(pA, qo_pi, qs_pi):
 
 def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
     """
-    Compute expected Dirichlet information gain about parameters pB under a given policy
+    Compute expected Dirichlet information gain about parameters ``pB`` under a given policy
 
     Parameters
     ----------
-    pB: numpy ndarray of dtype object, optional
-        Dirichlet parameters over transition model (same shape as B)
-    qs_pi: list of numpy ndarray of dtype object
-        Predictive posterior beliefs over hidden states expected under the policy, where `qs_pi[t]` stores the beliefs about
-        hidden states expected under the policy at time `t`
-    qs_prev: numpy ndarray of dtype object
+    pB: ``numpy.ndarray`` of dtype object
+        Dirichlet parameters over transition model (same shape as ``B``)
+    qs_pi: list of ``numpy.ndarray``s of dtype object
+        Predictive posterior beliefs over hidden states expected under the policy, where ``qs_pi[t]`` stores the beliefs about
+        hidden states expected under the policy at time ``t``
+    qs_prev: ``numpy.ndarray`` of dtype object
         Posterior over hidden states at beginning of trajectory (before receiving observations)
-    policy: 2D numpy ndarray
-        Array that stores actions entailed by a policy over time. Shape is `(num_timesteps, num_factors)` where `num_timesteps` is the temporal
-        depth of the policy and `num_factors` is the number of control factors.
+    policy: 2D ``numpy.ndarray``
+        Array that stores actions entailed by a policy over time. Shape is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
+        depth of the policy and ``num_factors`` is the number of control factors.
     
     Returns
     -------
-    infogain_pB: scalar
+    infogain_pB: float
         Surprise (about dirichlet parameters) expected under the policy in question
     """
 
@@ -459,27 +459,27 @@ def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
 
 def construct_policies(num_states, num_controls = None, policy_len=1, control_fac_idx=None):
     """
-    Generate a list of policies. The returned array `policies` is a list that stores one policy per entry.
-    The shape of a particular policy (`policies[i]`) is `(num_timesteps, num_factors)` 
-    where `num_timesteps` is the temporal depth of the policy and `num_factors` is the number of control factors.
+    Generate a list of policies. The returned array ``policies`` is a list that stores one policy per entry.
+    A particular policy (``policies[i]``) has shape ``(num_timesteps, num_factors)`` 
+    where ``num_timesteps`` is the temporal depth of the policy and ``num_factors`` is the number of control factors.
 
     Parameters
     ----------
     num_states: list of int
         list of the dimensionalities of each hidden state factor
-    num_controls: list of int, default None
-        list of the dimensionalities of each control state factor. If `None`, then is automatically computed as the dimensionality of each hidden state factor that is controllable
+    num_controls: list of int, default ``None``
+        list of the dimensionalities of each control state factor. If ``None``, then is automatically computed as the dimensionality of each hidden state factor that is controllable
     policy_len: int, default 1
         temporal depth ("planning horizon") of policies
     control_fac_idx: list of int
-        list of indices of the hidden state factors that are controllable (i.e. those state factors `i` where `num_controls[i] > 1`)
+        list of indices of the hidden state factors that are controllable (i.e. those state factors ``i`` where ``num_controls[i] > 1``)
 
     Returns
     ----------
-    policies: list of 2D numpy ndarray
-        List that stores each policy as a 2D array in `policies[p_idx]`. Shape of `policies[p_idx]` 
-        is `(num_timesteps, num_factors)` where `num_timesteps` is the temporal
-        depth of the policy and `num_factors` is the number of control factors.
+    policies: list of 2D ``numpy.ndarray``s
+        List that stores each policy as a 2D array in ``policies[p_idx]``. Shape of ``policies[p_idx]`` 
+        is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
+        depth of the policy and ``num_factors`` is the number of control factors.
     """
 
     num_factors = len(num_states)
@@ -501,16 +501,16 @@ def construct_policies(num_states, num_controls = None, policy_len=1, control_fa
     
 def get_num_controls_from_policies(policies):
     """
-    Calculates the list of dimensionalities of control factors (`num_controls`)
+    Calculates the list of dimensionalities of control factors (``num_controls``)
     from the list or array of policies. This assumes a policy space such that for each control factor, there is at least
     one policy that entails taking the action with the maximum index along that control factor.
 
     Parameters
     ----------
-    policies: list of 2D numpy ndarray
-        List that stores each policy as a 2D array in `policies[p_idx]`. Shape of `policies[p_idx]` 
-        is `(num_timesteps, num_factors)` where `num_timesteps` is the temporal
-        depth of the policy and `num_factors` is the number of control factors.
+    policies: list of 2D ``numpy.ndarray``s
+        List that stores each policy as a 2D array in ``policies[p_idx]``. Shape of ``policies[p_idx]`` 
+        is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
+        depth of the policy and ``num_factors`` is the number of control factors.
     
     Returns
     ----------
@@ -527,12 +527,12 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
 
     Parameters
     ----------
-    q_pi: 1D numpy ndarray
+    q_pi: 1D ``numpy.ndarray``
         Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
-    policies: list of 2D numpy ndarray
-        List that stores each policy as a 2D array in `policies[p_idx]`. Shape of `policies[p_idx]` 
-        is `(num_timesteps, num_factors)` where `num_timesteps` is the temporal
-        depth of the policy and `num_factors` is the number of control factors.
+    policies: list of 2D ``numpy.ndarray``s
+        List that stores each policy as a 2D array in ``policies[p_idx]``. Shape of ``policies[p_idx]`` 
+        is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
+        depth of the policy and ``num_factors`` is the number of control factors.
     num_controls: list of int
         list of the dimensionalities of each control state factor.
     action_selection: string, default "deterministic"
@@ -540,11 +540,11 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
         or whether it's sampled from the posterior marginal over actions
     alpha: float, default 16.0
         Action selection precision -- the inverse temperature of the softmax that is used to scale the 
-        action marginals before sampling. This is only used if `action_selection` is set to "stochastic"
+        action marginals before sampling. This is only used if ``action_selection`` argument is "stochastic"
 
     Returns
     ----------
-    selected_policy: 1D numpy ndarray
+    selected_policy: 1D ``numpy.ndarray``
         Vector containing the indices of the actions for each control factor
     """
 
