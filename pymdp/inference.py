@@ -12,7 +12,7 @@ import numpy as np
 
 from pymdp import utils
 from pymdp.maths import get_joint_likelihood_seq
-from pymdp.algos import run_vanilla_fpi, run_mmp, run_mmp_testing
+from pymdp.algos import run_vanilla_fpi, run_mmp, _run_mmp_testing
 
 VANILLA = "VANILLA"
 VMP = "VMP"
@@ -36,29 +36,31 @@ def update_posterior_states_full(
 
     Parameters
     ----------
-    A: numpy ndarray of dtype object
-        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element `A[m]` of
-        stores an `np.ndarray` multidimensional array for observation modality `m`, whose entries `A[m][i, j, k, ...]` store 
-        the probability of observation level `i` given hidden state levels `j, k, ...`
-    B: numpy ndarray of dtype object
-        Dynamics likelihood mapping or 'transition model', mapping from hidden states at `t` to hidden states at `t+1`, given some control state `u`.
-        Each element B[f] of this object array stores a 3-D tensor for hidden state factor `f`, whose entries `B[f][s, v, u] store the probability
-        of hidden state level `s` at the current time, given hidden state level `v` and action `u` at the previous time.
+    A: ``numpy.ndarray`` of dtype object
+        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element ``A[m]`` of
+        stores an ``np.ndarray`` multidimensional array for observation modality ``m``, whose entries ``A[m][i, j, k, ...]`` store 
+        the probability of observation level ``i`` given hidden state levels ``j, k, ...``
+    B: ``numpy.ndarray`` of dtype object
+        Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
+        Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
+        of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
     prev_obs: list
-        List of observations over time. Each observation in the list can be an `int`, a `list` of ints, a `tuple` of ints, a one-hot vector or an object array of one-hot vectors.
-    prior: numpy ndarray of dtype object, optional
-        If provided, this a `numpy` object array with one sub-array per hidden state factor, that stores the prior beliefs about initial states. 
-        If `None`, this defaults to a flat (uninformative) prior over hidden states.
+        List of observations over time. Each observation in the list can be an ``int``, a ``list`` of ints, a ``tuple`` of ints, a one-hot vector or an object array of one-hot vectors.
+    prior: ``numpy.ndarray`` of dtype object, default None
+        If provided, this a ``numpy.ndarray`` of dtype object, with one sub-array per hidden state factor, that stores the prior beliefs about initial states. 
+        If ``None``, this defaults to a flat (uninformative) prior over hidden states.
     policy_sep_prior: Bool, default True
-        -Flag determining whether the prior beliefs from the past are unconditioned on policy, or separated by /conditioned on the policy variable.
+        Flag determining whether the prior beliefs from the past are unconditioned on policy, or separated by /conditioned on the policy variable.
     **kwargs: keyword arguments
-        Optional keyword arguments for the function `run_mmp`
+        Optional keyword arguments for the function ``algos.mmp.run_mmp``
 
     Returns
     ---------
-    qs_seq_pi: numpy ndarray of dtype object
+    qs_seq_pi: ``numpy.ndarray`` of dtype object
         Posterior beliefs over hidden states for each policy. Nesting structure is policies, timepoints, factors,
-        where e.g. `qs_seq_pi[p][t][f]` stores the marginal belief about factor `f` at timepoint `t` under policy `p`.
+        where e.g. ``qs_seq_pi[p][t][f]`` stores the marginal belief about factor ``f`` at timepoint ``t`` under policy ``p``.
+    F: 1D ``numpy.ndarray``
+        Vector of variational free energies for each policy
     """
 
     num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A, B)
@@ -102,38 +104,38 @@ def _update_posterior_states_full_test(
 
     Parameters
     ----------
-    A: numpy ndarray of dtype object
-        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element `A[m]` of
-        stores an `np.ndarray` multidimensional array for observation modality `m`, whose entries `A[m][i, j, k, ...]` store 
-        the probability of observation level `i` given hidden state levels `j, k, ...`
-    B: numpy ndarray of dtype object
-        Dynamics likelihood mapping or 'transition model', mapping from hidden states at `t` to hidden states at `t+1`, given some control state `u`.
-        Each element B[f] of this object array stores a 3-D tensor for hidden state factor `f`, whose entries `B[f][s, v, u] store the probability
-        of hidden state level `s` at the current time, given hidden state level `v` and action `u` at the previous time.
+    A: ``numpy.ndarray`` of dtype object
+        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element ``A[m]`` of
+        stores an ``np.ndarray`` multidimensional array for observation modality ``m``, whose entries ``A[m][i, j, k, ...]`` store 
+        the probability of observation level ``i`` given hidden state levels ``j, k, ...``
+    B: ``numpy.ndarray`` of dtype object
+        Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
+        Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
+        of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
     prev_obs: list
-        List of observations over time. Each observation in the list can be an `int`, a `list` of ints, a `tuple` of ints, a one-hot vector or an object array of one-hot vectors.
-    prior: numpy ndarray of dtype object, optional
-        If provided, this a `numpy` object array with one sub-array per hidden state factor, that stores the prior beliefs about initial states. 
-        If `None`, this defaults to a flat (uninformative) prior over hidden states.
+        List of observations over time. Each observation in the list can be an ``int``, a ``list`` of ints, a ``tuple`` of ints, a one-hot vector or an object array of one-hot vectors.
+    prior: ``numpy.ndarray`` of dtype object, default None
+        If provided, this a ``numpy.ndarray`` of dtype object, with one sub-array per hidden state factor, that stores the prior beliefs about initial states. 
+        If ``None``, this defaults to a flat (uninformative) prior over hidden states.
     policy_sep_prior: Bool, default True
-        -Flag determining whether the prior beliefs from the past are unconditioned on policy, or separated by /conditioned on the policy variable.
+        Flag determining whether the prior beliefs from the past are unconditioned on policy, or separated by /conditioned on the policy variable.
     **kwargs: keyword arguments
-        Optional keyword arguments for the function `run_mmp`.
+        Optional keyword arguments for the function ``algos.mmp.run_mmp``
 
     Returns
     --------
-    qs_seq_pi: numpy ndarray of dtype object
+    qs_seq_pi: ``numpy.ndarray`` of dtype object
         Posterior beliefs over hidden states for each policy. Nesting structure is policies, timepoints, factors,
-        where e.g. `qs_seq_pi[p][t][f]` stores the marginal belief about factor `f` at timepoint `t` under policy `p`.
-    F: 1D numpy ndarray 
+        where e.g. ``qs_seq_pi[p][t][f]`` stores the marginal belief about factor ``f`` at timepoint ``t`` under policy ``p``.
+    F: 1D ``numpy.ndarray``
         Vector of variational free energies for each policy
-    xn_seq_pi: numpy ndarray of of dtype object
+    xn_seq_pi: ``numpy.ndarray`` of dtype object
         Posterior beliefs over hidden states for each policy, for each iteration of marginal message passing.
-        Nesting structure is policy, iteration, factor, so xn_seq_p[p][itr][f] stores the `num_states x infer_len` 
+        Nesting structure is policy, iteration, factor, so ``xn_seq_p[p][itr][f]`` stores the ``num_states x infer_len`` 
         array of beliefs about hidden states at different time points of inference horizon.
-    vn_seq_pi: numpy ndarray of of dtype object
+    vn_seq_pi: `numpy.ndarray`` of dtype object
         Prediction errors over hidden states for each policy, for each iteration of marginal message passing.
-        Nesting structure is policy, iteration, factor, so vn_seq_p[p][itr][f] stores the `num_states x infer_len` 
+        Nesting structure is policy, iteration, factor, so ``vn_seq_p[p][itr][f]`` stores the ``num_states x infer_len`` 
         array of beliefs about hidden states at different time points of inference horizon.
     """
 
@@ -154,7 +156,7 @@ def _update_posterior_states_full_test(
     for p_idx, policy in enumerate(policies):
 
             # get sequence and the free energy for policy
-            qs_seq_pi[p_idx], F[p_idx], xn_seq_pi[p_idx], vn_seq_pi[p_idx] = run_mmp_testing(
+            qs_seq_pi[p_idx], F[p_idx], xn_seq_pi[p_idx], vn_seq_pi[p_idx] = _run_mmp_testing(
                 lh_seq,
                 B,
                 policy,
@@ -172,17 +174,17 @@ def average_states_over_policies(qs_pi, q_pi):
 
     Parameters
     ----------
-    qs_pi: numpy ndarray of dtype object
+    qs_pi: ``numpy.ndarray`` of dtype object
         Posterior beliefs over hidden states for each policy. Nesting structure is policies, factors,
-        where e.g. `qs_pi[p][f]` stores the marginal belief about factor `f` under policy `p`.
-    q_pi: numpy ndarray
-        Posterior beliefs about policies where `len(q_pi) = num_policies`
+        where e.g. ``qs_pi[p][f]`` stores the marginal belief about factor ``f`` under policy ``p``.
+    q_pi: ``numpy.ndarray`` of dtype object
+        Posterior beliefs about policies where ``len(q_pi) = num_policies``
 
     Returns
     ---------
-    qs_bma: numpy ndarray of dtype object
+    qs_bma: ``numpy.ndarray`` of dtype object
         Marginal posterior over hidden states for the current timepoint, 
-        averaged across policies according to their posterior probability given by `q_pi`
+        averaged across policies according to their posterior probability given by ``q_pi``
     """
 
     num_factors = len(qs_pi[0]) # get the number of hidden state factors using the shape of the first-policy-conditioned posterior
@@ -203,31 +205,33 @@ def average_states_over_policies(qs_pi, q_pi):
 def update_posterior_states(A, obs, prior=None, **kwargs):
     """
     Update marginal posterior over hidden states using mean-field fixed point iteration 
-    FPI or Fixed point iteration. See the following links for details:
+    FPI or Fixed point iteration. 
+
+    See the following links for details:
     http://www.cs.cmu.edu/~guestrin/Class/10708/recitations/r9/VI-view.pdf, slides 13- 18, and http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.137.221&rep=rep1&type=pdf, slides 24 - 38.
     
     Parameters
     ----------
-    A: numpy ndarray of dtype object
-        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element `A[m]` of
-        stores an `np.ndarray` multidimensional array for observation modality `m`, whose entries `A[m][i, j, k, ...]` store 
-        the probability of observation level `i` given hidden state levels `j, k, ...`
-    obs: numpy 1D array, numpy ndarray of dtype object, int or tuple
-        The observation (generated by the environment). If single modality, this can be a 1D `np.ndarray`
-        (one-hot vector representation) or an `int` (observation index)
-        If multi-modality, this can be `np.ndarray` of dtype object whose entries are 1D one-hot vectors,
-        or a tuple (of `int`s)
-    prior: numpy 1D array, numpy ndarray of dtype object, optional
+    A: ``numpy.ndarray`` of dtype object
+        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element ``A[m]`` of
+        stores an ``np.ndarray`` multidimensional array for observation modality ``m``, whose entries ``A[m][i, j, k, ...]`` store 
+        the probability of observation level ``i`` given hidden state levels ``j, k, ...``
+    obs: 1D `numpy.ndarray``, ``numpy.ndarray`` of dtype object, int or tuple
+        The observation (generated by the environment). If single modality, this can be a 1D ``np.ndarray``
+        (one-hot vector representation) or an ``int`` (observation index)
+        If multi-modality, this can be ``np.ndarray`` of dtype object whose entries are 1D one-hot vectors,
+        or a tuple (of ``int``s)
+    prior: 1D `numpy.ndarray`` or ``numpy.ndarray`` of dtype object, default None
         Prior beliefs about hidden states, to be integrated with the marginal likelihood to obtain
-        a posterior distribution. If not prvided, prior is set to be equal to a flat categorical distribution (at the level of
+        a posterior distribution. If not provided, prior is set to be equal to a flat categorical distribution (at the level of
         the individual inference functions).
     **kwargs: keyword arguments 
         List of keyword/parameter arguments corresponding to parameter values for the fixed-point iteration
-        algorithm `run_vanilla_fpi.py`
+        algorithm ``algos.fpi.run_vanilla_fpi.py``
 
     Returns
     ----------
-    qs: numpy 1D array, numpy ndarray of dtype object, optional
+    qs: 1D ``numpy.ndarray`` or ``numpy.ndarray`` of dtype object
         Marginal posterior beliefs over hidden states at current timepoint
     """
 
