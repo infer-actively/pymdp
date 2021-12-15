@@ -2,12 +2,6 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=no-member
 
-"""
-learning.py
-================================
-Functions updating parameters of Dirichlet distributions in POMDP generative models.
-"""
-
 import numpy as np
 from pymdp import utils, maths
 import copy

@@ -2,11 +2,6 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=no-member
 
-""" Functions for performing variational inference on hidden states 
-
-__author__: Conor Heins, Beren Millidge, Alexander Tschantz, Brennan Klein
-"""
-
 import numpy as np
 import sys
 import pathlib

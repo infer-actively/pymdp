@@ -2,11 +2,6 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=no-member
 
-""" Functions for performing variational inference on hidden states 
-
-__author__: Conor Heins, Beren Millidge, Alexander Tschantz, Brennan Klein
-"""
-
 import numpy as np
 from pymdp.maths import spm_dot, get_joint_likelihood, softmax, calc_free_energy, spm_log_single, spm_log_obj_array
 from pymdp.utils import to_arr_of_arr, obj_array_uniform
@@ -49,7 +44,7 @@ def run_vanilla_fpi(A, obs, num_obs, num_states, prior=None, num_iter=10, dF=1.0
     """
 
     # get model dimensions
-    n_modalities = len(num_observations)
+    n_modalities = len(num_obs)
     n_factors = len(num_states)
 
     """

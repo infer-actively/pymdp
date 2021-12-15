@@ -2,12 +2,6 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=no-member
 
-"""
-inference.py
-================================
-Functions for performing inference of hidden states in POMDP generative models.
-"""
-
 import numpy as np
 
 from pymdp import utils

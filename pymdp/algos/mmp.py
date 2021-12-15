@@ -1,10 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-""" Marginal message passing
-__author__: Conor Heins, Beren Millidge, Alexander Tschantz, Brennan Klein
-"""
-
 import numpy as np
 
 from pymdp.utils import to_arr_of_arr, get_model_dimensions, obj_array, obj_array_zeros, obj_array_uniform
