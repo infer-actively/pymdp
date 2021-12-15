@@ -3,13 +3,6 @@
 # pylint: disable=no-member
 # pylint: disable=not-an-iterable
 
-"""
-control.py
-================================
-Functions for performing inference of policies (control states) in POMDP generative models,
-according to the expected free energy.
-"""
-
 import itertools
 import numpy as np
 from pymdp.maths import softmax, softmax_obj_arr, spm_dot, spm_wnorm, spm_MDP_G, spm_log_single, spm_log_obj_array
@@ -553,11 +546,18 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
     action_marginals = utils.obj_array_zeros(num_controls)
     
     # weight each action according to its integrated posterior probability over policies and timesteps
-    for pol_idx, policy in enumerate(policies):
-        for t in range(policy.shape[0]):
-            for factor_i, action_i in enumerate(policy[t, :]):
-                action_marginals[factor_i][action_i] += q_pi[pol_idx]
+    # for pol_idx, policy in enumerate(policies):
+    #     for t in range(policy.shape[0]):
+    #         for factor_i, action_i in enumerate(policy[t, :]):
+    #             action_marginals[factor_i][action_i] += q_pi[pol_idx]
     
+    # weight each action according to its integrated posterior probability under all policies at the current timestep
+    for pol_idx, policy in enumerate(policies):
+        for factor_i, action_i in enumerate(policy[0, :]):
+            action_marginals[factor_i][action_i] += q_pi[pol_idx]
+    
+    action_marginals = utils.norm_dist_obj_arr(action_marginals)
+
     selected_policy = np.zeros(num_factors)
     for factor_i in range(num_factors):
 
