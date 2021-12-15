@@ -13,7 +13,7 @@ import warnings
 import itertools
 
 def sample(probabilities):
-    sample_onehot = np.random.multinomial(1, probabilities.squeeze())
+    sample_onehot = np.random.multinomial(1, probabilities)
     return np.where(sample_onehot == 1)[0][0]
 
 def sample_obj_array(arr):

@@ -492,9 +492,9 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
     
     # weight each action according to its integrated posterior probability over policies and timesteps
     for pol_idx, policy in enumerate(policies):
-        for t in range(policy.shape[0]):
-            for factor_i, action_i in enumerate(policy[t, :]):
-                action_marginals[factor_i][action_i] += q_pi[pol_idx]
+        for factor_i, action_i in enumerate(policy[0, :]):
+            # to get the marginals we just want to add up the actions at time 0
+            action_marginals[factor_i][action_i] += q_pi[pol_idx]
     
     selected_policy = np.zeros(num_factors)
     for factor_i in range(num_factors):
