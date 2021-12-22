@@ -1,4 +1,4 @@
-MMP Module
+MMP (Marginal Message Passing)
 =================================
 
 .. automodule:: pymdp.algos.mmp
