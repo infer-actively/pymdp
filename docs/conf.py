@@ -57,10 +57,25 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 #
 html_theme = 'sphinx_rtd_theme'
 
+# Theme options are theme-specific and customize the look and feel of a theme
+# further.  For a list of options available for each theme, see the
+# documentation.
+html_theme_options = {
+    'logo_only': True,
+}
+
+# The name of an image file (relative to this directory) to place at the top
+# of the sidebar.
+html_logo = '_static/pymdp_logo_2-removebg.png'
+
+html_favicon = '_static/pymdp_logo_2-removebg.png'
+
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
 
+
 # -- Options for myst ----------------------------------------------
-jupyter_execute_notebooks = "force"
+jupyter_execute_notebooks = "cache"
+jupyter_cache = "notebooks"
