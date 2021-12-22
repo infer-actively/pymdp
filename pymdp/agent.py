@@ -73,7 +73,7 @@ class Agent(object):
                 'A matrix must be a numpy array'
             )
 
-        self.A = utils.to_arr_of_arr(A)
+        self.A = utils.to_obj_array(A)
 
         assert utils.is_normalized(self.A), "A matrix is not normalized (i.e. A.sum(axis = 0) must all equal 1.0"
 
@@ -90,7 +90,7 @@ class Agent(object):
                 'B matrix must be a numpy array'
             )
 
-        self.B = utils.to_arr_of_arr(B)
+        self.B = utils.to_obj_array(B)
 
         assert utils.is_normalized(self.B), "A matrix is not normalized (i.e. A.sum(axis = 0) must all equal 1.0"
 
@@ -137,7 +137,7 @@ class Agent(object):
                 raise TypeError(
                     'C vector must be a numpy array'
                 )
-            self.C = utils.to_arr_of_arr(C)
+            self.C = utils.to_obj_array(C)
 
             assert len(self.C) == self.num_modalities, f"Check C vector: number of sub-arrays must be equal to number of observation modalities: {self.num_modalities}"
 
@@ -153,7 +153,7 @@ class Agent(object):
                 raise TypeError(
                     'D vector must be a numpy array'
                 )
-            self.D = utils.to_arr_of_arr(D)
+            self.D = utils.to_obj_array(D)
 
             assert len(self.D) == self.num_factors, f"Check D vector: number of sub-arrays must be equal to number of hidden state factors: {self.num_factors}"
 

@@ -12,6 +12,8 @@ import pandas as pd
 import warnings
 import itertools
 
+EPS_VAL = 1e-16 # global constant for use in norm_dist()
+
 def sample(probabilities):
     sample_onehot = np.random.multinomial(1, probabilities.squeeze())
     return np.where(sample_onehot == 1)[0][0]
@@ -129,12 +131,12 @@ def dirichlet_like(template_categorical, scale = 1.0):
     Helper function to construct a Dirichlet distribution based on an existing Categorical distribution
     """ 
 
-    if not is_arr_of_arr(template_categorical):
+    if not is_obj_array(template_categorical):
         warnings.warn(
                     "Input array is not an object array...\
                     Casting the input to an object array"
                 )
-        template_categorical = to_arr_of_arr(template_categorical)
+        template_categorical = to_obj_array(template_categorical)
 
     n_sub_arrays = len(template_categorical)
 
@@ -153,17 +155,17 @@ def get_model_dimensions(A=None, B=None):
                 )
 
     if A is not None:
-        num_obs = [a.shape[0] for a in A] if is_arr_of_arr(A) else [A.shape[0]]
+        num_obs = [a.shape[0] for a in A] if is_obj_array(A) else [A.shape[0]]
         num_modalities = len(num_obs)
     else:
         num_obs, num_modalities = None, None
     
     if B is not None:
-        num_states = [b.shape[0] for b in B] if is_arr_of_arr(B) else [B.shape[0]]
+        num_states = [b.shape[0] for b in B] if is_obj_array(B) else [B.shape[0]]
         num_factors = len(num_states)
     else:
         if A is not None:
-            num_states = list(A[0].shape[1:]) if is_arr_of_arr(A) else list(A.shape[1:])
+            num_states = list(A[0].shape[1:]) if is_obj_array(A) else list(A.shape[1:])
             num_factors = len(num_states)
         else:
             num_states, num_factors = None, None
@@ -215,7 +217,7 @@ def is_normalized(dist):
     Returns True if all distributions integrate to 1.0
     """
 
-    if is_arr_of_arr(dist):
+    if is_obj_array(dist):
         normed_arrays = []
         for i, arr in enumerate(dist):
             column_sums = arr.sum(axis=0)
@@ -227,15 +229,21 @@ def is_normalized(dist):
     
     return out
 
-def is_arr_of_arr(arr):
+def is_obj_array(arr):
     return arr.dtype == "object"
 
-def to_arr_of_arr(arr):
-    if is_arr_of_arr(arr):
+def to_obj_array(arr):
+    if is_obj_array(arr):
         return arr
-    arr_of_arr = obj_array(1)
-    arr_of_arr[0] = arr.squeeze()
-    return arr_of_arr
+    obj_array_out = obj_array(1)
+    obj_array_out[0] = arr.squeeze()
+    return obj_array_out
+
+def obj_array_from_list(list_input):
+    """
+    Takes a list of `numpy.ndarray` and converts them to a `numpy.ndarray` of `dtype = object`
+    """
+    return np.array(list_input, dtype = object)
 
 def process_observation_seq(obs_seq, n_modalities, n_observations):
     """
@@ -267,7 +275,7 @@ def process_observation(obs, num_modalities, num_observations):
     - if `obs` is a numpy object array (array of arrays), this function will return `obs` unchanged.
     """
 
-    if isinstance(obs, np.ndarray) and not is_arr_of_arr(obs):
+    if isinstance(obs, np.ndarray) and not is_obj_array(obs):
         assert num_modalities == 1, "If `obs` is a 1D numpy array, `num_modalities` must be equal to 1"
         assert len(np.where(obs)[0]) == 1, "If `obs` is a 1D numpy array, it must be a one hot vector (e.g. np.array([0.0, 1.0, 0.0, ....]))"
 

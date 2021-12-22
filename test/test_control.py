@@ -132,7 +132,7 @@ class TestControl(unittest.TestCase):
             qo_pi = control.get_expected_obs(qs_pi, A)
 
             # validation qo_pi
-            qo_pi_valid = maths.spm_dot(A[modality_idx],utils.to_arr_of_arr(qs_pi_valid))
+            qo_pi_valid = maths.spm_dot(A[modality_idx],utils.to_obj_array(qs_pi_valid))
 
             self.assertTrue((qo_pi[t_idx][modality_idx] == qo_pi_valid).all())
 
@@ -228,10 +228,10 @@ class TestControl(unittest.TestCase):
         num_obs = [2]
 
         # Create noiseless identity A matrix
-        A = utils.to_arr_of_arr(np.eye(num_obs[0]))
+        A = utils.to_obj_array(np.eye(num_obs[0]))
 
         # Create imbalance in preferences for observations
-        C = utils.to_arr_of_arr(utils.onehot(1, num_obs[0]))
+        C = utils.to_obj_array(utils.onehot(1, num_obs[0]))
         
         # Compute expected utility of policies
         expected_utilities = np.zeros(len(policies))
@@ -258,7 +258,7 @@ class TestControl(unittest.TestCase):
         num_obs = [3]
 
         # create noiseless identity A matrix
-        A = utils.to_arr_of_arr(np.eye(num_obs[0]))
+        A = utils.to_obj_array(np.eye(num_obs[0]))
 
         # create imbalance in preferences for observations
         # This test is designed to illustrate the emergence of planning by
@@ -266,7 +266,7 @@ class TestControl(unittest.TestCase):
         # Even though the first observation (index 0) is the most preferred, the policy
         # that frequents this observation the most is actually not optimal, because that policy
         # terminates in a less preferred state by timestep 3.
-        C = utils.to_arr_of_arr(np.array([1.2, 1.0, 0.55]))
+        C = utils.to_obj_array(np.array([1.2, 1.0, 0.55]))
 
         expected_utilities = np.zeros(len(policies))
         for idx, policy in enumerate(policies):
@@ -289,7 +289,7 @@ class TestControl(unittest.TestCase):
         num_controls = [2]
 
         # start with a precise initial state
-        qs = utils.to_arr_of_arr(utils.onehot(0, num_states[0]))
+        qs = utils.to_obj_array(utils.onehot(0, num_states[0]))
 
         '''Case study 1: Uncertain states, unambiguous observations'''
         # add some uncertainty into the consequences of the second policy, which
@@ -306,7 +306,7 @@ class TestControl(unittest.TestCase):
         num_obs = [2]
 
         # create noiseless identity A matrix
-        A = utils.to_arr_of_arr(np.eye(num_obs[0]))
+        A = utils.to_obj_array(np.eye(num_obs[0]))
 
         state_info_gains = np.zeros(len(policies)) # store the Bayesian surprise / epistemic values of states here (AKA state info gain)
         for idx, policy in enumerate(policies):
@@ -330,7 +330,7 @@ class TestControl(unittest.TestCase):
         '''Case study 2: Uncertain states, ambiguous observations (for particular states)'''
 
         # create noiseless identity A matrix
-        A = utils.to_arr_of_arr(np.eye(num_obs[0]))
+        A = utils.to_obj_array(np.eye(num_obs[0]))
 
         # add some uncertainty into the consequences of the both policies
         B = utils.construct_controllable_B(num_states, num_controls)
@@ -364,7 +364,7 @@ class TestControl(unittest.TestCase):
         num_controls = [2]
 
         # start with a precise initial state
-        qs = utils.to_arr_of_arr(utils.onehot(0, num_states[0]))
+        qs = utils.to_obj_array(utils.onehot(0, num_states[0]))
 
         B = utils.construct_controllable_B(num_states, num_controls)
 
@@ -376,7 +376,7 @@ class TestControl(unittest.TestCase):
         num_obs = [2]
 
         # create noiseless identity A matrix
-        A = utils.to_arr_of_arr(np.eye(num_obs[0]))
+        A = utils.to_obj_array(np.eye(num_obs[0]))
 
         # create prior over dirichlets such that there is a skew
         # in the parameters about the likelihood mapping from the
@@ -406,7 +406,7 @@ class TestControl(unittest.TestCase):
         num_controls = [2]
 
         # start with a precise initial state
-        qs = utils.to_arr_of_arr(utils.onehot(0, num_states[0]))
+        qs = utils.to_obj_array(utils.onehot(0, num_states[0]))
 
         B = utils.construct_controllable_B(num_states, num_controls)
 
@@ -1287,7 +1287,7 @@ class TestControl(unittest.TestCase):
         policies = [np.array([0, 0, 2]).reshape(-1, 1), np.array([1, 1, 1]).reshape(-1, 1)]
 
         # create noiseless identity A matrix
-        A = utils.to_arr_of_arr(np.eye(num_obs[0]))
+        A = utils.to_obj_array(np.eye(num_obs[0]))
 
         # create imbalance in preferences for observations
         # This test is designed to illustrate the emergence of planning by
@@ -1295,7 +1295,7 @@ class TestControl(unittest.TestCase):
         # Even though the first observation (index 0) is the most preferred, the policy
         # that frequents this observation the most is actually not optimal, because that policy
         # terminates in a less preferred state by timestep 3.
-        C = utils.to_arr_of_arr(np.array([1.2, 1.0, 0.55]))
+        C = utils.to_obj_array(np.array([1.2, 1.0, 0.55]))
 
         q_pi, efe = control.update_posterior_policies(
             qs,
@@ -1326,13 +1326,13 @@ class TestControl(unittest.TestCase):
         num_states = [3]
         num_controls = [3]
 
-        qs = utils.to_arr_of_arr(utils.onehot(0, num_states[0]))
-        A = utils.to_arr_of_arr(np.eye(num_obs[0]))
+        qs = utils.to_obj_array(utils.onehot(0, num_states[0]))
+        A = utils.to_obj_array(np.eye(num_obs[0]))
         B = utils.construct_controllable_B(num_states, num_controls)
         
-        C = utils.to_arr_of_arr(np.array([1.5, 1.0, 1.0]))
+        C = utils.to_obj_array(np.array([1.5, 1.0, 1.0]))
 
-        D = utils.to_arr_of_arr(utils.onehot(0, num_states[0]))
+        D = utils.to_obj_array(utils.onehot(0, num_states[0]))
         E = np.array([0.05, 0.05, 0.9])
 
         policies = control.construct_policies(num_states, num_controls, policy_len=1)

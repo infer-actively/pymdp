@@ -5,7 +5,7 @@ import numpy as np
 from scipy.io import loadmat
 
 from pymdp.agent import Agent
-from pymdp.utils import to_arr_of_arr, build_belief_array, build_xn_vn_array, get_model_dimensions, convert_observation_array
+from pymdp.utils import to_obj_array, build_belief_array, build_xn_vn_array, get_model_dimensions, convert_observation_array
 from pymdp.maths import dirichlet_log_evidence
 
 DATA_PATH = "test/matlab_crossval/output/"
@@ -22,7 +22,7 @@ class TestSPM(unittest.TestCase):
 
         A = mat_contents["A"][0]
         B = mat_contents["B"][0]
-        C = to_arr_of_arr(mat_contents["C"][0][0][:,0])
+        C = to_obj_array(mat_contents["C"][0][0][:,0])
         obs_matlab = mat_contents["obs"].astype("int64")
         policy = mat_contents["policies"].astype("int64") - 1
         t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")

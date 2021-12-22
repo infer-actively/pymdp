@@ -118,16 +118,16 @@ def run_mmp_old(
 
     # get model dimensions
     # TODO: make a general function in `utils` for extracting model dimensions
-    if utils.is_arr_of_arr(obs_t[0]):
+    if utils.is_obj_array(obs_t[0]):
         num_obs = [obs.shape[0] for obs in obs_t[0]]
     else:
         num_obs = [obs_t[0].shape[0]]
 
-    if utils.is_arr_of_arr(B):
+    if utils.is_obj_array(B):
         num_states = [b.shape[0] for b in B]
     else:
         num_states = [B[0].shape[0]]
-        B = utils.to_arr_of_arr(B)
+        B = utils.to_obj_array(B)
 
     num_modalities = len(num_obs)
     num_factors = len(num_states)

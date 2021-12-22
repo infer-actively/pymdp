@@ -3,7 +3,7 @@
 
 import numpy as np
 
-from pymdp.utils import to_arr_of_arr, get_model_dimensions, obj_array, obj_array_zeros, obj_array_uniform
+from pymdp.utils import to_obj_array, get_model_dimensions, obj_array, obj_array_zeros, obj_array_uniform
 from pymdp.maths import spm_dot, spm_norm, softmax, calc_free_energy, spm_log_single
 import copy
 

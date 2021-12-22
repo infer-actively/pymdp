@@ -4,7 +4,7 @@
 
 import numpy as np
 from pymdp.maths import spm_dot, get_joint_likelihood, softmax, calc_free_energy, spm_log_single, spm_log_obj_array
-from pymdp.utils import to_arr_of_arr, obj_array_uniform
+from pymdp.utils import to_obj_array, obj_array_uniform
 from itertools import chain
 
 def run_vanilla_fpi(A, obs, num_obs, num_states, prior=None, num_iter=10, dF=1.0, dF_tol=0.001):
@@ -94,7 +94,7 @@ def run_vanilla_fpi(A, obs, num_obs, num_states, prior=None, num_iter=10, dF=1.0
 
         qL = spm_dot(likelihood, qs, [0])
 
-        return to_arr_of_arr(softmax(qL + prior[0]))
+        return to_obj_array(softmax(qL + prior[0]))
 
     else:
         """
