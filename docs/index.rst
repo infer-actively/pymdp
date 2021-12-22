@@ -17,7 +17,9 @@ specificity to a given task.
    :caption: Installation & Usage
 
    installation
-   quickstart
+   notebooks/pymdp-fundamentals
+   notebooks/active_inference_from_scratch
+   notebooks/using_the_agent_class
 
 .. toctree::
    :maxdepth: 1
