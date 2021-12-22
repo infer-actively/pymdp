@@ -7,7 +7,7 @@ from scipy.io import loadmat
 
 from pymdp.agent import Agent, build_belief_array, build_xn_vn_array
 from pymdp.utils import random_A_matrix, random_B_matrix, obj_array_zeros, get_model_dimensions, convert_observation_array
-from pymdp.utils import to_arr_of_arr
+from pymdp.utils import to_obj_array
 from pymdp import control
 
 import matplotlib.pyplot as plt
@@ -21,7 +21,7 @@ mat_contents = loadmat(file_name=array_path)
 
 A = mat_contents["A"][0]
 B = mat_contents["B"][0]
-C = to_arr_of_arr(mat_contents["C"][0][0][:,0])
+C = to_obj_array(mat_contents["C"][0][0][:,0])
 obs_matlab = mat_contents["obs"].astype("int64")
 policy = mat_contents["policies"].astype("int64") - 1
 t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")

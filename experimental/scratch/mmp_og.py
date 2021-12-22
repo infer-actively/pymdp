@@ -101,16 +101,16 @@ def run_mmp(
     window_len = len(time_window_idxs)
     print("t_horizon ", t_horizon)
     print("window_len ", window_len)
-    if utils.is_arr_of_arr(obs_t[0]):
+    if utils.is_obj_array(obs_t[0]):
         n_observations = [obs_array_i.shape[0] for obs_array_i in obs_t[0]]
     else:
         n_observations = [obs_t[0].shape[0]]
 
-    if utils.is_arr_of_arr(B):
+    if utils.is_obj_array(B):
         n_states = [sub_B.shape[0] for sub_B in B]
     else:
         n_states = [B[0].shape[0]]
-        B = utils.to_arr_of_arr(B)
+        B = utils.to_obj_array(B)
 
     n_modalities = len(n_observations)
     n_factors = len(n_states)
