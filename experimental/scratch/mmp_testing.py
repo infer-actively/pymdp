@@ -100,7 +100,7 @@ T = 1
 qs1, qss, F, F_pol = algos.run_mmp(A, B, obs_t, policy, curr_t, t_horizon,T)
 print(f"qs1 len {len(qs1)} qs1 {qs1[0]} qss len {len(qss)} qss [0] {qss[0]} F {F} F_pol {F_pol}")
 
-qs2 = algos.run_fpi(A, obs_t[0], num_obs, num_states, prior=None, num_iter=10, dF=1.0, dF_tol=0.001)
+qs2 = algos.run_vanilla_fpi(A, obs_t[0], num_obs, num_states, prior=None, num_iter=10, dF=1.0, dF_tol=0.001)
 print(f"qs2 len {len(qs2)} qs2 {qs2}")
 
 

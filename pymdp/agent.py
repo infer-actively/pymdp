@@ -73,7 +73,7 @@ class Agent(object):
                 'A matrix must be a numpy array'
             )
 
-        self.A = utils.to_arr_of_arr(A)
+        self.A = utils.to_obj_array(A)
 
         assert utils.is_normalized(self.A), "A matrix is not normalized (i.e. A.sum(axis = 0) must all equal 1.0"
 
@@ -90,7 +90,7 @@ class Agent(object):
                 'B matrix must be a numpy array'
             )
 
-        self.B = utils.to_arr_of_arr(B)
+        self.B = utils.to_obj_array(B)
 
         assert utils.is_normalized(self.B), "A matrix is not normalized (i.e. A.sum(axis = 0) must all equal 1.0"
 
@@ -137,7 +137,7 @@ class Agent(object):
                 raise TypeError(
                     'C vector must be a numpy array'
                 )
-            self.C = utils.to_arr_of_arr(C)
+            self.C = utils.to_obj_array(C)
 
             assert len(self.C) == self.num_modalities, f"Check C vector: number of sub-arrays must be equal to number of observation modalities: {self.num_modalities}"
 
@@ -153,7 +153,7 @@ class Agent(object):
                 raise TypeError(
                     'D vector must be a numpy array'
                 )
-            self.D = utils.to_arr_of_arr(D)
+            self.D = utils.to_obj_array(D)
 
             assert len(self.D) == self.num_factors, f"Check D vector: number of sub-arrays must be equal to number of hidden state factors: {self.num_factors}"
 
@@ -378,7 +378,7 @@ class Agent(object):
                 latest_obs = self.prev_obs
                 latest_actions = self.prev_actions
 
-            qs, F = inference.update_posterior_states_v2(
+            qs, F = inference.update_posterior_states_full(
                 self.A,
                 self.B,
                 latest_obs,
@@ -426,7 +426,7 @@ class Agent(object):
                 latest_obs = self.prev_obs
                 latest_actions = self.prev_actions
 
-            qs, F, xn, vn = inference.update_posterior_states_v2_test(
+            qs, F, xn, vn = inference._update_posterior_states_full_test(
                 self.A,
                 self.B, 
                 latest_obs,
@@ -467,7 +467,7 @@ class Agent(object):
 
             future_qs_seq = self.get_future_qs()
 
-            q_pi, efe = control.update_posterior_policies_mmp(
+            q_pi, efe = control.update_posterior_policies_full(
                 future_qs_seq,
                 self.A,
                 self.B,
@@ -509,7 +509,7 @@ class Agent(object):
         Update posterior beliefs about Dirichlet parameters that parameterise the observation likelihood 
         """
 
-        pA_updated = learning.update_likelihood_dirichlet(
+        pA_updated = learning.update_obs_likelihood_dirichlet(
             self.pA, 
             self.A, 
             obs, 
@@ -528,7 +528,7 @@ class Agent(object):
         Update posterior beliefs about Dirichlet parameters that parameterise the transition likelihood 
         """
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             self.pB,
             self.B,
             self.action,

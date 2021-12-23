@@ -21,3 +21,5 @@ six>=1.15.0
 toml>=0.10.2
 typing-extensions>=3.7.4.3
 xlsxwriter>=1.4.3
+sphinx-rtd-theme>=0.4
+myst-nb>=0.13.1

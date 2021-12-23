@@ -32,13 +32,13 @@ def spm_dot(X, x, dims_to_omit=None):
     """
 
     # Construct dims to perform dot product on
-    if utils.is_arr_of_arr(x):
+    if utils.is_obj_array(x):
         # dims = list((np.arange(0, len(x)) + X.ndim - len(x)).astype(int))
         dims = list(range(X.ndim - len(x),len(x)+X.ndim - len(x)))
         # dims = list(range(X.ndim))
     else:
         dims = [1]
-        x = utils.to_arr_of_arr(x)
+        x = utils.to_obj_array(x)
 
     if dims_to_omit is not None:
         arg_list = [X, list(range(X.ndim))] + list(chain(*([x[xdim_i],[dims[xdim_i]]] for xdim_i in range(len(x)) if xdim_i not in dims_to_omit))) + [dims_to_omit]
@@ -72,11 +72,11 @@ def spm_dot_classic(X, x, dims_to_omit=None):
     """
 
     # Construct dims to perform dot product on
-    if utils.is_arr_of_arr(x):
+    if utils.is_obj_array(x):
         dims = (np.arange(0, len(x)) + X.ndim - len(x)).astype(int)
     else:
         dims = np.array([1], dtype=int)
-        x = utils.to_arr_of_arr(x)
+        x = utils.to_obj_array(x)
 
     # delete ignored dims
     if dims_to_omit is not None:
@@ -124,7 +124,7 @@ def spm_dot_old(X, x, dims_to_omit=None, obs_mode=False):
     """
 
     # Construct dims to perform dot product on
-    if utils.is_arr_of_arr(x):
+    if utils.is_obj_array(x):
         dims = (np.arange(0, len(x)) + X.ndim - len(x)).astype(int)
     else:
         if obs_mode is True:
@@ -141,7 +141,7 @@ def spm_dot_old(X, x, dims_to_omit=None, obs_mode=False):
             """
             dims = np.array([1], dtype=int)
 
-        x = utils.to_arr_of_arr(x)
+        x = utils.to_obj_array(x)
 
     # delete ignored dims
     if dims_to_omit is not None:
@@ -191,7 +191,7 @@ def spm_cross(x, y=None, *args):
     """
 
     if len(args) == 0 and y is None:
-        if utils.is_arr_of_arr(x):
+        if utils.is_obj_array(x):
             z = spm_cross(*list(x))
         elif np.issubdtype(x.dtype, np.number):
             z = x
@@ -199,10 +199,10 @@ def spm_cross(x, y=None, *args):
             raise ValueError(f"Invalid input to spm_cross ({x})")
         return z
 
-    if utils.is_arr_of_arr(x):
+    if utils.is_obj_array(x):
         x = spm_cross(*list(x))
 
-    if y is not None and utils.is_arr_of_arr(y):
+    if y is not None and utils.is_obj_array(y):
         y = spm_cross(*list(y))
 
     reshape_dims = tuple(list(x.shape) + list(np.ones(y.ndim, dtype=int)))
@@ -236,8 +236,8 @@ def get_joint_likelihood(A, obs, num_states):
     # deal with single modality case
     if type(num_states) is int:
         num_states = [num_states]
-    A = utils.to_arr_of_arr(A)
-    obs = utils.to_arr_of_arr(obs)
+    A = utils.to_obj_array(A)
+    obs = utils.to_obj_array(obs)
     ll = np.ones(tuple(num_states))
     for modality in range(len(A)):
         ll = ll * dot_likelihood(A[modality], obs[modality])
@@ -392,7 +392,7 @@ def spm_MDP_G(A, x):
     qo = 0
     idx = np.array(np.where(qx > np.exp(-16))).T
 
-    if utils.is_arr_of_arr(A):
+    if utils.is_obj_array(A):
         # Accumulate expectation of entropy: i.e., E_{Q(o, s)}[lnP(o|x)]
         for i in idx:
             # Probability over outcomes for this combination of causes

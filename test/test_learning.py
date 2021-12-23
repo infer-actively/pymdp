@@ -24,7 +24,7 @@ class TestLearning(unittest.TestCase):
         
         observation = utils.sample(maths.spm_dot(A[0], qs))
 
-        pA_updated = learning.update_likelihood_dirichlet(
+        pA_updated = learning.update_obs_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities="all")
         validation_pA = pA[0] + l_rate * maths.spm_cross(utils.onehot(observation, num_obs[0]), qs)
         self.assertTrue(np.all(pA_updated[0] == validation_pA))
@@ -36,7 +36,7 @@ class TestLearning(unittest.TestCase):
         
         observation = [utils.sample(maths.spm_dot(A_m, qs)) for A_m in A]
 
-        pA_updated = learning.update_likelihood_dirichlet(
+        pA_updated = learning.update_obs_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities="all")
 
         for modality, obs_dim in enumerate(num_obs):
@@ -64,7 +64,7 @@ class TestLearning(unittest.TestCase):
         
         observation = [utils.sample(maths.spm_dot(A_m, qs)) for A_m in A]
 
-        pA_updated = learning.update_likelihood_dirichlet(
+        pA_updated = learning.update_obs_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities=modality_to_update)
 
         for modality, obs_dim in enumerate(num_obs):
@@ -93,7 +93,7 @@ class TestLearning(unittest.TestCase):
 
         observation = [utils.sample(maths.spm_dot(A_m, qs)) for A_m in A]
 
-        pA_updated = learning.update_likelihood_dirichlet(
+        pA_updated = learning.update_obs_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities=modalities_to_update)
 
         for modality, obs_dim in enumerate(num_obs):
@@ -119,7 +119,7 @@ class TestLearning(unittest.TestCase):
         A = utils.random_A_matrix(num_obs, num_states)
         pA = utils.obj_array_ones([A_m.shape for A_m in A])
         observation = [utils.sample(maths.spm_dot(A_m, qs)) for A_m in A]
-        pA_updated = learning.update_likelihood_dirichlet(
+        pA_updated = learning.update_obs_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities="all")
         update = maths.spm_cross(utils.onehot(observation[0], num_obs[0]), qs)
         validation_pA = pA[0] + l_rate * update
@@ -130,7 +130,7 @@ class TestLearning(unittest.TestCase):
         A = utils.random_A_matrix(num_obs, num_states)
         pA = utils.obj_array_ones([A_m.shape for A_m in A])
         observation = [utils.sample(maths.spm_dot(A_m, qs)) for A_m in A]
-        pA_updated = learning.update_likelihood_dirichlet(
+        pA_updated = learning.update_obs_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities="all")
         for modality, obs_dim in enumerate(num_obs):
             update = maths.spm_cross(utils.onehot(observation[modality], obs_dim), qs)
@@ -153,7 +153,7 @@ class TestLearning(unittest.TestCase):
         A = utils.random_A_matrix(num_obs, num_states)
         pA = utils.obj_array_ones([A_m.shape for A_m in A])
         observation = [utils.sample(maths.spm_dot(A_m, qs)) for A_m in A]
-        pA_updated = learning.update_likelihood_dirichlet(
+        pA_updated = learning.update_obs_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities=modality_to_update)
 
         for modality, obs_dim in enumerate(num_obs):
@@ -180,7 +180,7 @@ class TestLearning(unittest.TestCase):
         A = utils.random_A_matrix(num_obs, num_states)
         pA = utils.obj_array_ones([A_m.shape for A_m in A])
         observation = [utils.sample(maths.spm_dot(A_m, qs)) for A_m in A]
-        pA_updated = learning.update_likelihood_dirichlet(
+        pA_updated = learning.update_obs_likelihood_dirichlet(
             pA, A, observation, qs, lr=l_rate, modalities=modalities_to_update)
 
         for modality, obs_dim in enumerate(num_obs):
@@ -209,17 +209,17 @@ class TestLearning(unittest.TestCase):
 
         observation_list = [0, 3, 2]
 
-        pA_updated_1 = learning.update_likelihood_dirichlet(
+        pA_updated_1 = learning.update_obs_likelihood_dirichlet(
             pA, A, observation_list, qs, lr=l_rate, modalities=modalities_to_update)
 
         observation_tuple = (0, 3, 2)
 
-        pA_updated_2 = learning.update_likelihood_dirichlet(
+        pA_updated_2 = learning.update_obs_likelihood_dirichlet(
             pA, A, observation_tuple, qs, lr=l_rate, modalities=modalities_to_update)
         
         observation_obj_array = utils.process_observation((0, 3, 2), len(num_obs), num_obs)
 
-        pA_updated_3 = learning.update_likelihood_dirichlet(
+        pA_updated_3 = learning.update_obs_likelihood_dirichlet(
             pA, A, observation_obj_array, qs, lr=l_rate, modalities=modalities_to_update)
 
         for modality, _ in enumerate(num_obs):
@@ -240,12 +240,12 @@ class TestLearning(unittest.TestCase):
 
         observation_int = 2
 
-        pA_updated_1 = learning.update_likelihood_dirichlet(
+        pA_updated_1 = learning.update_obs_likelihood_dirichlet(
             pA, A, observation_int, qs, lr=l_rate, modalities=modalities_to_update)
 
         observation_onehot = utils.onehot(2, num_obs[0])
 
-        pA_updated_2 = learning.update_likelihood_dirichlet(
+        pA_updated_2 = learning.update_obs_likelihood_dirichlet(
             pA, A, observation_onehot, qs, lr=l_rate, modalities=modalities_to_update)
         
         self.assertTrue(np.allclose(pA_updated_1[0], pA_updated_2[0]))
@@ -269,7 +269,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors="all"
         )
 
@@ -297,7 +297,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors="all"
         )
 
@@ -325,7 +325,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors="all"
         )
 
@@ -359,7 +359,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update
         )
 
@@ -395,7 +395,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update
         )
 
@@ -429,7 +429,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors="all"
         )
 
@@ -464,7 +464,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update
         )
 
@@ -500,7 +500,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update
         )
 
@@ -536,7 +536,7 @@ class TestLearning(unittest.TestCase):
 
         action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
 
-        pB_updated = learning.update_transition_dirichlet(
+        pB_updated = learning.update_state_likelihood_dirichlet(
             pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update
         )
 
@@ -620,42 +620,42 @@ class TestLearning(unittest.TestCase):
     def test_prune_prior(self):
         """
         Test removing hidden state factor levels and/or observation levels from the priors vectors
-        of a generative model, using the `prune_prior` function of the `learning` module
+        of a generative model, using the `_prune_prior` function of the `learning` module
         """
 
-        """ Test 1a. Testing `prune_prior()` in case of a single hidden state factor/modality """
+        """ Test 1a. Testing `_prune_prior()` in case of a single hidden state factor/modality """
 
         num_levels_total = 4 # this could either be 4 hidden state levels, or 4 observation levels
         test_prior = utils.random_single_categorical([num_levels_total])[0]
 
         levels_to_remove = [2]
 
-        reduced_prior = learning.prune_prior(test_prior, levels_to_remove)
+        reduced_prior = learning._prune_prior(test_prior, levels_to_remove)
 
         self.assertTrue(len(reduced_prior) == (num_levels_total - len(levels_to_remove)))
         self.assertTrue(utils.is_normalized(reduced_prior))
 
-        """ Test 1b. Testing `prune_prior()` in case of multiple hidden state factors/modalities """
+        """ Test 1b. Testing `_prune_prior()` in case of multiple hidden state factors/modalities """
 
         num_levels_total = [4, 5] # this could either be 4 hidden state levels, or 4 observation levels
         test_prior = utils.random_single_categorical(num_levels_total)
 
         levels_to_remove = [ [2, 3], []]
 
-        reduced_prior = learning.prune_prior(test_prior, levels_to_remove)
+        reduced_prior = learning._prune_prior(test_prior, levels_to_remove)
 
         for f, ns in enumerate(num_levels_total):
             self.assertTrue(len(reduced_prior[f]) == (ns - len(levels_to_remove[f])))
             self.assertTrue(utils.is_normalized(reduced_prior[f]))
         
-        """ Test 1c. Testing `prune_prior()` in case of multiple hidden state factors/modalities, and where you're removing all the levels of a particular factor """
+        """ Test 1c. Testing `_prune_prior()` in case of multiple hidden state factors/modalities, and where you're removing all the levels of a particular factor """
 
         num_levels_total = [4, 5] # this could either be 4 hidden state levels, or 4 observation levels
         test_prior = utils.random_single_categorical(num_levels_total)
 
         levels_to_remove = [ [2, 3], list(range(5))]
 
-        reduced_prior = learning.prune_prior(test_prior, levels_to_remove)
+        reduced_prior = learning._prune_prior(test_prior, levels_to_remove)
 
         self.assertTrue(len(reduced_prior[0]) == (num_levels_total[0] - len(levels_to_remove[0])))
         self.assertTrue(utils.is_normalized(reduced_prior[0]))
@@ -665,49 +665,49 @@ class TestLearning(unittest.TestCase):
     def test_prune_likelihoods(self):
         """
         Test removing hidden state factor levels and/or observation levels from the likelihood arrays 
-        of a generative model, using the `prune_A` and `prune_B` functions of the `learning` module
+        of a generative model, using the `_prune_A` and `_prune_B` functions of the `learning` module
         """
 
-        """ Test 1a. Testing `prune_A()` in case of a single hidden state factor/modality """
+        """ Test 1a. Testing `_prune_A()` in case of a single hidden state factor/modality """
 
         A = utils.random_A_matrix([5], [4])[0]
 
         obs_levels_to_prune = [2, 3]
         state_levels_to_prune = [1, 3]
 
-        A_pruned = learning.prune_A(A, obs_levels_to_prune, state_levels_to_prune)
+        A_pruned = learning._prune_A(A, obs_levels_to_prune, state_levels_to_prune)
 
         expected_shape = (A.shape[0] - len(obs_levels_to_prune), A.shape[1] - len(state_levels_to_prune))
         self.assertTrue(A_pruned.shape == expected_shape)
         self.assertTrue(utils.is_normalized(A_pruned))
 
-        """ Test 1b. Testing `prune_A()` in case of a single hidden state factor/modality, where hidden state levels aren't pruned at all """
+        """ Test 1b. Testing `_prune_A()` in case of a single hidden state factor/modality, where hidden state levels aren't pruned at all """
 
         A = utils.random_A_matrix([5], [4])[0]
 
         obs_levels_to_prune = [2, 3]
         state_levels_to_prune = []
 
-        A_pruned = learning.prune_A(A, obs_levels_to_prune, state_levels_to_prune)
+        A_pruned = learning._prune_A(A, obs_levels_to_prune, state_levels_to_prune)
 
         expected_shape = (A.shape[0] - len(obs_levels_to_prune), A.shape[1] - len(state_levels_to_prune))
         self.assertTrue(A_pruned.shape == expected_shape)
         self.assertTrue(utils.is_normalized(A_pruned))
 
-        """ Test 1c. Testing `prune_A()` in case of a single hidden state factor/modality, where observation levels aren't pruned at all """
+        """ Test 1c. Testing `_prune_A()` in case of a single hidden state factor/modality, where observation levels aren't pruned at all """
         
         A = utils.random_A_matrix([5], [4])[0]
 
         obs_levels_to_prune = []
         state_levels_to_prune = [2,3]
 
-        A_pruned = learning.prune_A(A, obs_levels_to_prune, state_levels_to_prune)
+        A_pruned = learning._prune_A(A, obs_levels_to_prune, state_levels_to_prune)
 
         expected_shape = (A.shape[0] - len(obs_levels_to_prune), A.shape[1] - len(state_levels_to_prune))
         self.assertTrue(A_pruned.shape == expected_shape)
         self.assertTrue(utils.is_normalized(A_pruned))
 
-        """ Test 1d. Testing `prune_A()` in case of a multiple hidden state factors/modalities """
+        """ Test 1d. Testing `_prune_A()` in case of a multiple hidden state factors/modalities """
 
         num_obs = [3, 4, 5]
         num_states = [2, 10, 4]
@@ -716,7 +716,7 @@ class TestLearning(unittest.TestCase):
         obs_levels_to_prune = [ [0, 2], [], [1, 2, 3]]
         state_levels_to_prune = [[], [5,6,7,8], [1]]
 
-        A_pruned = learning.prune_A(A, obs_levels_to_prune, state_levels_to_prune)
+        A_pruned = learning._prune_A(A, obs_levels_to_prune, state_levels_to_prune)
 
         expected_lagging_dimensions = []
         for f, ns in enumerate(num_states):
@@ -726,46 +726,46 @@ class TestLearning(unittest.TestCase):
             self.assertTrue(A_pruned[m].shape == expected_shape)
             self.assertTrue(utils.is_normalized(A_pruned[m]))
         
-        """ Test 2a. Testing `prune_B()` in case of a single hidden state factor / control state factor """
+        """ Test 2a. Testing `_prune_B()` in case of a single hidden state factor / control state factor """
 
         B = utils.random_B_matrix([4], [3])[0]
 
         state_levels_to_prune = [1, 3]
         action_levels_to_prune = [0, 1]
 
-        B_pruned = learning.prune_B(B, state_levels_to_prune, action_levels_to_prune)
+        B_pruned = learning._prune_B(B, state_levels_to_prune, action_levels_to_prune)
 
         expected_shape = (B.shape[0] - len(state_levels_to_prune), B.shape[1] - len(state_levels_to_prune), B.shape[2] - len(action_levels_to_prune))
         self.assertTrue(B_pruned.shape == expected_shape)
         self.assertTrue(utils.is_normalized(B_pruned))
 
-        """ Test 2b. Testing `prune_B()` in case of a single hidden state factor, where control state levels aren't pruned at all """
+        """ Test 2b. Testing `_prune_B()` in case of a single hidden state factor, where control state levels aren't pruned at all """
 
         B = utils.random_B_matrix([4], [3])[0]
 
         state_levels_to_prune = [1, 3]
         action_levels_to_prune = []
 
-        B_pruned = learning.prune_B(B, state_levels_to_prune, action_levels_to_prune)
+        B_pruned = learning._prune_B(B, state_levels_to_prune, action_levels_to_prune)
 
         expected_shape = (B.shape[0] - len(state_levels_to_prune), B.shape[1] - len(state_levels_to_prune), B.shape[2] - len(action_levels_to_prune))
         self.assertTrue(B_pruned.shape == expected_shape)
         self.assertTrue(utils.is_normalized(B_pruned))
 
-        """ Test 1c. Testing `prune_B()` in case of a single hidden state factor, where hidden state levels aren't pruned at all """
+        """ Test 1c. Testing `_prune_B()` in case of a single hidden state factor, where hidden state levels aren't pruned at all """
         
         B = utils.random_B_matrix([4], [3])[0]
 
         state_levels_to_prune = []
         action_levels_to_prune = [0]
 
-        B_pruned = learning.prune_B(B, state_levels_to_prune, action_levels_to_prune)
+        B_pruned = learning._prune_B(B, state_levels_to_prune, action_levels_to_prune)
 
         expected_shape = (B.shape[0] - len(state_levels_to_prune), B.shape[1] - len(state_levels_to_prune), B.shape[2] - len(action_levels_to_prune))
         self.assertTrue(B_pruned.shape == expected_shape)
         self.assertTrue(utils.is_normalized(B_pruned))
         
-        """ Test 1d. Testing `prune_B()` in case of a multiple hidden state factors """
+        """ Test 1d. Testing `_prune_B()` in case of a multiple hidden state factors """
 
         num_states = [2, 10, 4]
         num_controls = [5, 3, 4]
@@ -774,7 +774,7 @@ class TestLearning(unittest.TestCase):
         state_levels_to_prune = [ [0, 1], [], [1, 2, 3]]
         action_levels_to_prune = [[], [0, 1], [1]]
 
-        B_pruned = learning.prune_B(B, state_levels_to_prune, action_levels_to_prune)
+        B_pruned = learning._prune_B(B, state_levels_to_prune, action_levels_to_prune)
 
         for f, ns in enumerate(num_states):
             expected_shape = (ns - len(state_levels_to_prune[f]), ns - len(state_levels_to_prune[f]), num_controls[f] - len(action_levels_to_prune[f]))

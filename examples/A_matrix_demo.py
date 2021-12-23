@@ -14,7 +14,7 @@ sys.path.append(module_path)
 
 from pymdp import utils
 from pymdp.utils import create_A_matrix_stub, read_A_matrix
-from pymdp.algos import run_fpi
+from pymdp.algos import run_vanilla_fpi
 
 # %% Create an empty A matrix
 model_labels = {
@@ -89,7 +89,7 @@ for g, modality_name in enumerate(model_labels['observations'].keys()):
     observation[g][obs_idx[g]] = 1.0
     print('%s: %s'%(modality_name, model_labels['observations'][modality_name][obs_idx[g]]))
 
-qs = run_fpi(A, observation, num_obs, n_states, prior=None, num_iter=10, dF=1.0, dF_tol=0.001)
+qs = run_vanilla_fpi(A, observation, num_obs, n_states, prior=None, num_iter=10, dF=1.0, dF_tol=0.001)
 
 print('Belief that it rained: %.2f'%(qs[0][0]))
 print('Belief that the sprinkler was on: %.2f'%(qs[1][0]))

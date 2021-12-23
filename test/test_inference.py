@@ -27,7 +27,7 @@ class TestInference(unittest.TestCase):
 
         prior = utils.random_single_categorical(num_states)
 
-        A = utils.to_arr_of_arr(maths.softmax(np.eye(num_states[0]) * 0.1))
+        A = utils.to_obj_array(maths.softmax(np.eye(num_states[0]) * 0.1))
 
         obs_idx = 1
         obs = utils.onehot(obs_idx, num_obs[0])
@@ -42,7 +42,7 @@ class TestInference(unittest.TestCase):
         self.assertTrue(np.isclose(qs_out_2[0], qs_out[0]).all())
 
         '''Try single modality inference where the observation is a one-hot stored in an object array'''
-        qs_out_3 = inference.update_posterior_states(A, utils.to_arr_of_arr(obs), prior=prior)
+        qs_out_3 = inference.update_posterior_states(A, utils.to_obj_array(obs), prior=prior)
         self.assertTrue(np.isclose(qs_out_3[0], qs_out[0]).all())
 
         '''Test with multiple hidden state factors and single observation modality'''

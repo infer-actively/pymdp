@@ -1,7 +1,7 @@
 
 <p align='center'>
   <a href='https://github.com/infer-actively/pymdp'>
-    <img src='.github/pymdp_logo_2.jpeg' />
+    <img src='.github/pymdp_logo_2-removebg.png' />
   </a> 
 </p>
 
@@ -9,6 +9,36 @@ A Python package for simulating Active Inference agents in Markov Decision Proce
 This package is hosted on the [`infer-actively`](https://github.com/infer-actively) GitHub organization, which was built with the intention of hosting open-source active inference and free-energy-principle related software.
 
 Most of the low-level mathematical operations are [NumPy](https://github.com/numpy/numpy) ports of their equivalent functions from the `SPM` [implementation](https://www.fil.ion.ucl.ac.uk/spm/doc/) in MATLAB. We have benchmarked and validated most of these functions against their SPM counterparts.
+
+# ``pymdp`` in action
+
+Here's a visualization of ``pymdp`` agents in action. One of the defining features of active inference agents is the drive to maximize "epistemic value" (i.e. curiosity). Equipped with such a drive in environments with uncertain yet disclosable hidden structure, active inference can ultimately allow agents to simultaneously learn about the environment as well as maximize reward.
+
+The simulation below demonstrates what might be called "epistemic chaining," where an agent (here, analogized to a mouse seeking food) forages for a chain of cues, each of which discloses the location of the subsequent cue in the chain. The final cue (here, "Cue 2") reveals the location a hidden reward. This is similar in spirit to "behavior chaining" used in operant conditioning, except that here, each successive action in the behavioral sequence doesn't need to be learned through instrumental conditioning. Rather, active inference agents will naturally forage the sequence of cues based on an intrinsic desire to disclose information. This ultimately leads the agent to the hidden reward source in the fewest number of moves as possible.
+<!-- 
+<p align="center">
+  <img src=".github/chained_cue_navigation_v1.gif" width="50%" height="50%"/>
+  <img src=".github/chained_cue_navigation_v2.gif" width="50%" height="50%"/>
+</p> -->
+
+<!-- ![alt](.github/chained_cue_navigation_v1.gif) | ![alt](.github/chained_cue_navigation_v2.gif) -->
+
+<table><tr>
+<td> 
+  <p align="center" style="padding: 10px">
+    <img src=".github/chained_cue_navigation_v1.gif" width="100%" height="50%"/>
+    <br>
+    <em style="color: grey">Cue 2 in Location 1, Reward on Top</em>
+  </p> 
+</td>
+<td> 
+  <p align="center">
+    <img src=".github/chained_cue_navigation_v2.gif" width="100%" height="50%"/>
+    <br>
+    <em style="color: grey">Cue 2 in Location 3, Reward on Bottomp</em>
+  </p> 
+</td>
+</tr></table>
 
 ## Status
 
