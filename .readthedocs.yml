@@ -10,11 +10,10 @@ build:
   tools:
     python: "3.8"
 
+# Optionally set the version of Python and requirements required to build your docs
 python:
-  # Install our python package before building the docs
   install:
-    - method: pip
-      path: .
+    - requirements: requirements.txt
 
 # Build documentation in the docs/ directory with Sphinx
 sphinx:
@@ -26,8 +25,3 @@ formats:
   - pdf
   - epub
   - htmlzip
-
-# Optionally set the version of Python and requirements required to build your docs
-python:
-  install:
-    - requirements: requirements.txt
