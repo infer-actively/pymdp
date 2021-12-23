@@ -35,7 +35,7 @@ The simulation below demonstrates what might be called "epistemic chaining," whe
   <p align="center">
     <img src=".github/chained_cue_navigation_v2.gif" width="100%" height="50%"/>
     <br>
-    <em style="color: grey">Cue 2 in Location 3, Reward on Bottomp</em>
+    <em style="color: grey">Cue 2 in Location 3, Reward on Bottom</em>
   </p> 
 </td>
 </tr></table>
