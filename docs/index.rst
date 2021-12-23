@@ -18,6 +18,7 @@ specificity to a given task.
 
    installation
    notebooks/pymdp_fundamentals
+   notebooks/active_inference_from_scratch
 
 .. toctree::
    :maxdepth: 1
