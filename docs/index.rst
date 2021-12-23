@@ -17,14 +17,14 @@ specificity to a given task.
    :caption: Installation & Usage
 
    installation
+   notebooks/pymdp_fundamentals
 
 .. toctree::
    :maxdepth: 1
    :caption: Examples
 
    notebooks/tmaze_demo
-   notebooks/pymdp_fundamentals
-
+   
 .. toctree::
    :maxdepth: 2
    :caption: Modules
