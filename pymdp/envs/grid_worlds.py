@@ -56,18 +56,18 @@ class GridWorldEnv(Env):
         values = np.zeros(self.shape)
         values[self.position] = 1.0
         _, ax = plt.subplots(figsize=(3, 3))
-        if self.shape[0] is 1 or self.shape[1] is 1:
+        if self.shape[0] == 1 or self.shape[1] == 1:
             ax.imshow(values, cmap="OrRd")
         else:
             _ = sns.heatmap(values, cmap="OrRd", linewidth=2.5, cbar=False, ax=ax)
         plt.xticks(range(self.shape[1]))
         plt.yticks(range(self.shape[0]))
-        if title is not None:
+        if title != None:
             plt.title(title)
         plt.show()
 
     def set_init_state(self, init_state=None):
-        if init_state is not None:
+        if init_state != None:
             if init_state > (self.n_states - 1) or init_state < 0:
                 raise ValueError("`init_state` is greater than number of states")
             if not isinstance(init_state, (int, float)):
@@ -105,7 +105,7 @@ class GridWorldEnv(Env):
 
     def get_init_state_dist(self, init_state=None):
         init_state_dist = np.zeros(self.n_states)
-        if init_state is None:
+        if init_state == None:
             init_state_dist[self.init_state] = 1.0
         else:
             init_state_dist[init_state] = 1.0
@@ -170,18 +170,18 @@ class DGridWorldEnv(object):
         values = np.zeros(self.shape)
         values[self.position] = 1.0
         _, ax = plt.subplots(figsize=(3, 3))
-        if self.shape[0] is 1 or self.shape[1] is 1:
+        if self.shape[0] == 1 or self.shape[1] == 1:
             ax.imshow(values, cmap="OrRd")
         else:
             _ = sns.heatmap(values, cmap="OrRd", linewidth=2.5, cbar=False, ax=ax)
         plt.xticks(range(self.shape[1]))
         plt.yticks(range(self.shape[0]))
-        if title is not None:
+        if title != None:
             plt.title(title)
         plt.show()
 
     def set_init_state(self, init_state=None):
-        if init_state is not None:
+        if init_state != None:
             if init_state > (self.n_states - 1) or init_state < 0:
                 raise ValueError("`init_state` is greater than number of states")
             if not isinstance(init_state, (int, float)):
@@ -215,7 +215,7 @@ class DGridWorldEnv(object):
 
     def get_init_state_dist(self, init_state=None):
         init_state_dist = np.zeros(self.n_states)
-        if init_state is None:
+        if init_state == None:
             init_state_dist[self.init_state] = 1.0
         else:
             init_state_dist[init_state] = 1.0
