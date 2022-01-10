@@ -14,7 +14,10 @@ Most of the low-level mathematical operations are [NumPy](https://github.com/num
 
 Here's a visualization of ``pymdp`` agents in action. One of the defining features of active inference agents is the drive to maximize "epistemic value" (i.e. curiosity). Equipped with such a drive in environments with uncertain yet disclosable hidden structure, active inference can ultimately allow agents to simultaneously learn about the environment as well as maximize reward.
 
-The simulation below demonstrates what might be called "epistemic chaining," where an agent (here, analogized to a mouse seeking food) forages for a chain of cues, each of which discloses the location of the subsequent cue in the chain. The final cue (here, "Cue 2") reveals the location a hidden reward. This is similar in spirit to "behavior chaining" used in operant conditioning, except that here, each successive action in the behavioral sequence doesn't need to be learned through instrumental conditioning. Rather, active inference agents will naturally forage the sequence of cues based on an intrinsic desire to disclose information. This ultimately leads the agent to the hidden reward source in the fewest number of moves as possible.
+The simulation below (see associated notebook [here](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/cue_chaining_demo.html)) demonstrates what might be called "epistemic chaining," where an agent (here, analogized to a mouse seeking food) forages for a chain of cues, each of which discloses the location of the subsequent cue in the chain. The final cue (here, "Cue 2") reveals the location a hidden reward. This is similar in spirit to "behavior chaining" used in operant conditioning, except that here, each successive action in the behavioral sequence doesn't need to be learned through instrumental conditioning. Rather, active inference agents will naturally forage the sequence of cues based on an intrinsic desire to disclose information. This ultimately leads the agent to the hidden reward source in the fewest number of moves as possible.
+
+You can run the code behind simulating tasks like this one and others in the **Examples** section of the [official documentation]((https://pymdp-rtd.readthedocs.io).
+
 <!-- 
 <p align="center">
   <img src=".github/chained_cue_navigation_v1.gif" width="50%" height="50%"/>
@@ -92,49 +95,15 @@ action = my_agent.sample_action() # sample an action
 
 ## Getting started / introductory material
 
-For a gentle, pedagogical introduction to active inference in discrete state-spaces, we recommend starting with two tutorial notebooks hosted on Google Colab, part of a series called:
+We recommend starting with the Installation/Usage section of the [official documentation](https://pymdp-rtd.readthedocs.io) for the repository. 
 
-###
-**Active Inference with `pymdp`**
+For new users to `pymdp`, the documentation contains a set of tutorial notebooks like:
 
-This series is (so far) separated into a [Part I](https://colab.research.google.com/drive/1Ux_jSFzXothHt6VKJRzLMXUBKvW8hdD8?usp=sharing) and a [Part II](https://colab.research.google.com/drive/1Q51jamhazOF0jHbB26TIwfujY5hBMEaf?usp=sharing). These two notebooks together provide a step-by-step walkthrough of simulating active inference agents in partially-observed Markov Decision Processes (POMDPs) using `pymdp`. We encourage you to step through these notebooks, cell-by-cell,  and fill out the suggested exercises as you go along. The solutions for each exercise are posted below as expandable hidden cells.
-
-- [Active inference with pymdp: Tutorial 1](https://colab.research.google.com/drive/1Ux_jSFzXothHt6VKJRzLMXUBKvW8hdD8?usp=sharing) walks you through representing Categorical distributions (both conditional and marginal) with `NumPy` NDarrays, building a generative model by writing down a set of likelihood and prior distributions, and finally simulating an active inference agent performing inference and action to successfully navigate to a desired location in a simple 2-D grid world.
-
-- [Active inference with pymdp: Tutorial 2](https://colab.research.google.com/drive/1Q51jamhazOF0jHbB26TIwfujY5hBMEaf?usp=sharing) introduces tools for constructing more complex generative models, notably by separating observations different *modalities* and hidden states into different *factors*. As an example, we construct a multi-modality and multi-factor model for use in a Multi-Armed Bandit task, stepping through each of the constituent arrays of the generative model and explaining the structure of the matrices. We then plug this model into the `Agent()` constructor to initialize an active inference agent, and demonstrate how to run an active inference loop using `Agent()` in a few simple lines. This notebook exemplifies most high-level and abstracted API offered by `pymdp`.  
-
-## Other `pymdp` material
-
--[**Introduction to Active Inference and Grid-world**](https://colab.research.google.com/drive/1m9Hhd7GnJEsbMrKf5khCh3EQnbjoCahw?usp=sharing) relies only on `numpy` and some plotting libraries. The purpose of this tutorial is to give a pedagogical overview of active inference, and a technical introduction to representing Categorical distributions (both marginal and conditional) with multidimensional `numpy` arrays.
-
--[**Simulating active inference from scratch**](https://colab.research.google.com/drive/13XfDDh2m-nHf8I_BPbQHhwUGxPgQLpjv?usp=sharing) walks the user through the construction of a generative model through the `A`, `B`, `C`, and `D` arrays - the key Categorical distributions that characterize an active inference agent's "mind". The notebook also goes through the mathematical operations (both formally and in code) required to perform inference and planning in a simple gridworld navigation task.
+- [`Pymdp` fundamentals](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/pymdp_fundamentals.html)
+- [Active Inference from Scratch](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/active_inference_from_scratch.html)
+- [The `Agent` API](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/using_the_agent_class.html)
 
 Special thanks to [Beren Millidge](https://github.com/BerenMillidge) and [Daphne Demekas](https://github.com/daphnedemekas) for their help in constructing these tutorials, which were originally based on a set of tutorial notebooks written by [Alec Tschantz](https://github.com/alec-tschantz).
-
-## The `Agent()` class
-The highest level API that `pymdp` currently offers is the `Agent()` class - this is a class whose methods abstract the core mathematical operations involved in active inference, which themselves have been abstracted by `pymdp`'s lower level libraries (e.g. `pymdp.inference`). 
-
-For an illustrative tutorial on how to instantiate and use an `Agent()`, we recommend going through the Jupyter notebooks in the `pymdp/examples/` folder - the `agent_demo.ipynb` notebook and the `tmaze_demo.ipynb` notebooks are a good place to start for tutorials related to using the agent.
-
-In order to go through these demos (which are not included if you `pip install` the package), we recommend following these steps:
-
-1. Clone (`git clone https://github.com/infer-actively/pymdp.git`) or download the repository locally and then `cd` into it.
-2. Start a virtual environment (with either `venv` or `conda`) & install the requirements.
-   1. If you're using `conda`:
-      ```bash
-      cd <path_to_local_clone_of_repo>
-      conda env create -n my_env
-      conda activate my_env
-      pip install -r requirements.txt
-      ```
-   2. If you're using `venv`
-      ```bash
-      cd <path_to_local_clone_of_repo>
-      python3 -m venv env
-      source env/bin/activate
-      pip install -r requirements.txt
-      ```
-3. then run the IPython notebooks interactively, either as a straight Jupyter Notebook or on a platform that supports IPython notebooks (e.g. VSCode's IPython extension, Jupyterlab, etc.).
 
 ## Contributing
 
