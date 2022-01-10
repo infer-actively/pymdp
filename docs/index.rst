@@ -26,6 +26,7 @@ specificity to a given task.
    :caption: Examples
 
    notebooks/tmaze_demo
+   notebooks/cue_chaining_demo
    
 .. toctree::
    :maxdepth: 2
