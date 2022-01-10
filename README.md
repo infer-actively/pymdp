@@ -10,6 +10,11 @@ This package is hosted on the [`infer-actively`](https://github.com/infer-active
 
 Most of the low-level mathematical operations are [NumPy](https://github.com/numpy/numpy) ports of their equivalent functions from the `SPM` [implementation](https://www.fil.ion.ucl.ac.uk/spm/doc/) in MATLAB. We have benchmarked and validated most of these functions against their SPM counterparts.
 
+## Status
+
+![status](https://img.shields.io/badge/status-active-green)
+![PyPI version](https://img.shields.io/pypi/v/inferactively-pymdp)
+
 # ``pymdp`` in action
 
 Here's a visualization of ``pymdp`` agents in action. One of the defining features of active inference agents is the drive to maximize "epistemic value" (i.e. curiosity). Equipped with such a drive in environments with uncertain yet disclosable hidden structure, active inference can ultimately allow agents to simultaneously learn about the environment as well as maximize reward.
@@ -42,11 +47,6 @@ You can run the code behind simulating tasks like this one and others in the **E
   </p> 
 </td>
 </tr></table>
-
-## Status
-
-![status](https://img.shields.io/badge/status-active-green)
-![PyPI version](https://img.shields.io/pypi/v/inferactively-pymdp)
 
 ## Installation and Usage
 
