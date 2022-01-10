@@ -48,7 +48,7 @@ You can run the code behind simulating tasks like this one and others in the **E
 </td>
 </tr></table>
 
-## Installation and Usage
+## Quick-start: Installationa and Usage
 
 In order to use `pymdp` to build and develop active inference agents, we recommend installing it with the the package installer [`pip`](https://pip.pypa.io/en/stable/), which will install `pymdp` locally as well as its dependencies. This can also be done in a virtual environment (e.g. with `venv`). 
 
@@ -92,12 +92,11 @@ action = my_agent.sample_action() # sample an action
 # ... and so on ...
 ```
 
-
 ## Getting started / introductory material
 
-We recommend starting with the Installation/Usage section of the [official documentation](https://pymdp-rtd.readthedocs.io) for the repository. 
+We recommend starting with the Installation/Usage section of the [official documentation](https://pymdp-rtd.readthedocs.io) for the repository, which provides a series of useful pedagogical notebooks for introducing you to active inference and how to build agents in `pymdp`.
 
-For new users to `pymdp`, the documentation contains a set of tutorial notebooks like:
+For new users to `pymdp`, we specifically recommend stepping through following three Jupyter notebooks (can also be used on Google Colab):
 
 - [`Pymdp` fundamentals](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/pymdp_fundamentals.html)
 - [Active Inference from Scratch](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/active_inference_from_scratch.html)
