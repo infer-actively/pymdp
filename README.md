@@ -48,7 +48,7 @@ You can run the code behind simulating tasks like this one and others in the **E
 </td>
 </tr></table>
 
-## Quick-start: Installationa and Usage
+## Quick-start: Installation and Usage
 
 In order to use `pymdp` to build and develop active inference agents, we recommend installing it with the the package installer [`pip`](https://pip.pypa.io/en/stable/), which will install `pymdp` locally as well as its dependencies. This can also be done in a virtual environment (e.g. with `venv`). 
 
