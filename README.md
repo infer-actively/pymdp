@@ -5,7 +5,9 @@
   </a> 
 </p>
 
-A Python package for simulating Active Inference agents in Markov Decision Process environments. 
+A Python package for simulating Active Inference agents in Markov Decision Process environments.
+Please see our companion preprint on arxiv for an overview of the package, its structure, and a mathematical overview of active inference in partially-observable Markov Decision Processes: ["pymdp: A Python library for active inference in discrete state spaces"](https://arxiv.org/abs/2201.03904).
+
 This package is hosted on the [`infer-actively`](https://github.com/infer-actively) GitHub organization, which was built with the intention of hosting open-source active inference and free-energy-principle related software.
 
 Most of the low-level mathematical operations are [NumPy](https://github.com/numpy/numpy) ports of their equivalent functions from the `SPM` [implementation](https://www.fil.ion.ucl.ac.uk/spm/doc/) in MATLAB. We have benchmarked and validated most of these functions against their SPM counterparts.
@@ -21,7 +23,7 @@ Here's a visualization of ``pymdp`` agents in action. One of the defining featur
 
 The simulation below (see associated notebook [here](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/cue_chaining_demo.html)) demonstrates what might be called "epistemic chaining," where an agent (here, analogized to a mouse seeking food) forages for a chain of cues, each of which discloses the location of the subsequent cue in the chain. The final cue (here, "Cue 2") reveals the location a hidden reward. This is similar in spirit to "behavior chaining" used in operant conditioning, except that here, each successive action in the behavioral sequence doesn't need to be learned through instrumental conditioning. Rather, active inference agents will naturally forage the sequence of cues based on an intrinsic desire to disclose information. This ultimately leads the agent to the hidden reward source in the fewest number of moves as possible.
 
-You can run the code behind simulating tasks like this one and others in the **Examples** section of the [official documentation]((https://pymdp-rtd.readthedocs.io).
+You can run the code behind simulating tasks like this one and others in the **Examples** section of the [official documentation](https://pymdp-rtd.readthedocs.io).
 
 <!-- 
 <p align="center">
