@@ -15,7 +15,8 @@ import itertools
 EPS_VAL = 1e-16 # global constant for use in norm_dist()
 
 def sample(probabilities):
-    sample_onehot = np.random.multinomial(1, probabilities.squeeze())
+    # squeeze here throws an error `len() of unsized object`
+    sample_onehot = np.random.multinomial(1, probabilities)
     return np.where(sample_onehot == 1)[0][0]
 
 def sample_obj_array(arr):
