@@ -30,9 +30,11 @@ class Agent(object):
         pD = None,
         num_controls=None,
         policy_len=1,
+        total_time=None,
         inference_horizon=1,
         control_fac_idx=None,
         policies=None,
+        alpha=16.0,
         gamma=16.0,
         use_utility=True,
         use_states_info_gain=True,
@@ -47,13 +49,20 @@ class Agent(object):
         lr_pD=1.0,
         use_BMA = True,
         policy_sep_prior = False,
-        save_belief_hist = False
+        save_belief_hist = False,
+        return_more_info = False
     ):
 
         ### Constant parameters ###
 
         # policy parameters
-        self.policy_len = policy_len
+        self.total_time = total_time
+        if total_time is not None:
+            self.policy_len = max(policy_len, total_time)
+        else:
+            self.policy_len = policy_len
+
+        self.alpha = alpha
         self.gamma = gamma
         self.action_selection = action_selection
         self.use_utility = use_utility
@@ -216,6 +225,8 @@ class Agent(object):
         if save_belief_hist:
             self.qs_hist = []
             self.q_pi_hist = []
+
+        self.return_more_info = return_more_info
         
         self.prev_obs = []
         self.reset()
@@ -289,6 +300,10 @@ class Agent(object):
             self.prev_actions.append(self.action)
 
         self.curr_timestep += 1
+
+        if self.total_time is not None:
+            self.policy_len = min(self.policy_len, self.total_time - self.curr_timestep)
+            self.policies = self._construct_policies()
 
         if self.inference_algo == "MMP" and (self.curr_timestep - self.inference_horizon) >= 0:
             self.set_latest_beliefs()
@@ -449,7 +464,7 @@ class Agent(object):
     def infer_policies(self):
 
         if self.inference_algo == "VANILLA":
-            q_pi, efe = control.update_posterior_policies(
+            q_pi, efe, eu, ei, polies = control.update_posterior_policies(
                 self.qs,
                 self.A,
                 self.B,
@@ -491,11 +506,14 @@ class Agent(object):
 
         self.q_pi = q_pi
         self.efe = efe
-        return q_pi, efe
+        if self.return_more_info:
+            return q_pi, efe, eu, ei, polies
+        else:
+            return q_pi, efe
 
     def sample_action(self):
         action = control.sample_action(
-            self.q_pi, self.policies, self.num_controls, self.action_selection
+            self.q_pi, self.policies, self.num_controls, self.action_selection, self.alpha
         )
 
         self.action = action

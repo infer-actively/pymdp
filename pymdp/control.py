@@ -92,24 +92,35 @@ def update_posterior_policies_full(
     # initialize (negative) expected free energies for all policies
     G = np.zeros(num_policies)
 
+    # initialize tracking expected utility ("pragmatic value") and
+    # expected information gain ("epistemic value")
+    eu = np.zeros(num_policies)
+    ei = np.zeros(num_policies)
+
     if F is None:
         F = spm_log_single(np.ones(num_policies) / num_policies)
 
     if E is None:
         lnE = spm_log_single(np.ones(num_policies) / num_policies)
     else:
-        lnE = spm_log_single(E) 
+        # kludge to get E to add below for fixed time horizon case
+        # Reset each time to new policies length.
+        lnE = spm_log_single(np.ones(num_policies) / num_policies)
 
-
+        
     for p_idx, policy in enumerate(policies):
 
         qo_seq_pi[p_idx] = get_expected_obs(qs_seq_pi[p_idx], A)
 
         if use_utility:
-            G[p_idx] += calc_expected_utility(qo_seq_pi[p_idx], C)
+            eu_now = calc_expected_utility(qo_seq_pi[p_idx], C)
+            G[p_idx] += eu_now
+            eu[p_idx] += eu_now
         
         if use_states_info_gain:
-            G[p_idx] += calc_states_info_gain(A, qs_seq_pi[p_idx])
+            ei_now = calc_states_info_gain(A, qs_seq_pi[p_idx])
+            G[p_idx] += ei_now
+            ei[idx] += ei_now
         
         if use_param_info_gain:
             if pA is not None:
@@ -119,7 +130,7 @@ def update_posterior_policies_full(
 
     q_pi = softmax(G * gamma - F + lnE)
     
-    return q_pi, G
+    return q_pi, G, eu, ei, policies
 
 
 def update_posterior_policies(
@@ -186,22 +197,30 @@ def update_posterior_policies(
 
     n_policies = len(policies)
     G = np.zeros(n_policies)
+    eu = np.zeros(n_policies)
+    ei = np.zeros(n_policies)
     q_pi = np.zeros((n_policies, 1))
 
     if E is None:
         lnE = spm_log_single(np.ones(n_policies) / n_policies)
     else:
-        lnE = spm_log_single(E) 
+        # kludge to get E to add below for fixed time horizon case
+        # Reset each time to new policies length.
+        lnE = spm_log_single(np.ones(n_policies) / n_policies)
 
     for idx, policy in enumerate(policies):
         qs_pi = get_expected_states(qs, B, policy)
         qo_pi = get_expected_obs(qs_pi, A)
 
         if use_utility:
-            G[idx] += calc_expected_utility(qo_pi, C)
+            eu_now = calc_expected_utility(qo_pi, C)
+            G[idx] += eu_now
+            eu[idx] += eu_now
 
         if use_states_info_gain:
-            G[idx] += calc_states_info_gain(A, qs_pi)
+            ei_now = calc_states_info_gain(A, qs_pi)
+            G[idx] += ei_now
+            ei[idx] += ei_now
 
         if use_param_info_gain:
             if pA is not None:
@@ -211,7 +230,7 @@ def update_posterior_policies(
 
     q_pi = softmax(G * gamma + lnE)    
 
-    return q_pi, G
+    return q_pi, G, eu, ei, policies
 
 def get_expected_states(qs, B, policy):
     """
@@ -567,5 +586,6 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
         elif action_selection == 'stochastic':
             p_actions = softmax(action_marginals[factor_i] * alpha)
             selected_policy[factor_i] = utils.sample(p_actions)
+
 
     return selected_policy
