@@ -15,7 +15,19 @@ import copy
 
 class Agent(object):
     """ 
-    Agent class 
+    The Agent class, the highest-level API that wraps together processes for action, perception, and learning under active inference.
+
+    The basic usage is as follows:
+
+    >>> my_agent = Agent(A = A, B = C, <more_params>)
+    >>> observation = env.step(initial_action)
+    >>> qs = my_agent.infer_states(observation)
+    >>> q_pi, G = my_agent.infer_policies()
+    >>> next_action = my_agent.sample_action()
+    >>> next_observation = env.step(next_action)
+
+    This represents one timestep of an active inference process. Wrapping this step in a loop with an ``Env()`` class that returns
+    observations and takes actions as inputs, would entail a dynamic agent-environment interaction.
     """
 
     def __init__(
@@ -324,7 +336,7 @@ class Agent(object):
         In the case that the inference horizon includes the first timestep of the simulation, then the ``latest_belief`` is
         simply the first belief of the whole simulation, or the prior (``self.D``). The particular structure of the ``latest_belief``
         depends on the value of ``self.edge_handling_params['use_BMA']``.
-        
+
         Returns
         ---------
         latest_belief: ``numpy.ndarray`` of dtype object
