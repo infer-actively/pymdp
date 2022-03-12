@@ -37,6 +37,12 @@ specificity to a given task.
    learning
    algos/index
 
+.. toctree::
+   :maxdepth: 1
+   :caption: APIs
+
+   agent
+
 
 Indices and tables
 ==================

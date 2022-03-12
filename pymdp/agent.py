@@ -67,7 +67,7 @@ class Agent(object):
         self.lr_pB = lr_pB
         self.lr_pD = lr_pD
 
-        """ Initialise observation model (A matrices) """
+        # Initialise observation model (A matrices)
         if not isinstance(A, np.ndarray):
             raise TypeError(
                 'A matrix must be a numpy array'
@@ -77,14 +77,14 @@ class Agent(object):
 
         assert utils.is_normalized(self.A), "A matrix is not normalized (i.e. A.sum(axis = 0) must all equal 1.0"
 
-        """ Determine number of observation modalities and their respective dimensions """
+        # Determine number of observation modalities and their respective dimensions
         self.num_obs = [self.A[m].shape[0] for m in range(len(self.A))]
         self.num_modalities = len(self.num_obs)
 
-        """ Assigning prior parameters on observation model (pA matrices) """
+        # Assigning prior parameters on observation model (pA matrices)
         self.pA = pA
 
-        """ Initialise transition model (B matrices) """
+        # Initialise transition model (B matrices)
         if not isinstance(B, np.ndarray):
             raise TypeError(
                 'B matrix must be a numpy array'
@@ -98,7 +98,7 @@ class Agent(object):
         self.num_states = [self.B[f].shape[0] for f in range(len(self.B))]
         self.num_factors = len(self.num_states)
 
-        """ Assigning prior parameters on transition model (pB matrices) """
+        # Assigning prior parameters on transition model (pB matrices) 
         self.pB = pB
 
         # If no `num_controls` are given, then this is inferred from the shapes of the input B matrices
@@ -130,7 +130,7 @@ class Agent(object):
 
         assert all([n_c == max_action for (n_c, max_action) in zip(self.num_controls, list(np.max(all_policies, axis =0)+1))]), "Maximum number of actions is not consistent with `num_controls`"
 
-        """ Construct prior preferences (uniform if not specified) """
+        # Construct prior preferences (uniform if not specified)
 
         if C is not None:
             if not isinstance(C, np.ndarray):
@@ -146,7 +146,7 @@ class Agent(object):
         else:
             self.C = self._construct_C_prior()
 
-        """ Construct prior over hidden states (uniform if not specified) """
+        # Construct prior over hidden states (uniform if not specified)
     
         if D is not None:
             if not isinstance(D, np.ndarray):
@@ -167,11 +167,10 @@ class Agent(object):
 
         assert utils.is_normalized(self.D), "A matrix is not normalized (i.e. A.sum(axis = 0) must all equal 1.0"
 
-        """ Assigning prior parameters on initial hidden states (pD vectors) """
+        # Assigning prior parameters on initial hidden states (pD vectors)
         self.pD = pD
 
-        """ Construct prior over policies (uniform if not specified) """
-
+        # Construct prior over policies (uniform if not specified) 
         if E is not None:
             if not isinstance(E, np.ndarray):
                 raise TypeError(
@@ -255,6 +254,20 @@ class Agent(object):
         return E
 
     def reset(self, init_qs=None):
+        """
+        Resets the posterior beliefs about hidden states of the agent to a uniform distribution, and resets time to first timestep of the simulation's temporal horizon.
+        Returns the posterior beliefs about hidden states.
+
+        Returns
+        ---------
+        qs: ``numpy.ndarray`` of dtype object
+           Initialized posterior over hidden states. Depending on the inference algorithm chosen and other parameters (such as the parameters stored within ``edge_handling_paramss),
+           the resulting ``qs`` variable will have additional sub-structure to reflect whether beliefs are additionally conditioned on timepoint and policy.
+            For example, in case the ``self.inference_algo == 'MMP' `, the indexing structure of ``qs`` is policy->timepoint-->factor, so that 
+            ``qs[p_idx][t_idx][f_idx]`` refers to beliefs about marginal factor ``f_idx`` expected under policy ``p_idx`` 
+            at timepoint ``t_idx``. In this case, the returned ``qs`` will only have entries filled out for the first timestep, i.e. for ``q[p_idx][0]``, for all 
+            policy-indices ``p_idx``. Subsequent entries ``q[:][1, 2, ...]`` will be initialized to empty ``numpy.ndarray`` objects.
+        """
 
         self.curr_timestep = 0
 
@@ -282,6 +295,16 @@ class Agent(object):
         return self.qs
 
     def step_time(self):
+        """
+        Advances time by one step. This involves updating the ``self.prev_actions``, and in the case of a moving
+        inference horizon, this also shifts the history of post-dictive beliefs forward in time (using ``self.set_latest_beliefs()``),
+        so that the penultimate belief before the beginning of the horizon is correctly indexed.
+
+        Returns
+        ---------
+        curr_timestep: ``int``
+            The index in absolute simulation time of the current timestep.
+        """
 
         if self.prev_actions is None:
             self.prev_actions = [self.action]
@@ -297,9 +320,21 @@ class Agent(object):
     
     def set_latest_beliefs(self,last_belief=None):
         """
-        This method sets the 'last' belief before the inference horizon. In the case that the inference
-        horizon reaches back to the first timestep of the simulation, then the `latest_belief` is
-        identical to the first belief / the prior (`self.D`). 
+        Both sets and returns the penultimate belief before the first timestep of the backwards inference horizon. 
+        In the case that the inference horizon includes the first timestep of the simulation, then the ``latest_belief`` is
+        simply the first belief of the whole simulation, or the prior (``self.D``). The particular structure of the ``latest_belief``
+        depends on the value of ``self.edge_handling_params['use_BMA']``.
+        
+        Returns
+        ---------
+        latest_belief: ``numpy.ndarray`` of dtype object
+            Penultimate posterior beliefs over hidden states at the timestep just before the first timestep of the inference horizon. 
+            Depending on the value of ``self.edge_handling_params['use_BMA']``, the shape of this output array will differ.
+            If ``self.edge_handling_params['use_BMA'] == True``, then ``latest_belief`` will be a Bayesian model average 
+            of beliefs about hidden states, where the average is taken with respect to posterior beliefs about policies.
+            Otherwise, `latest_belief`` will be the full, policy-conditioned belief about hidden states, and will have indexing structure
+            policies->factors, such that ``latest_belief[p_idx][f_idx]`` refers to the penultimate belief about marginal factor ``f_idx``
+            under policy ``p_idx``.
         """
 
         if last_belief is None:
@@ -320,10 +355,18 @@ class Agent(object):
     
     def get_future_qs(self):
         """
-        This method only gets the last `policy_len` timesteps of each policy-conditioned belief
+        Returns the last ``self.policy_len`` timesteps of each policy-conditioned belief
         over hidden states. This is a step of pre-processing that needs to be done before computing
         the expected free energy of policies. We do this to avoid computing the expected free energy of 
-        policies using ('post-dictive') beliefs about hidden states in the past
+        policies using beliefs about hidden states in the past (so-called "post-dictive" beliefs).
+
+        Returns
+        ---------
+        future_qs_seq: ``numpy.ndarray`` of dtype object
+            Posterior beliefs over hidden states under a policy, in the future. This is a nested ``numpy.ndarray`` object array, with one
+            sub-array ``future_qs_seq[p_idx]`` for each policy. The indexing structure is policy->timepoint-->factor, so that 
+            ``future_qs_seq[p_idx][t_idx][f_idx]`` refers to beliefs about marginal factor ``f_idx`` expected under policy ``p_idx`` 
+            at future timepoint ``t_idx``, relative to the current timestep.
         """
         
         future_qs_seq = utils.obj_array(len(self.qs))
@@ -334,21 +377,24 @@ class Agent(object):
 
 
     def infer_states(self, observation):
-        '''
-        Docstring @ TODO 
-        Update variational posterior over hidden states, i.e. Q(\tilde{s})
+        """
+        Update approximate posterior over hidden states by solving variational inference problem, given an observation.
+
         Parameters
         ----------
-        `self` [type]:
-            -Description
-        `observation` [list or tuple of ints]:
-            The observation (generated by the environment). Each observation[m] stores the index of the discrete
-            observation for that modality.
-        Returns:
+        observation: ``list`` or ``tuple`` of ints
+            The observation input. Each entry ``observation[m]`` stores the index of the discrete
+            observation for modality ``m``.
+
+        Returns
         ---------
-        `qs` [numpy object array]:
-            - posterior beliefs over hidden states. 
-        '''
+        qs: ``numpy.ndarray`` of dtype object
+            Posterior beliefs over hidden states. Depending on the inference algorithm chosen, the resulting ``qs`` variable will have additional sub-structure to reflect whether
+            beliefs are additionally conditioned on timepoint and policy.
+            For example, in case the ``self.inference_algo == 'MMP' `` indexing structure is policy->timepoint-->factor, so that 
+            ``qs[p_idx][t_idx][f_idx]`` refers to beliefs about marginal factor ``f_idx`` expected under policy ``p_idx`` 
+            at timepoint ``t_idx``.
+        """
 
         observation = tuple(observation) 
 
@@ -397,7 +443,11 @@ class Agent(object):
 
         return qs
 
-    def infer_states_test(self, observation):
+    def _infer_states_test(self, observation):
+        """
+        Test version of ``infer_states()`` that additionally returns intermediate variables of MMP, such as
+        the prediction errors and intermediate beliefs from the optimization. Used for benchmarking against SPM outputs.
+        """
         observation = tuple(observation)
 
         if not hasattr(self, "qs"):
@@ -447,9 +497,22 @@ class Agent(object):
         return qs, xn, vn
 
     def infer_policies(self):
+        """
+        Perform policy inference by optimizing a posterior (categorical) distribution over policies.
+        This distribution is computed as the softmax of ``G * gamma + lnE`` where ``G`` is the negative expected
+        free energy of policies, ``gamma`` is a policy precision and ``lnE`` is the (log) prior probability of policies.
+        This function returns the posterior over policies as well as the negative expected free energy of each policy.
+
+        Returns
+        ----------
+        q_pi: 1D ``numpy.ndarray``
+            Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
+        G: 1D ``numpy.ndarray``
+            Negative expected free energies of each policy, i.e. a vector containing one negative expected free energy per policy.
+        """
 
         if self.inference_algo == "VANILLA":
-            q_pi, efe = control.update_posterior_policies(
+            q_pi, G = control.update_posterior_policies(
                 self.qs,
                 self.A,
                 self.B,
@@ -467,7 +530,7 @@ class Agent(object):
 
             future_qs_seq = self.get_future_qs()
 
-            q_pi, efe = control.update_posterior_policies_full(
+            q_pi, G = control.update_posterior_policies_full(
                 future_qs_seq,
                 self.A,
                 self.B,
@@ -490,10 +553,22 @@ class Agent(object):
                 self.q_pi_hist = self.q_pi_hist[-(self.inference_horizon-1):]
 
         self.q_pi = q_pi
-        self.efe = efe
-        return q_pi, efe
+        self.G = G
+        return q_pi, G
 
     def sample_action(self):
+        """
+        Sample or select a discrete action from the posterior over control states.
+        This function both sets or cachés the action as an internal variable with the agent and returns it.
+        This function also updates time variable (and thus manages consequences of updating the moving reference frame of beliefs)
+        using ``self.step_time()``.
+        
+        Returns
+        ----------
+        action: 1D ``numpy.ndarray``
+            Vector containing the indices of the actions for each control factor
+        """
+
         action = control.sample_action(
             self.q_pi, self.policies, self.num_controls, self.action_selection
         )
@@ -506,10 +581,21 @@ class Agent(object):
 
     def update_A(self, obs):
         """
-        Update posterior beliefs about Dirichlet parameters that parameterise the observation likelihood 
+        Update approximate posterior beliefs about Dirichlet parameters that parameterise the observation likelihood or ``A`` array.
+
+        Parameters
+        ----------
+        observation: ``list`` or ``tuple`` of ints
+            The observation input. Each entry ``observation[m]`` stores the index of the discrete
+            observation for modality ``m``.
+
+        Returns
+        -----------
+        qA: ``numpy.ndarray`` of dtype object
+            Posterior Dirichlet parameters over observation model (same shape as ``A``), after having updated it with observations.
         """
 
-        pA_updated = learning.update_obs_likelihood_dirichlet(
+        qA = learning.update_obs_likelihood_dirichlet(
             self.pA, 
             self.A, 
             obs, 
@@ -518,14 +604,24 @@ class Agent(object):
             self.modalities_to_learn
         )
 
-        self.pA = pA_updated
-        self.A = utils.norm_dist_obj_arr(self.pA) 
+        self.pA = qA # set new prior to posterior
+        self.A = utils.norm_dist_obj_arr(qA) # take expected value of posterior Dirichlet parameters to calculate posterior over A array
 
-        return pA_updated
+        return qA
 
     def update_B(self, qs_prev):
         """
         Update posterior beliefs about Dirichlet parameters that parameterise the transition likelihood 
+        
+        Parameters
+        -----------
+        qs_prev: 1D ``numpy.ndarray`` or ``numpy.ndarray`` of dtype object
+            Marginal posterior beliefs over hidden states at previous timepoint.
+    
+        Returns
+        -----------
+        qB: ``numpy.ndarray`` of dtype object
+            Posterior Dirichlet parameters over transition model (same shape as ``B``), after having updated it with state beliefs and actions.
         """
 
         pB_updated = learning.update_state_likelihood_dirichlet(
@@ -538,14 +634,28 @@ class Agent(object):
             self.factors_to_learn
         )
 
-        self.pB = pB_updated
-        self.B = utils.norm_dist_obj_arr(self.pB) 
+        self.pB = qB # set new prior to posterior
+        self.B = utils.norm_dist_obj_arr(qB)  # take expected value of posterior Dirichlet parameters to calculate posterior over B array
 
-        return pB_updated
+        return qB
     
     def update_D(self, qs_t0 = None):
         """
-        Update posterior beliefs about Dirichlet parameters that parameterise the prior over initial hidden states
+        Update Dirichlet parameters of the initial hidden state distribution 
+        (prior beliefs about hidden states at the beginning of the inference window).
+
+        Parameters
+        -----------
+        qs_t0: 1D ``numpy.ndarray``, ``numpy.ndarray`` of dtype object, or ``None``
+            Marginal posterior beliefs over hidden states at current timepoint. If ``None``, the 
+            value of ``qs_t0`` is set to ``self.qs_hist[0]`` (i.e. the initial hidden state beliefs at the first timepoint).
+            If ``self.inference_algo == "MMP"``, then ``qs_t0`` is set to be the Bayesian model average of beliefs about hidden states
+            at the first timestep of the backwards inference horizon, where the average is taken with respect to posterior beliefs about policies.
+      
+        Returns
+        -----------
+        qD: ``numpy.ndarray`` of dtype object
+            Posterior Dirichlet parameters over initial hidden state prior (same shape as ``qs_t0``), after having updated it with state beliefs.
         """
         
         if self.inference_algo == "VANILLA":
@@ -574,12 +684,12 @@ class Agent(object):
             
                 qs_t0 = inference.average_states_over_policies(qs_pi_t0,q_pi_t0) # beliefs about hidden states at the first timestep of the inference horizon
         
-        pD_updated = learning.update_state_prior_dirichlet(self.pD, qs_t0, self.lr_pD, factors = self.factors_to_learn)
+        qD = learning.update_state_prior_dirichlet(self.pD, qs_t0, self.lr_pD, factors = self.factors_to_learn)
         
-        self.pD = pD_updated
-        self.D = utils.norm_dist_obj_arr(self.pD)
+        self.pD = qD # set new prior to posterior
+        self.D = utils.norm_dist_obj_arr(qD) # take expected value of posterior Dirichlet parameters to calculate posterior over D array
 
-        return pD_updated
+        return qD
 
     def _get_default_params(self):
         method = self.inference_algo
