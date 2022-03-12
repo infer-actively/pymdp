@@ -45,7 +45,7 @@ class TestSPM(unittest.TestCase):
 
         for t in range(T):
             o_t = (np.where(obs[t])[0][0],)
-            qx, xn_t, vn_t = agent.infer_states_test(o_t)
+            qx, xn_t, vn_t = agent._infer_states_test(o_t)
             q_pi, efe= agent.infer_policies()
             action = agent.sample_action()
 
