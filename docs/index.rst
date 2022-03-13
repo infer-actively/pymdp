@@ -42,7 +42,7 @@ specificity to a given task.
    :caption: Agent and environment API
 
    agent
-   env/index
+   env
 
 Indices and tables
 ==================
