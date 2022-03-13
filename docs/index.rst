@@ -38,11 +38,11 @@ specificity to a given task.
    algos/index
 
 .. toctree::
-   :maxdepth: 1
-   :caption: APIs
+   :maxdepth: 2
+   :caption: Agent and environment API
 
    agent
-
+   env/index
 
 Indices and tables
 ==================
