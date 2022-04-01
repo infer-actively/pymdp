@@ -636,7 +636,7 @@ class Agent(object):
             Posterior Dirichlet parameters over transition model (same shape as ``B``), after having updated it with state beliefs and actions.
         """
 
-        pB_updated = learning.update_state_likelihood_dirichlet(
+        qB = learning.update_state_likelihood_dirichlet(
             self.pB,
             self.B,
             self.action,
