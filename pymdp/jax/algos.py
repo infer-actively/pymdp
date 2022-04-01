@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 from jax import tree_util, jit, lax, nn
 
-from pymdp.jax.maths import compute_log_likelihood, log
+from pymdp.jax.maths import compute_log_likelihood, log_stable
 
 def add(x, y):
     return x + y
@@ -15,7 +15,7 @@ def marginal_log_likelihood(qs, log_likelihood, i):
     dims = (f for f in range(len(qs)) if f != i)
     return joint.sum(dims)/qs[i]
 
-def run_vanilla_fpi(A, obs, prior, K=16):
+def run_vanilla_fpi(A, obs, prior, num_iter=16):
     """ Vanilla fixed point iteration (jaxified) """
 
     nf = len(prior)
@@ -25,7 +25,7 @@ def run_vanilla_fpi(A, obs, prior, K=16):
     log_likelihoods = [ll] * nf
 
     # Step 2: Map prior to log space and create initial log-posterior
-    log_prior = tree_util.tree_map(log, prior)
+    log_prior = tree_util.tree_map(log_stable, prior)
     log_q = tree_util.tree_map(jnp.zeros_like, prior)
 
     # Step 3: Iterate until convergence
@@ -39,7 +39,7 @@ def run_vanilla_fpi(A, obs, prior, K=16):
 
         return log_q, None
 
-    res, _ = lax.scan(scan_fn, log_q, jnp.arange(K))
+    res, _ = lax.scan(scan_fn, log_q, jnp.arange(num_iter))
 
     # Step 4: Map result to factorised posterior
     qs = tree_util.tree_map(nn.softmax, res)
@@ -49,6 +49,7 @@ if __name__ == "__main__":
     obs = [0, 1, 2]
     A = [jnp.ones((3, 2, 2))/3] * 3
     prior = [jnp.ones(2)/2] * 2
-
-    print(jit(run_vanilla_fpi)(A, obs, prior))
+    obs_vec = [nn.one_hot(o_m, A[m].shape[0]) for m, o_m in enumerate(obs)]
+    print(jit(run_vanilla_fpi)(A, obs_vec, prior))
+    # print(jit(run_vanilla_fpi)(A, obs, prior))
 
