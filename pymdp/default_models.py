@@ -68,3 +68,48 @@ def generate_epistemic_MAB_model():
     control_fac_idx = [1]
 
     return A, B, C, control_fac_idx
+
+def generate_grid_world_transitions(action_labels, num_rows = 3, num_cols = 3):
+    """ 
+    Wrapper code for creating the controllable transition matrix 
+    that an agent can use to navigate in a 2-dimensional grid world
+    """
+
+    num_grid_locs = num_rows * num_cols
+
+    transition_matrix = np.zeros( (num_grid_locs, num_grid_locs, len(action_labels)) )
+
+    grid = np.arange(num_grid_locs).reshape(num_rows, num_cols)
+    it = np.nditer(grid, flags=["multi_index"])
+
+    loc_list = []
+    while not it.finished:
+        loc_list.append(it.multi_index)
+        it.iternext()
+
+    for action_id, action_label in enumerate(action_labels):
+
+        for curr_state, grid_location in enumerate(loc_list):
+
+            curr_row, curr_col = grid_location
+            
+            if action_label == "LEFT":
+                next_col = curr_col - 1 if curr_col > 0 else curr_col 
+                next_row = curr_row
+            elif action_label == "DOWN":
+                next_row = curr_row + 1 if curr_row < (num_rows-1) else curr_row 
+                next_col = curr_col
+            elif action_label == "RIGHT":
+                next_col = curr_col + 1 if curr_col < (num_cols-1) else curr_col 
+                next_row = curr_row
+            elif action_label == "UP":
+                next_row = curr_row - 1 if curr_row > 0 else curr_row 
+                next_col = curr_col
+            elif action_label == "STAY":
+                next_row, next_col = curr_row, curr_col
+
+            new_location = (next_row, next_col)
+            next_state = loc_list.index(new_location)
+            transition_matrix[next_state, curr_state, action_id] = 1.0
+    
+    return transition_matrix
