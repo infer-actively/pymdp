@@ -48,7 +48,7 @@ please see our companion paper_: "pymdp: A Python library for active inference i
    env
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :caption: Additional learning materials
 
    notebooks/free_energy_calculation.ipynb
