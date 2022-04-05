@@ -4,10 +4,9 @@
 # pylint: disable=not-an-iterable
 
 import itertools
-import numpy as np
-from pymdp.maths import softmax, softmax_obj_arr, spm_dot, spm_wnorm, spm_MDP_G, spm_log_single, spm_log_obj_array
-from pymdp import utils
-import copy
+import jax.numpy as jnp
+from .maths import *
+from . import utils
 
 def update_posterior_policies_full(
     qs_seq_pi,
@@ -243,7 +242,7 @@ def get_expected_states(qs, B, policy):
     
     # get expected states over time
     for t in range(n_steps):
-        for control_factor, action in enumerate(policy[t,:]):
+        for control_factor, action in enumerate(policy[t]):
             qs_pi[t+1][control_factor] = B[control_factor][:,:,int(action)].dot(qs_pi[t][control_factor])
 
     return qs_pi[1:]

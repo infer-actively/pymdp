@@ -1,5 +1,5 @@
 import jax.numpy as jnp
-from jax import tree_util, jit, lax, nn
+from jax import tree_util, jit, grad, lax, nn
 
 from pymdp.jax.maths import compute_log_likelihood, log_stable
 
@@ -9,13 +9,13 @@ def add(x, y):
 def marginal_log_likelihood(qs, log_likelihood, i):
     x = qs[0]
     for q in qs[1:]:
-        x = x[:, None] * q
+        x = jnp.expand_dims(x, -1) * q
 
     joint = log_likelihood * x
     dims = (f for f in range(len(qs)) if f != i)
     return joint.sum(dims)/qs[i]
 
-def run_vanilla_fpi(A, obs, prior, num_iter=16):
+def run_vanilla_fpi(A, obs, prior, num_iter=1):
     """ Vanilla fixed point iteration (jaxified) """
 
     nf = len(prior)
@@ -46,10 +46,18 @@ def run_vanilla_fpi(A, obs, prior, num_iter=16):
     return qs
 
 if __name__ == "__main__":
-    obs = [0, 1, 2]
-    A = [jnp.ones((3, 2, 2))/3] * 3
-    prior = [jnp.ones(2)/2] * 2
-    obs_vec = [nn.one_hot(o_m, A[m].shape[0]) for m, o_m in enumerate(obs)]
-    print(jit(run_vanilla_fpi)(A, obs_vec, prior))
-    # print(jit(run_vanilla_fpi)(A, obs, prior))
+    prior = [jnp.ones(2)/2, jnp.ones(2)/2, nn.softmax(jnp.array([0, -80., -80., -80, -80.]))]
+    obs = [0, 5]
+    A = [jnp.ones((5, 2, 2, 5))/5, jnp.ones((10, 2, 2, 5))/10]
+    
+    qs = jit(run_vanilla_fpi)(A, obs, prior)
+    print(qs)
+
+    # test if differentiable
+    from functools import partial
+    def sum_prod(prior):
+        qs = jnp.concatenate(run_vanilla_fpi(A, obs, prior))
+        return (qs * log_stable(qs)).sum()
+
+    print(jit(grad(sum_prod))(prior))
 

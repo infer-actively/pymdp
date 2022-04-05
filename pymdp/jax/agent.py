@@ -1,17 +1,15 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-""" Agent Class
+""" Agent Class iplementation in Jax
 
-__author__: Conor Heins, Alexander Tschantz, Daphne Demekas, Brennan Klein
+__author__: Conor Heins, Dimitrije Markovic, Alexander Tschantz, Daphne Demekas, Brennan Klein
 
 """
 
-import warnings
-import numpy as np
-from pymdp import inference, control, learning
-from pymdp import utils, maths
-import copy
+import jax.numpy as jnp
+from jax import nn
+from . import inference, control, learning, utils, maths
 
 class Agent(object):
     """ 
@@ -231,7 +229,7 @@ class Agent(object):
         return future_qs_seq
 
 
-    def infer_states(self, observation):
+    def infer_states(self, observations):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
@@ -251,7 +249,7 @@ class Agent(object):
             at timepoint ``t_idx``.
         """
 
-        observation = tuple(observation)
+        # replace this if statement with self.empirical_prior = self.D
 
         if self.action is not None:
             empirical_prior = control.get_expected_states(
@@ -259,16 +257,22 @@ class Agent(object):
             )[0]
         else:
             empirical_prior = self.D
+
+
+        o_vec = [nn.one_hot(o, self.A[i].shape[0]) for i, o in enumerate(observations)]
         qs = inference.update_posterior_states(
-        self.A,
-        observation,
-        empirical_prior,
-        **self.inference_params
+            self.A,
+            o_vec,
+            prior=empirical_prior
         )
 
         self.qs = qs
 
         return qs
+
+    def get_expected_states(self, action):
+        # update self.empirical_prior
+        pass
 
     def infer_policies(self):
         """
