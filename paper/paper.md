@@ -22,7 +22,7 @@ authors:
     affiliation: "6, 7"
   - name: Karl Friston
     affiliation: "8" 
-  - name: Iain Couzin
+  - name: Iain D. Couzin
     affiliation: "1, 2, 3" 
   - name: Alexander Tschantz^[corresponding author]
     affiliation: "9, 10"
