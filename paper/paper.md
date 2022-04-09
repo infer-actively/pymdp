@@ -88,6 +88,6 @@ CH and IDC acknowledge support from the Office of Naval Research grant (ONR, N00
 
 # Acknowledgements
 
-The authors would like to thank Dimitrije Markovic, Arun Niranjan, Sivan Altinakar, Mahault Albarracin, Alex Kiefer, Magnus Koudahl, Ryan Smith, Casper Hesp, and Maxwell Ramstead for discussions and feedback that contributed to development of `pymdp`. We also are grateful to the many users of `pymdp` whose feedback and usage of the package have contributed to its continued improvement and development.
+The authors would like to thank Dimitrije Markovic, Arun Niranjan, Sivan Altinakar, Mahault Albarracin, Alex Kiefer, Magnus Koudahl, Ryan Smith, Casper Hesp, and Maxwell Ramstead for discussions and feedback that contributed to development of `pymdp`. We would also like to thank Thomas Parr for providing feedback on an earlier version of the manuscript. Finally, we are grateful to the many users of `pymdp` whose feedback and usage of the package have contributed to its continued improvement and development.
 
 # References
