@@ -49,7 +49,6 @@ affiliations:
    index: 10
  - name: Sackler Centre for Consciousness Science, University of Sussex, Brighton, UK
    index: 11
-
   
 date: 14 January 2022
 bibliography: paper.bib
