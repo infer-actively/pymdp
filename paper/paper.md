@@ -12,20 +12,20 @@ tags:
   - free energy principle
 authors:
   - name: Conor Heins^[corresponding author]
-    affiliation: "1, 2, 3"
+    affiliation: "1, 2, 3, 4"
   - name: Beren Millidge
-    affiliation: "4"
+    affiliation: "4, 5"
   - name: Daphne Demekas
-    affiliation: "5"
+    affiliation: "6"
   - name: Brennan Klein
     orcid: 0000-0001-8326-5044
-    affiliation: "6, 7"
+    affiliation: "4, 7, 8"
   - name: Karl Friston
-    affiliation: "8" 
+    affiliation: "9" 
   - name: Iain D. Couzin
     affiliation: "1, 2, 3" 
   - name: Alexander Tschantz^[corresponding author]
-    affiliation: "9, 10"
+    affiliation: "4, 10, 11"
 affiliations:
  - name: Department of Collective Behaviour, Max Planck Institute of Animal Behavior, 78457 Konstanz, Germany
    index: 1
@@ -33,20 +33,23 @@ affiliations:
    index: 2
  - name: Department of Biology, University of Konstanz, 78457 Konstanz, Germany
    index: 3
- - name: MRC Brain Networks Dynamics Unit, University of Oxford, Oxford, UK
+ - name: VERSES Research Lab, Los Angeles, California, USA
    index: 4
- - name: Department of Computing, Imperial College London, London, UK
+ - name: MRC Brain Networks Dynamics Unit, University of Oxford, Oxford, UK
    index: 5
- - name: Network Science Institute, Northeastern University, Boston, MA, USA
+ - name: Department of Computing, Imperial College London, London, UK
    index: 6
- - name: Laboratory for the Modeling of Biological and Socio-Technical Systems, Northeastern University, Boston, USA
+ - name: Network Science Institute, Northeastern University, Boston, MA, USA
    index: 7
- - name: Wellcome Centre for Human Neuroimaging, Queen Square Institute of Neurology, University College London, London WC1N 3AR, UK
+ - name: Laboratory for the Modeling of Biological and Socio-Technical Systems, Northeastern University, Boston, USA
    index: 8
- - name: Sackler Centre for Consciousness Science, University of Sussex, Brighton, UK
+ - name: Wellcome Centre for Human Neuroimaging, Queen Square Institute of Neurology, University College London, London WC1N 3AR, UK
    index: 9
- - name: VERSES LAB INC.
+ - name: Sussex AI Group, Department of Informatics, University of Sussex, Brighton, UK
    index: 10
+ - name: Sackler Centre for Consciousness Science, University of Sussex, Brighton, UK
+   index: 11
+
   
 date: 14 January 2022
 bibliography: paper.bib
@@ -81,7 +84,7 @@ The `DEM` toolbox within `SPM` in MATLAB is the current gold-standard in active 
 A recent related, but largely non-overlapping project is [ForneyLab](https://github.com/biaslab/ForneyLab.jl), which provides a set of Julia libraries for performing approximate Bayesian inference via message passing on Forney Factor Graphs [@van2018forneylab]. Notably, this package has also seen several applications in simulating active inference processes, using ForneyLab as the backend for the inference algorithms employed by an active inference agent [@van2019simulating; @vanderbroeck2019active; @ergul2020learning; @van2021chance]. While ForneyLab focuses on including a rigorous set of message passing routines that can be used to simulate active inference agents, `pymdp` is specifically designed to help users quickly build agents (regardless of their underlying inference routines) and plug them into arbitrary environments to run active inference in a few easy steps.
 
 # Funding Statement
-CH and IDC acknowledge support from the Office of Naval Research grant (ONR, N00014- 64019-1-2556), with IDC further acknowledging support from the European Union’s Horizon 2020 research and innovation programme under the Marie Skłodowska-Curie grant agreement (ID: 860949), the Deutsche Forschungsgemeinschaft (DFG, German Research Foundation) under Germany’s Excellence Strategy-EXC 2117- 422037984, and the Max Planck Society. KF is supported by funding for the Wellcome Centre for Human Neuroimaging (Ref: 205103/Z/16/Z) and the Canada-UK Artificial Intelligence Initiative (Ref: ES/T01279X/1). BK acknowledges the support of a grant from the John Templeton Foundation (61780). The opinions expressed in this publication are those of the author(s) and do not necessarily reflect the views of the John Templeton Foundation.
+CH and IDC acknowledge support from the Office of Naval Research grant (ONR, N00014- 64019-1-2556), with IDC further acknowledging support from the European Union’s Horizon 2020 research and innovation programme under the Marie Skłodowska-Curie grant agreement (ID: 860949), the Deutsche Forschungsgemeinschaft (DFG, German Research Foundation) under Germany’s Excellence Strategy-EXC 2117- 422037984, and the Max Planck Society. KF is supported by funding for the Wellcome Centre for Human Neuroimaging (Ref: 205103/Z/16/Z) and the Canada-UK Artificial Intelligence Initiative (Ref: ES/T01279X/1). CH, DD, and BK acknowledge the support of a grant from the John Templeton Foundation (61780). The opinions expressed in this publication are those of the author(s) and do not necessarily reflect the views of the John Templeton Foundation.
 
 # Acknowledgements
 
