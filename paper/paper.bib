@@ -31,7 +31,8 @@
   title={Chance-Constrained Active Inference},
   author={van de Laar, Thijs and Senoz, Ismail and {\"O}z{\c{c}}elikkale, Ay{\c{c}}a and Wymeersch, Henk},
   journal={arXiv preprint arXiv:2102.08792},
-  year={2021}
+  year={2021},
+  do = {10.1162/neco_a_01427}
 }
 
 @Article{         harris2020array,
@@ -58,11 +59,10 @@
 }
 
 @article{millidge2021understanding,
-    title = {Understanding the origin of information-seeking exploration in probabilistic objectives for control},
-    author = {Millidge, Beren and Tschantz, Alexander and Seth, Anil and Buckley, Christopher},
-    journal = {arXiv},
-    year = {2021},
-    url = {https://arxiv.org/abs/2103.06859}
+  title={Understanding the origin of information-seeking exploration in probabilistic objectives for control},
+  author={Millidge, Beren and Tschantz, Alexander and Seth, Anil and Buckley, Christopher},
+  journal={arXiv preprint arXiv:2103.06859},
+  year={2021}
 }
 
 @article{millidge2021whence,
@@ -438,12 +438,15 @@
     doi = {10.1503/jpn.200032}
 }
 
-@article{smith2021step,
-    title = {A step-by-step tutorial on active inference and its application to empirical data},
-    author = {Smith, Ryan and Friston, Karl J. and Whyte, Christopher},
-    journal = {PsyArXiv},
-    year = {2021},
-    doi = {10.31234/osf.io/b4jm6}
+@article{smith2022step,
+  title={A step-by-step tutorial on active inference and its application to empirical data},
+  author={Smith, Ryan and Friston, Karl J and Whyte, Christopher J},
+  journal={Journal of Mathematical Psychology},
+  volume={107},
+  pages={102632},
+  year={2022},
+  publisher={Elsevier},
+  doi={10.1016/j.jmp.2021.102632}
 }
 
 @article{friston2008variational,
@@ -458,11 +461,10 @@
 }
 
 @article{friston2019free,
-    title = {A free energy principle for a particular physics},
-    author = {Friston, Karl J.},
-    journal = {arXiv},
-    year = {2019},
-    url = {https://arxiv.org/abs/1906.10184}
+  title={A free energy principle for a particular physics},
+  author={Friston, Karl},
+  journal={arXiv preprint arXiv:1906.10184},
+  year={2019}
 }
 
 @article{millidge2020deep,
@@ -485,19 +487,28 @@
     doi = {10.1007/978-3-030-64919-7_1}
 }
 
-@inproceedings{van2018forneylab,
-    title = {ForneyLab: A toolbox for biologically plausible free energy minimization in dynamic neural models},
-    author = {van de Laar, Thijs and Cox, Marco and Senoz, Ismail and Bocharov, Ivan and de Vries, Bert},
-    booktitle = {Conference on Complex Systems},
-    year = {2018},
-    url = {https://biaslab.github.io/pdf/forneylab/van_de_laar_forneylab_biologically_plausible_free_energy_minimization.pdf}
+@article{ForneyLab2019,
+	title = {A factor graph approach to automated design of {Bayesian} signal processing algorithms},
+	volume = {104},
+	issn = {0888-613X},
+	url = {http://www.sciencedirect.com/science/article/pii/S0888613X18304298},
+	doi = {10.1016/j.ijar.2018.11.002},
+	abstract = {The benefits of automating design cycles for Bayesian inference-based algorithms are becoming increasingly recognized by the machine learning community. As a result, interest in probabilistic programming frameworks has much increased over the past few years. This paper explores a specific probabilistic programming paradigm, namely message passing in Forney-style factor graphs (FFGs), in the context of automated design of efficient Bayesian signal processing algorithms. To this end, we developed “ForneyLab”2 as a Julia toolbox for message passing-based inference in FFGs. We show by example how ForneyLab enables automatic derivation of Bayesian signal processing algorithms, including algorithms for parameter estimation and model comparison. Crucially, due to the modular makeup of the FFG framework, both the model specification and inference methods are readily extensible in ForneyLab. In order to test this framework, we compared variational message passing as implemented by ForneyLab with automatic differentiation variational inference (ADVI) and Monte Carlo methods as implemented by state-of-the-art tools “Edward” and “Stan”. In terms of performance, extensibility and stability issues, ForneyLab appears to enjoy an edge relative to its competitors for automated inference in state-space models.},
+	urldate = {2018-11-16},
+	journal = {International Journal of Approximate Reasoning},
+	author = {Cox, Marco and van de Laar, Thijs and de Vries, Bert},
+	month = jan,
+	year = {2019},
+	keywords = {Bayesian inference, Message passing, Factor graphs, Julia, Probabilistic programming},
+	pages = {185--204}
 }
 
 @article{baltieri2019generative,
   title={Generative models as parsimonious descriptions of sensorimotor loops},
   author={Baltieri, Manuel and Buckley, Christopher L},
   journal={arXiv preprint arXiv:1904.12937},
-  year={2019}
+  year={2019},
+  doi={10.1017/S0140525X19001353}
 }
 
 @article{gregory1980perceptions,
@@ -509,14 +520,14 @@
   pages={181--197},
   year={1980},
   publisher={The Royal Society London}
+  doi={10.1098/rstb.1980.0090}
 }
 
 @article{brockman2016openai,
-    title = {{OpenAI gym}},
-    author = {Brockman, Greg and Cheung, Vicki and Pettersson, Ludwig and Schneider, Jonas and Schulman, John and Tang, Jie and Zaremba, Wojciech},
-    journal = {arXiv},
-    year = {2016},
-    url = {https://arxiv.org/abs/1606.01540}
+  title={Openai gym},
+  author={Brockman, Greg and Cheung, Vicki and Pettersson, Ludwig and Schneider, Jonas and Schulman, John and Tang, Jie and Zaremba, Wojciech},
+  journal={arXiv preprint arXiv:1606.01540},
+  year={2016}
 }
 
 @article{friston2016active,
@@ -561,9 +572,10 @@
 @article{baioumy2021towards,
     title = {Towards stochastic fault-tolerant control using precision learning and active inference},
     author = {Baioumy, Mohamed and Pezzato, Corrado and Corbato, Carlos Hernandez and Hawes, Nick and Ferrari, Riccardo},
-    journal = {arXiv},
+    journal={arXiv preprint arXiv:2109.05870},
     year = {2021},
-    url = {https://arxiv.org/abs/2109.05870}
+    url = {https://arxiv.org/abs/2109.05870},
+    doi = {10.1007/978-3-030-93736-2_48}
 }
 
 @article{ccatal2021robot,
@@ -688,7 +700,8 @@
   volume={131},
   pages={1288--1304},
   year={2021},
-  publisher={Elsevier}
+  publisher={Elsevier},
+  doi={10.1016/j.neubiorev.2021.09.038}
 }
 
 @article{adams2021everything,
@@ -696,7 +709,8 @@
   author={Adams, Rick A and Vincent, Peter and Benrimoh, David and Friston, Karl J and Parr, Thomas},
   journal={Schizophrenia research},
   year={2021},
-  publisher={Elsevier}
+  publisher={Elsevier},
+  doi={10.1016/j.schres.2021.07.032}
 }
 
 @article{parr2020prefrontal,
@@ -718,5 +732,6 @@
   number={1},
   pages={1--13},
   year={2021},
-  publisher={Nature Publishing Group}
+  publisher={Nature Publishing Group},
+  doi={10.1038/s41598-021-91308-x}
 }
