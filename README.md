@@ -16,6 +16,9 @@ Most of the low-level mathematical operations are [NumPy](https://github.com/num
 
 ![status](https://img.shields.io/badge/status-active-green)
 ![PyPI version](https://img.shields.io/pypi/v/inferactively-pymdp)
+[![Documentation Status](https://readthedocs.org/projects/pymdp-rtd/badge/?version=latest)](https://pymdp-rtd.readthedocs.io/en/latest/?badge=latest)
+[![DOI](https://zenodo.org/badge/224498849.svg)](https://zenodo.org/badge/latestdoi/224498849)
+
 
 # ``pymdp`` in action
 
