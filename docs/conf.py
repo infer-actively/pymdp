@@ -21,7 +21,7 @@ copyright = '2021, infer-actively'
 author = 'infer-actively'
 
 # The full version, including alpha/beta/rc tags
-release = '0.0.3'
+release = '0.0.5'
 
 # -- General configuration ---------------------------------------------------
 

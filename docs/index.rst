@@ -12,6 +12,9 @@ discrete space and time, using partially-observed Markov Decision Processes
 enable users to design and simulate bespoke active inference models with varying levels of
 specificity to a given task.
 
+For a theoretical overview of active inference and the motivations for developing this package, 
+please see our companion paper_: "pymdp: A Python library for active inference in discrete state spaces".
+
 .. toctree::
    :maxdepth: 1
    :caption: Installation & Usage
@@ -44,9 +47,17 @@ specificity to a given task.
    agent
    env
 
+.. toctree::
+   :maxdepth: 1
+   :caption: Additional learning materials
+
+   notebooks/free_energy_calculation.ipynb
+
 Indices and tables
 ==================
 
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
+
+.. _paper: https://arxiv.org/abs/2201.03904
