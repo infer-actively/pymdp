@@ -15,6 +15,8 @@ SCENE_ID = 1
 
 
 class VisualForagingEnv(Env):
+    """ Implementation of the visual foraging environment used for scene construction simulations """
+
     def __init__(self, scenes=None, n_features=2):
         if scenes is None:
             self.scenes = self._construct_default_scenes()

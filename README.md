@@ -104,7 +104,9 @@ For new users to `pymdp`, we specifically recommend stepping through following t
 - [Active Inference from Scratch](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/active_inference_from_scratch.html)
 - [The `Agent` API](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/using_the_agent_class.html)
 
-Special thanks to [Beren Millidge](https://github.com/BerenMillidge) and [Daphne Demekas](https://github.com/daphnedemekas) for their help in constructing these tutorials, which were originally based on a set of tutorial notebooks written by [Alec Tschantz](https://github.com/alec-tschantz).
+Special thanks to [Beren Millidge](https://github.com/BerenMillidge) and [Daphne Demekas](https://github.com/daphnedemekas) for their help in prototyping earlier versions of the [Active Inference from Scratch](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/active_inference_from_scratch.html) tutorial, which were originally based on a grid world POMDP environment create by [Alec Tschantz](https://github.com/alec-tschantz).
+
+We also have (and are continuing to build) a series of notebooks that walk through active inference agents performing different types of tasks, such as the classic [T-Maze environment](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/tmaze_demo.html) and the newer [Epistemic Chaining](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/cue_chaining_demo.html) demo.
 
 ## Contributing
 

@@ -16,6 +16,7 @@ from copy import deepcopy
 from pymdp.agent import Agent
 from pymdp import utils, maths
 from pymdp import inference, control, learning
+from pymdp.default_models import generate_grid_world_transitions
 
 class TestAgent(unittest.TestCase):
     
@@ -199,11 +200,61 @@ class TestAgent(unittest.TestCase):
         
         self.assertEqual(len(agent.prev_obs), T)
         self.assertEqual(len(agent.prev_actions), T)
+
+    def test_agent_with_B_learning_vanilla(self):
+        """ Unit test for updating prior Dirichlet parameters over transition model (pB) with the ``Agent`` class,
+        in the case that you're using "vanilla" inference mode.
+        """
+
+        # 3 x 3, 2-dimensional grid world
+        num_obs = [9]
+        num_states = [9]
+        num_controls = [4]
+
+        A = utils.obj_array_zeros([ [num_obs[0], num_states[0]] ])
+        A[0] = np.eye(num_obs[0])
+
+        action_labels = ["LEFT", "DOWN", "RIGHT", "UP"]
+
+        # flat transition prior
+        pB = utils.obj_array_ones([[num_states[0], num_states[0], num_controls[0]]])
+        B = utils.norm_dist_obj_arr(pB)
+        
+        # instantiate the agent
+        learning_rate_pB = 2.0
+        agent = Agent(A = A, B = B, pB = pB, inference_algo="VANILLA", save_belief_hist = True, action_selection="stochastic", lr_pB= learning_rate_pB)
+
+        # get some true transition dynamics
+        true_transition_matrix = generate_grid_world_transitions(action_labels, num_rows = 3, num_cols = 3)
+
+        # time horizon
+        T = 10
+        next_state = 0
+
+        for t in range(T):
+            
+            prev_state = next_state
+            o = [prev_state] 
+            qx = agent.infer_states(o)
+            agent.infer_policies()
+            agent.sample_action()
+
+            # sample the next state given the true transition dynamics and the sampled action
+            next_state = utils.sample(true_transition_matrix[:,prev_state,int(agent.action[0])])
+
+            if t > 0:
+                
+                # compute the predicted update to the action-conditioned slice of qB
+                predicted_update = agent.pB[0][:,:,int(agent.action[0])] + learning_rate_pB * maths.spm_cross(agent.qs_hist[-1][0], agent.qs_hist[-2][0])
+                qB = agent.update_B(qs_prev = agent.qs_hist[-2]) # update qB using the agent function
+
+                # check if the predicted update and the actual update are the same
+                self.assertTrue(np.allclose(predicted_update, qB[0][:,:,int(agent.action[0])]))
     
     def test_agent_with_D_learning_vanilla(self):
         """
-        Test updating prior Dirichlet parameters over initial hidden states (pD) with the agent class,
-        in the case that you're using "vanilla" inference. 
+        Test updating prior Dirichlet parameters over initial hidden states (pD) with the ``Agent`` class,
+        in the case that you're using "vanilla" inference mode.
         """
 
         num_obs = [2, 4]

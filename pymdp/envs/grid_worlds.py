@@ -16,7 +16,7 @@ from pymdp.envs import Env
 
 
 class GridWorldEnv(Env):
-    """ Basic grid-world implementation """
+    """ 2-dimensional grid-world implementation with 5 actions (the 4 cardinal directions and staying put)."""
 
     UP = 0
     RIGHT = 1
@@ -27,6 +27,18 @@ class GridWorldEnv(Env):
     CONTROL_NAMES = ["UP", "RIGHT", "DOWN", "LEFT", "STAY"]
 
     def __init__(self, shape=[2, 2], init_state=None):
+        """
+        Initialization function for 2-D grid world
+
+        Parameters
+        ----------
+        shape: ``list`` of ``int``, where ``len(shape) == 2``
+            The dimensions of the grid world, stored as a list of integers, storing the discrete dimensions of the Y (vertical) and X (horizontal) spatial dimensions, respectively.
+        init_state: ``int`` or ``None``
+            Initial state of the environment, i.e. the location of the agent in grid world. If not ``None``, must be a discrete index  in the range ``(0, (shape[0] * shape[1])-1)``. It is thus a "linear index" of the initial location of the agent in grid world.
+            If ``None``, then an initial location will be randomly sampled from the grid.
+        """
+        
         self.shape = shape
         self.n_states = np.prod(shape)
         self.n_observations = self.n_states
@@ -38,21 +50,70 @@ class GridWorldEnv(Env):
         self.last_action = None
 
     def reset(self, init_state=None):
+        """
+        Reset the state of the 2-D grid world. In other words, resets the location of the agent, and wipes the current action.
+
+        Parameters
+        ----------
+        init_state: ``int`` or ``None``
+            Initial state of the environment, i.e. the location of the agent in grid world. If not ``None``, must be a discrete index  in the range ``(0, (shape[0] * shape[1])-1)``. It is thus a "linear index" of the initial location of the agent in grid world.
+            If ``None``, then an initial location will be randomly sampled from the grid.
+
+        Returns
+        ----------
+        self.state: ``int``
+            The current state of the environment, i.e. the location of the agent in grid world. Will be a discrete index  in the range ``(0, (shape[0] * shape[1])-1)``. It is thus a "linear index" of the location of the agent in grid world.
+        """
         self.set_init_state(init_state)
         self.last_action = None
         return self.state
 
     def set_state(self, state):
+        """
+        Sets the state of the 2-D grid world.
+
+        Parameters
+        ----------
+        state: ``int`` or ``None``
+            State of the environment, i.e. the location of the agent in grid world. If not ``None``, must be a discrete index  in the range ``(0, (shape[0] * shape[1])-1)``. It is thus a "linear index" of the location of the agent in grid world.
+            If ``None``, then a location will be randomly sampled from the grid.
+
+        Returns
+        ----------
+        self.state: ``int``
+            The current state of the environment, i.e. the location of the agent in grid world. Will be a discrete index  in the range ``(0, (shape[0] * shape[1])-1)``. It is thus a "linear index" of the location of the agent in grid world.
+        """
         self.state = state
         return state
 
     def step(self, action):
+        """
+        Updates the state of the environment, i.e. the location of the agent, using an action index that corresponds to one of the 5 possible moves.
+
+        Parameters
+        ----------
+        action: ``int`` 
+            Action index that refers to which of the 5 actions the agent will take. Actions are, in order: "UP", "RIGHT", "DOWN", "LEFT", "STAY".
+
+        Returns
+        ----------
+        state: ``int``
+            The new, updated state of the environment, i.e. the location of the agent in grid world after the action has been made. Will be discrete index in the range ``(0, (shape[0] * shape[1])-1)``. It is thus a "linear index" of the location of the agent in grid world.
+        """
         state = self.P[self.state][action]
         self.state = state
         self.last_action = action
         return state
 
     def render(self, title=None):
+        """
+        Creates a heatmap showing the current position of the agent in the grid world.
+
+        Parameters
+        ----------
+        title: ``str`` or ``None``
+            Optional title for the heatmap.
+        """
         values = np.zeros(self.shape)
         values[self.position] = 1.0
         _, ax = plt.subplots(figsize=(3, 3))
@@ -132,7 +193,7 @@ class GridWorldEnv(Env):
 
 
 class DGridWorldEnv(object):
-    """ Only one dimension (three actions) """
+    """ 1-dimensional grid-world implementation with 3 possible movement actions ("LEFT", "STAY", "RIGHT")"""
 
     LEFT = 0
     STAY = 1

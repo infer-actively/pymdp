@@ -109,7 +109,7 @@ class TestDemos(unittest.TestCase):
         for t in range(T):
             qx = agent.infer_states(obs)
 
-            q_pi, efe = agent.infer_policies()
+            q_pi, G = agent.infer_policies()
 
             action = agent.sample_action()
 

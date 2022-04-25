@@ -23,6 +23,7 @@ LOSS_IDX = 2
 
 
 class TMazeEnv(Env):
+    """ Implementation of the 3-arm T-Maze environment """
     def __init__(self, reward_probs=None):
 
         if reward_probs is None:
@@ -189,6 +190,9 @@ class TMazeEnv(Env):
 
 
 class TMazeEnvNullOutcome(Env):
+    """ Implementation of the 3-arm T-Maze environment where there is an additional null outcome within the cue modality, so that the agent
+    doesn't get a random cue observation, but a null one, when it visits non-cue locations"""
+
     def __init__(self, reward_probs=None):
 
         if reward_probs is None:

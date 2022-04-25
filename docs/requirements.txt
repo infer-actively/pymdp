@@ -1,10 +1,14 @@
 # sphinx <4 required by myst-nb v0.12.0 (Feb 2021)
 # sphinx >=3 required by sphinx-autodoc-typehints v1.11.1 (Oct 2020)
-sphinx >=3, <4
+# sphinx >=3, <4 # old version of sphinx dependency, based on two comments above
+
+# New commit to myst-nb (September 2021) suggests it can work with sphinx >4 (see https://github.com/executablebooks/MyST-NB/commit/9f6fae2da3f1ce3e726320eade079b8e25a878fa)
+sphinx==4.2.0
 sphinx_rtd_theme
 sphinx-autodoc-typehints==1.11.1
 jupyter-sphinx>=0.3.2
 myst-nb
+jinja2==3.0.0
 
 # Packages used for notebook execution
 matplotlib
