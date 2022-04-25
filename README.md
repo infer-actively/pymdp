@@ -26,7 +26,7 @@ Here's a visualization of ``pymdp`` agents in action. One of the defining featur
 
 The simulation below (see associated notebook [here](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/cue_chaining_demo.html)) demonstrates what might be called "epistemic chaining," where an agent (here, analogized to a mouse seeking food) forages for a chain of cues, each of which discloses the location of the subsequent cue in the chain. The final cue (here, "Cue 2") reveals the location a hidden reward. This is similar in spirit to "behavior chaining" used in operant conditioning, except that here, each successive action in the behavioral sequence doesn't need to be learned through instrumental conditioning. Rather, active inference agents will naturally forage the sequence of cues based on an intrinsic desire to disclose information. This ultimately leads the agent to the hidden reward source in the fewest number of moves as possible.
 
-You can run the code behind simulating tasks like this one and others in the **Examples** section of the [official documentation](https://pymdp-rtd.readthedocs.io).
+You can run the code behind simulating tasks like this one and others in the **Examples** section of the [official documentation](https://pymdp-rtd.readthedocs.io/en/stable/).
 
 <!-- 
 <p align="center">
@@ -99,7 +99,7 @@ action = my_agent.sample_action() # sample an action
 
 ## Getting started / introductory material
 
-We recommend starting with the Installation/Usage section of the [official documentation](https://pymdp-rtd.readthedocs.io) for the repository, which provides a series of useful pedagogical notebooks for introducing you to active inference and how to build agents in `pymdp`.
+We recommend starting with the Installation/Usage section of the [official documentation](https://pymdp-rtd.readthedocs.io/en/stable/) for the repository, which provides a series of useful pedagogical notebooks for introducing you to active inference and how to build agents in `pymdp`.
 
 For new users to `pymdp`, we specifically recommend stepping through following three Jupyter notebooks (can also be used on Google Colab):
 
