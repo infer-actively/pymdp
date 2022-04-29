@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name="inferactively-pymdp",
-    version="0.0.4",
+    version="0.0.5",
     author="infer-actively",
     author_email="conor.heins@gmail.com",
     description= ("A Python package for solving Markov Decision Processes with Active Inference"),
@@ -34,7 +34,8 @@ setuptools.setup(
     'typing-extensions>=3.7.4.3',
     'xlsxwriter>=1.4.3',
     'sphinx-rtd-theme>=0.4',
-    'myst-nb>=0.13.1'
+    'myst-nb>=0.13.1',
+    'autograd>=1.3'
     ],
     packages=[
         "pymdp",

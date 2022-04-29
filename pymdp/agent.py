@@ -87,7 +87,7 @@ class Agent(object):
 
         self.A = utils.to_obj_array(A)
 
-        assert utils.is_normalized(self.A), "A matrix is not normalized (i.e. A.sum(axis = 0) must all equal 1.0"
+        assert utils.is_normalized(self.A), "A matrix is not normalized (i.e. A.sum(axis = 0) must all equal 1.0)"
 
         # Determine number of observation modalities and their respective dimensions
         self.num_obs = [self.A[m].shape[0] for m in range(len(self.A))]
@@ -104,7 +104,7 @@ class Agent(object):
 
         self.B = utils.to_obj_array(B)
 
-        assert utils.is_normalized(self.B), "A matrix is not normalized (i.e. A.sum(axis = 0) must all equal 1.0"
+        assert utils.is_normalized(self.B), "B matrix is not normalized (i.e. B.sum(axis = 0) must all equal 1.0)"
 
         # Determine number of hidden state factors and their dimensionalities
         self.num_states = [self.B[f].shape[0] for f in range(len(self.B))]
