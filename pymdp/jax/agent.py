@@ -110,7 +110,8 @@ class Agent(object):
         self.C = C
 
         """ Construct prior over hidden states (uniform if not specified) """
-        self.D = D    
+        self.D = D
+        self.empirical_prior = D    
 
         """ Assigning prior parameters on initial hidden states (pD vectors) """
         self.pD = pD
@@ -249,30 +250,22 @@ class Agent(object):
             at timepoint ``t_idx``.
         """
 
-        # replace this if statement with self.empirical_prior = self.D
-
-        if self.action is not None:
-            empirical_prior = control.get_expected_states(
-                self.qs, self.B, self.action.reshape(1, -1) #type: ignore
-            )[0]
-        else:
-            empirical_prior = self.D
-
-
         o_vec = [nn.one_hot(o, self.A[i].shape[0]) for i, o in enumerate(observations)]
         qs = inference.update_posterior_states(
             self.A,
             o_vec,
-            prior=empirical_prior
+            prior=self.empirical_prior
         )
 
         self.qs = qs
 
         return qs
 
-    def get_expected_states(self, action):
+    def update_empirical_prior(self, action):
         # update self.empirical_prior
-        pass
+        self.empirical_prior = control.compute_expected_state(
+                self.qs, self.B, action
+            )
 
     def infer_policies(self):
         """
@@ -290,17 +283,11 @@ class Agent(object):
         """
 
         q_pi, G = control.update_posterior_policies(
+            self.policies,
             self.qs,
             self.A,
             self.B,
             self.C,
-            self.policies,
-            self.use_utility,
-            self.use_states_info_gain,
-            self.use_param_info_gain,
-            self.pA,
-            self.pB,
-            E = self.E,
             gamma = self.gamma
         )
 

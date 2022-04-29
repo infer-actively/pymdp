@@ -47,7 +47,7 @@ def run_vanilla_fpi(A, obs, prior, num_iter=1):
 
 if __name__ == "__main__":
     prior = [jnp.ones(2)/2, jnp.ones(2)/2, nn.softmax(jnp.array([0, -80., -80., -80, -80.]))]
-    obs = [0, 5]
+    obs = [nn.one_hot(0, 5), nn.one_hot(5, 10)]
     A = [jnp.ones((5, 2, 2, 5))/5, jnp.ones((10, 2, 2, 5))/10]
     
     qs = jit(run_vanilla_fpi)(A, obs, prior)

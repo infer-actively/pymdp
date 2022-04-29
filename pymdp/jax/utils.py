@@ -6,8 +6,6 @@
 __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
-import numpy as np
-
 import jax.numpy as jnp
 
 from typing import (Any, Callable, List, NamedTuple, Optional, Sequence, Union, Tuple)
@@ -17,40 +15,13 @@ Vector = List[Tensor]
 Shape = Sequence[int]
 ShapeList = list[Shape]
 
-EPS_VAL = 1e-16 # global constant for use in norm_dist()
-
-# def sample(probabilities):
-#     sample_onehot = np.random.multinomial(1, probabilities.squeeze())
-#     return np.where(sample_onehot == 1)[0][0]
-
-# def sample_obj_array(arr):
-#     """ 
-#     Sample from set of Categorical distributions, stored in the sub-arrays of an object array 
-#     """
-    
-#     samples = [sample(arr_i) for arr_i in arr]
-
-#     return samples
-
-# def obj_array(num_arr):
-#     """
-#     Creates a generic object array with the desired number of sub-arrays, given by `num_arr`
-#     """
-#     return np.empty(num_arr, dtype=object)
-
-# def obj_array_zeros(shape_list):
-#     """ 
-#     Creates a numpy object array whose sub-arrays are 1-D vectors
-#     filled with zeros, with shapes given by shape_list[i]
-#     """
-#     arr = obj_array(len(shape_list))
-#     for i, shape in enumerate(shape_list):
-#         arr[i] = np.zeros(shape)
-#     return arr
+def norm_dist(dist: Tensor) -> Tensor:
+    """ Normalizes a Categorical probability distribution"""
+    return dist/dist.sum(0)
 
 def list_array_uniform(shape_list: ShapeList) -> Vector:
     """ 
-    Creates a numpy object array whose sub-arrays are uniform Categorical
+    Creates a list of jax arrays representing uniform Categorical
     distributions with shapes given by shape_list[i]. The shapes (elements of shape_list)
     can either be tuples or lists.
     """
@@ -59,12 +30,24 @@ def list_array_uniform(shape_list: ShapeList) -> Vector:
         arr.append( norm_dist(jnp.ones(shape)) )
     return arr
 
-# def obj_array_ones(shape_list, scale = 1.0):
-#     arr = obj_array(len(shape_list))
-#     for i, shape in enumerate(shape_list):
-#         arr[i] = scale * np.ones(shape)
+def list_array_zeros(shape_list: ShapeList) -> Vector:
+    """ 
+    Creates a list of 1-D jax arrays filled with zeros, with shapes given by shape_list[i]
+    """
+    arr = []
+    for shape in shape_list:
+        arr.append( jnp.zeros(shape) )
+    return arr
+
+def list_array_scaled(shape_list: ShapeList, scale: float=1.0) -> Vector:
+    """ 
+    Creates a list of 1-D jax arrays filled with scale, with shapes given by shape_list[i]
+    """
+    arr = []
+    for shape in shape_list:
+        arr.append( scale * jnp.ones(shape) )
     
-#     return arr
+    return arr
 
 # def onehot(value, num_values):
 #     arr = np.zeros(num_values)
@@ -198,9 +181,7 @@ def list_array_uniform(shape_list: ShapeList) -> Vector:
 #         return num_obs, num_modalities, num_states, num_factors
 
 
-def norm_dist(dist: Tensor) -> Tensor:
-    """ Normalizes a Categorical probability distribution"""
-    return dist/dist.sum(0)
+
 
 # def norm_dist_obj_arr(obj_arr):
 
