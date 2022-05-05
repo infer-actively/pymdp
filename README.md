@@ -6,7 +6,7 @@
 </p>
 
 A Python package for simulating Active Inference agents in Markov Decision Process environments.
-Please see our companion preprint on arxiv for an overview of the package, its structure, and a mathematical overview of active inference in partially-observable Markov Decision Processes: ["pymdp: A Python library for active inference in discrete state spaces"](https://arxiv.org/abs/2201.03904).
+Please see our companion paper, published in the Journal of Open Source Software: ["pymdp: A Python library for active inference in discrete state spaces"](https://joss.theoj.org/papers/10.21105/joss.04098) for an overview of the package and its motivation. For a more in-depth, tutorial-style introduction to the package and a mathematical overview of active inference in Markov Decision Processes, see the [longer arxiv version](https://arxiv.org/abs/2201.03904) of the paper.
 
 This package is hosted on the [`infer-actively`](https://github.com/infer-actively) GitHub organization, which was built with the intention of hosting open-source active inference and free-energy-principle related software.
 
