@@ -116,7 +116,9 @@ class Agent(object):
         # If no `num_controls` are given, then this is inferred from the shapes of the input B matrices
         if num_controls == None:
             self.num_controls = [self.B[f].shape[2] for f in range(self.num_factors)]
-
+        else:
+            self.num_controls = num_controls
+        
         # Users have the option to make only certain factors controllable.
         # default behaviour is to make all hidden state factors controllable
         # (i.e. self.num_states == self.num_controls)
