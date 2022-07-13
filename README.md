@@ -129,6 +129,26 @@ You should then be able to run tests locally with `pytest`
 pytest test
 ```
 
+## Citing `pymdp`
+If you use `pymdp` in your work or research, please consider citing our [paper](https://joss.theoj.org/papers/10.21105/joss.04098) (open-access) published in the Journal of Open-Source Software:
+
+```
+@article{Heins2022,
+  doi = {10.21105/joss.04098},
+  url = {https://doi.org/10.21105/joss.04098},
+  year = {2022},
+  publisher = {The Open Journal},
+  volume = {7},
+  number = {73},
+  pages = {4098},
+  author = {Conor Heins and Beren Millidge and Daphne Demekas and Brennan Klein and Karl Friston and Iain D. Couzin and Alexander Tschantz},
+  title = {pymdp: A Python library for active inference in discrete state spaces},
+  journal = {Journal of Open Source Software}
+}
+```
+
+For a more in-depth, tutorial-style introduction to the package and a mathematical overview of active inference in Markov Decision Processes, you can also consult the [longer arxiv version](https://arxiv.org/abs/2201.03904) of the paper.
+
 ## Authors
 
 - Conor Heins [@conorheins](https://github.com/conorheins)
