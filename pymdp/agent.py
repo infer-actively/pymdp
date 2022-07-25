@@ -46,6 +46,7 @@ class Agent(object):
         control_fac_idx=None,
         policies=None,
         gamma=16.0,
+        alpha = 16.0,
         use_utility=True,
         use_states_info_gain=True,
         use_param_info_gain=False,
@@ -67,6 +68,7 @@ class Agent(object):
         # policy parameters
         self.policy_len = policy_len
         self.gamma = gamma
+        self.alpha = alpha
         self.action_selection = action_selection
         self.use_utility = use_utility
         self.use_states_info_gain = use_states_info_gain
@@ -584,7 +586,7 @@ class Agent(object):
         """
 
         action = control.sample_action(
-            self.q_pi, self.policies, self.num_controls, self.action_selection
+            self.q_pi, self.policies, self.num_controls, action_selection = self.action_selection, alpha = self.alpha
         )
 
         self.action = action
@@ -592,6 +594,29 @@ class Agent(object):
         self.step_time()
 
         return action
+    
+    def _sample_action_test(self):
+        """
+        Sample or select a discrete action from the posterior over control states.
+        This function both sets or cachés the action as an internal variable with the agent and returns it.
+        This function also updates time variable (and thus manages consequences of updating the moving reference frame of beliefs)
+        using ``self.step_time()``.
+        
+        Returns
+        ----------
+        action: 1D ``numpy.ndarray``
+            Vector containing the indices of the actions for each control factor
+        """
+
+        action, p_actions = control._sample_action_test(
+            self.q_pi, self.policies, self.num_controls, action_selection = self.action_selection, alpha = self.alpha
+        )
+
+        self.action = action
+
+        self.step_time()
+
+        return action, p_actions
 
     def update_A(self, obs):
         """
