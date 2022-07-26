@@ -438,7 +438,37 @@ class TestAgent(unittest.TestCase):
         entropy_p_actions2 = -maths.spm_log_single(p_actions2[0]).dot(p_actions2[0])
 
         self.assertGreater(entropy_p_actions2, entropy_p_actions1)
+    
+    def test_agent_with_sampling_mode(self):
+        """
+        Test for passing in `sampling_mode` argument to `agent.Agent()` constructor, which determines whether you sample
+        from posterior marginal over actions ("marginal", default) or posterior over policies ("full")
+        """
 
+        num_obs = [2]
+        num_states = [2]
+        num_controls = [2]
+        A = utils.to_obj_array(np.eye(num_obs[0], num_states[0]))
+        B = utils.construct_controllable_B(num_states, num_controls)
+        C = utils.to_obj_array(np.array([1.01, 1.0]))
+
+        agent = Agent(A=A, B=B, C=C, alpha = 16.0, sampling_mode = "full", action_selection = "stochastic")
+        agent.infer_states(([0]))
+        agent.infer_policies()
+        chosen_action, p_policies = agent._sample_action_test()
+        self.assertEqual(len(p_policies), len(agent.q_pi))
+
+        agent = Agent(A=A, B=B, C=C, alpha = 16.0, sampling_mode = "full", action_selection = "deterministic")
+        agent.infer_states(([0]))
+        agent.infer_policies()
+        chosen_action, p_policies = agent._sample_action_test()
+        self.assertEqual(len(p_policies), len(agent.q_pi))
+
+        agent = Agent(A=A, B=B, C=C, alpha = 16.0, sampling_mode = "marginal", action_selection = "stochastic")
+        agent.infer_states(([0]))
+        agent.infer_policies()
+        chosen_action, p_actions = agent._sample_action_test()
+        self.assertEqual(len(p_actions[0]), num_controls[0])
         
 
 

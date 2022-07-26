@@ -632,3 +632,88 @@ def _sample_action_test(q_pi, policies, num_controls, action_selection="determin
             selected_policy[factor_i] = utils.sample(p_actions[factor_i])
 
     return selected_policy, p_actions
+
+def sample_policy(q_pi, policies, num_controls, action_selection="deterministic", alpha = 16.0):
+    """
+    Samples a policy from the posterior over policies, taking the action (per control factor) entailed by the first timestep of the selected policy.
+
+    Parameters
+    ----------
+    q_pi: 1D ``numpy.ndarray``
+        Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
+    policies: ``list`` of 2D ``numpy.ndarray``
+        ``list`` that stores each policy as a 2D array in ``policies[p_idx]``. Shape of ``policies[p_idx]`` 
+        is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
+        depth of the policy and ``num_factors`` is the number of control factors.
+    num_controls: ``list`` of ``int``
+        ``list`` of the dimensionalities of each control state factor.
+    action_selection: string, default "deterministic"
+        String indicating whether whether the selected policy is chosen as the maximum of the posterior over policies,
+        or whether it's sampled from the posterior over policies.
+    alpha: float, default 16.0
+        Action selection precision -- the inverse temperature of the softmax that is used to scale the 
+        policy posterior before sampling. This is only used if ``action_selection`` argument is "stochastic"
+
+    Returns
+    ----------
+    selected_policy: 1D ``numpy.ndarray``
+        Vector containing the indices of the actions for each control factor
+    """
+
+    num_factors = len(num_controls)
+
+    if action_selection == "deterministic":
+        policy_idx = np.argmax(q_pi)
+    elif action_selection == "stochastic":
+        log_qpi = spm_log_single(q_pi)
+        p_policies = softmax(log_qpi * alpha)
+        policy_idx = utils.sample(p_policies)
+
+    selected_policy = np.zeros(num_factors)
+    for factor_i in range(num_factors):
+        selected_policy[factor_i] = policies[policy_idx][0, factor_i]
+
+    return selected_policy
+
+def _sample_policy_test(q_pi, policies, num_controls, action_selection="deterministic", alpha = 16.0):
+    """
+    Test version of sampling a policy from the posterior over policies, taking the action (per control factor) entailed by the first timestep of the selected policy.
+    This test version also returns the probability distribution over policies.
+    Parameters
+    ----------
+    q_pi: 1D ``numpy.ndarray``
+        Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
+    policies: ``list`` of 2D ``numpy.ndarray``
+        ``list`` that stores each policy as a 2D array in ``policies[p_idx]``. Shape of ``policies[p_idx]`` 
+        is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
+        depth of the policy and ``num_factors`` is the number of control factors.
+    num_controls: ``list`` of ``int``
+        ``list`` of the dimensionalities of each control state factor.
+    action_selection: string, default "deterministic"
+        String indicating whether whether the selected policy is chosen as the maximum of the posterior over policies,
+        or whether it's sampled from the posterior over policies.
+    alpha: float, default 16.0
+        Action selection precision -- the inverse temperature of the softmax that is used to scale the 
+        policy posterior before sampling. This is only used if ``action_selection`` argument is "stochastic"
+
+    Returns
+    ----------
+    selected_policy: 1D ``numpy.ndarray``
+        Vector containing the indices of the actions for each control factor
+    """
+
+    num_factors = len(num_controls)
+
+    if action_selection == "deterministic":
+        policy_idx = np.argmax(q_pi)
+        p_policies = q_pi
+    elif action_selection == "stochastic":
+        log_qpi = spm_log_single(q_pi)
+        p_policies = softmax(log_qpi * alpha)
+        policy_idx = utils.sample(p_policies)
+
+    selected_policy = np.zeros(num_factors)
+    for factor_i in range(num_factors):
+        selected_policy[factor_i] = policies[policy_idx][0, factor_i]
+
+    return selected_policy, p_policies
