@@ -1313,7 +1313,28 @@ class TestControl(unittest.TestCase):
 
         chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
         self.assertEqual(int(chosen_action[0]), 1)
-    
+
+    def test_sample_policy(self):
+        """
+        Tests the action selection function where policies are sampled directly from posterior over policies `q_pi`
+        """
+
+        num_states = [3, 2]
+        num_controls = [3, 2]
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=3)
+
+        q_pi = utils.norm_dist(np.random.rand(len(policies)))
+        best_policy = policies[np.argmax(q_pi)]
+
+        selected_policy = control.sample_policy(q_pi, policies, num_controls)
+
+        for factor_ii in range(len(num_controls)):
+            self.assertEqual(selected_policy[factor_ii], best_policy[0,factor_ii])
+        
+        selected_policy_stochastic = control.sample_policy(q_pi, policies, num_controls, action_selection="stochastic", alpha = 1.0)
+        self.assertEqual(selected_policy_stochastic.shape, selected_policy.shape)
+        
     def test_update_posterior_policies_withE_vector(self):
         """
         Test update posterior policies in the case that there is a prior over policies
