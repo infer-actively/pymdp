@@ -1375,6 +1375,23 @@ class TestControl(unittest.TestCase):
 
         self.assertGreater(q_pi[0], q_pi[1])
         self.assertGreater(q_pi[2], q_pi[1])
+    
+    def test_stochastic_action_unidimensional_control(self):
+        """
+        Test stochastic action sampling in case that one of the control states is one-dimensional.
+        Due to a call to probabilities.squeeze() in an earlier version of utils.sample(), this was throwing an
+        error due to the inability to use np.random.multinomial on an array with undefined length (an 'unsized' array)
+        """
+        
+        num_states = [2, 2]
+        num_controls = [2, 1]
+        policies = control.construct_policies(num_states, num_controls = num_controls, policy_len=1)
+        q_pi = utils.norm_dist(np.random.rand(len(policies)))
+        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic")
+        self.assertEqual(sampled_action[1], 0)
+
+        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
+        self.assertEqual(sampled_action[1], 0)
 
 
 if __name__ == "__main__":
