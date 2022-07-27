@@ -469,6 +469,32 @@ class TestAgent(unittest.TestCase):
         agent.infer_policies()
         chosen_action, p_actions = agent._sample_action_test()
         self.assertEqual(len(p_actions[0]), num_controls[0])
+
+    def test_agent_with_stochastic_action_unidimensional_control(self):
+        """
+        Test stochastic action sampling in case that one of the control states is one-dimensional, within the agent
+        method `sample_action()`.
+        Due to a call to probabilities.squeeze() in an earlier version of utils.sample(), this was throwing an
+        error due to the inability to use np.random.multinomial on an array with undefined length (an 'unsized' array)
+        """
+        
+        num_obs = [2]
+        num_states = [2, 2]
+        num_controls = [2, 1]
+
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+
+        agent = Agent(A=A, B=B, action_selection = "stochastic")
+        agent.infer_policies()
+        chosen_action = agent.sample_action()
+        self.assertEqual(chosen_action[1], 0)
+
+        agent = Agent(A=A, B=B, action_selection = "deterministic")
+        agent.infer_policies()
+        chosen_action = agent.sample_action()
+        self.assertEqual(chosen_action[1], 0)
+
         
 
 
