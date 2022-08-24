@@ -121,7 +121,7 @@ Once you have completed the above steps, you are ready to choose an algorithm to
 
 2. In your machine, create the file where your algorithm is going to
    live. If you chose a softmax algorithm, copy
-   an existing fiile, such as `/pymdp/functions.py`, into 
+   an existing file, such as `/pymdp/functions.py`, into 
    `/pymdp/<algorithm_name>.py`. Please keep in mind that
    <algorithm_name> will be used inside the code, so try to choose
    something that looks "pythonic". In particular, <algorithm_name> cannot
