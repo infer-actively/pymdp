@@ -51,7 +51,7 @@ please see our companion paper_: "pymdp: A Python library for active inference i
    :maxdepth: 1
    :caption: Additional learning materials
 
-   notebooks/free_energy_calculation.ipynb
+   notebooks/free_energy_calculation
 
 Indices and tables
 ==================
@@ -60,4 +60,4 @@ Indices and tables
 * :ref:`modindex`
 * :ref:`search`
 
-.. _paper: https://arxiv.org/abs/2201.03904
+.. _paper: https://joss.theoj.org/papers/10.21105/joss.04098
