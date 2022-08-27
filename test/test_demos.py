@@ -71,8 +71,8 @@ class TestDemos(unittest.TestCase):
             
         def plot_likelihood(A, title=""):
             ax = sns.heatmap(A, cmap="OrRd", linewidth=2.5)
-            plt.xticks(range(A.shape[1]))
-            plt.yticks(range(A.shape[0]))
+            plt.xticks(range(A.shape[1] + 1))
+            plt.yticks(range(A.shape[0] + 1))
             plt.title(title)
 
         reward_probabilities = [0.98, 0.02] # probabilities used in the original SPM T-maze demo
@@ -141,8 +141,8 @@ class TestDemos(unittest.TestCase):
             
         def plot_likelihood(A, title=""):
             ax = sns.heatmap(A, cmap="OrRd", linewidth=2.5)
-            plt.xticks(range(A.shape[1]))
-            plt.yticks(range(A.shape[0]))
+            plt.xticks(range(A.shape[1] + 1))
+            plt.yticks(range(A.shape[0] + 1))
             plt.title(title)
         
         reward_probabilities = [0.85, 0.15] # the 'true' reward probabilities 
