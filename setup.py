@@ -35,7 +35,9 @@ setuptools.setup(
     'xlsxwriter>=1.4.3',
     'sphinx-rtd-theme>=0.4',
     'myst-nb>=0.13.1',
-    'autograd>=1.3'
+    'autograd>=1.3',
+    'jax>=0.3',
+    'jaxlib>=0.3'
     ],
     packages=[
         "pymdp",
