@@ -5,6 +5,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 from pymdp.agent import Agent
+from pymdp.utils import plot_beliefs, plot_likelihood
 from pymdp import utils, maths, default_models
 from pymdp import control
 from pymdp.envs import TMazeEnv, TMazeEnvNullOutcome
@@ -63,18 +64,6 @@ class TestDemos(unittest.TestCase):
         This unit test runs the a concise version of the code in the `tmaze_demo.ipynb` tutorial notebook to make sure it works if things are changed
         """
 
-        def plot_beliefs(belief_dist, title=""):
-            plt.grid(zorder=0)
-            plt.bar(range(belief_dist.shape[0]), belief_dist, color='r', zorder=3)
-            plt.xticks(range(belief_dist.shape[0]))
-            plt.title(title)
-            
-        def plot_likelihood(A, title=""):
-            ax = sns.heatmap(A, cmap="OrRd", linewidth=2.5)
-            plt.xticks(range(A.shape[1]))
-            plt.yticks(range(A.shape[0]))
-            plt.title(title)
-
         reward_probabilities = [0.98, 0.02] # probabilities used in the original SPM T-maze demo
         env = TMazeEnv(reward_probs = reward_probabilities)
 
@@ -132,18 +121,6 @@ class TestDemos(unittest.TestCase):
         """
         This unit test runs the a concise version of the code in the `tmaze_demo_learning.ipynb` tutorial notebook to make sure it works if things are changed
         """
-
-        def plot_beliefs(belief_dist, title=""):
-            plt.grid(zorder=0)
-            plt.bar(range(belief_dist.shape[0]), belief_dist, color='r', zorder=3)
-            plt.xticks(range(belief_dist.shape[0]))
-            plt.title(title)
-            
-        def plot_likelihood(A, title=""):
-            ax = sns.heatmap(A, cmap="OrRd", linewidth=2.5)
-            plt.xticks(range(A.shape[1]))
-            plt.yticks(range(A.shape[0]))
-            plt.title(title)
         
         reward_probabilities = [0.85, 0.15] # the 'true' reward probabilities 
         env = TMazeEnvNullOutcome(reward_probs = reward_probabilities)
@@ -228,10 +205,6 @@ class TestDemos(unittest.TestCase):
         A = np.eye(9)
 
         labels = [state_mapping[i] for i in range(A.shape[1])]
-        def plot_likelihood(A):
-            fig = plt.figure(figsize = (6,6))
-            ax = sns.heatmap(A, xticklabels = labels, yticklabels = labels, cbar = False)
-            plt.title("Likelihood distribution (A)")
 
         plot_likelihood(A)
 
@@ -290,19 +263,9 @@ class TestDemos(unittest.TestCase):
         state_mapping = {0: (0,0), 1: (1,0), 2: (2,0), 3: (0,1), 4: (1,1), 5:(2,1), 6: (0,2), 7:(1,2), 8:(2,2)}
 
         A = np.eye(9)
-        def plot_beliefs(Qs, title=""):
-            #values = Qs.values[:, 0]
-            plt.grid(zorder=0)
-            plt.bar(range(Qs.shape[0]), Qs, color='r', zorder=3)
-            plt.xticks(range(Qs.shape[0]))
-            plt.title(title)
-            
+       
         labels = [state_mapping[i] for i in range(A.shape[1])]
-        def plot_likelihood(A):
-            fig = plt.figure(figsize = (6,6))
-            ax = sns.heatmap(A, xticklabels = labels, yticklabels = labels, cbar = False)
-            plt.title("Likelihood distribution (A)")
-            
+       
         def plot_empirical_prior(B):
             fig, axes = plt.subplots(3,2, figsize=(8, 10))
             actions = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'STAY']

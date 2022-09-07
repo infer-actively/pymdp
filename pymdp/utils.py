@@ -8,6 +8,8 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import numpy as np
 import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 import warnings
 import itertools
@@ -615,6 +617,31 @@ def build_xn_vn_array(xn):
                 xn_array[itr,:,:,policy_i] = xn[policy_i][itr][0] 
     
     return xn_array
+
+def plot_beliefs(belief_dist, title=""):
+    """
+    Utility function that plots a bar chart of a categorical probability distribution,
+    with each bar height corresponding to the probability of one of the elements of the categorical
+    probability vector.
+    """
+
+    plt.grid(zorder=0)
+    plt.bar(range(belief_dist.shape[0]), belief_dist, color='r', zorder=3)
+    plt.xticks(range(belief_dist.shape[0]))
+    plt.title(title)
+    plt.show()
+    
+def plot_likelihood(A, title=""):
+    """
+    Utility function that shows a heatmap of a 2-D likelihood (hidden causes in the columns, observations in the rows),
+    with hotter colors indicating higher probability.
+    """
+
+    ax = sns.heatmap(A, cmap="OrRd", linewidth=2.5)
+    plt.xticks(range(A.shape[1]+1))
+    plt.yticks(range(A.shape[0]+1))
+    plt.title(title)
+    plt.show()
 
 
     
