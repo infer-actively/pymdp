@@ -409,6 +409,92 @@ class TestAgent(unittest.TestCase):
         for factor in range(len(num_states)):
 
             self.assertTrue(np.allclose(pD_test[factor], pD_validation[factor]))
+    
+    def test_agent_with_input_alpha(self):
+        """
+        Test for passing in `alpha` (action sampling precision parameter) as argument to `agent.Agent()` constructor.
+        Test two cases to make sure alpha scaling is working properly, by comparing entropies of action marginals 
+        after computing posterior over actions in cases where alpha is passed in as two different values to the Agent constructor.
+        """
+
+        num_obs = [2]
+        num_states = [2]
+        num_controls = [2]
+        A = utils.to_obj_array(np.eye(num_obs[0], num_states[0]))
+        B = utils.construct_controllable_B(num_states, num_controls)
+        C = utils.to_obj_array(np.array([1.01, 1.0]))
+
+        agent = Agent(A=A, B=B, C=C, alpha = 16.0, action_selection = "stochastic")
+        agent.infer_states(([0]))
+        agent.infer_policies()
+        chosen_action, p_actions1 = agent._sample_action_test()
+
+        agent = Agent(A=A, B=B, C=C, alpha = 0.0, action_selection = "stochastic")
+        agent.infer_states(([0]))
+        agent.infer_policies()
+        chosen_action, p_actions2 = agent._sample_action_test()
+
+        entropy_p_actions1 = -maths.spm_log_single(p_actions1[0]).dot(p_actions1[0])
+        entropy_p_actions2 = -maths.spm_log_single(p_actions2[0]).dot(p_actions2[0])
+
+        self.assertGreater(entropy_p_actions2, entropy_p_actions1)
+    
+    def test_agent_with_sampling_mode(self):
+        """
+        Test for passing in `sampling_mode` argument to `agent.Agent()` constructor, which determines whether you sample
+        from posterior marginal over actions ("marginal", default) or posterior over policies ("full")
+        """
+
+        num_obs = [2]
+        num_states = [2]
+        num_controls = [2]
+        A = utils.to_obj_array(np.eye(num_obs[0], num_states[0]))
+        B = utils.construct_controllable_B(num_states, num_controls)
+        C = utils.to_obj_array(np.array([1.01, 1.0]))
+
+        agent = Agent(A=A, B=B, C=C, alpha = 16.0, sampling_mode = "full", action_selection = "stochastic")
+        agent.infer_states(([0]))
+        agent.infer_policies()
+        chosen_action, p_policies = agent._sample_action_test()
+        self.assertEqual(len(p_policies), len(agent.q_pi))
+
+        agent = Agent(A=A, B=B, C=C, alpha = 16.0, sampling_mode = "full", action_selection = "deterministic")
+        agent.infer_states(([0]))
+        agent.infer_policies()
+        chosen_action, p_policies = agent._sample_action_test()
+        self.assertEqual(len(p_policies), len(agent.q_pi))
+
+        agent = Agent(A=A, B=B, C=C, alpha = 16.0, sampling_mode = "marginal", action_selection = "stochastic")
+        agent.infer_states(([0]))
+        agent.infer_policies()
+        chosen_action, p_actions = agent._sample_action_test()
+        self.assertEqual(len(p_actions[0]), num_controls[0])
+
+    def test_agent_with_stochastic_action_unidimensional_control(self):
+        """
+        Test stochastic action sampling in case that one of the control states is one-dimensional, within the agent
+        method `sample_action()`.
+        Due to a call to probabilities.squeeze() in an earlier version of utils.sample(), this was throwing an
+        error due to the inability to use np.random.multinomial on an array with undefined length (an 'unsized' array)
+        """
+        
+        num_obs = [2]
+        num_states = [2, 2]
+        num_controls = [2, 1]
+
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+
+        agent = Agent(A=A, B=B, action_selection = "stochastic")
+        agent.infer_policies()
+        chosen_action = agent.sample_action()
+        self.assertEqual(chosen_action[1], 0)
+
+        agent = Agent(A=A, B=B, action_selection = "deterministic")
+        agent.infer_policies()
+        chosen_action = agent.sample_action()
+        self.assertEqual(chosen_action[1], 0)
+
         
 
 

@@ -46,10 +46,12 @@ class Agent(object):
         control_fac_idx=None,
         policies=None,
         gamma=16.0,
+        alpha = 16.0,
         use_utility=True,
         use_states_info_gain=True,
         use_param_info_gain=False,
         action_selection="deterministic",
+        sampling_mode = "marginal", # whether to sample from full posterior over policies ("full") or from marginal posterior over actions ("marginal")
         inference_algo="VANILLA",
         inference_params=None,
         modalities_to_learn="all",
@@ -67,7 +69,9 @@ class Agent(object):
         # policy parameters
         self.policy_len = policy_len
         self.gamma = gamma
+        self.alpha = alpha
         self.action_selection = action_selection
+        self.sampling_mode = sampling_mode
         self.use_utility = use_utility
         self.use_states_info_gain = use_states_info_gain
         self.use_param_info_gain = use_param_info_gain
@@ -116,7 +120,9 @@ class Agent(object):
         # If no `num_controls` are given, then this is inferred from the shapes of the input B matrices
         if num_controls == None:
             self.num_controls = [self.B[f].shape[2] for f in range(self.num_factors)]
-
+        else:
+            self.num_controls = num_controls
+        
         # Users have the option to make only certain factors controllable.
         # default behaviour is to make all hidden state factors controllable
         # (i.e. self.num_states == self.num_controls)
@@ -581,15 +587,48 @@ class Agent(object):
             Vector containing the indices of the actions for each control factor
         """
 
-        action = control.sample_action(
-            self.q_pi, self.policies, self.num_controls, self.action_selection
-        )
+        if self.sampling_mode == "marginal":
+            action = control.sample_action(
+                self.q_pi, self.policies, self.num_controls, action_selection = self.action_selection, alpha = self.alpha
+            )
+        elif self.sampling_mode == "full":
+            action = control.sample_policy(
+                self.q_pi, self.policies, self.num_controls, action_selection = self.action_selection, alpha = self.alpha
+            )
 
         self.action = action
 
         self.step_time()
 
         return action
+    
+    def _sample_action_test(self):
+        """
+        Sample or select a discrete action from the posterior over control states.
+        This function both sets or cachés the action as an internal variable with the agent and returns it.
+        This function also updates time variable (and thus manages consequences of updating the moving reference frame of beliefs)
+        using ``self.step_time()``.
+        
+        Returns
+        ----------
+        action: 1D ``numpy.ndarray``
+            Vector containing the indices of the actions for each control factor
+        """
+
+        if self.sampling_mode == "marginal":
+            action, p_dist = control._sample_action_test(
+                self.q_pi, self.policies, self.num_controls, action_selection = self.action_selection, alpha = self.alpha
+            )
+        elif self.sampling_mode == "full":
+            action, p_dist = control._sample_policy_test(
+                self.q_pi, self.policies, self.num_controls, action_selection = self.action_selection, alpha = self.alpha
+            )
+
+        self.action = action
+
+        self.step_time()
+
+        return action, p_dist
 
     def update_A(self, obs):
         """

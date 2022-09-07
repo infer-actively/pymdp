@@ -6,7 +6,7 @@
 </p>
 
 A Python package for simulating Active Inference agents in Markov Decision Process environments.
-Please see our companion preprint on arxiv for an overview of the package, its structure, and a mathematical overview of active inference in partially-observable Markov Decision Processes: ["pymdp: A Python library for active inference in discrete state spaces"](https://arxiv.org/abs/2201.03904).
+Please see our companion paper, published in the Journal of Open Source Software: ["pymdp: A Python library for active inference in discrete state spaces"](https://joss.theoj.org/papers/10.21105/joss.04098) for an overview of the package and its motivation. For a more in-depth, tutorial-style introduction to the package and a mathematical overview of active inference in Markov Decision Processes, see the [longer arxiv version](https://arxiv.org/abs/2201.03904) of the paper.
 
 This package is hosted on the [`infer-actively`](https://github.com/infer-actively) GitHub organization, which was built with the intention of hosting open-source active inference and free-energy-principle related software.
 
@@ -17,7 +17,7 @@ Most of the low-level mathematical operations are [NumPy](https://github.com/num
 ![status](https://img.shields.io/badge/status-active-green)
 ![PyPI version](https://img.shields.io/pypi/v/inferactively-pymdp)
 [![Documentation Status](https://readthedocs.org/projects/pymdp-rtd/badge/?version=latest)](https://pymdp-rtd.readthedocs.io/en/latest/?badge=latest)
-[![DOI](https://zenodo.org/badge/224498849.svg)](https://zenodo.org/badge/latestdoi/224498849)
+[![DOI](https://joss.theoj.org/papers/10.21105/joss.04098/status.svg)](https://doi.org/10.21105/joss.04098)
 
 
 # ``pymdp`` in action
@@ -128,6 +128,26 @@ You should then be able to run tests locally with `pytest`
 ```bash
 pytest test
 ```
+
+## Citing `pymdp`
+If you use `pymdp` in your work or research, please consider citing our [paper](https://joss.theoj.org/papers/10.21105/joss.04098) (open-access) published in the Journal of Open-Source Software:
+
+```
+@article{Heins2022,
+  doi = {10.21105/joss.04098},
+  url = {https://doi.org/10.21105/joss.04098},
+  year = {2022},
+  publisher = {The Open Journal},
+  volume = {7},
+  number = {73},
+  pages = {4098},
+  author = {Conor Heins and Beren Millidge and Daphne Demekas and Brennan Klein and Karl Friston and Iain D. Couzin and Alexander Tschantz},
+  title = {pymdp: A Python library for active inference in discrete state spaces},
+  journal = {Journal of Open Source Software}
+}
+```
+
+For a more in-depth, tutorial-style introduction to the package and a mathematical overview of active inference in Markov Decision Processes, you can also consult the [longer arxiv version](https://arxiv.org/abs/2201.03904) of the paper.
 
 ## Authors
 
