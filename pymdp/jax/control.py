@@ -12,7 +12,7 @@ from pymdp.jax.maths import *
 # import pymdp.jax.utils as utils
 
 
-def update_posterior_policies(policy_matrix, qs_init, A, B, C, gamma = 16.0):
+def update_posterior_policies(policy_matrix, qs_init, A, B, C, gamma=16.0):
     # policy --> n_levels_factor_f x 1
     # factor --> n_levels_factor_f x n_policies
     ## vmap across policies

@@ -363,7 +363,7 @@ class Agent(object):
             Posterior Dirichlet parameters over transition model (same shape as ``B``), after having updated it with state beliefs and actions.
         """
 
-        pB_updated = learning.update_state_likelihood_dirichlet(
+        qB = learning.update_state_likelihood_dirichlet(
             self.pB,
             self.B,
             self.action,
@@ -417,9 +417,9 @@ class Agent(object):
                 # get beliefs about policies at the time at the beginning of the inference horizon
                 if hasattr(self, "q_pi_hist"):
                     begin_horizon_step = max(0, self.curr_timestep - self.inference_horizon)
-                    q_pi_t0 = np.copy(self.q_pi_hist[begin_horizon_step])
+                    q_pi_t0 = self.q_pi_hist[begin_horizon_step].copy()
                 else:
-                    q_pi_t0 = np.copy(self.q_pi)
+                    q_pi_t0 = self.q_pi.copy()
             
                 qs_t0 = inference.average_states_over_policies(qs_pi_t0,q_pi_t0) # beliefs about hidden states at the first timestep of the inference horizon
         
