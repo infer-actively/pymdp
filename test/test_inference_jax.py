@@ -17,43 +17,165 @@ from pymdp import utils, maths
 
 class TestInferenceJax(unittest.TestCase):
 
-    def test_fixed_point_iteration(self):
+    def test_fixed_point_iteration_singlestate_singleobs(self):
         """
-        Tests the jax-ified version of mean-field fixed-point iteration against the original numpy version
+        Tests the jax-ified version of mean-field fixed-point iteration against the original numpy version.
+        In this version there is one hidden state factor and one observation modality
         """
 
-        ''' Create a random generative model with a desired number/dimensionality of hidden state factors and observation modalities'''
+        num_states_list = [
+                            [1],
+                            [5],
+                            [10]
+        ]
 
-        # fpi_jax throws an error (some broadcasting dimension mistmatch in `fpi_jax`)
-        num_states = [2, 2, 5]
-        num_obs = [5, 10]
+        num_obs_list = [
+                        [5],
+                        [1],
+                        [2]
+        ]
 
-        # fpi_jax executes and returns an answer, but it is numerically incorrect
-        # num_states = [2, 2, 2]
-        # num_obs = [5, 10]
+        for (num_states, num_obs) in zip(num_states_list, num_obs_list):
 
-        # this works and returns the right answer
-        # num_states = [4, 4]
-        # num_obs = [5, 10, 6]
+            # numpy version
+            prior = utils.random_single_categorical(num_states)
+            A = utils.random_A_matrix(num_obs, num_states)
 
-        # numpy version
-        prior = utils.random_single_categorical(num_states)
-        A = utils.random_A_matrix(num_obs, num_states)
+            obs_idx = [utils.sample(maths.spm_dot(a_m, prior)) for a_m in A]
+            obs = utils.process_observation(obs_idx, len(num_obs), num_obs)
 
-        obs_idx = [utils.sample(maths.spm_dot(a_m, prior)) for a_m in A]
-        obs = utils.process_observation(obs_idx, len(num_obs), num_obs)
+            qs_numpy = fpi_numpy(A, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
-        qs_numpy = fpi_numpy(A, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so FPI never stops due to convergence
+            # jax version
+            prior = [jnp.array(prior_f) for prior_f in prior]
+            A = [jnp.array(a_m) for a_m in A]
+            obs = [jnp.array(o_m) for o_m in obs]
 
-        # jax version
-        prior = [jnp.array(prior_f) for prior_f in prior]
-        A = [jnp.array(a_m) for a_m in A]
-        obs = [jnp.array(o_m) for o_m in obs]
+            qs_jax = fpi_jax(A, obs, prior, num_iter=16)
 
-        qs_jax = fpi_jax(A, obs, prior, num_iter=16)
+            for f, _ in enumerate(qs_jax):
+                self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f]))
+    
+    def test_fixed_point_iteration_singlestate_multiobs(self):
+        """
+        Tests the jax-ified version of mean-field fixed-point iteration against the original numpy version.
+        In this version there is one hidden state factor and multiple observation modalities
+        """
 
-        for f, _ in enumerate(qs_jax):
-            self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f]))
+        num_states_list = [
+                            [1],
+                            [5],
+                            [10]
+        ]
+
+        num_obs_list = [
+                        [5, 2],
+                        [1, 8, 9],
+                        [2, 2, 2]
+        ]
+
+        for (num_states, num_obs) in zip(num_states_list, num_obs_list):
+
+            # numpy version
+            prior = utils.random_single_categorical(num_states)
+            A = utils.random_A_matrix(num_obs, num_states)
+
+            obs_idx = [utils.sample(maths.spm_dot(a_m, prior)) for a_m in A]
+            obs = utils.process_observation(obs_idx, len(num_obs), num_obs)
+
+            qs_numpy = fpi_numpy(A, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
+
+            # jax version
+            prior = [jnp.array(prior_f) for prior_f in prior]
+            A = [jnp.array(a_m) for a_m in A]
+            obs = [jnp.array(o_m) for o_m in obs]
+
+            qs_jax = fpi_jax(A, obs, prior, num_iter=16)
+
+            for f, _ in enumerate(qs_jax):
+                self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f]))
+    
+    def test_fixed_point_iteration_multistate_singleobs(self):
+        """
+        Tests the jax-ified version of mean-field fixed-point iteration against the original numpy version.
+        In this version there are multiple hidden state factors and a single observation modality
+        """
+
+        num_states_list = [
+                            [1, 10, 2],
+                            [5, 5, 10, 2],
+                            [10, 2]
+        ]
+
+        num_obs_list = [
+                        [5],
+                        [1],
+                        [10]
+        ]
+
+        for (num_states, num_obs) in zip(num_states_list, num_obs_list):
+
+            # numpy version
+            prior = utils.random_single_categorical(num_states)
+            A = utils.random_A_matrix(num_obs, num_states)
+
+            obs_idx = [utils.sample(maths.spm_dot(a_m, prior)) for a_m in A]
+            obs = utils.process_observation(obs_idx, len(num_obs), num_obs)
+
+            qs_numpy = fpi_numpy(A, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
+
+            # jax version
+            prior = [jnp.array(prior_f) for prior_f in prior]
+            A = [jnp.array(a_m) for a_m in A]
+            obs = [jnp.array(o_m) for o_m in obs]
+
+            qs_jax = fpi_jax(A, obs, prior, num_iter=16)
+
+            for f, _ in enumerate(qs_jax):
+                self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f]))
+
+
+    def test_fixed_point_iteration_multistate_multiobs(self):
+        """
+        Tests the jax-ified version of mean-field fixed-point iteration against the original numpy version.
+        In this version there are multiple hidden state factors and multiple observation modalities
+        """
+
+        ''' Start by creating a collection of random generative models with different 
+        cardinalities and dimensionalities of hidden state factors and observation modalities'''
+
+        num_states_list = [ 
+                         [2, 2, 5],
+                         [2, 2, 2],
+                         [4, 4]
+        ]
+
+        num_obs_list = [
+                        [5, 10],
+                        [4, 3, 2],
+                        [5, 10, 6]
+        ]
+
+        for (num_states, num_obs) in zip(num_states_list, num_obs_list):
+
+            # numpy version
+            prior = utils.random_single_categorical(num_states)
+            A = utils.random_A_matrix(num_obs, num_states)
+
+            obs_idx = [utils.sample(maths.spm_dot(a_m, prior)) for a_m in A]
+            obs = utils.process_observation(obs_idx, len(num_obs), num_obs)
+
+            qs_numpy = fpi_numpy(A, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
+
+            # jax version
+            prior = [jnp.array(prior_f) for prior_f in prior]
+            A = [jnp.array(a_m) for a_m in A]
+            obs = [jnp.array(o_m) for o_m in obs]
+
+            qs_jax = fpi_jax(A, obs, prior, num_iter=16)
+
+            for f, _ in enumerate(qs_jax):
+                self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f]))
 
 if __name__ == "__main__":
     unittest.main()
