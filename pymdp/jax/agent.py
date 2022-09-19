@@ -447,6 +447,3 @@ class Agent(object):
             raise NotImplementedError("CV is not implemented")
 
         return default_params
-
-    
-    
