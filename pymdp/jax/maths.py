@@ -1,11 +1,11 @@
 from jax import tree_util, nn, jit
 import jax.numpy as jnp
 
-MIN_VAL = -64
+MIN_VAL = 1e-32
 
 def log_stable(x):
 
-    return jnp.where(x > 0, jnp.log(x), MIN_VAL)
+    return jnp.log(jnp.where(x >= MIN_VAL, x, MIN_VAL))
 
 def compute_log_likelihood_single_modality(o_m, A_m):
     """ Compute observation likelihood for a single modality (observation and likelihood)"""
