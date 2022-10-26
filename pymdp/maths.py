@@ -342,6 +342,20 @@ def softmax_obj_arr(arr):
     
     return output
 
+def compute_accuracy(log_likelihood, qs):
+    """
+    Function that computes the accuracy term of the variational free energy. This is essentially a stripped down version of `spm_dot` above,
+    with fewer conditions / dimension handling in the beginning.
+    """ 
+
+    ndims_ll, n_factors = log_likelihood.ndim, len(qs)
+
+    dims = list(range(ndims_ll - n_factors,n_factors+ndims_ll - n_factors))
+    arg_list = [log_likelihood, list(range(ndims_ll))] + list(chain(*([qs[xdim_i],[dims[xdim_i]]] for xdim_i in range(n_factors))))
+
+    return np.einsum(*arg_list)
+
+
 def calc_free_energy(qs, prior, n_factors, likelihood=None):
     """ Calculate variational free energy
     @TODO Primarily used in FPI algorithm, needs to be made general
@@ -355,8 +369,7 @@ def calc_free_energy(qs, prior, n_factors, likelihood=None):
         free_energy += negH_qs + xH_qp
 
     if likelihood is not None:
-        accuracy = spm_dot(likelihood, qs)[0]
-        free_energy -= accuracy
+        free_energy -= compute_accuracy(likelihood, qs)
     return free_energy
 
 
