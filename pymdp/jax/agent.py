@@ -1,16 +1,18 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-""" Agent Class iplementation in Jax
+""" Agent Class implementation in Jax
 
 __author__: Conor Heins, Dimitrije Markovic, Alexander Tschantz, Daphne Demekas, Brennan Klein
 
 """
 
 import jax.numpy as jnp
-from jax import nn
+from jax import nn, vmap
+from jax.tree_util import register_pytree_node_class
 from . import inference, control, learning, utils, maths
 
+@register_pytree_node_class
 class Agent(object):
     """ 
     The Agent class, the highest-level API that wraps together processes for action, perception, and learning under active inference.
@@ -34,10 +36,10 @@ class Agent(object):
         B,
         C=None,
         D=None,
-        E = None,
+        E=None,
         pA=None,
-        pB = None,
-        pD = None,
+        pB=None,
+        pD=None,
         num_controls=None,
         policy_len=1,
         inference_horizon=1,
@@ -125,6 +127,23 @@ class Agent(object):
         
         self.action = None
         self.prev_actions = None
+    
+    def tree_flatten(self):
+        children = (self.A, self.B, self.C, self.D, self.E, self.pA, self.pB, self.num_controls, self.policy_len, self.control_fac_idx,
+                    self.policies, self.gamma, self.use_utility, self.use_states_info_gain, self.use_param_info_gain, self.action_selection,
+                    self.modalities_to_learn, self.lr_pA, self.factors_to_learn, self.lr_pB, self.lr_pD)
+        aux_data = None
+        return (children, aux_data)
+    
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        # @NOTE: @dimarkov, see here: I'm unclear on how to handle this, since when this function gets vmapped across the leaf-nodes stored in `children`, some of
+        # these leaves (e.g. leaves like `self.use_states_info_gain`) won't be `jnp.arrays` with a batch dimension. 
+        # 
+        # We either need to not have them get vmapped across or turn them into NDarray representations with a proper batch dimension. Another example are lists like `self.modalities_to_learn`
+        # which can be a list of arbitrary length (e.g. something like `[0, 2, 3]`). For instance, we might have to turn this into a boolean array per agent with equal length, and then stacked them
+        # along a batch-dimension for each agent.
+        return cls(*children)
 
     def reset(self, init_qs=None):
         """
@@ -229,7 +248,7 @@ class Agent(object):
 
         return future_qs_seq
 
-
+    @vmap
     def infer_states(self, observations):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
@@ -257,7 +276,7 @@ class Agent(object):
             prior=self.empirical_prior
         )
 
-        self.qs = qs
+        self.qs = qs # this doesn't work, apparently?
 
         return qs
 
