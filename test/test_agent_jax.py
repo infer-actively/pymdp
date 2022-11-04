@@ -11,10 +11,12 @@ import unittest
 import numpy as np
 import jax.numpy as jnp
 from jax import vmap, nn, random
-from jax.tree_util import register_pytree_node_class
+import jax.tree_util as jtu
 
 from pymdp.jax.maths import compute_log_likelihood_single_modality
 from pymdp.jax.utils import norm_dist
+from equinox import Module
+from typing import Any, List
 
 class TestAgentJax(unittest.TestCase):
 
@@ -23,27 +25,20 @@ class TestAgentJax(unittest.TestCase):
         dim, N = 5, 10
         sampling_key = random.PRNGKey(1)
 
-        @register_pytree_node_class
-        class BasicAgent(object):
-            def __init__(self, A, B):
+        class BasicAgent(Module):
+            A: jnp.ndarray
+            B: jnp.ndarray 
+            qs: jnp.ndarray
+
+            def __init__(self, A, B, qs=None):
                 self.A = A
                 self.B = B
-                self.qs = norm_dist(jnp.ones(dim))
+                self.qs = jnp.ones((N, dim))/dim if qs is None else qs
             
-            def tree_flatten(self):
-                children = (self.A, self.B)
-                aux_data = None
-                return (children, aux_data)
-
             @vmap
             def infer_states(self, obs):
                 qs = nn.softmax(compute_log_likelihood_single_modality(obs, self.A))
-                self.qs = qs # @NOTE: weirdly, adding this line doesn't actually change self.qs. When you query self.qs afterwards it's just the same as it was initialized in `self.__init__()`
-                return qs
-
-            @classmethod
-            def tree_unflatten(cls, aux_data, children):
-                return cls(*children) 
+                return qs, BasicAgent(self.A, self.B, qs=qs)
 
         A_key, B_key, obs_key, test_key = random.split(sampling_key, 4)
 
@@ -53,7 +48,10 @@ class TestAgentJax(unittest.TestCase):
 
         my_agent = BasicAgent(all_A, all_B)
 
-        all_qs = my_agent.infer_states(all_obs) 
+        all_qs, my_agent = my_agent.infer_states(all_obs)
+
+        assert all_qs.shape == my_agent.qs.shape
+        self.assertTrue(jnp.allclose(all_qs, my_agent.qs))
 
         # validate that the method broadcasted properly
         for id_to_check in range(N):
