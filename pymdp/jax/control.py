@@ -13,10 +13,52 @@ from itertools import chain
 from pymdp.jax.maths import *
 # import pymdp.jax.utils as utils
 
+def get_marginals(q_pi, policies, num_controls):
+    """
+    Computes the marginal posterior over actions.
+
+    Parameters
+    ----------
+    q_pi: 1D ``numpy.ndarray``
+        Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
+    policies: ``list`` of 2D ``numpy.ndarray``
+        ``list`` that stores each policy as a 2D array in ``policies[p_idx]``. Shape of ``policies[p_idx]`` 
+        is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
+        depth of the policy and ``num_factors`` is the number of control factors.
+    num_controls: ``list`` of ``int``
+        ``list`` of the dimensionalities of each control state factor.
+    
+    Returns
+    ----------
+    selected_policy: ``list`` of ``jax.numpy.ndarrays``
+       List of arrays corresponding to marginal probability of each action possible action
+    """
+    num_factors = len(num_controls)
+
+    # weight each action according to its integrated posterior probability over policies and timesteps
+    # for pol_idx, policy in enumerate(policies):
+    #     for t in range(policy.shape[0]):
+    #         for factor_i, action_i in enumerate(policy[t, :]):
+    #             marginal[factor_i][action_i] += q_pi[pol_idx]
+    
+    # weight each action according to its integrated posterior probability under all policies at the current timestep
+    
+    #NOTE: Why is the original version selecting policy[0, :] and not policy[t, :]
+    # for pol_idx, policy in enumerate(policies):
+    #     for factor_i, action_i in enumerate(policy[0, :]):
+    #         action_marginals[factor_i][action_i] += q_pi[pol_idx]
+
+    marginal = []
+    for factor_i in range(num_factors):
+        actions = jnp.arange(num_controls[factor_i])[:, None]
+        marginal.append(jnp.where(actions==policies[:, 0, factor_i], q_pi, 0).sum(-1))
+    
+    return marginal
+
 
 def sample_action(q_pi, policies, num_controls, action_selection="deterministic", alpha=16.0, rng_key=None):
     """
-    Computes the marginal posterior over actions and then samples an action from it, one action per control factor.
+    Samples an action from posterior marginals, one action per control factor.
 
     Parameters
     ----------
@@ -41,25 +83,7 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
         Vector containing the indices of the actions for each control factor
     """
 
-    num_factors = len(num_controls)
-
-    # weight each action according to its integrated posterior probability over policies and timesteps
-    # for pol_idx, policy in enumerate(policies):
-    #     for t in range(policy.shape[0]):
-    #         for factor_i, action_i in enumerate(policy[t, :]):
-    #             marginal[factor_i][action_i] += q_pi[pol_idx]
-    
-    # weight each action according to its integrated posterior probability under all policies at the current timestep
-    
-    #NOTE: Why is the original version selecting policy[0, :] and not policy[t, :]
-    # for pol_idx, policy in enumerate(policies):
-    #     for factor_i, action_i in enumerate(policy[0, :]):
-    #         action_marginals[factor_i][action_i] += q_pi[pol_idx]
-
-    marginal = []
-    for factor_i in range(num_factors):
-        actions = jnp.arange(num_controls[factor_i])[:, None]
-        marginal.append(jnp.where(actions==policies[:, 0, factor_i], q_pi, 0).sum(-1))
+    marginal = get_marginals(q_pi, policies, num_controls)
     
     if action_selection == 'deterministic':
         selected_policy = jtu.tree_map(lambda x: jnp.argmax(x, -1), marginal)

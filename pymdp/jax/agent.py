@@ -8,6 +8,7 @@ __author__: Conor Heins, Dimitrije Markovic, Alexander Tschantz, Daphne Demekas,
 """
 
 import jax.numpy as jnp
+import jax.tree_util as jtu
 from jax import nn, vmap
 from . import inference, control, learning, utils, maths
 from equinox import Module, static_field
@@ -36,7 +37,7 @@ class Agent(Module):
     C: List 
     D: List
     E: jnp.ndarray
-    empirical_prior: List
+    # empirical_prior: List
     gamma: jnp.ndarray
     qs: Optional[List]
     q_pi: Optional[List]
@@ -81,7 +82,7 @@ class Agent(Module):
         self.B = B
         self.C = C
         self.D = D
-        self.empirical_prior = D
+        # self.empirical_prior = D
         self.E = E
         self.qs = qs
         self.q_pi = q_pi
@@ -126,7 +127,7 @@ class Agent(Module):
         )
     
     @vmap
-    def infer_states(self, observations):
+    def infer_states(self, observations, empirical_prior):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
@@ -150,16 +151,15 @@ class Agent(Module):
         qs = inference.update_posterior_states(
             self.A,
             o_vec,
-            prior=self.empirical_prior
+            prior=empirical_prior
         )
 
         return qs
 
-    def update_empirical_prior(self, action):
-        # update self.empirical_prior
-        self.empirical_prior = control.compute_expected_state(
-                self.qs, self.B, action
-            )
+    @vmap
+    def update_empirical_prior(self, action, qs):
+        # return empirical_prior
+        return control.compute_expected_state(qs, self.B, action)
 
     @vmap
     def infer_policies(self, qs: List):
@@ -187,6 +187,32 @@ class Agent(Module):
         )
 
         return q_pi, G
+    
+    @vmap
+    def action_probabilities(self, q_pi: jnp.ndarray):
+        """
+        Compute probabilities of discrete actions from the posterior over policies.
+
+        Parameters
+        ----------
+        q_pi: 1D ``numpy.ndarray``
+        Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
+        
+        Returns
+        ----------
+        action: 2D ``jax.numpy.ndarray``
+            Vector containing probabilities of possible actions for different factors
+        """
+
+        marginals = control.get_marginals(q_pi, self.policies, self.num_controls)
+
+        # make all arrays same length (add 0 probability)
+        lengths = jtu.tree_map(lambda x: len(x), marginals)
+        max_length = max(lengths)
+        marginals = jtu.tree_map(lambda x: jnp.pad(x, (0, max_length - len(x))), marginals)
+
+        return jnp.stack(marginals, -2)
+
 
     def sample_action(self, q_pi: jnp.ndarray):
         """
