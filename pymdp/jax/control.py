@@ -15,7 +15,7 @@ from pymdp.jax.maths import *
 
 def get_marginals(q_pi, policies, num_controls):
     """
-    Computes the marginal posterior over actions.
+    Computes the marginal posterior(s) over actions by integrating their posterior probability under the policies that they appear within.
 
     Parameters
     ----------
@@ -30,30 +30,17 @@ def get_marginals(q_pi, policies, num_controls):
     
     Returns
     ----------
-    selected_policy: ``list`` of ``jax.numpy.ndarrays``
+    action_marginals: ``list`` of ``jax.numpy.ndarrays``
        List of arrays corresponding to marginal probability of each action possible action
     """
     num_factors = len(num_controls)
 
-    # weight each action according to its integrated posterior probability over policies and timesteps
-    # for pol_idx, policy in enumerate(policies):
-    #     for t in range(policy.shape[0]):
-    #         for factor_i, action_i in enumerate(policy[t, :]):
-    #             marginal[factor_i][action_i] += q_pi[pol_idx]
-    
-    # weight each action according to its integrated posterior probability under all policies at the current timestep
-    
-    #NOTE: Why is the original version selecting policy[0, :] and not policy[t, :]
-    # for pol_idx, policy in enumerate(policies):
-    #     for factor_i, action_i in enumerate(policy[0, :]):
-    #         action_marginals[factor_i][action_i] += q_pi[pol_idx]
-
-    marginal = []
+    action_marginals = []
     for factor_i in range(num_factors):
         actions = jnp.arange(num_controls[factor_i])[:, None]
-        marginal.append(jnp.where(actions==policies[:, 0, factor_i], q_pi, 0).sum(-1))
+        action_marginals.append(jnp.where(actions==policies[:, 0, factor_i], q_pi, 0).sum(-1))
     
-    return marginal
+    return action_marginals
 
 
 def sample_action(q_pi, policies, num_controls, action_selection="deterministic", alpha=16.0, rng_key=None):
