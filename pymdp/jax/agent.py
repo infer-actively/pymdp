@@ -87,7 +87,9 @@ class Agent(Module):
         self.qs = qs
         self.q_pi = q_pi
 
-        self.gamma = jnp.broadcast_to(gamma, self.A[0].shape[:1]) 
+        batch_dim = (self.A[0].shape[0],)
+
+        self.gamma = jnp.broadcast_to(gamma, batch_dim) 
 
         ### Static parameters ###
 
