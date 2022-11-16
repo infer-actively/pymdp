@@ -3,13 +3,127 @@
 # pylint: disable=no-member
 # pylint: disable=not-an-iterable
 
+import itertools
 import jax.numpy as jnp
+import jax.tree_util as jtu
 from functools import partial
 from jax import lax, jit, vmap, nn
 from itertools import chain
 
 from pymdp.jax.maths import *
 # import pymdp.jax.utils as utils
+
+def get_marginals(q_pi, policies, num_controls):
+    """
+    Computes the marginal posterior(s) over actions by integrating their posterior probability under the policies that they appear within.
+
+    Parameters
+    ----------
+    q_pi: 1D ``numpy.ndarray``
+        Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
+    policies: ``list`` of 2D ``numpy.ndarray``
+        ``list`` that stores each policy as a 2D array in ``policies[p_idx]``. Shape of ``policies[p_idx]`` 
+        is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
+        depth of the policy and ``num_factors`` is the number of control factors.
+    num_controls: ``list`` of ``int``
+        ``list`` of the dimensionalities of each control state factor.
+    
+    Returns
+    ----------
+    action_marginals: ``list`` of ``jax.numpy.ndarrays``
+       List of arrays corresponding to marginal probability of each action possible action
+    """
+    num_factors = len(num_controls)
+
+    action_marginals = []
+    for factor_i in range(num_factors):
+        actions = jnp.arange(num_controls[factor_i])[:, None]
+        action_marginals.append(jnp.where(actions==policies[:, 0, factor_i], q_pi, 0).sum(-1))
+    
+    return action_marginals
+
+
+def sample_action(q_pi, policies, num_controls, action_selection="deterministic", alpha=16.0, rng_key=None):
+    """
+    Samples an action from posterior marginals, one action per control factor.
+
+    Parameters
+    ----------
+    q_pi: 1D ``numpy.ndarray``
+        Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
+    policies: ``list`` of 2D ``numpy.ndarray``
+        ``list`` that stores each policy as a 2D array in ``policies[p_idx]``. Shape of ``policies[p_idx]`` 
+        is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
+        depth of the policy and ``num_factors`` is the number of control factors.
+    num_controls: ``list`` of ``int``
+        ``list`` of the dimensionalities of each control state factor.
+    action_selection: string, default "deterministic"
+        String indicating whether whether the selected action is chosen as the maximum of the posterior over actions,
+        or whether it's sampled from the posterior marginal over actions
+    alpha: float, default 16.0
+        Action selection precision -- the inverse temperature of the softmax that is used to scale the 
+        action marginals before sampling. This is only used if ``action_selection`` argument is "stochastic"
+
+    Returns
+    ----------
+    selected_policy: 1D ``numpy.ndarray``
+        Vector containing the indices of the actions for each control factor
+    """
+
+    marginal = get_marginals(q_pi, policies, num_controls)
+    
+    if action_selection == 'deterministic':
+        selected_policy = jtu.tree_map(lambda x: jnp.argmax(x, -1), marginal)
+    elif action_selection == 'stochastic':
+        selected_policy = jtu.tree_map( lambda x: random.categorical(rng_key, alpha * log_stable(x)), marginal)
+    else:
+        raise NotImplementedError
+
+    return jnp.array(selected_policy)
+
+
+def construct_policies(num_states, num_controls = None, policy_len=1, control_fac_idx=None):
+    """
+    Generate a ``list`` of policies. The returned array ``policies`` is a ``list`` that stores one policy per entry.
+    A particular policy (``policies[i]``) has shape ``(num_timesteps, num_factors)`` 
+    where ``num_timesteps`` is the temporal depth of the policy and ``num_factors`` is the number of control factors.
+
+    Parameters
+    ----------
+    num_states: ``list`` of ``int``
+        ``list`` of the dimensionalities of each hidden state factor
+    num_controls: ``list`` of ``int``, default ``None``
+        ``list`` of the dimensionalities of each control state factor. If ``None``, then is automatically computed as the dimensionality of each hidden state factor that is controllable
+    policy_len: ``int``, default 1
+        temporal depth ("planning horizon") of policies
+    control_fac_idx: ``list`` of ``int``
+        ``list`` of indices of the hidden state factors that are controllable (i.e. those state factors ``i`` where ``num_controls[i] > 1``)
+
+    Returns
+    ----------
+    policies: ``list`` of 2D ``numpy.ndarray``
+        ``list`` that stores each policy as a 2D array in ``policies[p_idx]``. Shape of ``policies[p_idx]`` 
+        is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
+        depth of the policy and ``num_factors`` is the number of control factors.
+    """
+
+    num_factors = len(num_states)
+    if control_fac_idx is None:
+        if num_controls is not None:
+            control_fac_idx = [f for f, n_c in enumerate(num_controls) if n_c > 1]
+        else:
+            control_fac_idx = list(range(num_factors))
+
+    if num_controls is None:
+        num_controls = [num_states[c_idx] if c_idx in control_fac_idx else 1 for c_idx in range(num_factors)]
+        
+    x = num_controls * policy_len
+    policies = list(itertools.product(*[list(range(i)) for i in x]))
+    
+    for pol_i in range(len(policies)):
+        policies[pol_i] = jnp.array(policies[pol_i]).reshape(policy_len, num_factors)
+
+    return jnp.stack(policies)
 
 
 def update_posterior_policies(policy_matrix, qs_init, A, B, C, gamma=16.0):
