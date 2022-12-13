@@ -13,7 +13,8 @@ def marginal_log_likelihood(qs, log_likelihood, i):
 
     joint = log_likelihood * x
     dims = (f for f in range(len(qs)) if f != i)
-    return joint.sum(dims)/qs[i]
+    marg = joint.sum(dims)
+    return jnp.where(marg < 0., marg/qs[i], marg)
 
 def run_vanilla_fpi(A, obs, prior, num_iter=1):
     """ Vanilla fixed point iteration (jaxified) """

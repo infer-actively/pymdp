@@ -1,8 +1,7 @@
 from jax import tree_util, nn, jit
 import jax.numpy as jnp
 
-MIN_VAL = 1e-16 # to debug weird inference with FPI, which we encountered with the T-Maze, try uncommenting this / commenting out the 1e-32 below
-# MIN_VAL = 1e-32
+MIN_VAL = jnp.finfo(float).eps
 
 def log_stable(x):
 

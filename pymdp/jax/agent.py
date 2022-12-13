@@ -43,6 +43,7 @@ class Agent(Module):
     q_pi: Optional[List]
 
     # static parameters not leaves of the PyTree
+    num_iter: int = static_field()
     num_obs: List = static_field()
     num_modalities: int = static_field()
     num_states: List = static_field()
@@ -75,6 +76,7 @@ class Agent(Module):
         use_param_info_gain=False,
         action_selection="deterministic",
         inference_algo="VANILLA",
+        num_iter=16,
     ):
         ### PyTree leaves
 
@@ -92,6 +94,8 @@ class Agent(Module):
         self.gamma = jnp.broadcast_to(gamma, batch_dim) 
 
         ### Static parameters ###
+
+        self.num_iter = num_iter
 
         self.inference_algo = inference_algo
 
@@ -153,7 +157,8 @@ class Agent(Module):
         qs = inference.update_posterior_states(
             self.A,
             o_vec,
-            prior=empirical_prior
+            prior=empirical_prior,
+            num_iter=self.num_iter
         )
 
         return qs
