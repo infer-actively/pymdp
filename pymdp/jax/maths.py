@@ -1,11 +1,10 @@
 from jax import tree_util, nn, jit
 import jax.numpy as jnp
 
-MIN_VAL = jnp.finfo(float).eps
+MINVAL = jnp.finfo(float).eps
 
 def log_stable(x):
-
-    return jnp.log(jnp.where(x >= MIN_VAL, x, MIN_VAL))
+    return jnp.log(jnp.clip(x, a_min=MINVAL))
 
 def compute_log_likelihood_single_modality(o_m, A_m):
     """ Compute observation likelihood for a single modality (observation and likelihood)"""
@@ -21,7 +20,7 @@ def compute_log_likelihood(obs, A):
     ll = jnp.sum(jnp.stack(result), 0)
 
     return ll
-
+MINVAL
 def compute_accuracy(qs, obs, A):
     """ Compute the accuracy portion of the variational free energy (expected log likelihood under the variational posterior) """
 
