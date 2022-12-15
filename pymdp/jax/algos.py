@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 from jax import tree_util, jit, grad, lax, nn
 
-from pymdp.jax.maths import compute_log_likelihood, log_stable
+from pymdp.jax.maths import compute_log_likelihood, log_stable, MINVAL
 
 def add(x, y):
     return x + y
@@ -14,7 +14,7 @@ def marginal_log_likelihood(qs, log_likelihood, i):
     joint = log_likelihood * x
     dims = (f for f in range(len(qs)) if f != i)
     marg = joint.sum(dims)
-    return jnp.where(marg < 0., marg/qs[i], marg)
+    return marg/jnp.clip(qs[i], a_min=MINVAL)
 
 def run_vanilla_fpi(A, obs, prior, num_iter=1):
     """ Vanilla fixed point iteration (jaxified) """
