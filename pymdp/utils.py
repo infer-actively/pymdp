@@ -46,6 +46,24 @@ def obj_array_zeros(shape_list):
         arr[i] = np.zeros(shape)
     return arr
 
+def initialize_empty_A(num_obs, num_states):
+    """ 
+    Initializes an empty observation likelihood array or `A` array using a list of observation-modality dimensions (`num_obs`)
+    and hidden state factor dimensions (`num_states`)
+    """
+
+    A_shape_list = [ [no] + num_states for no in num_obs]
+    return obj_array_zeros(A_shape_list)
+
+def initialize_empty_B(num_states, num_controls):
+    """ 
+    Initializes an empty (controllable) transition likelihood array or `B` array using a list of hidden state factor dimensions (`num_states`)
+    and control factor dimensions (`num_controls)
+    """
+
+    B_shape_list = [ [ns, ns, num_controls[f]] for f, ns in enumerate(num_states)]
+    return obj_array_zeros(B_shape_list)
+
 def obj_array_uniform(shape_list):
     """ 
     Creates a numpy object array whose sub-arrays are uniform Categorical
@@ -559,34 +577,34 @@ def convert_B_stubs_to_ndarray(B_stubs, model_labels):
 
     return B
 
-def build_belief_array(qx):
+# def build_belief_array(qx):
 
-    """
-    This function constructs array-ified (not nested) versions
-    of the posterior belief arrays, that are separated 
-    by policy, timepoint, and hidden state factor
-    """
+#     """
+#     This function constructs array-ified (not nested) versions
+#     of the posterior belief arrays, that are separated 
+#     by policy, timepoint, and hidden state factor
+#     """
 
-    num_policies = len(qx)
-    num_timesteps = len(qx[0])
-    num_factors = len(qx[0][0])
+#     num_policies = len(qx)
+#     num_timesteps = len(qx[0])
+#     num_factors = len(qx[0][0])
 
-    if num_factors > 1:
-        belief_array = utils.obj_array(num_factors)
-        for factor in range(num_factors):
-            belief_array[factor] = np.zeros( (num_policies, qx[0][0][factor].shape[0], num_timesteps) )
-        for policy_i in range(num_policies):
-            for timestep in range(num_timesteps):
-                for factor in range(num_factors):
-                    belief_array[factor][policy_i, :, timestep] = qx[policy_i][timestep][factor]
-    else:
-        num_states = qx[0][0][0].shape[0]
-        belief_array = np.zeros( (num_policies, num_states, num_timesteps) )
-        for policy_i in range(num_policies):
-            for timestep in range(num_timesteps):
-                belief_array[policy_i, :, timestep] = qx[policy_i][timestep][0]
+#     if num_factors > 1:
+#         belief_array = obj_array(num_factors)
+#         for factor in range(num_factors):
+#             belief_array[factor] = np.zeros( (num_policies, qx[0][0][factor].shape[0], num_timesteps) )
+#         for policy_i in range(num_policies):
+#             for timestep in range(num_timesteps):
+#                 for factor in range(num_factors):
+#                     belief_array[factor][policy_i, :, timestep] = qx[policy_i][timestep][factor]
+#     else:
+#         num_states = qx[0][0][0].shape[0]
+#         belief_array = np.zeros( (num_policies, num_states, num_timesteps) )
+#         for policy_i in range(num_policies):
+#             for timestep in range(num_timesteps):
+#                 belief_array[policy_i, :, timestep] = qx[policy_i][timestep][0]
     
-    return belief_array
+#     return belief_array
 
 def build_xn_vn_array(xn):
 
@@ -601,9 +619,9 @@ def build_xn_vn_array(xn):
     num_factors = len(xn[0][0])
 
     if num_factors > 1:
-        xn_array = utils.obj_array(num_factors)
+        xn_array = obj_array(num_factors)
         for factor in range(num_factors):
-            num_states, infer_len = xn[0][0][f].shape
+            num_states, infer_len = xn[0][0][factor].shape
             xn_array[factor] = np.zeros( (num_itr, num_states, infer_len, num_policies) )
         for policy_i in range(num_policies):
             for itr in range(num_itr):

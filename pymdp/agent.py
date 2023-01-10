@@ -46,7 +46,7 @@ class Agent(object):
         control_fac_idx=None,
         policies=None,
         gamma=16.0,
-        alpha = 16.0,
+        alpha=16.0,
         use_utility=True,
         use_states_info_gain=True,
         use_param_info_gain=False,
@@ -394,7 +394,7 @@ class Agent(object):
         return future_qs_seq
 
 
-    def infer_states(self, observation):
+    def infer_states(self, observation, distr_obs = False):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
@@ -414,7 +414,7 @@ class Agent(object):
             at timepoint ``t_idx``.
         """
 
-        observation = tuple(observation) 
+        observation = tuple(observation) if not distr_obs else observation
 
         if not hasattr(self, "qs"):
             self.reset()
