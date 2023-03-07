@@ -20,7 +20,7 @@ setuptools.setup(
     'openpyxl>=3.0.7',
     'packaging>=20.8', 
     'pandas>=1.2.4',
-    'Pillow>=8.2.0'
+    'Pillow>=8.2.0',
     'pluggy>=0.13.1', 
     'py>=1.10.0',
     'pyparsing>=2.4.7',
