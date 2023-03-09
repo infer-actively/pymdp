@@ -331,6 +331,12 @@ class Agent(object):
             
         else:
             self.qs = init_qs
+        
+        if self.pA != None:
+            self.A = utils.norm_dist_obj_arr(self.pA)
+        
+        if self.pB != None:
+            self.B = utils.norm_dist_obj_arr(self.pB)
 
         return self.qs
 
