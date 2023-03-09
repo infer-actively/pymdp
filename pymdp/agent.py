@@ -124,6 +124,25 @@ class Agent(object):
             self.num_controls = [self.B[f].shape[-1] for f in range(self.num_factors)]
         else:
             self.num_controls = num_controls
+
+        # checking that `A_factor_list` and `B_factor_list` are consistent with `num_factors`, `num_states`, and lagging dimensions of `A` and `B` tensors
+        if A_factor_list == None:
+            self.A_factor_list = list(range(self.num_factors))
+        else:
+            for m in range(self.num_modalities):
+                assert max(A_factor_list[m]) <= (self.num_factors - 1), f"Check modality {m} of A_factor_list - must be consistent with `num_states` and `num_factors`..."
+                factor_dims = tuple([self.num_states[f] for f in A_factor_list[m]])
+                assert self.A[m].shape[1:] == factor_dims, f"Check modality {m} of A_factor_list. It must coincide with lagging dimensions of A{m}..." 
+                assert self.pA[m].shape[1:] == factor_dims, f"Check modality {m} of A_factor_list. It must coincide with lagging dimensions of pA{m}..."
+
+        if B_factor_list == None:
+            B_factor_list = list(range(self.num_factors))
+        else:
+            for f in range(self.num_factors):
+                assert max(B_factor_list[f]) <= (self.num_factors - 1), f"Check factor {f} of B_factor_list - must be consistent with `num_states` and `num_factors`..."
+                factor_dims = tuple([self.num_states[f] for f in B_factor_list[f]])
+                assert self.B[f].shape[1:-1] == factor_dims, f"Check factor {f} of B_factor_list. It must coincide with all-but-final lagging dimensions of B{f}..." 
+                assert self.pB[f].shape[1:-1] == factor_dims, f"Check factor {f} of B_factor_list. It must coincide with all-but-final lagging dimensions of pB{f}..."
         
         # Users have the option to make only certain factors controllable.
         # default behaviour is to make all hidden state factors controllable
