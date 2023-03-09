@@ -110,7 +110,7 @@ class Agent(object):
 
         self.B = utils.to_obj_array(B)
 
-        assert utils.is_normalized(self.B), "B matrix is not normalized (i.e. B.sum(axis = 0) must all equal 1.0)"
+        assert utils.is_normalized(self.B), "B matrix is not normalized (i.e. B[f].sum(axis = 0) must all equal 1.0 for all factors)"
 
         # Determine number of hidden state factors and their dimensionalities
         self.num_states = [self.B[f].shape[0] for f in range(len(self.B))]
