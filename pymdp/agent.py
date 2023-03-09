@@ -61,7 +61,9 @@ class Agent(object):
         lr_pD=1.0,
         use_BMA = True,
         policy_sep_prior = False,
-        save_belief_hist = False
+        save_belief_hist = False,
+        A_factor_list = None,
+        B_factor_list = None
     ):
 
         ### Constant parameters ###
@@ -119,7 +121,7 @@ class Agent(object):
 
         # If no `num_controls` are given, then this is inferred from the shapes of the input B matrices
         if num_controls == None:
-            self.num_controls = [self.B[f].shape[2] for f in range(self.num_factors)]
+            self.num_controls = [self.B[f].shape[-1] for f in range(self.num_factors)]
         else:
             self.num_controls = num_controls
         
