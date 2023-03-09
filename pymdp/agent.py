@@ -123,6 +123,8 @@ class Agent(object):
         if num_controls == None:
             self.num_controls = [self.B[f].shape[-1] for f in range(self.num_factors)]
         else:
+            inferred_num_controls = [self.B[f].shape[-1] for f in range(self.num_factors)]
+            assert num_controls == inferred_num_controls, "num_controls must be consistent with the shapes of the input B matrices"
             self.num_controls = num_controls
 
         # checking that `A_factor_list` and `B_factor_list` are consistent with `num_factors`, `num_states`, and lagging dimensions of `A` and `B` tensors
@@ -203,7 +205,7 @@ class Agent(object):
             else:
                 self.D = self._construct_D_prior()
 
-        assert utils.is_normalized(self.D), "A matrix is not normalized (i.e. A.sum(axis = 0) must all equal 1.0"
+        assert utils.is_normalized(self.D), "D vector is not normalized (i.e. D[f].sum() must all equal 1.0 for all factors)"
 
         # Assigning prior parameters on initial hidden states (pD vectors)
         self.pD = pD
