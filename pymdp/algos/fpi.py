@@ -119,6 +119,9 @@ def run_vanilla_fpi(A, obs, num_obs, num_states, prior=None, num_iter=10, dF=1.0
                 qL = np.einsum(LL_tensor, list(range(n_factors)), [factor])/qs_i
                 qs[factor] = softmax(qL + prior[factor])
 
+            print(f'Posteriors at iteration {curr_iter}:\n')
+            print(qs[0])
+            print(qs[1])
             # List of orders in which marginal posteriors are sequentially multiplied into the joint likelihood:
             # First order loops over factors starting at index = 0, second order goes in reverse
             # factor_orders = [range(n_factors), range((n_factors - 1), -1, -1)]
@@ -133,6 +136,7 @@ def run_vanilla_fpi(A, obs, num_obs, num_states, prior=None, num_iter=10, dF=1.0
             # calculate new free energy
             vfe = calc_free_energy(qs, prior, n_factors, likelihood)
 
+            # print(f'VFE at iteration {curr_iter}: {vfe}\n')
             # stopping condition - time derivative of free energy
             dF = np.abs(prev_vfe - vfe)
             prev_vfe = vfe
@@ -190,7 +194,7 @@ def run_vanilla_fpi_factorized(A, obs, num_obs, num_states, mb_dict, prior=None,
         where `likelihood[m].ndim` will be equal to  `len(mb_dict['A_factor_list'][m])`
     """
 
-    likelihood = obj_array(num_modalities)
+    likelihood = obj_array(n_modalities)
     obs = to_obj_array(obs)
     for (m, A_m) in enumerate(A):
         likelihood[m] = dot_likelihood(A_m, obs[m])
@@ -264,10 +268,13 @@ def run_vanilla_fpi_factorized(A, obs, num_obs, num_states, mb_dict, prior=None,
                 qs[f] = softmax(qL + prior[f])
 
                 vfe -= qL.sum() # likelihood part of vfe, sum of factor-level expected energies E_q(s_i/f)[ln P(o=obs|s)]
-            
+            print(f'Posteriors at iteration {curr_iter}:\n')
+            print(qs[0])
+            print(qs[1])
             # calculate new free energy, leaving out the accuracy term
             vfe += calc_free_energy(qs, prior, n_factors)
 
+            # print(f'VFE at iteration {curr_iter}: {vfe}\n')
             # stopping condition - time derivative of free energy
             dF = np.abs(prev_vfe - vfe)
             prev_vfe = vfe
