@@ -6,6 +6,7 @@ import numpy as np
 from pymdp.maths import spm_dot, dot_likelihood, get_joint_likelihood, softmax, calc_free_energy, spm_log_single, spm_log_obj_array
 from pymdp.utils import to_obj_array, obj_array, obj_array_uniform
 from itertools import chain
+from copy import deepcopy
 
 def run_vanilla_fpi(A, obs, num_obs, num_states, prior=None, num_iter=10, dF=1.0, dF_tol=0.001):
     """
@@ -119,9 +120,9 @@ def run_vanilla_fpi(A, obs, num_obs, num_states, prior=None, num_iter=10, dF=1.0
                 qL = np.einsum(LL_tensor, list(range(n_factors)), [factor])/qs_i
                 qs[factor] = softmax(qL + prior[factor])
 
-            print(f'Posteriors at iteration {curr_iter}:\n')
-            print(qs[0])
-            print(qs[1])
+            # print(f'Posteriors at iteration {curr_iter}:\n')
+            # print(qs[0])
+            # print(qs[1])
             # List of orders in which marginal posteriors are sequentially multiplied into the joint likelihood:
             # First order loops over factors starting at index = 0, second order goes in reverse
             # factor_orders = [range(n_factors), range((n_factors - 1), -1, -1)]
@@ -251,6 +252,8 @@ def run_vanilla_fpi_factorized(A, obs, num_obs, num_states, mb_dict, prior=None,
         while curr_iter < num_iter and dF >= dF_tol:
             
             vfe = 0 
+
+            qs_new = obj_array(n_factors)
             for f in range(n_factors):
             
                 '''
@@ -265,12 +268,14 @@ def run_vanilla_fpi_factorized(A, obs, num_obs, num_states, mb_dict, prior=None,
                 
                     qL += spm_dot(log_likelihood[m], qs[A_factor_list[m]], [A_factor_list[m].index(f)])
 
-                qs[f] = softmax(qL + prior[f])
+                qs_new[f] = softmax(qL + prior[f])
 
                 vfe -= qL.sum() # likelihood part of vfe, sum of factor-level expected energies E_q(s_i/f)[ln P(o=obs|s)]
-            print(f'Posteriors at iteration {curr_iter}:\n')
-            print(qs[0])
-            print(qs[1])
+            
+            qs = deepcopy(qs_new)
+            # print(f'Posteriors at iteration {curr_iter}:\n')
+            # print(qs[0])
+            # print(qs[1])
             # calculate new free energy, leaving out the accuracy term
             vfe += calc_free_energy(qs, prior, n_factors)
 
