@@ -137,6 +137,17 @@ class Agent(object):
                 assert self.A[m].shape[1:] == factor_dims, f"Check modality {m} of A_factor_list. It must coincide with lagging dimensions of A{m}..." 
                 assert self.pA[m].shape[1:] == factor_dims, f"Check modality {m} of A_factor_list. It must coincide with lagging dimensions of pA{m}..."
 
+        # generate a list of the modalities that depend on each factor 
+        A_modality_list = []
+        for f in range(self.num_factors):
+            A_modality_list.append( [m for m in range(self.num_modalities) if f in A_factor_list[m]] )
+
+        # Store thee `A_factor_list` and the `A_modality_list` in a Markov blanket dictionary
+        self.mb_dict = {
+                        'A_factor_list': A_factor_list,
+                        'A_modality_list': A_modality_list
+                        }
+
         if B_factor_list == None:
             B_factor_list = [[f] for f in range(self.num_factors)] # defaults to having all factors depend only on themselves
         else:
