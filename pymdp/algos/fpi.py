@@ -248,10 +248,18 @@ def run_vanilla_fpi_factorized(A, obs, num_obs, num_states, mb_dict, prior=None,
         """
 
         A_factor_list, A_modality_list = mb_dict['A_factor_list'], mb_dict['A_modality_list']
+        joint_loglikelihood = np.zeros(tuple(num_states))
+        for m in range(n_modalities):
+            reshape_dims = n_factors*[1]
+            for _f_id in A_factor_list[m]:
+                reshape_dims[_f_id] = num_states[_f_id]
+
+            joint_loglikelihood += log_likelihood[m].reshape(reshape_dims) # add up all the log-likelihoods after reshaping them to the global common dimensions of all hidden state factors
+
         curr_iter = 0
         while curr_iter < num_iter and dF >= dF_tol:
             
-            vfe = 0 
+            # vfe = 0 
 
             qs_new = obj_array(n_factors)
             for f in range(n_factors):
@@ -270,14 +278,16 @@ def run_vanilla_fpi_factorized(A, obs, num_obs, num_states, mb_dict, prior=None,
 
                 qs_new[f] = softmax(qL + prior[f])
 
-                vfe -= qL.sum() # likelihood part of vfe, sum of factor-level expected energies E_q(s_i/f)[ln P(o=obs|s)]
+                # vfe -= qL.sum() # accuracy part of vfe, sum of factor-level expected energies E_q(s_i/f)[ln P(o=obs|s)]
             
             qs = deepcopy(qs_new)
             # print(f'Posteriors at iteration {curr_iter}:\n')
             # print(qs[0])
             # print(qs[1])
             # calculate new free energy, leaving out the accuracy term
-            vfe += calc_free_energy(qs, prior, n_factors)
+            # vfe += calc_free_energy(qs, prior, n_factors)
+
+            vfe = calc_free_energy(qs, prior, n_factors, likelihood=joint_loglikelihood)
 
             # print(f'VFE at iteration {curr_iter}: {vfe}\n')
             # stopping condition - time derivative of free energy
