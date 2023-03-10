@@ -87,16 +87,21 @@ def onehot(value, num_values):
     arr[value] = 1.0
     return arr
 
-def random_A_matrix(num_obs, num_states):
+def random_A_matrix(num_obs, num_states, A_factor_list=None):
     if type(num_obs) is int:
         num_obs = [num_obs]
     if type(num_states) is int:
         num_states = [num_states]
     num_modalities = len(num_obs)
 
+    if A_factor_list is None:
+        num_factors = len(num_states)
+        A_factor_list = [list(range(num_factors))] * num_modalities
+
     A = obj_array(num_modalities)
     for modality, modality_obs in enumerate(num_obs):
-        modality_shape = [modality_obs] + num_states
+        lagging_dimensions = [ns for i, ns in enumerate(num_states) if i in A_factor_list[modality]]
+        modality_shape = [modality_obs] + lagging_dimensions
         modality_dist = np.random.rand(*modality_shape)
         A[modality] = norm_dist(modality_dist)
     return A
