@@ -85,8 +85,8 @@ class TestFPI(unittest.TestCase):
         mb_dict = {'A_factor_list': [[0, 1]],
                     'A_modality_list': [[0], [0]]}
         
-        qs_out = run_vanilla_fpi_factorized(A, obs, num_obs, num_states, mb_dict, prior=prior, num_iter=5, dF_tol=1e-10)
-        qs_validation = run_vanilla_fpi(A, obs, num_obs, num_states, prior=prior, num_iter=5, dF_tol=1e-10)
+        qs_out = run_vanilla_fpi_factorized(A, obs, num_obs, num_states, mb_dict, prior=prior)
+        qs_validation = run_vanilla_fpi(A, obs, num_obs, num_states, prior=prior)
 
         for qs_f_val, qs_f_out in zip(qs_validation, qs_out):
             self.assertTrue(np.isclose(qs_f_val, qs_f_out).all())
