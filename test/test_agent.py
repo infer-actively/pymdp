@@ -595,7 +595,7 @@ class TestAgent(unittest.TestCase):
 
         obs = [np.random.randint(obs_dim) for obs_dim in num_obs]
 
-        qs_out = agent._infer_states_test(obs)
+        qs_out = agent.infer_states(obs)
 
         A_full = utils.initialize_empty_A(num_obs, num_states)
         for m, A_m in enumerate(A_full):
@@ -607,7 +607,7 @@ class TestAgent(unittest.TestCase):
             A_full[m] = np.tile(A_reduced[m].reshape(expanded_dims), tile_dims)
         
         agent = Agent(A=A_full, B=B, inference_algo = "VANILLA")
-        qs_validation = agent.infer_states(obs)
+        qs_validation = agent._infer_states_test(obs)
 
         for qs_out_f, qs_val_f in zip(qs_out, qs_validation):
             self.assertTrue(np.isclose(qs_out_f, qs_val_f).all())
