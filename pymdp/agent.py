@@ -135,28 +135,32 @@ class Agent(object):
                 assert max(A_factor_list[m]) <= (self.num_factors - 1), f"Check modality {m} of A_factor_list - must be consistent with `num_states` and `num_factors`..."
                 factor_dims = tuple([self.num_states[f] for f in A_factor_list[m]])
                 assert self.A[m].shape[1:] == factor_dims, f"Check modality {m} of A_factor_list. It must coincide with lagging dimensions of A{m}..." 
-                assert self.pA[m].shape[1:] == factor_dims, f"Check modality {m} of A_factor_list. It must coincide with lagging dimensions of pA{m}..."
+                if self.pA != None:
+                    assert self.pA[m].shape[1:] == factor_dims, f"Check modality {m} of A_factor_list. It must coincide with lagging dimensions of pA{m}..."
+            self.A_factor_list = A_factor_list
 
         # generate a list of the modalities that depend on each factor 
         A_modality_list = []
         for f in range(self.num_factors):
-            A_modality_list.append( [m for m in range(self.num_modalities) if f in A_factor_list[m]] )
+            A_modality_list.append( [m for m in range(self.num_modalities) if f in self.A_factor_list[m]] )
 
         # Store thee `A_factor_list` and the `A_modality_list` in a Markov blanket dictionary
         self.mb_dict = {
-                        'A_factor_list': A_factor_list,
+                        'A_factor_list': self.A_factor_list,
                         'A_modality_list': A_modality_list
                         }
 
         if B_factor_list == None:
-            B_factor_list = [[f] for f in range(self.num_factors)] # defaults to having all factors depend only on themselves
+            self.B_factor_list = [[f] for f in range(self.num_factors)] # defaults to having all factors depend only on themselves
         else:
             for f in range(self.num_factors):
                 assert max(B_factor_list[f]) <= (self.num_factors - 1), f"Check factor {f} of B_factor_list - must be consistent with `num_states` and `num_factors`..."
                 factor_dims = tuple([self.num_states[f] for f in B_factor_list[f]])
                 assert self.B[f].shape[1:-1] == factor_dims, f"Check factor {f} of B_factor_list. It must coincide with all-but-final lagging dimensions of B{f}..." 
-                assert self.pB[f].shape[1:-1] == factor_dims, f"Check factor {f} of B_factor_list. It must coincide with all-but-final lagging dimensions of pB{f}..."
-        
+                if self.pB != None:
+                    assert self.pB[f].shape[1:-1] == factor_dims, f"Check factor {f} of B_factor_list. It must coincide with all-but-final lagging dimensions of pB{f}..."
+            self.B_factor_list = B_factor_list
+
         # Users have the option to make only certain factors controllable.
         # default behaviour is to make all hidden state factors controllable, i.e. `self.num_factors == len(self.num_controls)`
         if control_fac_idx == None:
@@ -465,11 +469,14 @@ class Agent(object):
                 )[0]
             else:
                 empirical_prior = self.D
-            qs = inference.update_posterior_states(
-            self.A,
-            observation,
-            empirical_prior,
-            **self.inference_params
+            qs = inference.update_posterior_states_factorized(
+                self.A,
+                observation,
+                self.num_obs,
+                self.num_states,
+                self.mb_dict,
+                empirical_prior,
+                **self.inference_params
             )
         elif self.inference_algo == "MMP":
 
@@ -518,10 +525,10 @@ class Agent(object):
             else:
                 empirical_prior = self.D
             qs = inference.update_posterior_states(
-            self.A,
-            observation,
-            empirical_prior,
-            **self.inference_params
+                self.A,
+                observation,
+                empirical_prior,
+                **self.inference_params
             )
         elif self.inference_algo == "MMP":
 
@@ -551,7 +558,10 @@ class Agent(object):
 
         self.qs = qs
 
-        return qs, xn, vn
+        if self.inference_algo == "MMP":
+            return qs, xn, vn
+        else:
+            return qs
 
     def infer_policies(self):
         """
