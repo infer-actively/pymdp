@@ -25,7 +25,7 @@ def run_vanilla_fpi(A, obs, num_obs, num_states, prior=None, num_iter=10, dF=1.0
     num_obs: list of ints
         List of dimensionalities of each observation modality
     num_states: list of ints
-        List of dimensionalities of each observation modality
+        List of dimensionalities of each hidden state factor
     prior: numpy ndarray of dtype object, default None
         Prior over hidden states. If absent, prior is set to be the log uniform distribution over hidden states (identical to the 
         initialisation of the posterior)
