@@ -173,7 +173,7 @@ def dirichlet_like(template_categorical, scale = 1.0):
 
     return dirichlet_out
 
-def get_model_dimensions(A=None, B=None):
+def get_model_dimensions(A=None, B=None, factorized=False):
 
     if A is None and B is None:
         raise ValueError(
@@ -191,8 +191,13 @@ def get_model_dimensions(A=None, B=None):
         num_factors = len(num_states)
     else:
         if A is not None:
-            num_states = list(A[0].shape[1:]) if is_obj_array(A) else list(A.shape[1:])
-            num_factors = len(num_states)
+            if not factorized:
+                num_states = list(A[0].shape[1:]) if is_obj_array(A) else list(A.shape[1:])
+                num_factors = len(num_states)
+            else:
+                raise ValueError(
+                    "`A` array is factorized and  cannot be used to infer `num_states`"
+                )
         else:
             num_states, num_factors = None, None
     
