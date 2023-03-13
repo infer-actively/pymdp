@@ -6,7 +6,7 @@ import numpy as np
 
 from pymdp import utils
 from pymdp.maths import get_joint_likelihood_seq
-from pymdp.algos import run_vanilla_fpi, run_mmp, _run_mmp_testing
+from pymdp.algos import run_vanilla_fpi, run_vanilla_fpi_factorized, run_mmp, _run_mmp_testing
 
 VANILLA = "VANILLA"
 VMP = "VMP"
@@ -232,7 +232,7 @@ def update_posterior_states(A, obs, prior=None, **kwargs):
         Marginal posterior beliefs over hidden states at current timepoint
     """
 
-    num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A = A)
+    num_obs, num_states, num_modalities, _ = utils.get_model_dimensions(A = A)
     
     obs = utils.process_observation(obs, num_modalities, num_obs)
 
@@ -241,7 +241,7 @@ def update_posterior_states(A, obs, prior=None, **kwargs):
 
     return run_vanilla_fpi(A, obs, num_obs, num_states, prior, **kwargs)
 
-def update_posterior_states_factorized(A, obs, mb_dict, prior=None, **kwargs):
+def update_posterior_states_factorized(A, obs, num_obs, num_states, mb_dict, prior=None, **kwargs):
     """
     Update marginal posterior over hidden states using mean-field fixed point iteration 
     FPI or Fixed point iteration. This version identifies the Markov blanket of each factor using `A_factor_list`
@@ -260,6 +260,10 @@ def update_posterior_states_factorized(A, obs, mb_dict, prior=None, **kwargs):
         (one-hot vector representation) or an ``int`` (observation index)
         If multi-modality, this can be ``np.ndarray`` of dtype object whose entries are 1D one-hot vectors,
         or a tuple (of ``int``)
+    num_obs: ``list`` of ``int``
+        List of dimensionalities of each observation modality
+    num_states: ``list`` of ``int``
+        List of dimensionalities of each hidden state factor
     mb_dict: ``Dict``
         Dictionary with two keys (``A_factor_list`` and ``A_modality_list``), that stores the factor indices that influence each modality (``A_factor_list``)
         and the modality indices influenced by each factor (``A_modality_list``).
@@ -277,7 +281,7 @@ def update_posterior_states_factorized(A, obs, mb_dict, prior=None, **kwargs):
         Marginal posterior beliefs over hidden states at current timepoint
     """
     
-    num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A = A)
+    num_modalities = len(num_obs)
     
     obs = utils.process_observation(obs, num_modalities, num_obs)
 
