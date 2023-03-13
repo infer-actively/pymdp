@@ -577,6 +577,42 @@ class TestAgent(unittest.TestCase):
                 for f in range(len(num_states)):
                     self.assertTrue(np.isclose(qs_pi_validation[p_idx][t][f], qs_pi_out[p_idx][t][f]).all())
 
+    def test_agent_with_factorized_inference(self):
+        """
+        Test that an instance of the `Agent` class can be initialized with a provided `A_factor_list` and run the factorized inference algorithm. Validate
+        against an equivalent `Agent` whose `A` matrix represents the full set of (redundant) conditional dependence relationships.
+        """
+
+        num_obs = [5, 4]
+        num_states = [2, 3]
+        num_controls = [2, 3]
+
+        A_factor_list = [ [0], [1] ]
+        A_reduced = utils.random_A_matrix(num_obs, num_states, A_factor_list)
+        B = utils.random_B_matrix(num_states, num_controls)
+
+        agent = Agent(A=A_reduced, B=B, A_factor_list=A_factor_list, inference_algo = "VANILLA")
+
+        obs = [np.random.randint(obs_dim) for obs_dim in num_obs]
+
+        qs_out = agent._infer_states_test(obs)
+
+        A_full = utils.initialize_empty_A(num_obs, num_states)
+        for m, A_m in enumerate(A_full):
+            other_factors = list(set(range(len(num_states))) - set(A_factor_list[m])) # list of the factors that modality `m` does not depend on
+
+            # broadcast or tile the reduced A matrix (`A_reduced`) along the dimensions of corresponding to `other_factors`
+            expanded_dims = [num_obs[m]] + [1 if f in other_factors else ns for (f, ns) in enumerate(num_states)]
+            tile_dims = [1] + [ns if f in other_factors else 1 for (f, ns) in enumerate(num_states)]
+            A_full[m] = np.tile(A_reduced[m].reshape(expanded_dims), tile_dims)
+        
+        agent = Agent(A=A_full, B=B, inference_algo = "VANILLA")
+        qs_validation = agent.infer_states(obs)
+
+        for qs_out_f, qs_val_f in zip(qs_out, qs_validation):
+            self.assertTrue(np.isclose(qs_out_f, qs_val_f).all())
+        
+
 
         
 
