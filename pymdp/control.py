@@ -247,8 +247,45 @@ def get_expected_states(qs, B, policy):
             qs_pi[t+1][control_factor] = B[control_factor][:,:,int(action)].dot(qs_pi[t][control_factor])
 
     return qs_pi[1:]
- 
+    
+def get_expected_states_interactions(qs, B, B_factor_list, policy):
+    """
+    Compute the expected states under a policy, also known as the posterior predictive density over states
 
+    Parameters
+    ----------
+    qs: ``numpy.ndarray`` of dtype object
+        Marginal posterior beliefs over hidden states at a given timepoint.
+    B: ``numpy.ndarray`` of dtype object
+        Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
+        Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
+        of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
+    B_factor_list: ``list`` of ``list`` of ``int``
+        List of lists of hidden state factors each hidden state factor depends on. Each element ``B_factor_list[i]`` is a list of the factor indices that factor i's dynamics depend on.
+    policy: 2D ``numpy.ndarray``
+        Array that stores actions entailed by a policy over time. Shape is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
+        depth of the policy and ``num_factors`` is the number of control factors.
+
+    Returns
+    -------
+    qs_pi: ``list`` of ``numpy.ndarray`` of dtype object
+        Predictive posterior beliefs over hidden states expected under the policy, where ``qs_pi[t]`` stores the beliefs about
+        hidden states expected under the policy at time ``t``
+    """
+    n_steps = policy.shape[0]
+    n_factors = policy.shape[1]
+
+    # initialise posterior predictive density as a list of beliefs over time, including current posterior beliefs about hidden states as the first element
+    qs_pi = [qs] + [utils.obj_array(n_factors) for t in range(n_steps)]
+    
+    # get expected states over time
+    for t in range(n_steps):
+        for control_factor, action in enumerate(policy[t,:]):
+            factor_idx = B_factor_list[control_factor] # list of the hidden state factor indices that the dynamics of `qs[control_factor]` depend on
+            qs_pi[t+1][control_factor] = spm_dot(B[control_factor][...,int(action)], qs_pi[t][factor_idx])
+
+    return qs_pi[1:]
+ 
 def get_expected_obs(qs_pi, A):
     """
     Compute the expected observations under a policy, also known as the posterior predictive density over observations
