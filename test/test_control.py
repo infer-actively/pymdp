@@ -99,6 +99,48 @@ class TestControl(unittest.TestCase):
                     else:
                         self.assertTrue((qs_pi[p_idx][t_idx][factor_idx] == B[factor_idx][:,:,policies[p_idx][t_idx,factor_idx]].dot(qs_pi[p_idx][t_idx-1][factor_idx])).all())
 
+    def test_get_expected_states_interactions_single_factor(self):
+        """
+        Test the new version of `get_expected_states` that includes `B` array inter-factor dependencies, in case a of trivial single factor
+        """
+        
+        num_states = [3]
+        num_controls = [3]
+
+        B_factor_list = [[0]]
+
+        qs = utils.random_single_categorical(num_states)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list)
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=1)
+
+        qs_pi_0 = control.get_expected_states_interactions(qs, B, B_factor_list, policies[0])
+
+        self.assertTrue((qs_pi_0[0][0] == B[0][:,:,policies[0][0,0]].dot(qs[0])).all())
+
+    def test_get_expected_states_interactions_multi_factor(self):
+        """
+        Test the new version of `get_expected_states` that includes `B` array inter-factor dependencies, 
+        in the case where there are two hidden state factors: one that depends on itself and another that depends on both itself and the other factor.
+        """
+        
+        num_states = [3, 4]
+        num_controls = [3, 2]
+
+        B_factor_list = [[0], [0, 1]]
+
+        qs = utils.random_single_categorical(num_states)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list)
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=1)
+
+        qs_pi_0 = control.get_expected_states_interactions(qs, B, B_factor_list, policies[0])
+
+        self.assertTrue((qs_pi_0[0][0] == B[0][:,:,policies[0][0,0]].dot(qs[0])).all())
+
+        qs_next_validation = (B[1][..., policies[0][0,1]] * maths.spm_cross(qs)[None,...]).sum(axis=(1,2)) # how to compute equivalent of `spm_dot(B[...,past_action], qs)`
+        self.assertTrue(np.allclose(qs_pi_0[0][1], qs_next_validation))
+
     def test_get_expected_states_and_obs(self):
         """
         Tests the refactored (Categorical-less) versions of `get_expected_states` and `get_expected_obs` together
