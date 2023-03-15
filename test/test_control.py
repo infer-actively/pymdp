@@ -164,6 +164,53 @@ class TestControl(unittest.TestCase):
         for qs_f, qs_val_f in zip(qs_pi_0[0], qs_pi_0_validation[0]):
             self.assertTrue(np.allclose(qs_f, qs_val_f))
 
+    def test_get_expected_obs_factorized(self):
+        """
+        Test the new version of `get_expected_obs` that includes sparse dependencies of `A` array on hidden state factors (not all observation modalities depend on all hidden state factors)
+        """
+
+        """ Case 1, where all modalities depend on all hidden state factors """
+
+        num_states = [3, 4]
+        num_obs = [3, 4]
+
+        A_factor_list = [[0, 1], [0, 1]]
+
+        qs = utils.random_single_categorical(num_states)
+        A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+
+        qo_test = control.get_expected_obs_factorized([qs], A, A_factor_list) # need to wrap `qs` in list because `get_expected_obs_factorized` expects a list of `qs` (representing multiple timesteps)
+        qo_val = control.get_expected_obs([qs], A) # need to wrap `qs` in list because `get_expected_obs` expects a list of `qs` (representing multiple timesteps)
+
+        for qo_m, qo_val_m in zip(qo_test[0], qo_val[0]): # need to extract first index of `qo_test` and `qo_val` because `get_expected_obs_factorized` returns a list of `qo` (representing multiple timesteps)
+            self.assertTrue(np.allclose(qo_m, qo_val_m))
+        
+        """ Case 2, where some modalities depend on some hidden state factors """
+
+        num_states = [3, 4]
+        num_obs = [3, 4]
+
+        A_factor_list = [[0], [0, 1]]
+
+        qs = utils.random_single_categorical(num_states)
+        A_reduced = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+
+        qo_test = control.get_expected_obs_factorized([qs], A_reduced, A_factor_list) # need to wrap `qs` in list because `get_expected_obs_factorized` expects a list of `qs` (representing multiple timesteps)
+
+        A_full = utils.initialize_empty_A(num_obs, num_states)
+        for m, A_m in enumerate(A_full):
+            other_factors = list(set(range(len(num_states))) - set(A_factor_list[m])) # list of the factors that modality `m` does not depend on
+
+            # broadcast or tile the reduced A matrix (`A_reduced`) along the dimensions of corresponding to `other_factors`
+            expanded_dims = [num_obs[m]] + [1 if f in other_factors else ns for (f, ns) in enumerate(num_states)]
+            tile_dims = [1] + [ns if f in other_factors else 1 for (f, ns) in enumerate(num_states)]
+            A_full[m] = np.tile(A_reduced[m].reshape(expanded_dims), tile_dims)
+        
+        qo_val = control.get_expected_obs([qs], A_full) # need to wrap `qs` in list because `get_expected_obs` expects a list of `qs` (representing multiple timesteps)
+        
+        for qo_m, qo_val_m in zip(qo_test[0], qo_val[0]): # need to extract first index of `qo_test` and `qo_val` because `get_expected_obs_factorized` returns a list of `qo` (representing multiple timesteps)
+            self.assertTrue(np.allclose(qo_m, qo_val_m))
+
     def test_get_expected_states_and_obs(self):
         """
         Tests the refactored (Categorical-less) versions of `get_expected_states` and `get_expected_obs` together
@@ -417,6 +464,15 @@ class TestControl(unittest.TestCase):
             state_info_gains[idx] += control.calc_states_info_gain(A, qs_pi)
         self.assertGreater(state_info_gains[1], state_info_gains[0])
     
+    # def test_state_info_gain_factorized(self):
+    #     """
+    #     Test that the output of the `control.calc_states_info_gain()` function is 
+    #     the same as that out of the factorized version (`control.calc_states_info_gain_factorized()`)
+    #     """
+
+    #     num_states = [3, 2, 4]
+    #     num_controls = [2, 3, 2]
+
     def test_pA_info_gain(self):
 
         """
