@@ -464,14 +464,59 @@ class TestControl(unittest.TestCase):
             state_info_gains[idx] += control.calc_states_info_gain(A, qs_pi)
         self.assertGreater(state_info_gains[1], state_info_gains[0])
     
-    # def test_state_info_gain_factorized(self):
+    def test_state_info_gain_factorized(self):
+        """ 
+        Test the factorized version of the `calc_states_info_gain` function (`calc_states_info_gain_factorized`). 
+        Make sure that summing across modalities is allowed when the modalities only depend on certain hidden state factors.    
+        """
+
+        num_states = [3, 2, 4]
+        num_obs = [2, 3, 2]
+
+        qs = utils.random_single_categorical(num_states)
+
+        A_factor_list = [[0], [1], [2]] # this only works when modalities are all independent of each other (not in eachother's MBs)
+        A_reduced = utils.random_A_matrix(num_obs, num_states, A_factor_list)
+
+        states_info_gain_across_modality = 0.
+        for m, A_m in enumerate(A_reduced):
+            if len(A_factor_list[m]) == 1:
+                qs_that_matter = utils.to_obj_array(qs[A_factor_list[m]])
+            else:
+                qs_that_matter = qs[A_factor_list[m]]
+            states_info_gain_across_modality += control.calc_states_info_gain(A_m, [qs_that_matter])
+
+        A_full = utils.initialize_empty_A(num_obs, num_states)
+        for m, A_m in enumerate(A_full):
+            other_factors = list(set(range(len(num_states))) - set(A_factor_list[m])) # list of the factors that modality `m` does not depend on
+
+            # broadcast or tile the reduced A matrix (`A_reduced`) along the dimensions of corresponding to `other_factors`
+            expanded_dims = [num_obs[m]] + [1 if f in other_factors else ns for (f, ns) in enumerate(num_states)]
+            tile_dims = [1] + [ns if f in other_factors else 1 for (f, ns) in enumerate(num_states)]
+            A_full[m] = np.tile(A_reduced[m].reshape(expanded_dims), tile_dims)
+        
+        states_info_gain_full = control.calc_states_info_gain(A_full, [qs]) # need to wrap `qs` in a list because the function expects a list of policy-conditioned posterior beliefs (corresponding to each timestep)
+
+        self.assertTrue(np.isclose(states_info_gain_across_modality, states_info_gain_full))
+
+
+    # def test_state_info_gain_modality_sum(self):
     #     """
-    #     Test that the output of the `control.calc_states_info_gain()` function is 
-    #     the same as that out of the factorized version (`control.calc_states_info_gain_factorized()`)
+    #     Test that the states_info_gain function is the same when computed using the full (unfactorized) joint distribution over observations and hidden state factors vs. when computed for each modality separately and summed together.
     #     """
 
     #     num_states = [3, 2, 4]
-    #     num_controls = [2, 3, 2]
+    #     num_obs = [2, 3, 2]
+
+    #     qs = utils.random_single_categorical(num_states)
+    #     A = utils.random_A_matrix(num_obs, num_states)
+
+    #     states_info_gain_full = control.calc_states_info_gain(A, [qs]) # need to wrap `qs` in a list because the function expects a list of policy-conditioned posterior beliefs (corresponding to each timestep)
+    #     states_info_gain_by_modality = 0.
+    #     for m, A_m in enumerate(A):
+    #         states_info_gain_by_modality += control.calc_states_info_gain(A_m, [qs])
+        
+    #     self.assertEqual(states_info_gain_full, states_info_gain_by_modality)
 
     def test_pA_info_gain(self):
 
