@@ -437,7 +437,7 @@ class Agent(object):
         return future_qs_seq
 
 
-    def infer_states(self, observation, distr_obs = False):
+    def infer_states(self, observation, distr_obs=False):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
@@ -446,6 +446,8 @@ class Agent(object):
         observation: ``list`` or ``tuple`` of ints
             The observation input. Each entry ``observation[m]`` stores the index of the discrete
             observation for modality ``m``.
+        distr_obs: ``bool``
+            Whether the observation is a distribution over possible observations, rather than a single observation.
 
         Returns
         ---------
@@ -464,8 +466,8 @@ class Agent(object):
 
         if self.inference_algo == "VANILLA":
             if self.action is not None:
-                empirical_prior = control.get_expected_states(
-                    self.qs, self.B, self.action.reshape(1, -1) #type: ignore
+                empirical_prior = control.get_expected_states_interactions(
+                    self.qs, self.B, self.B_factor_list, self.action.reshape(1, -1) 
                 )[0]
             else:
                 empirical_prior = self.D
@@ -507,12 +509,12 @@ class Agent(object):
 
         return qs
 
-    def _infer_states_test(self, observation):
+    def _infer_states_test(self, observation, distr_obs=False):
         """
         Test version of ``infer_states()`` that additionally returns intermediate variables of MMP, such as
         the prediction errors and intermediate beliefs from the optimization. Used for benchmarking against SPM outputs.
         """
-        observation = tuple(observation)
+        observation = tuple(observation) if not distr_obs else observation
 
         if not hasattr(self, "qs"):
             self.reset()
@@ -520,8 +522,8 @@ class Agent(object):
         if self.inference_algo == "VANILLA":
             if self.action is not None:
                 empirical_prior = control.get_expected_states(
-                    self.qs, self.B, self.action.reshape(1, -1) #type: ignore
-                )
+                    self.qs, self.B, self.action.reshape(1, -1) 
+                )[0]
             else:
                 empirical_prior = self.D
             qs = inference.update_posterior_states(
