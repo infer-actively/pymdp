@@ -611,6 +611,41 @@ class TestAgent(unittest.TestCase):
 
         for qs_out_f, qs_val_f in zip(qs_out, qs_validation):
             self.assertTrue(np.isclose(qs_out_f, qs_val_f).all())
+    
+    def test_agent_with_interactions_in_B(self):
+        """
+        Test that an instance of the `Agent` class can be initialized with a provided `B_factor_list` and run a time loop of active inferece
+        """
+
+        num_obs = [5, 4]
+        num_states = [2, 3]
+        num_controls = [2, 3]
+
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+
+        agent_test = Agent(A=A, B=B)
+        agent_val = Agent(A=A, B=B)
+
+        obs_seq = []
+        for t in range(5):
+            obs_seq.append([np.random.randint(obs_dim) for obs_dim in num_obs])
+        
+        for t in range(5):
+            qs_out = agent_test.infer_states(obs_seq[t])
+            qs_val = agent_val._infer_states_test(obs_seq[t])
+            for qs_out_f, qs_val_f in zip(qs_out, qs_val):
+                self.assertTrue(np.isclose(qs_out_f, qs_val_f).all())
+            
+            agent_test.infer_policies()
+            agent_val.infer_policies()
+
+            agent_test.sample_action()
+            agent_val.sample_action()
+        
+
+
+
         
 
 
