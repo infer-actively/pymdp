@@ -624,7 +624,7 @@ class TestAgent(unittest.TestCase):
         A = utils.random_A_matrix(num_obs, num_states)
         B = utils.random_B_matrix(num_states, num_controls)
 
-        agent_test = Agent(A=A, B=B)
+        agent_test = Agent(A=A, B=B, B_factor_list=[[0], [1]])
         agent_val = Agent(A=A, B=B)
 
         obs_seq = []
