@@ -463,60 +463,107 @@ class TestControl(unittest.TestCase):
             qs_pi = control.get_expected_states(qs, B, policy)
             state_info_gains[idx] += control.calc_states_info_gain(A, qs_pi)
         self.assertGreater(state_info_gains[1], state_info_gains[0])
-    
+
     def test_state_info_gain_factorized(self):
         """ 
-        Test the factorized version of the `calc_states_info_gain` function (`calc_states_info_gain_factorized`). 
-        Make sure that summing across modalities is allowed when the modalities only depend on certain hidden state factors.    
+        Unit test the `calc_states_info_gain_factorized` function by qualitatively checking that in the T-Maze (contextual bandit)
+        example, the state info gain is higher for the policy that leads to visiting the cue, which is higher than state info gain
+        for visiting the bandit arm, which in turn is higher than the state info gain for the policy that leads to staying in the start state.
         """
 
-        num_states = [3, 2, 4]
-        num_obs = [2, 3, 2]
+        num_states = [2, 3]  
+        num_obs = [3, 3, 3]
+        num_controls = [1, 3]
 
-        qs = utils.random_single_categorical(num_states)
-
-        A_factor_list = [[0], [1], [2]] # this only works when modalities are all independent of each other (not in eachother's MBs)
-        A_reduced = utils.random_A_matrix(num_obs, num_states, A_factor_list)
-
-        states_info_gain_across_modality = 0.
-        for m, A_m in enumerate(A_reduced):
-            if len(A_factor_list[m]) == 1:
-                qs_that_matter = utils.to_obj_array(qs[A_factor_list[m]])
-            else:
-                qs_that_matter = qs[A_factor_list[m]]
-            states_info_gain_across_modality += control.calc_states_info_gain(A_m, [qs_that_matter])
-
-        A_full = utils.initialize_empty_A(num_obs, num_states)
-        for m, A_m in enumerate(A_full):
-            other_factors = list(set(range(len(num_states))) - set(A_factor_list[m])) # list of the factors that modality `m` does not depend on
-
-            # broadcast or tile the reduced A matrix (`A_reduced`) along the dimensions of corresponding to `other_factors`
-            expanded_dims = [num_obs[m]] + [1 if f in other_factors else ns for (f, ns) in enumerate(num_states)]
-            tile_dims = [1] + [ns if f in other_factors else 1 for (f, ns) in enumerate(num_states)]
-            A_full[m] = np.tile(A_reduced[m].reshape(expanded_dims), tile_dims)
+        A_factor_list = [[0, 1], [0, 1], [1]] 
         
-        states_info_gain_full = control.calc_states_info_gain(A_full, [qs]) # need to wrap `qs` in a list because the function expects a list of policy-conditioned posterior beliefs (corresponding to each timestep)
+        A = utils.obj_array(len(num_obs))
+        for m, obs in enumerate(num_obs):
+            lagging_dimensions = [ns for i, ns in enumerate(num_states) if i in A_factor_list[m]]
+            modality_shape = [obs] + lagging_dimensions
+            A[m] = np.zeros(modality_shape)
+            if m == 0:
+                A[m][:, :, 0] = np.ones( (num_obs[m], num_states[0]) ) / num_obs[m]
+                A[m][:, :, 1] = np.ones( (num_obs[m], num_states[0]) ) / num_obs[m]
+                A[m][:, :, 2] = np.array([[0.9, 0.1], [0.0, 0.0], [0.1, 0.9]]) # cue statistics
+            if m == 1:
+                A[m][2, :, 0] = np.ones(num_states[0])
+                A[m][0:2, :, 1] = np.array([[0.6, 0.4], [0.6, 0.4]]) # bandit statistics (mapping between reward-state (first hidden state factor) and rewards (Good vs Bad))
+                A[m][2, :, 2] = np.ones(num_states[0])
+            if m == 2:
+                A[m] = np.eye(obs)
 
-        self.assertTrue(np.isclose(states_info_gain_across_modality, states_info_gain_full))
+        qs_start = utils.obj_array_uniform(num_states)
+        qs_start[1] = np.array([1., 0., 0.]) # agent believes it's in the start state
 
+        state_info_gain_visit_start = 0.
+        for m, A_m in enumerate(A):
+            if len(A_factor_list[m]) == 1:
+                qs_that_matter = utils.to_obj_array(qs_start[A_factor_list[m]])
+            else:
+                qs_that_matter = qs_start[A_factor_list[m]]
+            state_info_gain_visit_start += control.calc_states_info_gain(A_m, [qs_that_matter])
 
-    # def test_state_info_gain_modality_sum(self):
+        qs_arm = utils.obj_array_uniform(num_states)
+        qs_arm[1] = np.array([0., 1., 0.]) # agent believes it's in the arm-visiting state
+
+        state_info_gain_visit_arm = 0.
+        for m, A_m in enumerate(A):
+            if len(A_factor_list[m]) == 1:
+                qs_that_matter = utils.to_obj_array(qs_arm[A_factor_list[m]])
+            else:
+                qs_that_matter = qs_arm[A_factor_list[m]]
+            state_info_gain_visit_arm += control.calc_states_info_gain(A_m, [qs_that_matter])
+
+        qs_cue = utils.obj_array_uniform(num_states)
+        qs_cue[1] = np.array([0., 0., 1.]) # agent believes it's in the cue-visiting state
+
+        state_info_gain_visit_cue = 0.
+        for m, A_m in enumerate(A):
+            if len(A_factor_list[m]) == 1:
+                qs_that_matter = utils.to_obj_array(qs_cue[A_factor_list[m]])
+            else:
+                qs_that_matter = qs_cue[A_factor_list[m]]
+            state_info_gain_visit_cue += control.calc_states_info_gain(A_m, [qs_that_matter])
+        
+        self.assertGreater(state_info_gain_visit_arm, state_info_gain_visit_start)
+        self.assertGreater(state_info_gain_visit_cue, state_info_gain_visit_arm)
+
+    # def test_neg_ambiguity_modality_sum(self):
     #     """
-    #     Test that the states_info_gain function is the same when computed using the full (unfactorized) joint distribution over observations and hidden state factors vs. when computed for each modality separately and summed together.
+    #     Test that the negativity ambiguity function is the same when computed using the full (unfactorized) joint distribution over observations and hidden state factors vs. when computed for each modality separately and summed together.
     #     """
 
-    #     num_states = [3, 2, 4]
-    #     num_obs = [2, 3, 2]
+    #     num_states = [10, 20, 10, 10]
+    #     num_obs = [2, 25, 10, 8]
 
     #     qs = utils.random_single_categorical(num_states)
     #     A = utils.random_A_matrix(num_obs, num_states)
 
-    #     states_info_gain_full = control.calc_states_info_gain(A, [qs]) # need to wrap `qs` in a list because the function expects a list of policy-conditioned posterior beliefs (corresponding to each timestep)
-    #     states_info_gain_by_modality = 0.
+    #     neg_ambig_full = maths.spm_calc_neg_ambig(A, qs) # need to wrap `qs` in a list because the function expects a list of policy-conditioned posterior beliefs (corresponding to each timestep)
+    #     neg_ambig_by_modality = 0.
     #     for m, A_m in enumerate(A):
-    #         states_info_gain_by_modality += control.calc_states_info_gain(A_m, [qs])
+    #         neg_ambig_by_modality += maths.spm_calc_neg_ambig(A_m, qs)
         
-    #     self.assertEqual(states_info_gain_full, states_info_gain_by_modality)
+    #     self.assertEqual(neg_ambig_full, neg_ambig_by_modality)
+    
+    # def test_entropy_modality_sum(self):
+    #     """
+    #     Test that the negativity ambiguity function is the same when computed using the full (unfactorized) joint distribution over observations and hidden state factors vs. when computed for each modality separately and summed together.
+    #     """
+
+    #     num_states = [10, 20, 10, 10]
+    #     num_obs = [2, 25, 10, 8]
+
+    #     qs = utils.random_single_categorical(num_states)
+    #     A = utils.random_A_matrix(num_obs, num_states)
+
+    #     H_full = maths.spm_calc_qo_entropy(A, qs) # need to wrap `qs` in a list because the function expects a list of policy-conditioned posterior beliefs (corresponding to each timestep)
+    #     H_by_modality = 0.
+    #     for m, A_m in enumerate(A):
+    #         H_by_modality += maths.spm_calc_qo_entropy(A_m, qs)
+        
+    #     self.assertEqual(H_full, H_by_modality)
 
     def test_pA_info_gain(self):
 
