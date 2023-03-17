@@ -658,7 +658,22 @@ class TestAgent(unittest.TestCase):
         A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
         B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list)
 
-        agent = Agent(A=A, B=B, A_factor_list=A_factor_list, B_factor_list=B_factor_list, inference_algo = "VANILLA")
+        agent = Agent(A=A, B=B, A_factor_list=A_factor_list, B_factor_list=B_factor_list, inference_algo="VANILLA")
+
+        obs_seq = []
+        for t in range(5):
+            obs_seq.append([np.random.randint(obs_dim) for obs_dim in num_obs])
+        
+        for t in range(5):
+            qs_out = agent.infer_states(obs_seq[t])
+            agent.infer_policies_factorized()
+            agent.sample_action()
+
+        """ Test to make sure it works even when generative model sparsity is not taken advantage of """
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+
+        agent = Agent(A=A, B=B, inference_algo="VANILLA")
 
         obs_seq = []
         for t in range(5):
