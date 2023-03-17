@@ -642,7 +642,32 @@ class TestAgent(unittest.TestCase):
 
             agent_test.sample_action()
             agent_val.sample_action()
+    
+    def test_actinfloop_factorized(self):
+        """
+        Test that an instance of the `Agent` class can be initialized and run
+        with the fully-factorized generative model functions (including policy inference)
+        """
+
+        num_obs = [5, 4, 4]
+        num_states = [2, 3, 5]
+        num_controls = [2, 3, 2]
+
+        A_factor_list = [[0], [0, 1], [0, 1, 2]]
+        B_factor_list = [[0], [0, 1], [1, 2]]
+        A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list)
+
+        agent = Agent(A=A, B=B, A_factor_list=A_factor_list, B_factor_list=B_factor_list, inference_algo = "VANILLA")
+
+        obs_seq = []
+        for t in range(5):
+            obs_seq.append([np.random.randint(obs_dim) for obs_dim in num_obs])
         
+        for t in range(5):
+            qs_out = agent.infer_states(obs_seq[t])
+            agent.infer_policies_factorized()
+            agent.sample_action()
 
 
 
