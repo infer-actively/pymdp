@@ -302,11 +302,14 @@ def update_posterior_policies_factorized(
         if use_states_info_gain:
             G[idx] += calc_states_info_gain_factorized(A, qs_pi, A_factor_list)
 
+        # @TODO: Make sure parameter information gain terms are compatible with new factorized version of the model
         if use_param_info_gain:
             if pA is not None:
-                G[idx] += calc_pA_info_gain(pA, qo_pi, qs_pi)
+                Raise(NotImplementedError("Parameter information gain terms are not yet compatible with factorized version of the model"))
+                # G[idx] += calc_pA_info_gain(pA, qo_pi, qs_pi)
             if pB is not None:
-                G[idx] += calc_pB_info_gain(pB, qs_pi, qs, policy)
+                Raise(NotImplementedError("Parameter information gain terms are not yet compatible with factorized version of the model"))
+                # G[idx] += calc_pB_info_gain(pB, qs_pi, qs, policy)
 
     q_pi = softmax(G * gamma + lnE)    
 
