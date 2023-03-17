@@ -1359,6 +1359,43 @@ class TestControl(unittest.TestCase):
 
         self.assertTrue(np.allclose(efe, efe_valid))
         self.assertTrue(np.allclose(q_pi, q_pi_valid))
+    
+    def test_update_posterior_policies_factorized(self):
+        """ 
+        Test new update_posterior_policies_factorized function, just to make sure it runs through and outputs correct shapes
+        """
+
+        num_obs = [3, 3]
+        num_states = [3, 2]
+        num_controls = [3, 2]
+
+        A_factor_list = [[0, 1], [1]]
+        B_factor_list = [[0], [0, 1]]
+
+        qs = utils.random_single_categorical(num_states)
+        A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list)
+        C = utils.obj_array_zeros(num_obs)
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=1)
+
+        q_pi, efe = control.update_posterior_policies_factorized(
+            qs,
+            A,
+            B,
+            C,
+            A_factor_list,
+            B_factor_list,
+            policies,
+            use_utility = True,
+            use_states_info_gain = True,
+            gamma=16.0
+        )
+
+        self.assertEqual(len(q_pi), len(policies))
+        self.assertEqual(len(efe), len(policies))
+
+        chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
 
     def test_sample_action(self):
         """
