@@ -256,6 +256,7 @@ class TestLearning(unittest.TestCase):
         in the case that the generative model is sparse and only some modalities depend on some hidden state factors
         """
 
+        """ Test version with sparse conditional dependency graph (taking advantage of `A_factor_list` argument) """
         num_states = [2, 6, 5]
         num_obs = [3, 4, 5]
         A_factor_list = [[0], [1, 2], [0, 2]]
@@ -273,6 +274,28 @@ class TestLearning(unittest.TestCase):
             pA_updated_valid_m = pA[modality] +  update
             self.assertTrue(np.allclose(pA_updated_test[modality], pA_updated_valid_m))
 
+        """ Test version with full conditional dependency graph (not taking advantage of `A_factor_list` argument, but including it anyway) """
+        num_states = [2, 6, 5]
+        num_obs = [3, 4, 5]
+        A_factor_list = len(num_obs) * [[0, 1, 2]]
+        qs = utils.random_single_categorical(num_states)
+        A = utils.random_A_matrix(num_obs, num_states)
+
+        modalities_to_update = [0, 2]
+        learning_rate = np.random.rand() # sample some positive learning rate
+
+        pA = utils.dirichlet_like(A, scale=1.0)
+        observation = [np.random.randint(obs_dim) for obs_dim in num_obs]
+        pA_updated_test = learning.update_obs_likelihood_dirichlet_factorized(
+            pA, A, observation, qs, A_factor_list, lr=learning_rate, modalities=modalities_to_update
+            )
+
+        pA_updated_valid = learning.update_obs_likelihood_dirichlet(
+            pA, A, observation, qs, lr=learning_rate, modalities=modalities_to_update
+            )
+
+        for modality, obs_dim in enumerate(num_obs):
+            self.assertTrue(np.allclose(pA_updated_test[modality], pA_updated_valid[modality]))
 
     def test_update_pB_single_factor_no_actions(self):
         """
