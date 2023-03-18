@@ -130,6 +130,11 @@ class Agent(object):
         # checking that `A_factor_list` and `B_factor_list` are consistent with `num_factors`, `num_states`, and lagging dimensions of `A` and `B` tensors
         if A_factor_list == None:
             self.A_factor_list = self.num_modalities * [list(range(self.num_factors))] # defaults to having all modalities depend on all factors
+            for m in range(self.num_modalities):
+                factor_dims = tuple([self.num_states[f] for f in self.A_factor_list[m]])
+                assert self.A[m].shape[1:] == factor_dims, f"Please input an `A_factor_list` whose {m}-th indices pick out the hidden state factors that line up with lagging dimensions of A{m}..." 
+                if self.pA != None:
+                    assert self.pA[m].shape[1:] == factor_dims, f"Please input an `A_factor_list` whose {m}-th indices pick out the hidden state factors that line up with lagging dimensions of pA{m}..." 
         else:
             for m in range(self.num_modalities):
                 assert max(A_factor_list[m]) <= (self.num_factors - 1), f"Check modality {m} of A_factor_list - must be consistent with `num_states` and `num_factors`..."
@@ -152,6 +157,11 @@ class Agent(object):
 
         if B_factor_list == None:
             self.B_factor_list = [[f] for f in range(self.num_factors)] # defaults to having all factors depend only on themselves
+            for f in range(self.num_factors):
+                factor_dims = tuple([self.num_states[f] for f in self.B_factor_list[f]])
+                assert self.B[f].shape[1:-1] == factor_dims, f"Please input a `B_factor_list` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of B{f}..." 
+                if self.pB != None:
+                    assert self.pB[f].shape[1:-1] == factor_dims, f"Please input a `B_factor_list` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of pB{f}..." 
         else:
             for f in range(self.num_factors):
                 assert max(B_factor_list[f]) <= (self.num_factors - 1), f"Check factor {f} of B_factor_list - must be consistent with `num_states` and `num_factors`..."
