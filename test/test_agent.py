@@ -247,6 +247,51 @@ class TestAgent(unittest.TestCase):
 
             # check if the predicted update and the actual update are the same
             self.assertTrue(np.allclose(predicted_update, qA[0]))
+    
+    def test_agent_with_A_learning_vanilla_factorized(self):
+        """ Unit test for updating prior Dirichlet parameters over likelihood model (pA) with the ``Agent`` class,
+        in the case that you're using "vanilla" inference mode. In this case, we encode sparse conditional dependencies by specifying
+        a non-all-to-all `A_factor_list`, that specifies the subset of hidden state factors that different modalities depend on.
+        """
+
+        num_obs = [5, 4, 3]
+        num_states = [9, 8, 2, 4]
+        num_controls = [2, 2, 1, 1]
+
+        A_factor_list = [[0, 1], [0, 2], [3]]
+
+        A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+        pA = utils.dirichlet_like(A, scale=1.)
+
+        B = utils.random_B_matrix(num_states, num_controls)
+        
+        # instantiate the agent
+        learning_rate_pA = np.random.rand()
+        agent = Agent(A=A, B=B, pA=pA, A_factor_list=A_factor_list, inference_algo="VANILLA", action_selection="stochastic", lr_pA=learning_rate_pA)
+
+        # time horizon
+        T = 10
+
+        obs_seq = []
+        for t in range(T):
+            obs_seq.append([np.random.randint(obs_dim) for obs_dim in num_obs])
+        
+        for t in range(T):
+            print(t)
+            
+            qx = agent.infer_states(obs_seq[t])
+            agent.infer_policies_factorized()
+            agent.sample_action()
+            
+            # compute the predicted update to the action-conditioned slice of qB
+            qA_valid = utils.obj_array_zeros([A_m.shape for A_m in A])
+            for m, pA_m in enumerate(agent.pA):
+                qA_valid[m] = pA_m + learning_rate_pA*maths.spm_cross(utils.onehot(obs_seq[t][m], num_obs[m]), qx[A_factor_list[m]])
+            qA_test = agent.update_A(obs_seq[t]) # update qA using the agent function
+
+            # check if the predicted update and the actual update are the same
+            for m, qA_valid_m in enumerate(qA_valid):
+                self.assertTrue(np.allclose(qA_valid_m, qA_test[m]))
 
     def test_agent_with_B_learning_vanilla(self):
         """ Unit test for updating prior Dirichlet parameters over transition model (pB) with the ``Agent`` class,
