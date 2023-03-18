@@ -158,6 +158,57 @@ def update_state_likelihood_dirichlet(
 
     return qB
 
+def update_state_likelihood_dirichlet_interactions(
+    pB, B, actions, qs, qs_prev, B_factor_list, lr=1.0, factors="all"
+):
+    """
+    Update Dirichlet parameters of the transition distribution, in the case when 'interacting' hidden state factors are present, i.e.
+    the dynamics of a given hidden state factor `f` are no longer independent of the dynamics of other hidden state factors.
+
+    Parameters
+    -----------
+    pB: ``numpy.ndarray`` of dtype object
+        Prior Dirichlet parameters over transition model (same shape as ``B``)
+    B: ``numpy.ndarray`` of dtype object
+        Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
+        Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
+        of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
+    actions: 1D ``numpy.ndarray``
+        A vector with length equal to the number of control factors, where each element contains the index of the action (for that control factor) performed at 
+        a given timestep.
+    qs: 1D ``numpy.ndarray`` or ``numpy.ndarray`` of dtype object
+        Marginal posterior beliefs over hidden states at current timepoint.
+    qs_prev: 1D ``numpy.ndarray`` or ``numpy.ndarray`` of dtype object
+        Marginal posterior beliefs over hidden states at previous timepoint.
+    B_factor_list: ``list`` of ``list`` of ``int``
+        A list of lists, where each element ``B_factor_list[f]`` is a list of indices of hidden state factors that that are needed to predict the dynamics of hidden state factor ``f``.
+    lr: float, default ``1.0``
+        Learning rate, scale of the Dirichlet pseudo-count update.
+    factors: ``list``, default "all"
+        Indices (ranging from 0 to ``n_factors - 1``) of the hidden state factors to include 
+        in learning. Defaults to "all", meaning that factor-specific sub-arrays of ``pB``
+        are all updated using the corresponding hidden state distributions and actions.
+
+    Returns
+    -----------
+    qB: ``numpy.ndarray`` of dtype object
+        Posterior Dirichlet parameters over transition model (same shape as ``B``), after having updated it with state beliefs and actions.
+    """
+
+    num_factors = len(pB)
+
+    qB = copy.deepcopy(pB)
+   
+    if factors == "all":
+        factors = list(range(num_factors))
+
+    for factor in factors:
+        dfdb = maths.spm_cross(qs[factor], qs_prev[B_factor_list[factor]])
+        dfdb *= (B[factor][...,int(actions[factor])] > 0).astype("float")
+        qB[factor][...,int(actions[factor])] += (lr*dfdb)
+
+    return qB
+
 def update_state_prior_dirichlet(
     pD, qs, lr=1.0, factors="all"
 ):
