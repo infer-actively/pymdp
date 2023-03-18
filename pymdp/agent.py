@@ -762,6 +762,37 @@ class Agent(object):
             Posterior Dirichlet parameters over observation model (same shape as ``A``), after having updated it with observations.
         """
 
+        qA = learning.update_obs_likelihood_dirichlet_factorized(
+            self.pA, 
+            self.A, 
+            obs, 
+            self.qs, 
+            self.A_factor_list,
+            self.lr_pA, 
+            self.modalities_to_learn
+        )
+
+        self.pA = qA # set new prior to posterior
+        self.A = utils.norm_dist_obj_arr(qA) # take expected value of posterior Dirichlet parameters to calculate posterior over A array
+
+        return qA
+
+    def _update_A_old(self, obs):
+        """
+        Update approximate posterior beliefs about Dirichlet parameters that parameterise the observation likelihood or ``A`` array.
+
+        Parameters
+        ----------
+        observation: ``list`` or ``tuple`` of ints
+            The observation input. Each entry ``observation[m]`` stores the index of the discrete
+            observation for modality ``m``.
+
+        Returns
+        -----------
+        qA: ``numpy.ndarray`` of dtype object
+            Posterior Dirichlet parameters over observation model (same shape as ``A``), after having updated it with observations.
+        """
+
         qA = learning.update_obs_likelihood_dirichlet(
             self.pA, 
             self.A, 
@@ -777,6 +808,37 @@ class Agent(object):
         return qA
 
     def update_B(self, qs_prev):
+        """
+        Update posterior beliefs about Dirichlet parameters that parameterise the transition likelihood 
+        
+        Parameters
+        -----------
+        qs_prev: 1D ``numpy.ndarray`` or ``numpy.ndarray`` of dtype object
+            Marginal posterior beliefs over hidden states at previous timepoint.
+    
+        Returns
+        -----------
+        qB: ``numpy.ndarray`` of dtype object
+            Posterior Dirichlet parameters over transition model (same shape as ``B``), after having updated it with state beliefs and actions.
+        """
+
+        qB = learning.update_state_likelihood_dirichlet_interactions(
+            self.pB,
+            self.B,
+            self.action,
+            self.qs,
+            qs_prev,
+            self.B_factor_list,
+            self.lr_pB,
+            self.factors_to_learn
+        )
+
+        self.pB = qB # set new prior to posterior
+        self.B = utils.norm_dist_obj_arr(qB)  # take expected value of posterior Dirichlet parameters to calculate posterior over B array
+
+        return qB
+    
+    def _update_B_old(self, qs_prev):
         """
         Update posterior beliefs about Dirichlet parameters that parameterise the transition likelihood 
         
