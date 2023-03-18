@@ -249,6 +249,29 @@ class TestLearning(unittest.TestCase):
             pA, A, observation_onehot, qs, lr=l_rate, modalities=modalities_to_update)
         
         self.assertTrue(np.allclose(pA_updated_1[0], pA_updated_2[0]))
+    
+    def test_update_pA_factorized(self):
+        """
+        Test for `learning.update_obs_likelihood_dirichlet_factorized`, which is the learning function updating prior Dirichlet parameters over the sensory likelihood (pA) 
+        in the case that the generative model is sparse and only some modalities depend on some hidden state factors
+        """
+
+        num_states = [2, 6, 5]
+        num_obs = [3, 4, 5]
+        A_factor_list = [[0], [1, 2], [0, 2]]
+
+        qs = utils.random_single_categorical(num_states)
+        A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+        pA = utils.dirichlet_like(A, scale=1.0)
+        observation = [np.random.randint(obs_dim) for obs_dim in num_obs]
+        pA_updated_test = learning.update_obs_likelihood_dirichlet_factorized(
+            pA, A, observation, qs, A_factor_list
+            )
+
+        for modality, obs_dim in enumerate(num_obs):
+            update = maths.spm_cross(utils.onehot(observation[modality], obs_dim), qs[A_factor_list[modality]])
+            pA_updated_valid_m = pA[modality] +  update
+            self.assertTrue(np.allclose(pA_updated_test[modality], pA_updated_valid_m))
 
 
     def test_update_pB_single_factor_no_actions(self):
