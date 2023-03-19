@@ -305,8 +305,7 @@ def update_posterior_policies_factorized(
         # @TODO: Make sure parameter information gain terms are compatible with new factorized version of the model
         if use_param_info_gain:
             if pA is not None:
-                Raise(NotImplementedError("Parameter information gain terms are not yet compatible with factorized version of the model"))
-                # G[idx] += calc_pA_info_gain(pA, qo_pi, qs_pi)
+                G[idx] += calc_pA_info_gain_factorized(pA, qo_pi, qs_pi, A_factor_list)
             if pB is not None:
                 Raise(NotImplementedError("Parameter information gain terms are not yet compatible with factorized version of the model"))
                 # G[idx] += calc_pB_info_gain(pB, qs_pi, qs, policy)
@@ -606,6 +605,47 @@ def calc_pA_info_gain(pA, qo_pi, qs_pi):
         wA_modality = wA[modality] * (pA[modality] > 0).astype("float")
         for t in range(n_steps):
             pA_infogain -= qo_pi[t][modality].dot(spm_dot(wA_modality, qs_pi[t])[:, np.newaxis])
+
+    return pA_infogain
+
+def calc_pA_info_gain_factorized(pA, qo_pi, qs_pi, A_factor_list):
+    """
+    Compute expected Dirichlet information gain about parameters ``pA`` under a policy.
+    In this version of the function, we assume that the observation model is factorized, i.e. that each observation modality depends on a subset of the hidden state factors.
+
+    Parameters
+    ----------
+    pA: ``numpy.ndarray`` of dtype object
+        Dirichlet parameters over observation model (same shape as ``A``)
+    qo_pi: ``list`` of ``numpy.ndarray`` of dtype object
+        Predictive posterior beliefs over observations expected under the policy, where ``qo_pi[t]`` stores the beliefs about
+        observations expected under the policy at time ``t``
+    qs_pi: ``list`` of ``numpy.ndarray`` of dtype object
+        Predictive posterior beliefs over hidden states expected under the policy, where ``qs_pi[t]`` stores the beliefs about
+        hidden states expected under the policy at time ``t``
+    A_factor_list: ``list`` of ``list`` of ``int``
+        List of lists, where ``A_factor_list[m]`` is a list of the hidden state factor indices that observation modality with the index ``m`` depends on
+
+    Returns
+    -------
+    infogain_pA: float
+        Surprise (about Dirichlet parameters) expected under the policy in question
+    """
+
+    n_steps = len(qo_pi)
+    
+    num_modalities = len(pA)
+    wA = utils.obj_array(num_modalities)
+    for modality, pA_m in enumerate(pA):
+        wA[modality] = spm_wnorm(pA[modality])
+
+    pA_infogain = 0
+    
+    for modality in range(num_modalities):
+        wA_modality = wA[modality] * (pA[modality] > 0).astype("float")
+        factor_idx = A_factor_list[modality]
+        for t in range(n_steps):
+            pA_infogain -= qo_pi[t][modality].dot(spm_dot(wA_modality, qs_pi[t][factor_idx])[:, np.newaxis])
 
     return pA_infogain
 
