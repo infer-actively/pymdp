@@ -302,13 +302,11 @@ def update_posterior_policies_factorized(
         if use_states_info_gain:
             G[idx] += calc_states_info_gain_factorized(A, qs_pi, A_factor_list)
 
-        # @TODO: Make sure parameter information gain terms are compatible with new factorized version of the model
         if use_param_info_gain:
             if pA is not None:
                 G[idx] += calc_pA_info_gain_factorized(pA, qo_pi, qs_pi, A_factor_list)
             if pB is not None:
-                Raise(NotImplementedError("Parameter information gain terms are not yet compatible with factorized version of the model"))
-                # G[idx] += calc_pB_info_gain(pB, qs_pi, qs, policy)
+                G[idx] += calc_pB_info_gain_interactions(pB, qs_pi, qs, B_factor_list, policy)
 
     q_pi = softmax(G * gamma + lnE)    
 
@@ -649,7 +647,6 @@ def calc_pA_info_gain_factorized(pA, qo_pi, qs_pi, A_factor_list):
 
     return pA_infogain
 
-
 def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
     """
     Compute expected Dirichlet information gain about parameters ``pB`` under a given policy
@@ -698,6 +695,60 @@ def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
         for factor, a_i in enumerate(policy_t):
             wB_factor_t = wB[factor][:, :, int(a_i)] * (pB[factor][:, :, int(a_i)] > 0).astype("float")
             pB_infogain -= qs_pi[t][factor].dot(wB_factor_t.dot(previous_qs[factor]))
+
+    return pB_infogain
+
+def calc_pB_info_gain_interactions(pB, qs_pi, qs_prev, B_factor_list, policy):
+    """
+    Compute expected Dirichlet information gain about parameters ``pB`` under a given policy
+
+    Parameters
+    ----------
+    pB: ``numpy.ndarray`` of dtype object
+        Dirichlet parameters over transition model (same shape as ``B``)
+    qs_pi: ``list`` of ``numpy.ndarray`` of dtype object
+        Predictive posterior beliefs over hidden states expected under the policy, where ``qs_pi[t]`` stores the beliefs about
+        hidden states expected under the policy at time ``t``
+    qs_prev: ``numpy.ndarray`` of dtype object
+        Posterior over hidden states at beginning of trajectory (before receiving observations)
+    B_factor_list: ``list`` of ``list`` of ``int``
+        List of lists, where ``B_factor_list[f]`` is a list of the hidden state factor indices that hidden state factor with the index ``f`` depends on
+    policy: 2D ``numpy.ndarray``
+        Array that stores actions entailed by a policy over time. Shape is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
+        depth of the policy and ``num_factors`` is the number of control factors.
+    
+    Returns
+    -------
+    infogain_pB: float
+        Surprise (about dirichlet parameters) expected under the policy in question
+    """
+
+    n_steps = len(qs_pi)
+
+    num_factors = len(pB)
+    wB = utils.obj_array(num_factors)
+    for factor, pB_f in enumerate(pB):
+        wB[factor] = spm_wnorm(pB_f)
+
+    pB_infogain = 0
+
+    for t in range(n_steps):
+        # the 'past posterior' used for the information gain about pB here is the posterior
+        # over expected states at the timestep previous to the one under consideration
+        # if we're on the first timestep, we just use the latest posterior in the
+        # entire action-perception cycle as the previous posterior
+        if t == 0:
+            previous_qs = qs_prev
+        # otherwise, we use the expected states for the timestep previous to the timestep under consideration
+        else:
+            previous_qs = qs_pi[t - 1]
+
+        # get the list of action-indices for the current timestep
+        policy_t = policy[t, :]
+        for factor, a_i in enumerate(policy_t):
+            wB_factor_t = wB[factor][...,int(a_i)] * (pB[factor][...,int(a_i)] > 0).astype("float")
+            f_idx = B_factor_list[factor]
+            pB_infogain -= qs_pi[t][factor].dot(spm_dot(wB_factor_t, previous_qs[f_idx]))
 
     return pB_infogain
 
