@@ -566,7 +566,6 @@ class TestControl(unittest.TestCase):
     #     self.assertEqual(H_full, H_by_modality)
 
     def test_pA_info_gain(self):
-
         """
         Test the pA_info_gain function. Demonstrates operation
         by manipulating shape of the Dirichlet priors over likelihood parameters
@@ -608,6 +607,15 @@ class TestControl(unittest.TestCase):
             pA_info_gains[idx] += control.calc_pA_info_gain(pA, qo_pi, qs_pi)
 
         self.assertGreater(pA_info_gains[1], pA_info_gains[0])
+
+        """ Test the factorized version of the pA_info_gain function. """
+        pA_info_gains_fac = np.zeros(len(policies))
+        for idx, policy in enumerate(policies):
+            qs_pi = control.get_expected_states(qs, B, policy)
+            qo_pi = control.get_expected_obs_factorized(qs_pi, A, A_factor_list=[[0]])
+            pA_info_gains_fac[idx] += control.calc_pA_info_gain_factorized(pA, qo_pi, qs_pi, A_factor_list=[[0]])
+
+        self.assertTrue(np.allclose(pA_info_gains_fac,  pA_info_gains))  
     
     def test_pB_info_gain(self):
         """
@@ -644,6 +652,13 @@ class TestControl(unittest.TestCase):
             qs_pi = control.get_expected_states(qs, B, policy)
             pB_info_gains[idx] += control.calc_pB_info_gain(pB, qs_pi, qs, policy)
         self.assertGreater(pB_info_gains[1], pB_info_gains[0])
+
+        B_factor_list = [[0]]
+        pB_info_gains_interactions = np.zeros(len(policies))
+        for idx, policy in enumerate(policies):
+            qs_pi = control.get_expected_states_interactions(qs, B, B_factor_list, policy)
+            pB_info_gains_interactions[idx] += control.calc_pB_info_gain_interactions(pB, qs_pi, qs, B_factor_list, policy)
+        self.assertTrue(np.allclose(pB_info_gains_interactions, pB_info_gains))
 
     def test_update_posterior_policies_utility(self):
         """
