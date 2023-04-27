@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 from jax import tree_util, jit, grad, lax, nn
 
-from pymdp.jax.maths import compute_log_likelihood, log_stable, MINVAL
+from pymdp.jax.maths import compute_log_likelihood, compute_log_likelihood_per_modality, log_stable, MINVAL
 
 def add(x, y):
     return x + y
@@ -45,6 +45,38 @@ def run_vanilla_fpi(A, obs, prior, num_iter=1):
     # Step 4: Map result to factorised posterior
     qs = tree_util.tree_map(nn.softmax, res)
     return qs
+
+def run_factorized_fpi(A, obs, prior, blanket_dict, num_iter=1):
+    """
+    @TODO: Run the sparsity-leveraging fixed point iteration algorithm (jaxified)
+    """
+
+    nf = len(prior)
+    factors = list(range(nf))
+    # Step 1: Compute log likelihoods for each factor
+    log_likelihoods = compute_log_likelihood_per_modality(obs, A)
+
+    # Step 2: Map prior to log space and create initial log-posterior
+    log_prior = tree_util.tree_map(log_stable, prior)
+    log_q = tree_util.tree_map(jnp.zeros_like, prior)
+
+    # Step 3: Iterate until convergence
+    def scan_fn(carry, t):
+        log_q = carry
+        q = tree_util.tree_map(nn.softmax, log_q)
+        mll = tree_util.Partial(marginal_log_likelihood, q)
+        marginal_ll = tree_util.tree_map(mll, log_likelihoods, factors)
+
+        log_q = tree_util.tree_map(add, marginal_ll, log_prior)
+
+        return log_q, None
+
+    res, _ = lax.scan(scan_fn, log_q, jnp.arange(num_iter))
+
+    # Step 4: Map result to factorised posterior
+    qs = tree_util.tree_map(nn.softmax, res)
+    return qs
+
 
 if __name__ == "__main__":
     prior = [jnp.ones(2)/2, jnp.ones(2)/2, nn.softmax(jnp.array([0, -80., -80., -80, -80.]))]
