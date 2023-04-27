@@ -20,7 +20,7 @@ def compute_log_likelihood(obs, A):
     ll = jnp.sum(jnp.stack(result), 0)
 
     return ll
-MINVAL
+
 def compute_accuracy(qs, obs, A):
     """ Compute the accuracy portion of the variational free energy (expected log likelihood under the variational posterior) """
 
@@ -52,6 +52,15 @@ def compute_free_energy(qs, prior, obs, A):
     vfe -= compute_accuracy(qs, obs, A)
 
     return vfe
+
+def multidimensional_outer(arrs):
+    """ Compute the outer product of a list of arrays by iteratively expanding the first array and multiplying it with the next array """
+
+    x = arrs[0]
+    for q in arrs[1:]:
+        x = jnp.expand_dims(x, -1) * q
+
+    return x
 
 if __name__ == '__main__':
     obs = [0, 1, 2]
