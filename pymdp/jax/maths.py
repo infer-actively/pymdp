@@ -21,6 +21,13 @@ def compute_log_likelihood(obs, A):
 
     return ll
 
+def compute_log_likelihood_per_modality(obs, A):
+    """ Compute likelihood over hidden states across observations from different modalities, and return them per modality """
+    ll_all = tree_util.tree_map(compute_log_likelihood_single_modality, obs, A)
+    ll_all = tree_util.tree_map(lambda x: jnp.sum(x, 0), ll_all) # sum out the observation dimension
+
+    return ll_all
+
 def compute_accuracy(qs, obs, A):
     """ Compute the accuracy portion of the variational free energy (expected log likelihood under the variational posterior) """
 
