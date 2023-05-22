@@ -131,6 +131,16 @@ class Agent(Module):
         self.policies =  control.construct_policies(
             self.num_states, self.num_controls, self.policy_len, self.control_fac_idx
         )
+
+    @vmap
+    def learning(self, *args, **kwargs):
+        # do stuff
+        # variables = ...
+        # parameters = ...
+        # varibles = {'A': jnp.ones(5)}
+
+        # return Agent(variables, parameters)
+        raise NotImplementedError
     
     @vmap
     def infer_states(self, observations, empirical_prior):
