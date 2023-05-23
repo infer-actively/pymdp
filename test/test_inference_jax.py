@@ -41,8 +41,9 @@ class TestInferenceJax(unittest.TestCase):
             prior = utils.random_single_categorical(num_states)
             A = utils.random_A_matrix(num_obs, num_states)
 
-            obs_idx = [utils.sample(maths.spm_dot(a_m, prior)) for a_m in A]
-            obs = utils.process_observation(obs_idx, len(num_obs), num_obs)
+            obs = utils.obj_array(len(num_obs))
+            for m, obs_dim in enumerate(num_obs):
+                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim)
 
             qs_numpy = fpi_numpy(A, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
@@ -80,8 +81,9 @@ class TestInferenceJax(unittest.TestCase):
             prior = utils.random_single_categorical(num_states)
             A = utils.random_A_matrix(num_obs, num_states)
 
-            obs_idx = [utils.sample(maths.spm_dot(a_m, prior)) for a_m in A]
-            obs = utils.process_observation(obs_idx, len(num_obs), num_obs)
+            obs = utils.obj_array(len(num_obs))
+            for m, obs_dim in enumerate(num_obs):
+                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim)
 
             qs_numpy = fpi_numpy(A, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
@@ -119,8 +121,9 @@ class TestInferenceJax(unittest.TestCase):
             prior = utils.random_single_categorical(num_states)
             A = utils.random_A_matrix(num_obs, num_states)
 
-            obs_idx = [utils.sample(maths.spm_dot(a_m, prior)) for a_m in A]
-            obs = utils.process_observation(obs_idx, len(num_obs), num_obs)
+            obs = utils.obj_array(len(num_obs))
+            for m, obs_dim in enumerate(num_obs):
+                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim)
 
             qs_numpy = fpi_numpy(A, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
@@ -162,8 +165,9 @@ class TestInferenceJax(unittest.TestCase):
             prior = utils.random_single_categorical(num_states)
             A = utils.random_A_matrix(num_obs, num_states)
 
-            obs_idx = [utils.sample(maths.spm_dot(a_m, prior)) for a_m in A]
-            obs = utils.process_observation(obs_idx, len(num_obs), num_obs)
+            obs = utils.obj_array(len(num_obs))
+            for m, obs_dim in enumerate(num_obs):
+                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim)
 
             qs_numpy = fpi_numpy(A, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
