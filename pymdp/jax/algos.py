@@ -1,10 +1,11 @@
 import jax.numpy as jnp
-from jax import jit, grad, lax, nn
+from jax import jit, vmap, grad, lax, nn
 import jax.tree_util as jtu
 # from jax.config import config
 # config.update("jax_enable_x64", True)
 
 from pymdp.jax.maths import compute_log_likelihood, compute_log_likelihood_per_modality, log_stable, MINVAL
+from typing import Any, List
 
 def add(x, y):
     return x + y
@@ -27,6 +28,25 @@ def marginal_log_likelihood(qs, log_likelihood, i):
     dims = (f + parallel_ndim for f in range(len(qs)) if f != i)
     return joint.sum(dims)
 
+def all_marginal_log_likelihood(qs, log_likelihoods, all_factor_lists):
+    qL_marginals = jtu.tree_map(lambda ll_m, factor_list_m: mll_factors(qs, ll_m, factor_list_m), log_likelihoods, all_factor_lists)
+    
+    num_factors = len(qs)
+
+    qL_all = [0.] * num_factors
+    for m, factor_list_m in enumerate(all_factor_lists):
+        for l, f in enumerate(factor_list_m):
+            qL_all[f] += qL_marginals[m][l]
+
+    return qL_all
+
+def mll_factors(qs, ll_m, factor_list_m) -> List:
+    relevant_factors = [qs[f] for f in factor_list_m]
+    marginal_ll_f = jtu.Partial(marginal_log_likelihood, relevant_factors, ll_m)
+    loc_nf = len(factor_list_m)
+    loc_factors = list(range(loc_nf))
+    return jtu.tree_map(marginal_ll_f, loc_factors)
+
 def run_vanilla_fpi(A, obs, prior, num_iter=1):
     """ Vanilla fixed point iteration (jaxified) """
 
@@ -46,7 +66,6 @@ def run_vanilla_fpi(A, obs, prior, num_iter=1):
         q = jtu.tree_map(nn.softmax, log_q)
         mll = jtu.Partial(marginal_log_likelihood, q, ll)
         marginal_ll = jtu.tree_map(mll, factors)
-        # marginal_ll = jtu.tree_map(mll, log_likelihoods, factors)
         log_q = jtu.tree_map(add, marginal_ll, log_prior)
 
         return log_q, None
@@ -57,7 +76,7 @@ def run_vanilla_fpi(A, obs, prior, num_iter=1):
     qs = jtu.tree_map(nn.softmax, res)
     return qs
 
-def run_factorized_fpi(A, obs, prior, blanket_dict, num_iter=1):
+def run_factorized_fpi(A, obs, prior, factor_lists, num_iter=1):
     """
     @TODO: Run the sparsity-leveraging fixed point iteration algorithm (jaxified)
     """
@@ -75,9 +94,7 @@ def run_factorized_fpi(A, obs, prior, blanket_dict, num_iter=1):
     def scan_fn(carry, t):
         log_q = carry
         q = jtu.tree_map(nn.softmax, log_q)
-        mll = jtu.Partial(marginal_log_likelihood, q)
-        marginal_ll = jtu.tree_map(mll, log_likelihoods, factors)
-
+        marginal_ll = all_marginal_log_likelihood(q, log_likelihoods, factor_lists)
         log_q = jtu.tree_map(add, marginal_ll, log_prior)
 
         return log_q, None
@@ -87,7 +104,6 @@ def run_factorized_fpi(A, obs, prior, blanket_dict, num_iter=1):
     # Step 4: Map result to factorised posterior
     qs = jtu.tree_map(nn.softmax, res)
     return qs
-
 
 def mirror_gradient_descent_step(tau, ln_A, lnB_past, lnB_future, ln_qs):
     """
@@ -126,7 +142,8 @@ def update_marginals(get_messages, obs, A, B, prior, num_iter=1, tau=1.):
 
         mgds = partial(mirror_gradient_descent_step, tau)
 
-        mll = vmap(jtu.Partial(marginal_log_likelihood, qs, log_likelihoods), ((None, 0, 1, None), 0)) 
+        # @TODO: Change to allow factorized updates
+        mll = jtu.Partial(marginal_log_likelihood, qs, log_likelihoods)
         ln_As = jtu.tree_map(mll, factors)
 
         qs = jtu.tree_map(mgds, ln_As, lnB_past, lnB_future, ln_qs)
@@ -135,17 +152,48 @@ def update_marginals(get_messages, obs, A, B, prior, num_iter=1, tau=1.):
 
     qs, _ = lax.scan(scan_fn, qs, jnp.arange(num_iter))
 
-    # Step 4: Map result to factorised posterior
-    # qs = jtu.tree_map(nn.softmax, res)
     return qs
 
-def run_vmp(A, obs, prior, blanket_dict, num_iter=1):
+def get_vmp_messages(ln_B, B, qs, ln_prior):
+    
+    @vmap(in_axes=(0, 1), out_axes=1)
+    def forward(ln_b, q, ln_prior):
+        msg = q[:-1] @ ln_b.T
+        return jnp.concatenate([jnp.expand_dims(ln_prior, 0), msg], axis=0)
+        
+    @vmap(in_axes=(0, 1), out_axes=1)
+    def backward(ln_b, q):
+        msg = q[1:] @ ln_b
+        return jnp.pad(msg, ((0, 1), (0, 0)))
 
-    qs = update_marginals(get_vmp_messages, num_iter=num_iter)
+    lnB_future = jtu.tree_map(forward, ln_B, qs, ln_prior)
+    lnB_past = jtu.tree_map(backward, ln_B, qs)
 
-def run_mmp(A, obs, prior, blanket_dict, num_iter=1):
+    return lnB_future, lnB_past
 
-    qs = update_marginals(get_mmp_messages, num_iter=num_iter)
+def run_vmp(A, obs, prior, blanket_dict, num_iter=1, tau=1.):
+    qs = update_marginals(get_vmp_messages, obs, A, B, prior, num_iter=num_iter, tau=tau)
+
+def get_mmp_messages(ln_B, B, qs, ln_prior):
+    
+    @vmap(in_axes=(0, 1), out_axes=1)
+    def forward(b, q, ln_prior):
+        msg = log_stable(q[:-1] @ b.T)
+        return jnp.concatenate([jnp.expand_dims(ln_prior, 0), msg], axis=0)
+        
+    @vmap(in_axes=(0, 1), out_axes=1)
+    def backward(b, q):
+        msg = log_stable(q[1:] @ b)
+        return jnp.pad(msg, ((0, 1), (0, 0)))
+
+    lnB_future = jtu.tree_map(forward, B, qs, ln_prior)
+    lnB_past = jtu.tree_map(backward, B, qs)
+
+    return lnB_future, lnB_past
+
+def run_mmp(A, obs, prior, blanket_dict, num_iter=1, tau=1.):
+    qs = update_marginals(get_vmp_messages, obs, A, B, prior, num_iter=num_iter, tau=tau)
+    return qs
 
 if __name__ == "__main__":
     prior = [jnp.ones(2)/2, jnp.ones(2)/2, nn.softmax(jnp.array([0, -80., -80., -80, -80.]))]
