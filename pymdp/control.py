@@ -557,9 +557,8 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
 
         # Either you do this:
         if action_selection == 'deterministic':
-        #     selected_policy[factor_i] = np.argmax(action_marginals[factor_i])
             if np.allclose(action_marginals[factor_i], action_marginals[factor_i][0]):
-                    # All action marginals are equal/close, sample instead of using argmax
+                # All action marginals are equal/close, sample instead of using argmax
                 selected_policy[factor_i] = np.random.choice(len(action_marginals[factor_i]))
             else:
                 selected_policy[factor_i] = np.argmax(action_marginals[factor_i])
