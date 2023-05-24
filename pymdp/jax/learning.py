@@ -3,8 +3,32 @@
 # pylint: disable=no-member
 
 import numpy as np
-from pymdp import utils, maths
-import copy
+from .maths import multidimensional_outer
+from jax.tree_utils import tree_map
+from jax import vmap
+
+def update_obs_likelihood_dirichlet_m(pA_m, A_m, obs_m, qs, lr=1.0):
+    """ JAX version of ``pymdp.learning.update_obs_likelihood_dirichlet_m`` """
+
+    dfda = vmap(multidimensional_outer)([obs_m]+ qs)
+    # dfda = dfda * (A_m > 0)
+    dfda = jnp.where(A_m > 0, dfda, 0.0)
+    qA_m = pA_m + (lr * dfda)
+
+    return qA_m
+    
+def update_obs_likelihood_dirichlet(pA, A, obs, qs, lr=1.0):
+    """ JAX version of ``pymdp.learning.update_obs_likelihood_dirichlet`` """
+
+    update_A_fn = lambda pA_m, A_m, obs_m: update_obs_likelihood_dirichlet_m(pA_m, A_m, obs_m, qs, lr=lr)
+    qA = tree_map(update_A_fn, pA, A, obs)
+
+    # qA=[]
+    # for (pA_m, A_m, o_m) in zip(pA, A, obs):
+    #    qA_m = update_obs_likelihood_dirichlet_m(pA_m, A_m, o_m, qs, lr=lr)
+    #    qA.append(qA_m)
+
+    return qA
 
 def update_obs_likelihood_dirichlet(pA, A, obs, qs, lr=1.0, modalities="all"):
     """ 

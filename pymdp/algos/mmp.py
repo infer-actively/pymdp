@@ -113,7 +113,7 @@ def run_mmp(
                     lnqs = spm_log_single(sx)
                     coeff = 1 if (t >= future_cutoff) else 2
                     err = (coeff * lnA + lnB_past + lnB_future) - coeff * lnqs
-                    lnqs = lnqs + tau * (err - err.mean())
+                    lnqs = lnqs + tau * (err - err.mean()) # for numerical stability, before passing into the softmax
                     qs_seq[t][f] = softmax(lnqs)
                     if (t == 0) or (t == (infer_len-1)):
                         F += sx.dot(0.5*err)

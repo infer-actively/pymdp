@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """ Unit Tests
-__author__: Conor Heins
+__author__: Dimitrije Markovic, Conor Heins
 """
 
 import os
