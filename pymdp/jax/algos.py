@@ -120,7 +120,7 @@ def mirror_gradient_descent_step(tau, ln_A, lnB_past, lnB_future, ln_qs):
 def update_marginals(get_messages, obs, A, B, prior, num_iter=1, tau=1.):
 
     nf = len(prior)
-    T = obs.shape[0]
+    T = obs[0].shape[0]
     factors = list(range(nf))
     ln_B = jtu.tree_map(log_stable, B)
     # log likelihoods -> $\ln(A)$ for all time steps
@@ -131,6 +131,9 @@ def update_marginals(get_messages, obs, A, B, prior, num_iter=1, tau=1.):
     # log marginals -> $\ln(q(s_t))$ for all time steps and factors
     ln_qs = jtu.tree_map( lambda p: jnp.broadcast_to(jnp.zeros_like(p), (T,) + p.shape), prior)
 
+    # log prior -> $\ln(p(s_t))$ for all factors
+    ln_prior = jtu.tree_map(log_stable, prior)
+
     qs = jtu.tree_map(nn.softmax, ln_qs)
 
     def scan_fn(carry, iter):
@@ -138,9 +141,9 @@ def update_marginals(get_messages, obs, A, B, prior, num_iter=1, tau=1.):
 
         ln_qs = jtu.tree_map(log_stable, qs)
         # messages from future $m_+(s_t)$ and past $m_-(s_t)$ for all time steps and factors. For t = T we have that $m_+(s_T) = 0$
-        lnB_past, lnB_future = get_messages(ln_B, B, qs)
+        lnB_past, lnB_future = get_messages(ln_B, B, qs, ln_prior)
 
-        mgds = partial(mirror_gradient_descent_step, tau)
+        mgds = jtu.Partial(mirror_gradient_descent_step, tau)
 
         # @TODO: Change to allow factorized updates
         mll = jtu.Partial(marginal_log_likelihood, qs, log_likelihoods)
@@ -156,18 +159,20 @@ def update_marginals(get_messages, obs, A, B, prior, num_iter=1, tau=1.):
 
 def get_vmp_messages(ln_B, B, qs, ln_prior):
     
-    @vmap(in_axes=(0, 1), out_axes=1)
+    # @vmap(in_axes=(0, 1, 0), out_axes=1)
     def forward(ln_b, q, ln_prior):
         msg = q[:-1] @ ln_b.T
         return jnp.concatenate([jnp.expand_dims(ln_prior, 0), msg], axis=0)
-        
-    @vmap(in_axes=(0, 1), out_axes=1)
+    fwd = vmap(forward, in_axes=(0, 1, 0), out_axes=1)
+
+    # @vmap(in_axes=(0, 1), out_axes=1)
     def backward(ln_b, q):
         msg = q[1:] @ ln_b
         return jnp.pad(msg, ((0, 1), (0, 0)))
+    bkwd = vmap(backward, in_axes=(0, 1), out_axes=1)
 
-    lnB_future = jtu.tree_map(forward, ln_B, qs, ln_prior)
-    lnB_past = jtu.tree_map(backward, ln_B, qs)
+    lnB_future = jtu.tree_map(fwd, ln_B, qs, ln_prior)
+    lnB_past = jtu.tree_map(bkwd, ln_B, qs)
 
     return lnB_future, lnB_past
 
@@ -178,6 +183,9 @@ def get_mmp_messages(ln_B, B, qs, ln_prior):
     
     @vmap(in_axes=(0, 1), out_axes=1)
     def forward(b, q, ln_prior):
+
+        # t x d @ d x d
+        #TypeError: dot_general requires contracting dimensions to have the same shape, got (2,) and (3,).
         msg = log_stable(q[:-1] @ b.T)
         return jnp.concatenate([jnp.expand_dims(ln_prior, 0), msg], axis=0)
         
@@ -191,7 +199,7 @@ def get_mmp_messages(ln_B, B, qs, ln_prior):
 
     return lnB_future, lnB_past
 
-def run_mmp(A, obs, prior, blanket_dict, num_iter=1, tau=1.):
+def run_mmp(A, B, obs, prior, blanket_dict, num_iter=1, tau=1.):
     qs = update_marginals(get_vmp_messages, obs, A, B, prior, num_iter=num_iter, tau=tau)
     return qs
 
