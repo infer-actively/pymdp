@@ -22,41 +22,6 @@ from pymdp import utils, maths
 
 from typing import Any, List
 
-# blanket_dict = {} # @TODO: implement factorized likelihoods for marginal message passing
-
-# num_states = [3]
-# num_obs = [3]
-
-# A = [ jnp.broadcast_to(jnp.array([[0.5, 0.5, 0.], 
-#                                   [0.0,  0.0,  1.], 
-#                                   [0.5, 0.5, 0.]]
-#                             ), (2, 3, 3) )]
-
-# B = [ jnp.broadcast_to(jnp.array([[0.0, 0.75, 0.0],
-#                                   [0.0, 0.25, 1.0],
-#                                   [1.0, 0.0, 0.0]]
-#             ), (2, 3, 3))]
-
-# # for the single modality, a sequence over time of observations (one hot vectors)
-# obs = [
-#         jnp.broadcast_to(jnp.array([[1., 0., 0.], 
-#                                     [0., 1., 0.], 
-#                                     [0., 0., 1.],
-#                                     [1., 0., 0.]])[:, None], (4, 2, 3) )
-#                         ]
-
-# prior = [jnp.ones((2, 3)) / 3.]
-
-# for t in range(4):
-#     loc_obs = jtu.tree_map( lambda o: o[:t+1], obs)
-#     qs_out = vmp_jax(A, B, loc_obs, prior, blanket_dict, num_iter=16, tau=1.)
-#     print(qs_out[0][:,0,:].round(3))
-
-# for t in range(4):
-#     loc_obs = jtu.tree_map( lambda o: o[:t+1], obs)
-#     qs_out = mmp_jax(A, B, loc_obs, prior, blanket_dict, num_iter=16, tau=1.)
-#     print(qs_out[0][:,0,:].round(3))
-
 class TestMessagePassing(unittest.TestCase):
 
     def test_fixed_point_iteration(self):
@@ -207,20 +172,6 @@ class TestMessagePassing(unittest.TestCase):
         prior = [jnp.ones((2, 3)) / 3.]
 
         qs_out = mmp_jax(A, B, obs, prior, blanket_dict, num_iter=16, tau=1.)
-
-        print('test')
-
-        # from pymdp.jax.maths import log_stable
-        # from jax import nn
-
-        # x = log_stable(B[0][0] @ qs_out[0][-2, 0])
-        # print( x )
-        # print(nn.softmax(x))
-
-        # y = log_stable(A[0][0, 0])
-        # print(nn.softmax(x + y))
-
-        # print(qs_out[0][-1,0,:])
 
         self.assertTrue(qs_out[0].shape[0] == obs[0].shape[0])
 
