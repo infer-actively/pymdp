@@ -544,13 +544,7 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
     num_factors = len(num_controls)
 
     action_marginals = utils.obj_array_zeros(num_controls)
-    
-    # weight each action according to its integrated posterior probability over policies and timesteps
-    # for pol_idx, policy in enumerate(policies):
-    #     for t in range(policy.shape[0]):
-    #         for factor_i, action_i in enumerate(policy[t, :]):
-    #             action_marginals[factor_i][action_i] += q_pi[pol_idx]
-    
+
     # weight each action according to its integrated posterior probability under all policies at the current timestep
     for pol_idx, policy in enumerate(policies):
         for factor_i, action_i in enumerate(policy[0, :]):
@@ -563,7 +557,12 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
 
         # Either you do this:
         if action_selection == 'deterministic':
-            selected_policy[factor_i] = np.argmax(action_marginals[factor_i])
+        #     selected_policy[factor_i] = np.argmax(action_marginals[factor_i])
+            if np.allclose(action_marginals[factor_i], action_marginals[factor_i][0]):
+                    # All action marginals are equal/close, sample instead of using argmax
+                selected_policy[factor_i] = np.random.choice(len(action_marginals[factor_i]))
+            else:
+                selected_policy[factor_i] = np.argmax(action_marginals[factor_i])
         elif action_selection == 'stochastic':
             log_marginal_f = spm_log_single(action_marginals[factor_i])
             p_actions = softmax(log_marginal_f * alpha)
