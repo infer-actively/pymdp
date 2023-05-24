@@ -183,26 +183,32 @@ def get_vmp_messages(ln_B, B, qs, ln_prior):
 
     return lnB_future, lnB_past
 
-def run_vmp(A, obs, prior, blanket_dict, num_iter=1, tau=1.):
+def run_vmp(A, B, obs, prior, blanket_dict, num_iter=1, tau=1.):
     qs = update_marginals(get_vmp_messages, obs, A, B, prior, num_iter=num_iter, tau=tau)
+    return qs
 
 def get_mmp_messages(ln_B, B, qs, ln_prior):
     
-    # @vmap(in_axes=(0, 1), out_axes=1)
     def forward(b, q, ln_prior):
+        if len(q) > 1:
+            msg = log_stable(q[:-1] @ b.T)
+            n = len(msg) 
+            if n > 1: # this is the case where there are at least 3 observations. If you have two observations, then you weight the single past message from t = 0 by 1.0
+                msg = msg * jnp.pad( 0.5 * jnp.ones(n-1), (0, 1), constant_values=1.)[:, None]
+            return jnp.concatenate([jnp.expand_dims(ln_prior, 0), msg], axis=0) # @TODO: look up whether we want to decrease influence of prior by half as well
+        else: # this is case where this is a single observation / single-timestep posterior
+            return jnp.expand_dims(ln_prior, 0)
 
-        # t x d @ d x d
-        #TypeError: dot_general requires contracting dimensions to have the same shape, got (2,) and (3,).
-        msg = log_stable(q[:-1] @ b.T) / 2.
-        return jnp.concatenate([jnp.expand_dims(ln_prior, 0), msg], axis=0)
+    fwd = vmap(forward, in_axes=(0, 1, 0), out_axes=1)
         
-    # @vmap(in_axes=(0, 1), out_axes=1)
     def backward(b, q):
-        msg = log_stable(q[1:] @ b) / 2.
-        return jnp.zeros_like(jnp.pad(msg, ((0, 1), (0, 0))))
+        msg = log_stable(q[1:] @ b) * 0.5
+        return jnp.pad(msg, ((0, 1), (0, 0)))
 
-    lnB_future = jtu.tree_map(forward, B, qs, ln_prior)
-    lnB_past = jtu.tree_map(backward, B, qs)
+    bkwd = vmap(backward, in_axes=(0, 1), out_axes=1)
+
+    lnB_future = jtu.tree_map(fwd, B, qs, ln_prior)
+    lnB_past = jtu.tree_map(bkwd, B, qs)
 
     return lnB_future, lnB_past
 
