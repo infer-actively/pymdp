@@ -126,7 +126,13 @@ def update_marginals(get_messages, obs, A, B, prior, num_iter=1, tau=1.):
     # log likelihoods -> $\ln(A)$ for all time steps
     # for $k > t$ we have $\ln(A) = 0$
 
-    log_likelihoods = vmap(compute_log_likelihood, (0, None))(obs, A) # this gives a sequence of log-likelihoods (one for each `t`)
+    def get_log_likelihood(obs_t, A):
+
+        # mapping over batch dimension
+        return vmap(compute_log_likelihood)(obs_t, A)
+
+    # mapping over time dimension of obs array
+    log_likelihoods = vmap(get_log_likelihood, (0, None))(obs, A) # this gives a sequence of log-likelihoods (one for each `t`)
 
     # log marginals -> $\ln(q(s_t))$ for all time steps and factors
     ln_qs = jtu.tree_map( lambda p: jnp.broadcast_to(jnp.zeros_like(p), (T,) + p.shape), prior)
@@ -167,6 +173,7 @@ def get_vmp_messages(ln_B, B, qs, ln_prior):
 
     # @vmap(in_axes=(0, 1), out_axes=1)
     def backward(ln_b, q):
+        # q_i B_ij
         msg = q[1:] @ ln_b
         return jnp.pad(msg, ((0, 1), (0, 0)))
     bkwd = vmap(backward, in_axes=(0, 1), out_axes=1)
@@ -181,18 +188,18 @@ def run_vmp(A, obs, prior, blanket_dict, num_iter=1, tau=1.):
 
 def get_mmp_messages(ln_B, B, qs, ln_prior):
     
-    @vmap(in_axes=(0, 1), out_axes=1)
+    # @vmap(in_axes=(0, 1), out_axes=1)
     def forward(b, q, ln_prior):
 
         # t x d @ d x d
         #TypeError: dot_general requires contracting dimensions to have the same shape, got (2,) and (3,).
-        msg = log_stable(q[:-1] @ b.T)
+        msg = log_stable(q[:-1] @ b.T) / 2.
         return jnp.concatenate([jnp.expand_dims(ln_prior, 0), msg], axis=0)
         
-    @vmap(in_axes=(0, 1), out_axes=1)
+    # @vmap(in_axes=(0, 1), out_axes=1)
     def backward(b, q):
-        msg = log_stable(q[1:] @ b)
-        return jnp.pad(msg, ((0, 1), (0, 0)))
+        msg = log_stable(q[1:] @ b) / 2.
+        return jnp.zeros_like(jnp.pad(msg, ((0, 1), (0, 0))))
 
     lnB_future = jtu.tree_map(forward, B, qs, ln_prior)
     lnB_past = jtu.tree_map(backward, B, qs)
@@ -200,7 +207,7 @@ def get_mmp_messages(ln_B, B, qs, ln_prior):
     return lnB_future, lnB_past
 
 def run_mmp(A, B, obs, prior, blanket_dict, num_iter=1, tau=1.):
-    qs = update_marginals(get_vmp_messages, obs, A, B, prior, num_iter=num_iter, tau=tau)
+    qs = update_marginals(get_mmp_messages, obs, A, B, prior, num_iter=num_iter, tau=tau)
     return qs
 
 if __name__ == "__main__":

@@ -10,12 +10,14 @@ import unittest
 
 import numpy as np
 import jax.numpy as jnp
+import jax.tree_util as jtu
 
 from pymdp.jax.algos import run_vanilla_fpi as fpi_jax
 from pymdp.jax.algos import run_factorized_fpi as fpi_jax_factorized
 from pymdp.algos import run_vanilla_fpi as fpi_numpy
 from pymdp.algos import run_mmp as mmp_numpy
 from pymdp.jax.algos import run_mmp as mmp_jax
+from pymdp.jax.algos import run_vmp as vmp_jax
 from pymdp import utils, maths
 
 from typing import Any, List
@@ -26,27 +28,35 @@ blanket_dict = {} # @TODO: implement factorized likelihoods for marginal message
 num_states = [3]
 num_obs = [3]
 
-A = [ jnp.broadcast_to(jnp.array([[0.5, 0.5, 0.0], 
-                [0.0, 0.0, 1.0], 
-                [0.5, 0.5, 0.0]]
-            ), (2, 3, 3) )]
+A = [ jnp.broadcast_to(jnp.array([[0.5, 0.5, 0.], 
+                                  [0.0,  0.0,  1.], 
+                                  [0.5, 0.5, 0.]]
+                            ), (2, 3, 3) )]
 
-B = [ jnp.broadcast_to(jnp.array([[0.0, 0.5, 0.0],
-                [0.0, 0.5, 1.0],
-                [1.0, 0.0, 0.0]]
+B = [ jnp.broadcast_to(jnp.array([[0.0, 0.75, 0.0],
+                                  [0.0, 0.25, 1.0],
+                                  [1.0, 0.0, 0.0]]
             ), (2, 3, 3))]
 
 # for the single modality, a sequence over time of observations (one hot vectors)
 obs = [
-        jnp.broadcast_to(jnp.array([[1, 0, 0], 
-                [0, 1, 0], 
-                [0, 0, 1],
-                [1, 0, 0]])[:, None], (4, 2, 3) )
-    ]
+        jnp.broadcast_to(jnp.array([[1., 0., 0.], 
+                                    [0., 1., 0.], 
+                                    [0., 0., 1.],
+                                    [1., 0., 0.]])[:, None], (4, 2, 3) )
+                        ]
 
 prior = [jnp.ones((2, 3)) / 3.]
 
-qs_out = mmp_jax(A, B, obs, prior, blanket_dict, num_iter=1, tau=1.)
+for t in range(4):
+    loc_obs = jtu.tree_map( lambda o: o[:t+1], obs)
+    qs_out = vmp_jax(A, B, loc_obs, prior, blanket_dict, num_iter=16, tau=1.)
+    print(qs_out[0][:,0,:].round(3))
+
+for t in range(4):
+    loc_obs = jtu.tree_map( lambda o: o[:t+1], obs)
+    qs_out = mmp_jax(A, B, loc_obs, prior, blanket_dict, num_iter=16, tau=1.)
+    print(qs_out[0][:,0,:].round(3))
 
 # class TestMessagePassing(unittest.TestCase):
 
