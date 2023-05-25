@@ -1189,8 +1189,9 @@ class TestControl(unittest.TestCase):
         modality_idx = 0
         t_idx = 0
 
-        chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
-        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic", alpha = 1.0)
+        chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic", seed=0)
+        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic", alpha=1.0,
+											   seed=0)
 
         self.assertEqual(chosen_action.shape, sampled_action.shape)
 
@@ -1228,8 +1229,9 @@ class TestControl(unittest.TestCase):
             gamma=16.0
         )
 
-        chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
-        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic", alpha = 1.0)
+        chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic", seed=0)
+        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic", alpha=1.0,
+											   seed=0)
 
         self.assertEqual(chosen_action.shape, sampled_action.shape)
 
@@ -1267,8 +1269,9 @@ class TestControl(unittest.TestCase):
             gamma=16.0
         )
 
-        chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
-        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic", alpha = 1.0)
+        chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic", seed=0)
+        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic", alpha=1.0,
+											   seed=0)
 
         self.assertEqual(chosen_action.shape, sampled_action.shape)
 
@@ -1311,7 +1314,7 @@ class TestControl(unittest.TestCase):
             gamma=16.0
         )
 
-        chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
+        chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic", seed=0)
         self.assertEqual(int(chosen_action[0]), 1)
 
     def test_sample_policy(self):
@@ -1387,10 +1390,10 @@ class TestControl(unittest.TestCase):
         num_controls = [2, 1]
         policies = control.construct_policies(num_states, num_controls = num_controls, policy_len=1)
         q_pi = utils.norm_dist(np.random.rand(len(policies)))
-        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic")
+        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic", seed=0)
         self.assertEqual(sampled_action[1], 0)
 
-        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
+        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic", seed=0)
         self.assertEqual(sampled_action[1], 0)
 
 

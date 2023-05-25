@@ -514,7 +514,7 @@ def get_num_controls_from_policies(policies):
     return list(np.max(np.vstack(policies), axis = 0) + 1)
     
 
-def sample_action(q_pi, policies, num_controls, action_selection="deterministic", alpha = 16.0):
+def sample_action(q_pi, policies, num_controls, action_selection="deterministic", alpha = 16.0, seed=None):
     """
     Computes the marginal posterior over actions and then samples an action from it, one action per control factor.
 
@@ -534,6 +534,9 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
     alpha: float, default 16.0
         Action selection precision -- the inverse temperature of the softmax that is used to scale the 
         action marginals before sampling. This is only used if ``action_selection`` argument is "stochastic"
+    seed: int, default None
+        The seed can be specified to make deterministic choices predictable even in case of multiple actions with the same likelikess.
+        Default is None, so random choice between the highest likeliness closer than 1e-5
 
     Returns
     ----------
@@ -561,6 +564,8 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
             same_prob = act_marg_i_with_idx[abs(act_marg_i_with_idx[:, 1] - np.amax(act_marg_i_with_idx[:, 1])) <= .00001][:, 0]
             if len(same_prob) > 1:
                 # All action marginals are equal/close, sample instead of using argmax
+                if seed is not None:
+                    np.random.seed(seed)
                 selected_policy[factor_i] = same_prob[np.random.choice(len(same_prob))]
             else:
                 selected_policy[factor_i] = same_prob[0]
