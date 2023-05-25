@@ -1330,12 +1330,13 @@ class TestControl(unittest.TestCase):
         q_pi = utils.norm_dist(np.random.rand(len(policies)))
         best_policy = policies[np.argmax(q_pi)]
 
-        selected_policy = control.sample_policy(q_pi, policies, num_controls)
+        selected_policy = control.sample_policy(q_pi, policies, num_controls, seed=0)
 
         for factor_ii in range(len(num_controls)):
             self.assertEqual(selected_policy[factor_ii], best_policy[0,factor_ii])
         
-        selected_policy_stochastic = control.sample_policy(q_pi, policies, num_controls, action_selection="stochastic", alpha = 1.0)
+        selected_policy_stochastic = control.sample_policy(q_pi, policies, num_controls, action_selection="stochastic",
+                                                           alpha=1.0, seed=0)
         self.assertEqual(selected_policy_stochastic.shape, selected_policy.shape)
         
     def test_update_posterior_policies_withE_vector(self):
