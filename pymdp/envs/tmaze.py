@@ -118,7 +118,7 @@ class TMazeEnv(Env):
 
     def _construct_likelihood_dist(self):
 
-        A = utils.obj_array_zeros([ [obs_dim] + self.num_states for _, obs_dim in enumerate(self.num_obs)] )
+        A = utils.obj_array_zeros([ [obs_dim] + self.num_states for obs_dim in self.num_obs] )
 
         for loc in range(self.num_states[LOCATION_FACTOR_ID]):
             for reward_condition in range(self.num_states[TRIAL_FACTOR_ID]):

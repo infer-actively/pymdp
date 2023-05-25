@@ -555,12 +555,15 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
     selected_policy = np.zeros(num_factors)
     for factor_i in range(num_factors):
 
+        # Either you do this:
         if action_selection == 'deterministic':
-            if np.allclose(action_marginals[factor_i], action_marginals[factor_i][0]):
+            act_marg_i_with_idx = np.array(list(enumerate(action_marginals[factor_i])))
+            same_prob = act_marg_i_with_idx[abs(act_marg_i_with_idx[:, 1] - np.amax(act_marg_i_with_idx[:, 1])) <= .00001][:, 0]
+            if len(same_prob) > 1:
                 # All action marginals are equal/close, sample instead of using argmax
-                selected_policy[factor_i] = np.random.choice(len(action_marginals[factor_i]))
+                selected_policy[factor_i] = same_prob[np.random.choice(len(same_prob))]
             else:
-                selected_policy[factor_i] = np.argmax(action_marginals[factor_i])
+                selected_policy[factor_i] = same_prob[0]
         elif action_selection == 'stochastic':
             log_marginal_f = spm_log_single(action_marginals[factor_i])
             p_actions = softmax(log_marginal_f * alpha)
