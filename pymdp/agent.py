@@ -146,7 +146,7 @@ class Agent(object):
         
         all_policies = np.vstack(self.policies)
 
-        assert all([n_c == max_action for (n_c, max_action) in zip(self.num_controls, list(np.max(all_policies, axis =0)+1))]), "Maximum number of actions is not consistent with `num_controls`"
+        assert all([n_c >= max_action for (n_c, max_action) in zip(self.num_controls, list(np.max(all_policies, axis =0)+1))]), "Maximum number of actions is not consistent with `num_controls`"
 
         # Construct prior preferences (uniform if not specified)
 
