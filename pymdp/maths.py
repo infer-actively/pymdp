@@ -431,3 +431,35 @@ def spm_MDP_G(A, x):
 
     return G
 
+# Necessary math functions
+def log_stable(arr):
+    """
+    Adds small epsilon value to an array before natural logging it
+    """
+    EPS_VAL = 1e-16
+    return np.log(arr + EPS_VAL)
+
+def kl_div(P,Q):
+    """
+    Parameters
+    ----------
+    P : Categorical probability distribution
+    Q : Categorical probability distribution
+
+    Returns
+    -------
+    The KL-DIV of P and Q
+
+    """
+    dkl = 0
+    for i in range(len(P)):
+        dkl += (P[i]*log_stable(P[i]))-(P[i]*log_stable(Q[i]))
+    return(dkl)
+
+def entropy(A):
+    """
+    Compute the entropy of a set of condition distributions,
+    i.e. one entropy value per column
+    """
+    H_A = - (A * log_stable(A)).sum(axis=0)
+    return H_A
