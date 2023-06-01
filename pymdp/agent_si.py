@@ -99,8 +99,9 @@ class si_agent(Agent):
                 D_new[idx] += 1 / self.num_states[idx]
         
         # Initialising the exisiting pymdp agent for Inference, and Learning
-        super().__init__(A = A_new, B = B_new, C = C_new, D = D_new)
+        super().__init__(A = A_new, B = B_new, C = C_new, D = D_new, pA = A_new, pB = B_new, pD = D_new)
         
+        # Initialising priors for A, B, D
         # Paramters for sophisticated inference
         self.N = planning_horizon
         self.tau = 0
@@ -169,7 +170,7 @@ class si_agent(Agent):
         self.action = np.array([action])
         return(action)
     
-    def step(self, obs_list):
+    def step(self, obs_list, learning = True):
         """
         Agent step combines the following agent functions:
         Combines Inference, Planning, Learning, and decision-making.
@@ -182,20 +183,21 @@ class si_agent(Agent):
 
             # Inference
             self.qs = super().infer_states(obs_list)
-            
-            # Learning D
-            # if(learning == True):
-                # super().update_D(self.qs[0])
-            
+            self.qs_prev = np.copy(self.qs)
             # Planning
             self.plan_tree_search()
             
             # Decision making
             self.take_decision()
             self.tau += 1
+            
+            # Learning D
+            if(learning == True):
+                super().update_D(self.qs)
 
         else:
             # Inference
+            self.qs_prev = np.copy(self.qs)
             self.qs = super().infer_states(obs_list)
             
             # Planning
@@ -206,10 +208,10 @@ class si_agent(Agent):
             self.tau += 1
             
             # Learning model parameters
-            # if(learning == True):
+            if(learning == True):
                 # Updating b
-                # super().update_B()
+                super().update_B(self.qs_prev)
                 # Updating a
-                # super().update_A(obs_list)
+                super().update_A(obs_list)
 
         return(self.action)
