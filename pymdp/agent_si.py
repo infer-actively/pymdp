@@ -18,7 +18,7 @@ sys.path.append(module_path)
 # importing the existing classical AI agent in pymdp to reuse inference and learning
 from pymdp.agent import Agent
 from pymdp.utils import random_A_matrix, random_B_matrix, obj_array_zeros
-from pymdp.maths import softmax, kl_div, entropy
+from pymdp.maths import softmax, softmax_obj_arr, kl_div, entropy
 
 # numpy
 import numpy as np
@@ -48,8 +48,7 @@ class si_agent(Agent):
     Combines Inference, planning, learning, and decision-making
     Generative model will be learned and updated over time if learning = True
     """
-    def __init__(self, num_states, num_obs, num_controls, 
-                 Agent = Agent, 
+    def __init__(self, num_states, num_obs, num_controls,
                  planning_horizon = 1, 
                  A = None, B = None, C = None, D = None, 
                  action_precision = 1,
@@ -85,7 +84,7 @@ class si_agent(Agent):
             B_new[0] = bb
             
         if C is not None:
-            C_new = softmax(C)
+            C_new = softmax_obj_arr(C)
         else:
             C_new = obj_array_zeros(num_obs)
             for idx in range(len(num_obs)):
