@@ -732,9 +732,9 @@ def select_highest(options_array, seed=None):
     """
     options_with_idx = np.array(list(enumerate(options_array)))
     same_prob = options_with_idx[
-                    abs(options_with_idx[:, 1] - np.amax(options_with_idx[:, 1])) <= .00001][:, 0]
+                    abs(options_with_idx[:, 1] - np.amax(options_with_idx[:, 1])) <= 1e-8][:, 0]
     if len(same_prob) > 1:
-        # Some of the action marginals with the highest likeliness are equal/close, sample instead of using argmax
+        # If some of the most likely actions have nearly equal probability, sample from this subset of actions, instead of using argmax
         if seed is not None:
             np.random.seed(seed)
         return same_prob[np.random.choice(len(same_prob))]
