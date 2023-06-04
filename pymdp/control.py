@@ -514,7 +514,7 @@ def get_num_controls_from_policies(policies):
     return list(np.max(np.vstack(policies), axis = 0) + 1)
     
 
-def sample_action(q_pi, policies, num_controls, action_selection="deterministic", alpha = 16.0, seed=None):
+def sample_action(q_pi, policies, num_controls, action_selection="deterministic", alpha = 16.0):
     """
     Computes the marginal posterior over actions and then samples an action from it, one action per control factor.
 
@@ -528,16 +528,13 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
         depth of the policy and ``num_factors`` is the number of control factors.
     num_controls: ``list`` of ``int``
         ``list`` of the dimensionalities of each control state factor.
-    action_selection: string, default "deterministic"
+    action_selection: ``str``, default "deterministic"
         String indicating whether whether the selected action is chosen as the maximum of the posterior over actions,
         or whether it's sampled from the posterior marginal over actions
-    alpha: float, default 16.0
+    alpha: ``float``, default 16.0
         Action selection precision -- the inverse temperature of the softmax that is used to scale the 
         action marginals before sampling. This is only used if ``action_selection`` argument is "stochastic"
-    seed: int, default None
-        The seed can be specified to make deterministic choices predictable even in case of multiple actions with the same likelikess.
-        Default is None, so random choice between the highest likeliness closer than 1e-5
-
+   
     Returns
     ----------
     selected_policy: 1D ``numpy.ndarray``
@@ -560,7 +557,7 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
 
         # Either you do this:
         if action_selection == 'deterministic':
-            selected_policy[factor_i] = select_highest(action_marginals[factor_i], seed)
+            selected_policy[factor_i] = select_highest(action_marginals[factor_i])
         elif action_selection == 'stochastic':
             log_marginal_f = spm_log_single(action_marginals[factor_i])
             p_actions = softmax(log_marginal_f * alpha)
@@ -571,7 +568,7 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
 def _sample_action_test(q_pi, policies, num_controls, action_selection="deterministic", alpha = 16.0, seed=None):
     """
     Computes the marginal posterior over actions and then samples an action from it, one action per control factor.
-    Internal testing version that returns the marginal posterior over actions.
+    Internal testing version that returns the marginal posterior over actions, and also has a seed argument for reproducibility.
 
     Parameters
     ----------
@@ -583,15 +580,15 @@ def _sample_action_test(q_pi, policies, num_controls, action_selection="determin
         depth of the policy and ``num_factors`` is the number of control factors.
     num_controls: ``list`` of ``int``
         ``list`` of the dimensionalities of each control state factor.
-    action_selection: string, default "deterministic"
+    action_selection: ``str``, default "deterministic"
         String indicating whether whether the selected action is chosen as the maximum of the posterior over actions,
         or whether it's sampled from the posterior marginal over actions
     alpha: float, default 16.0
         Action selection precision -- the inverse temperature of the softmax that is used to scale the 
         action marginals before sampling. This is only used if ``action_selection`` argument is "stochastic"
-    seed: int, default None
-        The seed can be specified to make deterministic choices predictable even in case of multiple actions with the same likelikess.
-        Default is None, so random choice between the highest likeliness closer than 1e-5
+    seed: ``int``, default None
+        The seed can be set to control the random sampling that occurs when ``action_selection`` is "deterministic" but there are more than one actions with the same maximum posterior probability.
+
 
     Returns
     ----------
@@ -618,7 +615,7 @@ def _sample_action_test(q_pi, policies, num_controls, action_selection="determin
     for factor_i in range(num_factors):
         if action_selection == 'deterministic':
             p_actions[factor_i] = action_marginals[factor_i]
-            selected_policy[factor_i] = select_highest(p_actions[factor_i], seed)
+            selected_policy[factor_i] = _select_highest_test(p_actions[factor_i], seed=seed)
         elif action_selection == 'stochastic':
             log_marginal_f = spm_log_single(action_marginals[factor_i])
             p_actions[factor_i] = softmax(log_marginal_f * alpha)
@@ -626,7 +623,7 @@ def _sample_action_test(q_pi, policies, num_controls, action_selection="determin
 
     return selected_policy, p_actions
 
-def sample_policy(q_pi, policies, num_controls, action_selection="deterministic", alpha = 16.0, seed=None):
+def sample_policy(q_pi, policies, num_controls, action_selection="deterministic", alpha = 16.0):
     """
     Samples a policy from the posterior over policies, taking the action (per control factor) entailed by the first timestep of the selected policy.
 
@@ -646,9 +643,6 @@ def sample_policy(q_pi, policies, num_controls, action_selection="deterministic"
     alpha: float, default 16.0
         Action selection precision -- the inverse temperature of the softmax that is used to scale the 
         policy posterior before sampling. This is only used if ``action_selection`` argument is "stochastic"
-    seed: int, default None
-        The seed can be specified to make deterministic choices predictable even in case of multiple actions with the same likelikess.
-        Default is None, so random choice between the highest likeliness closer than 1e-5
 
     Returns
     ----------
@@ -659,7 +653,7 @@ def sample_policy(q_pi, policies, num_controls, action_selection="deterministic"
     num_factors = len(num_controls)
 
     if action_selection == "deterministic":
-        policy_idx = select_highest(q_pi, seed)
+        policy_idx = select_highest(q_pi)
     elif action_selection == "stochastic":
         log_qpi = spm_log_single(q_pi)
         p_policies = softmax(log_qpi * alpha)
@@ -674,7 +668,7 @@ def sample_policy(q_pi, policies, num_controls, action_selection="deterministic"
 def _sample_policy_test(q_pi, policies, num_controls, action_selection="deterministic", alpha = 16.0, seed=None):
     """
     Test version of sampling a policy from the posterior over policies, taking the action (per control factor) entailed by the first timestep of the selected policy.
-    This test version also returns the probability distribution over policies.
+    This test version also returns the probability distribution over policies, and also has a seed argument for reproducibility.
     Parameters
     ----------
     q_pi: 1D ``numpy.ndarray``
@@ -691,10 +685,10 @@ def _sample_policy_test(q_pi, policies, num_controls, action_selection="determin
     alpha: float, default 16.0
         Action selection precision -- the inverse temperature of the softmax that is used to scale the 
         policy posterior before sampling. This is only used if ``action_selection`` argument is "stochastic"
-    seed: int, default None
-        The seed can be specified to make deterministic choices predictable even in case of multiple actions with the same likelikess.
-        Default is None, so random choice between the highest likeliness closer than 1e-5
+    seed: ``int``, default None
+        The seed can be set to control the random sampling that occurs when ``action_selection`` is "deterministic" but there are more than one actions with the same maximum posterior probability.
 
+   
     Returns
     ----------
     selected_policy: 1D ``numpy.ndarray``
@@ -705,7 +699,7 @@ def _sample_policy_test(q_pi, policies, num_controls, action_selection="determin
 
     if action_selection == "deterministic":
         p_policies = q_pi
-        policy_idx = select_highest(p_policies, seed)
+        policy_idx = _select_highest_test(p_policies, seed=seed)
     elif action_selection == "stochastic":
         log_qpi = spm_log_single(q_pi)
         p_policies = softmax(log_qpi * alpha)
@@ -718,13 +712,13 @@ def _sample_policy_test(q_pi, policies, num_controls, action_selection="determin
     return selected_policy, p_policies
 
 
-def select_highest(options_array, seed=None):
+def select_highest(options_array):
     """
     Selects the highest value among the provided ones. If the higher value is more than once and they're closer than 1e-5, a random choice is made.
     Parameters
     ----------
-    options_array   The array to examine
-    seed            Set it to a constant to have repeatable selection in case of random choices
+    options_array: ``numpy.ndarray``
+        The array to examine
 
     Returns
     -------
@@ -735,8 +729,28 @@ def select_highest(options_array, seed=None):
                     abs(options_with_idx[:, 1] - np.amax(options_with_idx[:, 1])) <= 1e-8][:, 0]
     if len(same_prob) > 1:
         # If some of the most likely actions have nearly equal probability, sample from this subset of actions, instead of using argmax
-        if seed is not None:
-            np.random.seed(seed)
-        return same_prob[np.random.choice(len(same_prob))]
+        return int(same_prob[np.random.choice(len(same_prob))])
+
+    return int(same_prob[0])
+
+def _select_highest_test(options_array, seed=None):
+    """
+    (Test version with seed argument for reproducibility) Selects the highest value among the provided ones. If the higher value is more than once and they're closer than 1e-8, a random choice is made.
+    Parameters
+    ----------
+    options_array: ``numpy.ndarray``
+        The array to examine
+
+    Returns
+    -------
+    The highest value in the given list
+    """
+    options_with_idx = np.array(list(enumerate(options_array)))
+    same_prob = options_with_idx[
+                    abs(options_with_idx[:, 1] - np.amax(options_with_idx[:, 1])) <= 1e-8][:, 0]
+    if len(same_prob) > 1:
+        # If some of the most likely actions have nearly equal probability, sample from this subset of actions, instead of using argmax
+        rng = np.random.default_rng(seed)
+        return int(same_prob[rng.choice(len(same_prob))])
 
     return int(same_prob[0])
