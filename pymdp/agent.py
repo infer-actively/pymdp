@@ -574,16 +574,13 @@ class Agent(object):
         self.G = G
         return q_pi, G
 
-    def sample_action(self, seed=None):
+    def sample_action(self):
         """
         Sample or select a discrete action from the posterior over control states.
         This function both sets or cachés the action as an internal variable with the agent and returns it.
         This function also updates time variable (and thus manages consequences of updating the moving reference frame of beliefs)
         using ``self.step_time()``.
 
-        seed: int, default None
-        The seed can be specified to make deterministic choices predictable even in case of multiple actions with the same likelikess.
-        Default is None, so random choice between the highest likeliness closer than 1e-5
         
         Returns
         ----------
@@ -593,12 +590,11 @@ class Agent(object):
 
         if self.sampling_mode == "marginal":
             action = control.sample_action(
-                self.q_pi, self.policies, self.num_controls, action_selection = self.action_selection, alpha = self.alpha,
-                seed=seed
+                self.q_pi, self.policies, self.num_controls, action_selection = self.action_selection, alpha = self.alpha
             )
         elif self.sampling_mode == "full":
             action = control.sample_policy(self.q_pi, self.policies, self.num_controls,
-                                           action_selection=self.action_selection, alpha=self.alpha, seed=seed)
+                                           action_selection=self.action_selection, alpha=self.alpha)
 
         self.action = action
 
@@ -621,12 +617,10 @@ class Agent(object):
 
         if self.sampling_mode == "marginal":
             action, p_dist = control._sample_action_test(self.q_pi, self.policies, self.num_controls,
-                                                         action_selection=self.action_selection, alpha=self.alpha,
-                                                         seed=0)
+                                                         action_selection=self.action_selection, alpha=self.alpha)
         elif self.sampling_mode == "full":
             action, p_dist = control._sample_policy_test(self.q_pi, self.policies, self.num_controls,
-                                                         action_selection=self.action_selection, alpha=self.alpha,
-                                                         seed=0)
+                                                         action_selection=self.action_selection, alpha=self.alpha)
 
         self.action = action
 
