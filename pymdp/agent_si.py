@@ -198,6 +198,13 @@ class si_agent(Agent):
             # Inference
             self.qs_prev = np.copy(self.qs)
             self.infer_states(obs_list)
+
+            # Learning model parameters
+            if(learning == True):
+                # Updating b
+                self.update_B(self.qs_prev)
+                # Updating a
+                self.update_A(obs_list)
             
             # Planning
             self.plan_tree_search()
@@ -205,12 +212,5 @@ class si_agent(Agent):
             # Decision making
             self.take_decision()
             self.tau += 1
-            
-            # Learning model parameters
-            if(learning == True):
-                # Updating b
-                self.update_B(self.qs_prev)
-                # Updating a
-                self.update_A(obs_list)
 
         return(self.action)
