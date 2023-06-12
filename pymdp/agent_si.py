@@ -98,7 +98,10 @@ class si_agent(Agent):
                 D_new[idx] += 1 / self.num_states[idx]
         
         # Initialising the exisiting pymdp agent for Inference, and Learning
-        super().__init__(A = A_new, B = B_new, C = C_new, D = D_new, pA = A_new, pB = B_new, pD = D_new)
+        super().__init__(A = A_new, B = B_new, C = C_new, D = D_new, 
+                         pA = A_new, pB = B_new, pD = D_new,
+                        gamma = planning_precision, 
+                        alpha = action_precision)
         
         # Initialising priors for A, B, D
         # Paramters for sophisticated inference
@@ -147,16 +150,16 @@ class si_agent(Agent):
             val = kl_div(Q_po[:,j],self.C[mod]) + np.dot(post, entropy(self.A[mod]))
             G[j] += val
 
-        self.Q_actions[:] = softmax(-1*self.planning_precision*G[:])
+        self.Q_actions[:] = softmax(-1*self.gamma*G[:])
 
         if(N < self.N):
             for j in list(np.where(self.Q_actions[:] >= self.tree_threshold)[0]):
+                pre = post_l[j]
                 for i in list(np.where(pre >= self.tree_threshold)[0]):
-                    pre = post_l[j]
                     G_next = self.forward_search(mod, N, pre)
                     a = np.multiply(self.Q_actions[:],G_next[:])
                     b = np.reshape(a, (1,self.numA))
-                    state_next = np.reshape(pre, (self.numS,1))
+                    state_next = np.reshape(self.B[0][:,i,j], (self.numS,1))
                     val = np.sum(np.matmul(state_next,b))
                     G[j] += val
         return G
@@ -164,7 +167,7 @@ class si_agent(Agent):
     
     # Decision making
     def take_decision(self):
-        p = softmax(-1*self.action_precision*self.G)
+        p = softmax(-1*self.alpha*self.G)
         action = np.random.choice(list(range(0, self.numA)), size = None, replace = True, p = p)
         self.action = np.array([action])
         return(action)
