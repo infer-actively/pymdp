@@ -170,8 +170,8 @@ class si_agent(Agent):
     
     # Decision making
     def take_decision(self):
-        p = softmax(-1*self.alpha*self.G)
-        action = np.random.choice(list(range(0, self.numA)), size = None, replace = True, p = p)
+        self.action_probability = softmax(-1*self.alpha*self.G)
+        action = np.random.choice(list(range(0, self.numA)), size = None, replace = True, p = self.action_probability)
         self.action = np.array([action])
         return(action)
     
