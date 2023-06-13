@@ -157,3 +157,4 @@ For a more in-depth, tutorial-style introduction to the package and a mathematic
 - Brennan Klein [@jkbren](https://github.com/jkbren)
 - Arun Niranjan [@Arun-Niranjan](https://github.com/Arun-Niranjan)
 - Daphne Demekas [@daphnedemekas](https://github.com/daphnedemekas)
+- Aswin Paul [@aswinpaul](https://github.com/aswinpaul)
