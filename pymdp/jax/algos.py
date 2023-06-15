@@ -133,7 +133,7 @@ def update_marginals(get_messages, obs, A, B, prior, num_iter=1, tau=1.):
 
     # mapping over time dimension of obs array
     log_likelihoods = vmap(get_log_likelihood, (0, None))(obs, A) # this gives a sequence of log-likelihoods (one for each `t`)
-
+    
     # log marginals -> $\ln(q(s_t))$ for all time steps and factors
     ln_qs = jtu.tree_map( lambda p: jnp.broadcast_to(jnp.zeros_like(p), (T,) + p.shape), prior)
 

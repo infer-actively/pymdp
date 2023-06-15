@@ -11,6 +11,7 @@ import unittest
 import numpy as np
 import jax.numpy as jnp
 import jax.tree_util as jtu
+from jax import vmap
 
 from pymdp.jax.algos import run_vanilla_fpi as fpi_jax
 from pymdp.jax.algos import run_factorized_fpi as fpi_jax_factorized
@@ -231,12 +232,92 @@ class TestMessagePassing(unittest.TestCase):
         qs_out = vmp_jax(A, B_policy, obs, prior, blanket_dict, num_iter=16, tau=1.)
 
         self.assertTrue(qs_out[0].shape[0] == obs[0].shape[0])
+    
+    def test_vmap_message_passing_across_policies(self):
+
+        blanket_dict = {} # @TODO: implement factorized likelihoods for message passing
+
+        num_states = [3]
+        num_obs = [3]
+
+        A_tensor = jnp.stack([jnp.array([[0.5, 0.5, 0.], 
+                                        [0.0,  0.0,  1.], 
+                                        [0.5, 0.5, 0.]]
+                                    ), jnp.array([[1./3, 1./3, 1./3], 
+                                                  [1./3, 1./3, 1./3], 
+                                                  [1./3, 1./3, 1./3]]
+                                    )], axis=-1)
+
+        A = [ jnp.broadcast_to(A_tensor, (2, 3, 3, 2)) ]
+
+        # create two B matrices, one for each action
+        B_1 = jnp.broadcast_to(jnp.array([[0.0, 0.75, 0.0],
+                                        [0.0, 0.25, 1.0],
+                                        [1.0, 0.0, 0.0]]
+                    ), (2, 3, 3))
         
+        B_2 = jnp.broadcast_to(jnp.array([[0.0, 0.25, 0.0],
+                                        [0.0, 0.75, 0.0],
+                                        [1.0, 0.0, 1.0]]
+                    ), (2, 3, 3))
+        
+        B_uncontrollable = jnp.expand_dims(
+            jnp.broadcast_to(
+                jnp.array([[1.0, 0.0], [0.0, 1.0]]), (2, 2, 2)
+            ), 
+            -1
+        )
+
+        B = [jnp.stack([B_1, B_2], axis=-1), B_uncontrollable]
+
+        # create a policy-dependent sequence of B matrices
+
+        policy_1 = jnp.array([ [0, 0],
+                               [1, 0],
+                               [1, 0] ]
+                            )
+
+        policy_2 = jnp.array([ [1, 0],
+                               [1, 0],
+                               [1, 0] ]
+                            )
+        
+        policy_3 = jnp.array([ [1, 0],
+                               [0, 0],
+                               [1, 0] ]
+                            )
+        
+        policy_4 = jnp.array([ [0, 0],
+                               [0, 0],
+                               [1, 0] ]
+                            )
+
+        all_policies = [policy_1, policy_2, policy_3, policy_4]
+        all_policies = list(jnp.stack([policy_1, policy_2, policy_3, policy_4]).transpose(2, 0, 1)) # `n_factors` lists, each with matrix of shape `(n_policies, n_time_steps)`
+
+                # for the single modality, a sequence over time of observations (one hot vectors)
+        obs = [jnp.broadcast_to(jnp.array([[1., 0., 0.], 
+                                           [0., 1., 0.], 
+                                           [0., 0., 1.],
+                                           [1., 0., 0.]])[:, None], (4, 2, 3) )]
+
+        prior = [jnp.ones((2, 3)) / 3., jnp.ones((2, 2)) / 2.]
+
+        def test(action_sequence):
+            print(len(B), len(action_sequence))
+            B_policy = jtu.tree_map(lambda b, a_idx: b[..., a_idx].transpose(0, 3, 1, 2), B, action_sequence)
+            print(B_policy[0].shape, B_policy[1].shape)
+            
+            return vmp_jax(A, B_policy, obs, prior, blanket_dict, num_iter=16, tau=1.)
+
+        # qs_out = vmp_jax(A, B_policy, obs, prior, blanket_dict, num_iter=16, tau=1.)
+        qs_out = vmap(test)(all_policies)
+
+        # self.assertTrue(qs_out[0].shape[0] == obs[0].shape[0])
+        self.assertTrue(False==True)
 
 if __name__ == "__main__":
-    unittest.main()       
-
-
+    unittest.main()
 
 
 
