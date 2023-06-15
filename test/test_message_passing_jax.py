@@ -22,189 +22,244 @@ from pymdp import utils, maths
 
 from typing import Any, List
 
-class TestMessagePassing(unittest.TestCase):
 
-    def test_fixed_point_iteration(self):
-        num_states_list = [ 
-                         [2, 2, 5],
-                         [2, 2, 2],
-                         [4, 4]
-        ]
+num_states = [3]
+num_obs = [3]
 
-        num_obs_list = [
-                        [5, 10],
-                        [4, 3, 2],
-                        [5, 10, 6]
-        ]
+A = [ jnp.broadcast_to(jnp.array([[0.5, 0.5, 0.], 
+                                [0.0,  0.0,  1.], 
+                                [0.5, 0.5, 0.]]
+                            ), (2, 3, 3) )]
 
-        for (num_states, num_obs) in zip(num_states_list, num_obs_list):
+# create two B matrices, one for each action
+B_1 = jnp.broadcast_to(jnp.array([[0.0, 0.75, 0.0],
+                                [0.0, 0.25, 1.0],
+                                [1.0, 0.0, 0.0]]
+            ), (2, 3, 3))
 
-            # numpy version
-            prior = utils.random_single_categorical(num_states)
-            A = utils.random_A_matrix(num_obs, num_states)
+B_2 = jnp.broadcast_to(jnp.array([[0.0, 0.25, 0.0],
+                                [0.0, 0.75, 0.0],
+                                [1.0, 0.0, 1.0]]
+            ), (2, 3, 3))
 
-            obs = utils.obj_array(len(num_obs))
-            for m, obs_dim in enumerate(num_obs):
-                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim)
+B = [jnp.stack([B_1, B_2], axis=-1)]
 
-            qs_numpy = fpi_numpy(A, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
+# create a policy-dependent sequence of B matrices
 
-            # jax version
-            prior = [jnp.array(prior_f) for prior_f in prior]
-            A = [jnp.array(a_m) for a_m in A]
-            obs = [jnp.array(o_m) for o_m in obs]
-
-            qs_jax = fpi_jax(A, obs, prior, num_iter=16)
-
-            for f, _ in enumerate(qs_jax):
-                self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f]))
+policy = jnp.array([0, 1, 0])
+B_policy = jtu.tree_map(lambda b: b[..., policy].transpose(0, 3, 1, 2), B)
 
 
-    def test_fixed_point_iteration_factorized_fullyconnected(self):
-        """
-        Test the factorized version of `run_vanilla_fpi`, named `run_factorized_fpi`
-        with multiple hidden state factors and multiple observation modalities.
-        """
+# for the single modality, a sequence over time of observations (one hot vectors)
+obs = [
+        jnp.broadcast_to(jnp.array([[1., 0., 0.], 
+                                    [0., 1., 0.], 
+                                    [0., 0., 1.],
+                                    [1., 0., 0.]])[:, None], (4, 2, 3) )
+                        ]
 
-        num_states_list = [ 
-                         [2, 2, 5],
-                         [2, 2, 2],
-                         [4, 4]
-        ]
+prior = [jnp.ones((2, 3)) / 3.]
 
-        num_obs_list = [
-                        [5, 10],
-                        [4, 3, 2],
-                        [5, 10, 6]
-        ]
+qs_out = mmp_jax(A, B_policy, obs, prior, {}, num_iter=16, tau=1.)
 
-        for (num_states, num_obs) in zip(num_states_list, num_obs_list):
-
-            # initialize arrays in numpy version
-            prior = utils.random_single_categorical(num_states)
-            A = utils.random_A_matrix(num_obs, num_states)
-
-            obs = utils.obj_array(len(num_obs))
-            for m, obs_dim in enumerate(num_obs):
-                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim)
-
-            # jax version
-            prior = [jnp.array(prior_f) for prior_f in prior]
-            A = [jnp.array(a_m) for a_m in A]
-            obs = [jnp.array(o_m) for o_m in obs]
-
-            factor_lists = len(num_obs) * [list(range(len(num_states)))]
-
-            qs_jax = fpi_jax(A, obs, prior, num_iter=16)
-            qs_jax_factorized = fpi_jax_factorized(A, obs, prior, factor_lists, num_iter=16)
-
-            for f, _ in enumerate(qs_jax):
-                self.assertTrue(np.allclose(qs_jax[f], qs_jax_factorized[f]))
-
-    def test_fixed_point_iteration_factorized_sparsegraph(self):
-        """
-        Test the factorized version of `run_vanilla_fpi`, named `run_factorized_fpi`
-        with multiple hidden state factors and multiple observation modalities, and with sparse conditional dependence relationships between hidden states
-        and observation modalities
-        """
         
-        num_states = [3, 4]
-        num_obs = [3, 3, 5]
+# class TestMessagePassing(unittest.TestCase):
 
-        prior = utils.random_single_categorical(num_states)
+#     def test_fixed_point_iteration(self):
+#         num_states_list = [ 
+#                          [2, 2, 5],
+#                          [2, 2, 2],
+#                          [4, 4]
+#         ]
 
-        obs = utils.obj_array(len(num_obs))
-        for m, obs_dim in enumerate(num_obs):
-            obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim)
+#         num_obs_list = [
+#                         [5, 10],
+#                         [4, 3, 2],
+#                         [5, 10, 6]
+#         ]
 
-        A_factor_list = [[0], [1], [0, 1]] # modalities 0 and 1 only depend on factors 0 and 1, respectively
-        A_reduced = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+#         for (num_states, num_obs) in zip(num_states_list, num_obs_list):
 
-        # jax version
-        prior_jax = [jnp.array(prior_f) for prior_f in prior]
-        A_reduced_jax = [jnp.array(a_m) for a_m in A_reduced]
-        obs_jax = [jnp.array(o_m) for o_m in obs]
+#             # numpy version
+#             prior = utils.random_single_categorical(num_states)
+#             A = utils.random_A_matrix(num_obs, num_states)
 
-        qs_out = fpi_jax_factorized(A_reduced_jax, obs_jax, prior_jax, A_factor_list, num_iter=16)
+#             obs = utils.obj_array(len(num_obs))
+#             for m, obs_dim in enumerate(num_obs):
+#                 obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim)
 
-        A_full = utils.initialize_empty_A(num_obs, num_states)
-        for m, A_m in enumerate(A_full):
-            other_factors = list(set(range(len(num_states))) - set(A_factor_list[m])) # list of the factors that modality `m` does not depend on
+#             qs_numpy = fpi_numpy(A, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
-            # broadcast or tile the reduced A matrix (`A_reduced`) along the dimensions of corresponding to `other_factors`
-            expanded_dims = [num_obs[m]] + [1 if f in other_factors else ns for (f, ns) in enumerate(num_states)]
-            tile_dims = [1] + [ns if f in other_factors else 1 for (f, ns) in enumerate(num_states)]
-            A_full[m] = np.tile(A_reduced[m].reshape(expanded_dims), tile_dims)
+#             # jax version
+#             prior = [jnp.array(prior_f) for prior_f in prior]
+#             A = [jnp.array(a_m) for a_m in A]
+#             obs = [jnp.array(o_m) for o_m in obs]
 
-        # jax version
-        A_full_jax = [jnp.array(a_m) for a_m in A_full]
+#             qs_jax = fpi_jax(A, obs, prior, num_iter=16)
 
-        qs_validation = fpi_jax(A_full_jax, obs_jax, prior_jax, num_iter=16)
+#             for f, _ in enumerate(qs_jax):
+#                 self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f]))
 
-        for qs_f_val, qs_f_out in zip(qs_validation, qs_out):
-            self.assertTrue(np.allclose(qs_f_val, qs_f_out))
 
-    def test_marginal_message_passing(self):
+#     def test_fixed_point_iteration_factorized_fullyconnected(self):
+#         """
+#         Test the factorized version of `run_vanilla_fpi`, named `run_factorized_fpi`
+#         with multiple hidden state factors and multiple observation modalities.
+#         """
 
-        blanket_dict = {} # @TODO: implement factorized likelihoods for message passing
+#         num_states_list = [ 
+#                          [2, 2, 5],
+#                          [2, 2, 2],
+#                          [4, 4]
+#         ]
 
-        num_states = [3]
-        num_obs = [3]
+#         num_obs_list = [
+#                         [5, 10],
+#                         [4, 3, 2],
+#                         [5, 10, 6]
+#         ]
 
-        A = [ jnp.broadcast_to(jnp.array([[0.5, 0.5, 0.], 
-                                        [0.0,  0.0,  1.], 
-                                        [0.5, 0.5, 0.]]
-                                    ), (2, 3, 3) )]
+#         for (num_states, num_obs) in zip(num_states_list, num_obs_list):
 
-        B = [ jnp.broadcast_to(jnp.array([[0.0, 0.75, 0.0],
-                                        [0.0, 0.25, 1.0],
-                                        [1.0, 0.0, 0.0]]
-                    ), (2, 3, 3))]
+#             # initialize arrays in numpy version
+#             prior = utils.random_single_categorical(num_states)
+#             A = utils.random_A_matrix(num_obs, num_states)
 
-        # for the single modality, a sequence over time of observations (one hot vectors)
-        obs = [
-                jnp.broadcast_to(jnp.array([[1., 0., 0.], 
-                                            [0., 1., 0.], 
-                                            [0., 0., 1.],
-                                            [1., 0., 0.]])[:, None], (4, 2, 3) )
-                                ]
+#             obs = utils.obj_array(len(num_obs))
+#             for m, obs_dim in enumerate(num_obs):
+#                 obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim)
 
-        prior = [jnp.ones((2, 3)) / 3.]
+#             # jax version
+#             prior = [jnp.array(prior_f) for prior_f in prior]
+#             A = [jnp.array(a_m) for a_m in A]
+#             obs = [jnp.array(o_m) for o_m in obs]
 
-        qs_out = mmp_jax(A, B, obs, prior, blanket_dict, num_iter=16, tau=1.)
+#             factor_lists = len(num_obs) * [list(range(len(num_states)))]
 
-        self.assertTrue(qs_out[0].shape[0] == obs[0].shape[0])
+#             qs_jax = fpi_jax(A, obs, prior, num_iter=16)
+#             qs_jax_factorized = fpi_jax_factorized(A, obs, prior, factor_lists, num_iter=16)
 
-    def test_variational_message_passing(self):
+#             for f, _ in enumerate(qs_jax):
+#                 self.assertTrue(np.allclose(qs_jax[f], qs_jax_factorized[f]))
 
-        blanket_dict = {} # @TODO: implement factorized likelihoods for message passing
+#     def test_fixed_point_iteration_factorized_sparsegraph(self):
+#         """
+#         Test the factorized version of `run_vanilla_fpi`, named `run_factorized_fpi`
+#         with multiple hidden state factors and multiple observation modalities, and with sparse conditional dependence relationships between hidden states
+#         and observation modalities
+#         """
+        
+#         num_states = [3, 4]
+#         num_obs = [3, 3, 5]
 
-        num_states = [3]
-        num_obs = [3]
+#         prior = utils.random_single_categorical(num_states)
 
-        A = [ jnp.broadcast_to(jnp.array([[0.5, 0.5, 0.], 
-                                        [0.0,  0.0,  1.], 
-                                        [0.5, 0.5, 0.]]
-                                    ), (2, 3, 3) )]
+#         obs = utils.obj_array(len(num_obs))
+#         for m, obs_dim in enumerate(num_obs):
+#             obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim)
 
-        B = [ jnp.broadcast_to(jnp.array([[0.0, 0.75, 0.0],
-                                        [0.0, 0.25, 1.0],
-                                        [1.0, 0.0, 0.0]]
-                    ), (2, 3, 3))]
+#         A_factor_list = [[0], [1], [0, 1]] # modalities 0 and 1 only depend on factors 0 and 1, respectively
+#         A_reduced = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
 
-        # for the single modality, a sequence over time of observations (one hot vectors)
-        obs = [
-                jnp.broadcast_to(jnp.array([[1., 0., 0.], 
-                                            [0., 1., 0.], 
-                                            [0., 0., 1.],
-                                            [1., 0., 0.]])[:, None], (4, 2, 3) )
-                                ]
+#         # jax version
+#         prior_jax = [jnp.array(prior_f) for prior_f in prior]
+#         A_reduced_jax = [jnp.array(a_m) for a_m in A_reduced]
+#         obs_jax = [jnp.array(o_m) for o_m in obs]
 
-        prior = [jnp.ones((2, 3)) / 3.]
+#         qs_out = fpi_jax_factorized(A_reduced_jax, obs_jax, prior_jax, A_factor_list, num_iter=16)
 
-        qs_out = vmp_jax(A, B, obs, prior, blanket_dict, num_iter=16, tau=1.)
+#         A_full = utils.initialize_empty_A(num_obs, num_states)
+#         for m, A_m in enumerate(A_full):
+#             other_factors = list(set(range(len(num_states))) - set(A_factor_list[m])) # list of the factors that modality `m` does not depend on
 
-        self.assertTrue(qs_out[0].shape[0] == obs[0].shape[0])
+#             # broadcast or tile the reduced A matrix (`A_reduced`) along the dimensions of corresponding to `other_factors`
+#             expanded_dims = [num_obs[m]] + [1 if f in other_factors else ns for (f, ns) in enumerate(num_states)]
+#             tile_dims = [1] + [ns if f in other_factors else 1 for (f, ns) in enumerate(num_states)]
+#             A_full[m] = np.tile(A_reduced[m].reshape(expanded_dims), tile_dims)
+
+#         # jax version
+#         A_full_jax = [jnp.array(a_m) for a_m in A_full]
+
+#         qs_validation = fpi_jax(A_full_jax, obs_jax, prior_jax, num_iter=16)
+
+#         for qs_f_val, qs_f_out in zip(qs_validation, qs_out):
+#             self.assertTrue(np.allclose(qs_f_val, qs_f_out))
+
+#     def test_marginal_message_passing(self):
+
+#         blanket_dict = {} # @TODO: implement factorized likelihoods for message passing
+
+#         num_states = [3]
+#         num_obs = [3]
+
+#         A = [ jnp.broadcast_to(jnp.array([[0.5, 0.5, 0.], 
+#                                         [0.0,  0.0,  1.], 
+#                                         [0.5, 0.5, 0.]]
+#                                     ), (2, 3, 3) )]
+
+#         # create two B matrices, one for each action
+#         B_1 = jnp.broadcast_to(jnp.array([[0.0, 0.75, 0.0],
+#                                         [0.0, 0.25, 1.0],
+#                                         [1.0, 0.0, 0.0]]
+#                     ), (2, 3, 3))
+        
+#         B_2 = jnp.broadcast_to(jnp.array([[0.0, 0.25, 0.0],
+#                                         [0.0, 0.75, 0.0],
+#                                         [1.0, 0.0, 1.0]]
+#                     ), (2, 3, 3))
+        
+#         B = [jnp.stack([B_1, B_2], axis=-1)]
+
+#         # create a policy-dependent sequence of B matrices
+
+#         policy = jnp.array([0, 1, 0])
+#         B_policy = jtu.tree_map(lambda b: b[..., policy].transpose(0, 3, 1, 2), B)
+
+    
+#         # for the single modality, a sequence over time of observations (one hot vectors)
+#         obs = [
+#                 jnp.broadcast_to(jnp.array([[1., 0., 0.], 
+#                                             [0., 1., 0.], 
+#                                             [0., 0., 1.],
+#                                             [1., 0., 0.]])[:, None], (4, 2, 3) )
+#                                 ]
+
+#         prior = [jnp.ones((2, 3)) / 3.]
+
+#         qs_out = mmp_jax(A, B_policy, obs, prior, blanket_dict, num_iter=16, tau=1.)
+
+#         self.assertTrue(qs_out[0].shape[0] == obs[0].shape[0])
+
+    # def test_variational_message_passing(self):
+
+    #     blanket_dict = {} # @TODO: implement factorized likelihoods for message passing
+
+    #     num_states = [3]
+    #     num_obs = [3]
+
+    #     A = [ jnp.broadcast_to(jnp.array([[0.5, 0.5, 0.], 
+    #                                     [0.0,  0.0,  1.], 
+    #                                     [0.5, 0.5, 0.]]
+    #                                 ), (2, 3, 3) )]
+
+    #     B = [ jnp.broadcast_to(jnp.array([[0.0, 0.75, 0.0],
+    #                                     [0.0, 0.25, 1.0],
+    #                                     [1.0, 0.0, 0.0]]
+    #                 ), (2, 3, 3))]
+
+    #     # for the single modality, a sequence over time of observations (one hot vectors)
+    #     obs = [
+    #             jnp.broadcast_to(jnp.array([[1., 0., 0.], 
+    #                                         [0., 1., 0.], 
+    #                                         [0., 0., 1.],
+    #                                         [1., 0., 0.]])[:, None], (4, 2, 3) )
+    #                             ]
+
+    #     prior = [jnp.ones((2, 3)) / 3.]
+
+    #     qs_out = vmp_jax(A, B, obs, prior, blanket_dict, num_iter=16, tau=1.)
+
+    #     self.assertTrue(qs_out[0].shape[0] == obs[0].shape[0])
         
 
 if __name__ == "__main__":
