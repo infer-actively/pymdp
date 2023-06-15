@@ -117,11 +117,19 @@ def mirror_gradient_descent_step(tau, ln_A, lnB_past, lnB_future, ln_qs):
 
     return qs
 
+# B^1.shape = (3,3,num_actions), B^2.shape = (4,4, num_actions), B^3.shape = (2,2, actions)
+# B =jtu.tree_map(lambda b, actions: b[..., actions], actions))
 def update_marginals(get_messages, obs, A, B, prior, num_iter=1, tau=1.):
 
     nf = len(prior)
     T = obs[0].shape[0]
     factors = list(range(nf))
+
+    # B = [ B^1, B^2, B^3] 
+    # B^1.shape = (3,3), B^2.shape = (4,4), B^3.shape = (2,2) 
+    # B^1.shape = (5,3,3), B^2.shape = (5,4,4), B^3.shape = (5,2,2) 
+
+    # B = [ [B^1]_{tij}, [B^2]_{tij} ]
     ln_B = jtu.tree_map(log_stable, B)
     # log likelihoods -> $\ln(A)$ for all time steps
     # for $k > t$ we have $\ln(A) = 0$
@@ -167,14 +175,15 @@ def get_vmp_messages(ln_B, B, qs, ln_prior):
     
     # @vmap(in_axes=(0, 1, 0), out_axes=1)
     def forward(ln_b, q, ln_prior):
-        msg = q[:-1] @ ln_b.T
+        msg = lax.batch_matmul(q[:-1], ln_b.transpose(0, 2, 1))
         return jnp.concatenate([jnp.expand_dims(ln_prior, 0), msg], axis=0)
+    
     fwd = vmap(forward, in_axes=(0, 1, 0), out_axes=1)
 
     # @vmap(in_axes=(0, 1), out_axes=1)
     def backward(ln_b, q):
         # q_i B_ij
-        msg = q[1:] @ ln_b
+        msg = lax.batch_matmul(q[1:], ln_b)
         return jnp.pad(msg, ((0, 1), (0, 0)))
     bkwd = vmap(backward, in_axes=(0, 1), out_axes=1)
 
