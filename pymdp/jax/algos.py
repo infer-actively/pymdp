@@ -18,11 +18,13 @@ def marginal_log_likelihood(qs, log_likelihood, i):
 
     parallel_ndim = len(x.shape[:-1])
 
+    tpl = (-2,)
     for (f, q) in enumerate(qs[1:]):
         if (f + 1) != i:
-            x = jnp.expand_dims(x, -1) * q
+            x = jnp.expand_dims(x, -1) * jnp.expand_dims(q, tpl)
         else:
-            x = jnp.expand_dims(x, -1) * jnp.ones_like(q)
+            x = jnp.expand_dims(x, -1) * jnp.expand_dims(jnp.ones_like(q), tpl)
+        tpl = tpl + (tpl[f] - 1,)
     
     joint = log_likelihood * x
     dims = (f + parallel_ndim for f in range(len(qs)) if f != i)

@@ -287,13 +287,8 @@ class TestMessagePassing(unittest.TestCase):
                                [1, 0] ]
                             )
         
-        policy_4 = jnp.array([ [0, 0],
-                               [0, 0],
-                               [1, 0] ]
-                            )
-
-        all_policies = [policy_1, policy_2, policy_3, policy_4]
-        all_policies = list(jnp.stack([policy_1, policy_2, policy_3, policy_4]).transpose(2, 0, 1)) # `n_factors` lists, each with matrix of shape `(n_policies, n_time_steps)`
+        all_policies = [policy_1, policy_2, policy_3]
+        all_policies = list(jnp.stack(all_policies).transpose(2, 0, 1)) # `n_factors` lists, each with matrix of shape `(n_policies, n_time_steps)`
 
                 # for the single modality, a sequence over time of observations (one hot vectors)
         obs = [jnp.broadcast_to(jnp.array([[1., 0., 0.], 
@@ -310,11 +305,11 @@ class TestMessagePassing(unittest.TestCase):
             
             return vmp_jax(A, B_policy, obs, prior, blanket_dict, num_iter=16, tau=1.)
 
-        # qs_out = vmp_jax(A, B_policy, obs, prior, blanket_dict, num_iter=16, tau=1.)
         qs_out = vmap(test)(all_policies)
+        print(qs_out[0].shape, qs_out[1].shape)
 
-        # self.assertTrue(qs_out[0].shape[0] == obs[0].shape[0])
-        self.assertTrue(False==True)
+        self.assertTrue(qs_out[0].shape[1] == obs[0].shape[0])
+
 
 if __name__ == "__main__":
     unittest.main()
