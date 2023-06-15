@@ -117,19 +117,11 @@ def mirror_gradient_descent_step(tau, ln_A, lnB_past, lnB_future, ln_qs):
 
     return qs
 
-# B^1.shape = (3,3,num_actions), B^2.shape = (4,4, num_actions), B^3.shape = (2,2, actions)
-# B =jtu.tree_map(lambda b, actions: b[..., actions], actions))
 def update_marginals(get_messages, obs, A, B, prior, num_iter=1, tau=1.):
 
     nf = len(prior)
     T = obs[0].shape[0]
     factors = list(range(nf))
-
-    # B = [ B^1, B^2, B^3] 
-    # B^1.shape = (3,3), B^2.shape = (4,4), B^3.shape = (2,2) 
-    # B^1.shape = (5,3,3), B^2.shape = (5,4,4), B^3.shape = (5,2,2) 
-
-    # B = [ [B^1]_{tij}, [B^2]_{tij} ]
     ln_B = jtu.tree_map(log_stable, B)
     # log likelihoods -> $\ln(A)$ for all time steps
     # for $k > t$ we have $\ln(A) = 0$
@@ -141,7 +133,7 @@ def update_marginals(get_messages, obs, A, B, prior, num_iter=1, tau=1.):
 
     # mapping over time dimension of obs array
     log_likelihoods = vmap(get_log_likelihood, (0, None))(obs, A) # this gives a sequence of log-likelihoods (one for each `t`)
-
+    
     # log marginals -> $\ln(q(s_t))$ for all time steps and factors
     ln_qs = jtu.tree_map( lambda p: jnp.broadcast_to(jnp.zeros_like(p), (T,) + p.shape), prior)
 
@@ -175,7 +167,7 @@ def get_vmp_messages(ln_B, B, qs, ln_prior):
     
     # @vmap(in_axes=(0, 1, 0), out_axes=1)
     def forward(ln_b, q, ln_prior):
-        msg = lax.batch_matmul(q[:-1], ln_b.transpose(0, 2, 1))
+        msg = lax.batch_matmul(q[:-1, None], ln_b.transpose(0, 2, 1)).squeeze()
         return jnp.concatenate([jnp.expand_dims(ln_prior, 0), msg], axis=0)
     
     fwd = vmap(forward, in_axes=(0, 1, 0), out_axes=1)
@@ -183,7 +175,7 @@ def get_vmp_messages(ln_B, B, qs, ln_prior):
     # @vmap(in_axes=(0, 1), out_axes=1)
     def backward(ln_b, q):
         # q_i B_ij
-        msg = lax.batch_matmul(q[1:], ln_b)
+        msg = lax.batch_matmul(q[1:, None], ln_b).squeeze()
         return jnp.pad(msg, ((0, 1), (0, 0)))
     bkwd = vmap(backward, in_axes=(0, 1), out_axes=1)
 
@@ -200,7 +192,8 @@ def get_mmp_messages(ln_B, B, qs, ln_prior):
     
     def forward(b, q, ln_prior):
         if len(q) > 1:
-            msg = log_stable(q[:-1] @ b.T)
+            msg = lax.batch_matmul(q[:-1, None], b.transpose(0, 2, 1)).squeeze()
+            msg = log_stable(msg)
             n = len(msg) 
             if n > 1: # this is the case where there are at least 3 observations. If you have two observations, then you weight the single past message from t = 0 by 1.0
                 msg = msg * jnp.pad( 0.5 * jnp.ones(n-1), (0, 1), constant_values=1.)[:, None]
@@ -211,7 +204,8 @@ def get_mmp_messages(ln_B, B, qs, ln_prior):
     fwd = vmap(forward, in_axes=(0, 1, 0), out_axes=1)
         
     def backward(b, q):
-        msg = log_stable(q[1:] @ b) * 0.5
+        msg = lax.batch_matmul(q[:-1, None], b.transpose(0, 2, 1)).squeeze()
+        msg = log_stable(msg) * 0.5
         return jnp.pad(msg, ((0, 1), (0, 0)))
 
     bkwd = vmap(backward, in_axes=(0, 1), out_axes=1)
