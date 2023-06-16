@@ -11,7 +11,7 @@ import unittest
 import numpy as np
 import jax.numpy as jnp
 import jax.tree_util as jtu
-from jax import vmap
+from jax import vmap, nn
 
 from pymdp.jax.algos import run_vanilla_fpi as fpi_jax
 from pymdp.jax.algos import run_factorized_fpi as fpi_jax_factorized
@@ -290,7 +290,7 @@ class TestMessagePassing(unittest.TestCase):
         all_policies = [policy_1, policy_2, policy_3]
         all_policies = list(jnp.stack(all_policies).transpose(2, 0, 1)) # `n_factors` lists, each with matrix of shape `(n_policies, n_time_steps)`
 
-                # for the single modality, a sequence over time of observations (one hot vectors)
+        # for the single modality, a sequence over time of observations (one hot vectors)
         obs = [jnp.broadcast_to(jnp.array([[1., 0., 0.], 
                                            [0., 1., 0.], 
                                            [0., 0., 1.],
@@ -298,18 +298,93 @@ class TestMessagePassing(unittest.TestCase):
 
         prior = [jnp.ones((2, 3)) / 3., jnp.ones((2, 2)) / 2.]
 
+        ### First do VMP
         def test(action_sequence):
-            print(len(B), len(action_sequence))
-            B_policy = jtu.tree_map(lambda b, a_idx: b[..., a_idx].transpose(0, 3, 1, 2), B, action_sequence)
-            print(B_policy[0].shape, B_policy[1].shape)
-            
+            B_policy = jtu.tree_map(lambda b, a_idx: b[..., a_idx].transpose(0, 3, 1, 2), B, action_sequence)            
             return vmp_jax(A, B_policy, obs, prior, blanket_dict, num_iter=16, tau=1.)
-
         qs_out = vmap(test)(all_policies)
-        print(qs_out[0].shape, qs_out[1].shape)
-
         self.assertTrue(qs_out[0].shape[1] == obs[0].shape[0])
 
+        ### Then do MMP
+        def test(action_sequence):
+            B_policy = jtu.tree_map(lambda b, a_idx: b[..., a_idx].transpose(0, 3, 1, 2), B, action_sequence)
+            return mmp_jax(A, B_policy, obs, prior, blanket_dict, num_iter=16, tau=1.)
+        qs_out = vmap(test)(all_policies)
+        self.assertTrue(qs_out[0].shape[1] == obs[0].shape[0])
+    
+    def test_message_passing_multiple_modalities_factors(self):
+
+        blanket_dict = {} # @TODO: implement factorized likelihoods for message passing
+
+        num_states_list = [ 
+                         [2, 2, 5],
+                         [2, 2, 2],
+                         [4, 4]
+        ]
+
+        num_controls_list = [
+                            [2, 1, 3],
+                            [2, 1, 2],
+                            [1, 3]
+        ]
+
+        num_obs_list = [
+                        [5, 10],
+                        [4, 3, 2],
+                        [5, 2, 6, 3]
+        ]
+
+        batch_dim, T = 2, 4 # batch dimension (e.g. number of agents, parallel realizations, etc.) and time steps
+        n_policies = 3
+
+        for (num_states, num_controls, num_obs) in zip(num_states_list, num_controls_list, num_obs_list):
+
+            # initialize arrays in numpy
+            A_numpy = utils.random_A_matrix(num_obs, num_states)
+            B_numpy = utils.random_B_matrix(num_states, num_controls)
+
+            A = []
+            for mod_i in range(len(num_obs)):
+                broadcast_shape = (batch_dim,) + tuple(A_numpy[mod_i].shape)
+                A.append(jnp.broadcast_to(A_numpy[mod_i], broadcast_shape))
+            
+            B = []
+            for fac_i in range(len(num_states)):
+                broadcast_shape = (batch_dim,) + tuple(B_numpy[fac_i].shape)
+                B.append(jnp.broadcast_to(B_numpy[fac_i], broadcast_shape))
+
+            prior_numpy = utils.random_single_categorical(num_states)
+            prior = []
+            for fac_i in range(len(num_states)):
+                broadcast_shape = (batch_dim,) + tuple(prior_numpy[fac_i].shape)
+                prior.append(jnp.broadcast_to(prior_numpy[fac_i], broadcast_shape))
+
+            # initialization observation sequences in jax
+            obs_seq = []
+            for n_obs in num_obs:
+                obs_ints = np.random.randint(0, high=n_obs, size=(T,1))
+                obs_array_mod_i = jnp.broadcast_to(nn.one_hot(obs_ints, num_classes=n_obs), (T, batch_dim, n_obs))
+                obs_seq.append(obs_array_mod_i)
+
+            # create random policies
+            policies = []
+            for n_controls in num_controls:
+                policies.append(jnp.array(np.random.randint(0, high=n_controls, size=(n_policies, T-1))))
+
+            print([p.shape for p in policies])
+             ### First do VMP
+            def test(action_sequence):
+                B_policy = jtu.tree_map(lambda b, a_idx: b[..., a_idx].transpose(0, 3, 1, 2), B, action_sequence)            
+                return vmp_jax(A, B_policy, obs_seq, prior, blanket_dict, num_iter=16, tau=1.)
+            qs_out = vmap(test)(policies)
+            self.assertTrue(qs_out[0].shape[1] == obs_seq[0].shape[0])
+
+            ### Then do MMP
+            def test(action_sequence):
+                B_policy = jtu.tree_map(lambda b, a_idx: b[..., a_idx].transpose(0, 3, 1, 2), B, action_sequence)
+                return mmp_jax(A, B_policy, obs_seq, prior, blanket_dict, num_iter=16, tau=1.)
+            qs_out = vmap(test)(policies)
+            self.assertTrue(qs_out[0].shape[1] == obs_seq[0].shape[0])
 
 if __name__ == "__main__":
     unittest.main()
