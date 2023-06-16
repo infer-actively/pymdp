@@ -227,7 +227,6 @@ if __name__ == "__main__":
     A = [jnp.ones((5, 2, 2, 5))/5, jnp.ones((10, 2, 2, 5))/10]
     
     qs = jit(run_vanilla_fpi)(A, obs, prior)
-    print(qs)
 
     # test if differentiable
     from functools import partial
