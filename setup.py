@@ -41,13 +41,18 @@ setuptools.setup(
     'sphinx-rtd-theme>=0.4',
     'myst-nb>=0.13.1',
     'autograd>=1.3',
-    'jax>=0.3',
-    'jaxlib>=0.3'
+    'jax>=0.3.4',
+    'jaxlib>=0.3.4',
+    'equinox>=0.9',
+    'numpyro>=0.1',
+    'arviz>=0.13',
+    'optax>=0.1'
     ],
     packages=[
         "pymdp",
         "pymdp.envs",
-        "pymdp.algos"
+        "pymdp.algos",
+        "pymdp.jax"
     ],
     include_package_data=True,
     keywords=[

@@ -80,7 +80,7 @@ def run_vanilla_fpi(A, obs, prior, num_iter=1):
 
 def run_factorized_fpi(A, obs, prior, factor_lists, num_iter=1):
     """
-    @TODO: Run the sparsity-leveraging fixed point iteration algorithm (jaxified)
+    Run the fixed point iteration algorithm with sparse dependencies between factors and outcomes (stored in `factor_lists`)
     """
 
     nf = len(prior)
@@ -119,7 +119,8 @@ def mirror_gradient_descent_step(tau, ln_A, lnB_past, lnB_future, ln_qs):
 
     return qs
 
-def update_marginals(get_messages, obs, A, B, prior, num_iter=1, tau=1.):
+def update_marginals(get_messages, obs, A, B, prior, A_dependencies, num_iter=1, tau=1.,):
+    """" Version of marginal update that uses a sparse dependency matrix for A """
 
     nf = len(prior)
     T = obs[0].shape[0]
@@ -129,9 +130,8 @@ def update_marginals(get_messages, obs, A, B, prior, num_iter=1, tau=1.):
     # for $k > t$ we have $\ln(A) = 0$
 
     def get_log_likelihood(obs_t, A):
-
         # mapping over batch dimension
-        return vmap(compute_log_likelihood)(obs_t, A)
+        return vmap(compute_log_likelihood_per_modality)(obs_t, A)
 
     # mapping over time dimension of obs array
     log_likelihoods = vmap(get_log_likelihood, (0, None))(obs, A) # this gives a sequence of log-likelihoods (one for each `t`)
@@ -153,9 +153,7 @@ def update_marginals(get_messages, obs, A, B, prior, num_iter=1, tau=1.):
 
         mgds = jtu.Partial(mirror_gradient_descent_step, tau)
 
-        # @TODO: Change to allow factorized updates
-        mll = jtu.Partial(marginal_log_likelihood, qs, log_likelihoods)
-        ln_As = jtu.tree_map(mll, factors)
+        ln_As = all_marginal_log_likelihood(qs, log_likelihoods, A_dependencies)
 
         qs = jtu.tree_map(mgds, ln_As, lnB_past, lnB_future, ln_qs)
 
@@ -186,9 +184,14 @@ def get_vmp_messages(ln_B, B, qs, ln_prior):
 
     return lnB_future, lnB_past
 
-def run_vmp(A, B, obs, prior, blanket_dict, num_iter=1, tau=1.):
-    qs = update_marginals(get_vmp_messages, obs, A, B, prior, num_iter=num_iter, tau=tau)
+def run_vmp(A, B, obs, prior, A_dependencies, num_iter=1, tau=1.):
+    '''
+    Run variational message passing (VMP) on a sequence of observations
+    '''
+
+    qs = update_marginals(get_vmp_messages, obs, A, B, prior, A_dependencies, num_iter=num_iter, tau=tau)
     return qs
+
 
 def get_mmp_messages(ln_B, B, qs, ln_prior):
     
@@ -217,8 +220,8 @@ def get_mmp_messages(ln_B, B, qs, ln_prior):
 
     return lnB_future, lnB_past
 
-def run_mmp(A, B, obs, prior, blanket_dict, num_iter=1, tau=1.):
-    qs = update_marginals(get_mmp_messages, obs, A, B, prior, num_iter=num_iter, tau=tau)
+def run_mmp(A, B, obs, prior, A_dependencies, num_iter=1, tau=1.):
+    qs = update_marginals(get_mmp_messages, obs, A, B, prior, A_dependencies, num_iter=num_iter, tau=tau)
     return qs
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
 
 import numpy as np
 from .maths import multidimensional_outer
-from jax.tree_utils import tree_map
+from jax.tree_util import tree_map
 from jax import vmap
 
 def update_obs_likelihood_dirichlet_m(pA_m, A_m, obs_m, qs, lr=1.0):

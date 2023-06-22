@@ -147,8 +147,6 @@ class TestMessagePassing(unittest.TestCase):
 
     def test_marginal_message_passing(self):
 
-        blanket_dict = {} # @TODO: implement factorized likelihoods for message passing
-
         num_states = [3]
         num_obs = [3]
 
@@ -185,13 +183,12 @@ class TestMessagePassing(unittest.TestCase):
 
         prior = [jnp.ones((2, 3)) / 3.]
 
-        qs_out = mmp_jax(A, B_policy, obs, prior, blanket_dict, num_iter=16, tau=1.)
+        A_dependencies = [list(range(len(num_states))) for _ in range(len(num_obs))]
+        qs_out = mmp_jax(A, B_policy, obs, prior, A_dependencies, num_iter=16, tau=1.)
 
         self.assertTrue(qs_out[0].shape[0] == obs[0].shape[0])
 
     def test_variational_message_passing(self):
-
-        blanket_dict = {} # @TODO: implement factorized likelihoods for message passing
 
         num_states = [3]
         num_obs = [3]
@@ -229,15 +226,14 @@ class TestMessagePassing(unittest.TestCase):
 
         prior = [jnp.ones((2, 3)) / 3.]
 
-        qs_out = vmp_jax(A, B_policy, obs, prior, blanket_dict, num_iter=16, tau=1.)
+        A_dependencies = [list(range(len(num_states))) for _ in range(len(num_obs))]
+        qs_out = vmp_jax(A, B_policy, obs, prior, A_dependencies, num_iter=16, tau=1.)
 
         self.assertTrue(qs_out[0].shape[0] == obs[0].shape[0])
     
     def test_vmap_message_passing_across_policies(self):
 
-        blanket_dict = {} # @TODO: implement factorized likelihoods for message passing
-
-        num_states = [3]
+        num_states = [3, 2]
         num_obs = [3]
 
         A_tensor = jnp.stack([jnp.array([[0.5, 0.5, 0.], 
@@ -298,23 +294,23 @@ class TestMessagePassing(unittest.TestCase):
 
         prior = [jnp.ones((2, 3)) / 3., jnp.ones((2, 2)) / 2.]
 
+        A_dependencies = [list(range(len(num_states))) for _ in range(len(num_obs))]
+
         ### First do VMP
         def test(action_sequence):
             B_policy = jtu.tree_map(lambda b, a_idx: b[..., a_idx].transpose(0, 3, 1, 2), B, action_sequence)            
-            return vmp_jax(A, B_policy, obs, prior, blanket_dict, num_iter=16, tau=1.)
+            return vmp_jax(A, B_policy, obs, prior, A_dependencies, num_iter=16, tau=1.)
         qs_out = vmap(test)(all_policies)
         self.assertTrue(qs_out[0].shape[1] == obs[0].shape[0])
 
         ### Then do MMP
         def test(action_sequence):
             B_policy = jtu.tree_map(lambda b, a_idx: b[..., a_idx].transpose(0, 3, 1, 2), B, action_sequence)
-            return mmp_jax(A, B_policy, obs, prior, blanket_dict, num_iter=16, tau=1.)
+            return mmp_jax(A, B_policy, obs, prior, A_dependencies, num_iter=16, tau=1.)
         qs_out = vmap(test)(all_policies)
         self.assertTrue(qs_out[0].shape[1] == obs[0].shape[0])
     
     def test_message_passing_multiple_modalities_factors(self):
-
-        blanket_dict = {} # @TODO: implement factorized likelihoods for message passing
 
         num_states_list = [ 
                          [2, 2, 5],
@@ -370,21 +366,101 @@ class TestMessagePassing(unittest.TestCase):
             policies = []
             for n_controls in num_controls:
                 policies.append(jnp.array(np.random.randint(0, high=n_controls, size=(n_policies, T-1))))
-
-            print([p.shape for p in policies])
-             ### First do VMP
+            
+            A_dependencies = [list(range(len(num_states))) for _ in range(len(num_obs))]
+            ### First do VMP
             def test(action_sequence):
                 B_policy = jtu.tree_map(lambda b, a_idx: b[..., a_idx].transpose(0, 3, 1, 2), B, action_sequence)            
-                return vmp_jax(A, B_policy, obs_seq, prior, blanket_dict, num_iter=16, tau=1.)
+                return vmp_jax(A, B_policy, obs_seq, prior, A_dependencies, num_iter=16, tau=1.)
             qs_out = vmap(test)(policies)
             self.assertTrue(qs_out[0].shape[1] == obs_seq[0].shape[0])
 
             ### Then do MMP
             def test(action_sequence):
                 B_policy = jtu.tree_map(lambda b, a_idx: b[..., a_idx].transpose(0, 3, 1, 2), B, action_sequence)
-                return mmp_jax(A, B_policy, obs_seq, prior, blanket_dict, num_iter=16, tau=1.)
+                return mmp_jax(A, B_policy, obs_seq, prior, A_dependencies, num_iter=16, tau=1.)
             qs_out = vmap(test)(policies)
             self.assertTrue(qs_out[0].shape[1] == obs_seq[0].shape[0])
+    
+    def test_A_dependencies_message_passing(self):
+        """ Test variational message passing with A dependencies """
+
+        num_states_list = [ 
+                         [2, 2, 5],
+                         [2, 2, 2],
+                         [4, 4]
+        ]
+
+        num_controls_list = [
+                            [2, 1, 3],
+                            [2, 1, 2],
+                            [1, 3]
+        ]
+
+        num_obs_list = [
+                        [5, 10],
+                        [4, 3, 2],
+                        [5, 2, 6, 3]
+        ]
+
+        A_dependencies_list = [
+                            [[0, 1], [1,2]],
+                            [[0], [1], [2]],
+                            [[0,1], [1], [0], [1]]
+        ]
+
+        batch_dim, T = 13, 4 # batch dimension (e.g. number of agents, parallel realizations, etc.) and time steps
+        n_policies = 3
+
+        for (num_states, A_dependencies, num_controls, num_obs) in zip(num_states_list, A_dependencies_list, num_controls_list, num_obs_list):
+            
+            A_reduced_numpy = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_dependencies)
+            A_reduced = jtu.tree_map(lambda x: jnp.broadcast_to(x, (batch_dim,) + x.shape), list(A_reduced_numpy))
+          
+            A_full_numpy = []
+            for m, no in enumerate(num_obs):
+                other_factors = list(set(range(len(num_states))) - set(A_dependencies[m])) # list of the factors that modality `m` does not depend on
+
+                # broadcast or tile the reduced A matrix (`A_reduced`) along the dimensions of corresponding to `other_factors`
+                expanded_dims = [no] + [1 if f in other_factors else ns for (f, ns) in enumerate(num_states)]
+                tile_dims = [1] + [ns if f in other_factors else 1 for (f, ns) in enumerate(num_states)]
+                A_full_numpy.append(np.tile(A_reduced_numpy[m].reshape(expanded_dims), tile_dims))
+            
+            A_full = jtu.tree_map(lambda x: jnp.broadcast_to(x, (batch_dim,) + x.shape), list(A_full_numpy))
+
+            B_numpy = utils.random_B_matrix(num_states, num_controls)
+            B = jtu.tree_map(lambda x: jnp.broadcast_to(x, (batch_dim,) + x.shape), list(B_numpy))
+
+            prior_numpy = utils.random_single_categorical(num_states)
+            prior = jtu.tree_map(lambda x: jnp.broadcast_to(x, (batch_dim,) + x.shape), list(prior_numpy))
+          
+            # initialization observation sequences in jax
+            obs_seq = []
+            for n_obs in num_obs:
+                obs_ints = np.random.randint(0, high=n_obs, size=(T,1))
+                obs_array_mod_i = jnp.broadcast_to(nn.one_hot(obs_ints, num_classes=n_obs), (T, batch_dim, n_obs))
+                obs_seq.append(obs_array_mod_i)
+
+            # create random policies
+            policies = []
+            for n_controls in num_controls:
+                policies.append(jnp.array(np.random.randint(0, high=n_controls, size=(n_policies, T-1))))
+
+             ### First do VMP
+            def test_full(action_sequence):
+                B_policy = jtu.tree_map(lambda b, a_idx: b[..., a_idx].transpose(0, 3, 1, 2), B, action_sequence)
+                dependencies_fully_connected = [list(range(len(num_states))) for _ in range(len(num_obs))]
+                return vmp_jax(A_full, B_policy, obs_seq, prior, dependencies_fully_connected, num_iter=16, tau=1.)
+            
+            def test_sparse(action_sequence):
+                B_policy = jtu.tree_map(lambda b, a_idx: b[..., a_idx].transpose(0, 3, 1, 2), B, action_sequence)
+                return vmp_jax(A_reduced, B_policy, obs_seq, prior, A_dependencies, num_iter=16, tau=1)
+
+            qs_full = vmap(test_full)(policies)
+            qs_reduced = vmap(test_sparse)(policies)
+
+            for f in range(len(qs_full)):
+                self.assertTrue(jnp.allclose(qs_full[f], qs_reduced[f]))
 
 if __name__ == "__main__":
     unittest.main()
