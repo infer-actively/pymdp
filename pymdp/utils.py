@@ -216,16 +216,11 @@ def get_model_dimensions_from_labels(model_labels):
 
 def norm_dist(dist):
     """ Normalizes a Categorical probability distribution (or set of them) assuming sufficient statistics are stored in leading dimension"""
-    if dist.ndim == 3:
-        new_dist = np.zeros_like(dist)
-        for c in range(dist.shape[2]):
-            new_dist[:, :, c] = np.divide(dist[:, :, c], dist[:, :, c].sum(axis=0))
-        return new_dist
-    else:
-        return np.divide(dist, dist.sum(axis=0))
+    return np.divide(dist, dist.sum(axis=0))
 
 def norm_dist_obj_arr(obj_arr):
-
+    """ Normalizes a multi-factor or -modality collection of Categorical probability distributions, assuming sufficient statistics of each conditional distribution
+    are stored in the leading dimension"""
     normed_obj_array = obj_array(len(obj_arr))
     for i, arr in enumerate(obj_arr):
         normed_obj_array[i] = norm_dist(arr)
