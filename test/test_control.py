@@ -1455,7 +1455,7 @@ class TestControl(unittest.TestCase):
         t_idx = 0
 
         chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
-        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic", alpha = 1.0)
+        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic", alpha=1.0)
 
         self.assertEqual(chosen_action.shape, sampled_action.shape)
 
@@ -1494,7 +1494,7 @@ class TestControl(unittest.TestCase):
         )
 
         chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
-        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic", alpha = 1.0)
+        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic", alpha=1.0)
 
         self.assertEqual(chosen_action.shape, sampled_action.shape)
 
@@ -1533,7 +1533,7 @@ class TestControl(unittest.TestCase):
         )
 
         chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
-        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic", alpha = 1.0)
+        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic", alpha=1.0)
 
         self.assertEqual(chosen_action.shape, sampled_action.shape)
 
@@ -1597,7 +1597,8 @@ class TestControl(unittest.TestCase):
         for factor_ii in range(len(num_controls)):
             self.assertEqual(selected_policy[factor_ii], best_policy[0,factor_ii])
         
-        selected_policy_stochastic = control.sample_policy(q_pi, policies, num_controls, action_selection="stochastic", alpha = 1.0)
+        selected_policy_stochastic = control.sample_policy(q_pi, policies, num_controls, action_selection="stochastic",
+                                                           alpha=1.0)
         self.assertEqual(selected_policy_stochastic.shape, selected_policy.shape)
         
     def test_update_posterior_policies_withE_vector(self):
@@ -1657,7 +1658,44 @@ class TestControl(unittest.TestCase):
 
         sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
         self.assertEqual(sampled_action[1], 0)
+    
+    def test_deterministic_action_sampling_equal_value(self):
+        """
+        Test `deterministic` action sampling in the case that multiple actions have the same probability. 
+        Desired behavior is that actions are randomly sampled from the subset of total actions that have the highest (but equal) probability.
+        """
 
+        num_states = [3]
+        num_controls = [3]
+        policies = control.construct_policies(num_states, num_controls = num_controls, policy_len=1)
+        q_pi = np.array([0.4, 0.4, 0.2])
+
+        seeds = [1923, 48323]
+
+        sampled_action = control._sample_action_test(q_pi, policies, num_controls, action_selection="deterministic", seed=seeds[0])
+        self.assertEqual(sampled_action[0], 0)
+
+        sampled_action = control._sample_action_test(q_pi, policies, num_controls, action_selection="deterministic", seed=seeds[1])
+        self.assertEqual(sampled_action[0], 1)
+    
+    def test_deterministic_policy_selection_equal_value(self):
+        """
+        Test `deterministic` action sampling in the case that multiple actions have the same probability. 
+        Desired behavior is that actions are randomly sampled from the subset of total actions that have the highest (but equal) probability.
+        """
+
+        num_states = [3]
+        num_controls = [3]
+        policies = control.construct_policies(num_states, num_controls = num_controls, policy_len=1)
+        q_pi = np.array([0.1, 0.45, 0.45])
+
+        seeds = [1923, 48323]
+
+        sampled_action = control._sample_policy_test(q_pi, policies, num_controls, action_selection="deterministic", seed=seeds[0])
+        self.assertEqual(sampled_action[0], 1)
+
+        sampled_action = control._sample_policy_test(q_pi, policies, num_controls, action_selection="deterministic", seed=seeds[1])
+        self.assertEqual(sampled_action[0], 2)
 
 if __name__ == "__main__":
     unittest.main()

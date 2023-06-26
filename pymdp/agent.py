@@ -706,6 +706,7 @@ class Agent(object):
         This function both sets or cachés the action as an internal variable with the agent and returns it.
         This function also updates time variable (and thus manages consequences of updating the moving reference frame of beliefs)
         using ``self.step_time()``.
+
         
         Returns
         ----------
@@ -718,9 +719,8 @@ class Agent(object):
                 self.q_pi, self.policies, self.num_controls, action_selection = self.action_selection, alpha = self.alpha
             )
         elif self.sampling_mode == "full":
-            action = control.sample_policy(
-                self.q_pi, self.policies, self.num_controls, action_selection = self.action_selection, alpha = self.alpha
-            )
+            action = control.sample_policy(self.q_pi, self.policies, self.num_controls,
+                                           action_selection=self.action_selection, alpha=self.alpha)
 
         self.action = action
 
@@ -742,13 +742,11 @@ class Agent(object):
         """
 
         if self.sampling_mode == "marginal":
-            action, p_dist = control._sample_action_test(
-                self.q_pi, self.policies, self.num_controls, action_selection = self.action_selection, alpha = self.alpha
-            )
+            action, p_dist = control._sample_action_test(self.q_pi, self.policies, self.num_controls,
+                                                         action_selection=self.action_selection, alpha=self.alpha)
         elif self.sampling_mode == "full":
-            action, p_dist = control._sample_policy_test(
-                self.q_pi, self.policies, self.num_controls, action_selection = self.action_selection, alpha = self.alpha
-            )
+            action, p_dist = control._sample_policy_test(self.q_pi, self.policies, self.num_controls,
+                                                         action_selection=self.action_selection, alpha=self.alpha)
 
         self.action = action
 
