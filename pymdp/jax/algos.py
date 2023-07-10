@@ -163,6 +163,44 @@ def update_marginals(get_messages, obs, A, B, prior, A_dependencies, num_iter=1,
 
     return qs
 
+def update_variational_filtering(get_messages, obs, A, B, prior, A_dependencies, num_iter=1, tau=1.,):
+    """Online variational filtering belief update that uses a sparse dependency matrix for A"""
+
+    nf = len(prior)
+    T = obs[0].shape[0]
+    factors = list(range(nf))
+    ln_B = jtu.tree_map(log_stable, B)
+
+    def get_log_likelihood(obs_t, A):
+        # mapping over batch dimension
+        return vmap(compute_log_likelihood_per_modality)(obs_t, A)
+
+    # mapping over time dimension of obs array
+    log_likelihoods = vmap(get_log_likelihood, (0, None))(obs, A) # this gives a sequence of log-likelihoods (one for each `t`)
+    
+    
+    # log prior -> $\ln(p(s_1))$ for all factors
+    ln_prior = jtu.tree_map(log_stable, prior)
+
+    def scan_fn(carry, iter):
+        qs = carry
+
+        ln_qs = jtu.tree_map(log_stable, qs)
+        # messages from future $m_+(s_t)$ and past $m_-(s_t)$ for all time steps and factors. For t = T we have that $m_+(s_T) = 0$
+        lnB_past, lnB_future = get_messages(ln_B, B, qs, ln_prior)
+
+        mgds = jtu.Partial(mirror_gradient_descent_step, tau)
+
+        ln_As = all_marginal_log_likelihood(qs, log_likelihoods, A_dependencies)
+
+        qs = jtu.tree_map(mgds, ln_As, lnB_past, lnB_future, ln_qs)
+
+        return qs, None
+
+    qs, _ = lax.scan(scan_fn, qs, jnp.arange(num_iter))
+
+    return qs
+
 def get_vmp_messages(ln_B, B, qs, ln_prior):
     
     # @vmap(in_axes=(0, 1, 0), out_axes=1)
@@ -223,6 +261,11 @@ def get_mmp_messages(ln_B, B, qs, ln_prior):
 def run_mmp(A, B, obs, prior, A_dependencies, num_iter=1, tau=1.):
     qs = update_marginals(get_mmp_messages, obs, A, B, prior, A_dependencies, num_iter=num_iter, tau=tau)
     return qs
+
+def run_online_filtering(A, B, obs, prior, A_dependencies, num_iter=1, tau=1.):
+    """Runs online filtering (and smoothin) correponsing to belief propagation"""
+    qs = update_marginals(get_mmp_messages, obs, A, B, prior, A_dependencies, num_iter=num_iter, tau=tau)
+    return qs 
 
 if __name__ == "__main__":
     prior = [jnp.ones(2)/2, jnp.ones(2)/2, nn.softmax(jnp.array([0, -80., -80., -80, -80.]))]
