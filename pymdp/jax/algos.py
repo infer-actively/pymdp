@@ -163,14 +163,43 @@ def update_marginals(get_messages, obs, A, B, prior, A_dependencies, num_iter=1,
 
     return qs
 
-def update_variational_filtering(get_messages, obs, A, B, prior, A_dependencies, num_iter=1, tau=1.,):
+def variational_filtering_step(prior, Bs, ln_As, A_dependencies):
+
+    ln_prior = jtu.tree_map(log_stable, prior)
+
+    marg_ln_As = all_marginal_log_likelihood(prior, ln_As, A_dependencies)
+
+    # compute posterior
+    post = jtu.tree_map( 
+            lambda x, y: nn.softmax(x + y, -1), marg_ln_As, ln_prior 
+        )
+
+    # compute prediction
+    pred = jtu.tree_map(
+            lambda x, y: jnp.sum(x * jnp.expand_dims(y, -2), -1), Bs, post
+        )
+    
+    # compute reverse conditional distribution
+    cond = jtu.tree_map(
+        lambda x, y, z: x * jnp.expand_dims(y, -2) / jnp.expand_dims(z, -1),
+        Bs,
+        post, 
+        pred
+    )
+
+    return post, pred, cond
+
+def update_variational_filtering(obs, A, B, prior, A_dependencies, **kwargs):
     """Online variational filtering belief update that uses a sparse dependency matrix for A"""
 
-    nf = len(prior)
     T = obs[0].shape[0]
-    factors = list(range(nf))
-    ln_B = jtu.tree_map(log_stable, B)
-
+    def pad(x):
+        npad = [(0, 0)] * jnp.ndim(x)
+        npad[0] = (0, 1)
+        return jnp.pad(x, npad, constant_values=1.)
+    
+    B = jtu.tree_map(pad, B)
+ 
     def get_log_likelihood(obs_t, A):
         # mapping over batch dimension
         return vmap(compute_log_likelihood_per_modality)(obs_t, A)
@@ -178,28 +207,20 @@ def update_variational_filtering(get_messages, obs, A, B, prior, A_dependencies,
     # mapping over time dimension of obs array
     log_likelihoods = vmap(get_log_likelihood, (0, None))(obs, A) # this gives a sequence of log-likelihoods (one for each `t`)
     
-    
-    # log prior -> $\ln(p(s_1))$ for all factors
-    ln_prior = jtu.tree_map(log_stable, prior)
-
     def scan_fn(carry, iter):
-        qs = carry
+        _, prior = carry
+        Bs, ln_As = iter
 
-        ln_qs = jtu.tree_map(log_stable, qs)
-        # messages from future $m_+(s_t)$ and past $m_-(s_t)$ for all time steps and factors. For t = T we have that $m_+(s_T) = 0$
-        lnB_past, lnB_future = get_messages(ln_B, B, qs, ln_prior)
+        post, pred, cond = variational_filtering_step(prior, Bs, ln_As, A_dependencies)
+        
+        return (post, pred), cond
 
-        mgds = jtu.Partial(mirror_gradient_descent_step, tau)
+    init = (prior, prior)
+    iterator = (B, log_likelihoods)
+    # get q_T(s_t), p_T(s_{t+1}) and the history q_{T}(s_{t}|s_{t+1})q_{T-1}(s_{t-1}|s_{t}) ...
+    (qs, ps), qss = lax.scan(scan_fn, init, iterator)
 
-        ln_As = all_marginal_log_likelihood(qs, log_likelihoods, A_dependencies)
-
-        qs = jtu.tree_map(mgds, ln_As, lnB_past, lnB_future, ln_qs)
-
-        return qs, None
-
-    qs, _ = lax.scan(scan_fn, qs, jnp.arange(num_iter))
-
-    return qs
+    return qs, ps, qss
 
 def get_vmp_messages(ln_B, B, qs, ln_prior):
     
@@ -220,7 +241,7 @@ def get_vmp_messages(ln_B, B, qs, ln_prior):
     lnB_future = jtu.tree_map(fwd, ln_B, qs, ln_prior)
     lnB_past = jtu.tree_map(bkwd, ln_B, qs)
 
-    return lnB_future, lnB_past
+    return lnB_future, lnB_past 
 
 def run_vmp(A, B, obs, prior, A_dependencies, num_iter=1, tau=1.):
     '''
