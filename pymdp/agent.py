@@ -932,7 +932,7 @@ class Agent(object):
         method = self.inference_algo
         default_params = None
         if method == "VANILLA":
-            default_params = {"num_iter": 10, "dF": 1.0, "dF_tol": 0.001}
+            default_params = {"num_iter": 10, "dF": 1.0, "dF_tol": 0.001, "compute_vfe": True}
         elif method == "MMP":
             default_params = {"num_iter": 10, "grad_descent": True, "tau": 0.25}
         elif method == "VMP":
