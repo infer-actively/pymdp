@@ -116,7 +116,14 @@ class TestFPI(unittest.TestCase):
 
         for qs_f_val, qs_f_out in zip(qs_validation, qs_out):
             self.assertTrue(np.isclose(qs_f_val, qs_f_out).all())
-    
+
+        # test it also without computing VFE (i.e. with `compute_vfe=False`)
+        qs_out = run_vanilla_fpi_factorized(A, obs, num_obs, num_states, mb_dict, prior=prior, compute_vfe=False)
+        qs_validation = run_vanilla_fpi(A, obs, num_obs, num_states, prior=prior, compute_vfe=False)
+
+        for qs_f_val, qs_f_out in zip(qs_validation, qs_out):
+            self.assertTrue(np.isclose(qs_f_val, qs_f_out).all())
+
     def test_factorized_fpi_multi_factor_multi_modality_with_condind(self):
         """
         Test the sparsified version of `run_vanilla_fpi`, named `run_vanilla_fpi_factorized`
