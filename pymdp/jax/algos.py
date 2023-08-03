@@ -49,13 +49,13 @@ def mll_factors(qs, ll_m, factor_list_m) -> List:
     loc_factors = list(range(loc_nf))
     return jtu.tree_map(marginal_ll_f, loc_factors)
 
-def run_vanilla_fpi(A, obs, prior, num_iter=1):
+def run_vanilla_fpi(A, obs, prior, num_iter=1, distr_obs=True):
     """ Vanilla fixed point iteration (jaxified) """
 
     nf = len(prior)
     factors = list(range(nf))
     # Step 1: Compute log likelihoods for each factor
-    ll = compute_log_likelihood(obs, A)
+    ll = compute_log_likelihood(obs, A, distr_obs=distr_obs)
     # log_likelihoods = [ll] * nf
 
     # Step 2: Map prior to log space and create initial log-posterior
