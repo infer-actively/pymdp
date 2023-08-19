@@ -54,52 +54,10 @@ class si_agent(Agent):
                  action_precision = 1,
                  planning_precision = 1, 
                  search_threshold = 1/16):
-      
-        self.EPS_VAL = 1e-16
-        self.numS = 1
-        self.numA = 1
-        for i in num_states:
-            self.numS *= i
-        for i in num_controls:
-            self.numA *= i
-
-        self.num_states = [self.numS]
-        self.num_factors = len(self.num_states)
-        self.num_controls = [self.numA]
-
-        self.num_obs = num_obs
-        self.num_modalities = len(num_obs)
-        
-        A_new = random_A_matrix(self.num_obs, self.num_states)
-
-        if A is not None:
-            for i in range(len(self.num_obs)):
-                A_new[i] = A[i].reshape(num_obs[i], self.numS)
-
-        B_new = random_B_matrix(self.num_states, self.num_controls)
-        if B is not None:
-            bb = 1
-            for i in range(len(num_states)):
-                bb = np.kron(bb, B[i])
-            B_new[0] = bb
-            
-        if C is not None:
-            C_new = softmax_obj_arr(C)
-        else:
-            C_new = obj_array_zeros(num_obs)
-            for idx in range(len(num_obs)):
-                C_new[idx] += (1/num_obs[idx])
-                
-        if D is not None:
-            D_new = D
-        else:
-            D_new = obj_array_zeros(self.num_states)
-            for idx in range(len(self.num_states)):
-                D_new[idx] += 1 / self.num_states[idx]
         
         # Initialising the exisiting pymdp agent for Inference, and Learning
-        super().__init__(A = A_new, B = B_new, C = C_new, D = D_new, 
-                         pA = A_new, pB = B_new, pD = D_new,
+        super().__init__(A = A, B = B, C = C, D = D, 
+                         pA = A, pB = B, pD = D,
                         gamma = planning_precision, 
                         alpha = action_precision)
         
@@ -109,12 +67,64 @@ class si_agent(Agent):
         # Tree-pruning parameter in sophisticated inference
         self.tree_threshold = search_threshold
         
-    #Sophisticated inference functions for planning and decision making Author: Aswin Paul
+    #Sophisticated inference functions for planning and decision making. Author: Aswin Paul
+    
+    # Melting hidden state factors as single hidden state modality to use locally for planning
+    def melting_factors_for_planning(self):
         
+        self.EPS_VAL = 1e-16
+        self.numS = 1
+        self.numA = 1
+        for i in self.num_states:
+            self.numS *= i
+        for i in self.num_controls:
+            self.numA *= i
+
+        self.new_num_states = [self.numS]
+        self.new_num_factors = len(self.num_states)
+        self.new_num_controls = [self.numA]
+        self.new_num_obs = self.num_obs
+        
+        self.A_new = random_A_matrix(self.new_num_obs, self.new_num_states)
+        if self.A is not None:
+            for i in range(len(self.num_obs)):
+                self.A_new[i] = self.A[i].reshape(self.new_num_obs[i], self.numS)
+
+        self.B_new = random_B_matrix(self.new_num_states, self.new_num_controls)
+        if self.B is not None:
+            bb = 1
+            for i in range(len(self.num_states)):
+                bb = np.kron(bb, self.B[i])
+            self.B_new[0] = bb
+            
+        if self.C is not None:
+            self.C_new = softmax_obj_arr(self.C)
+        else:
+            self.C_new = obj_array_zeros(self.num_obs)
+            for idx in range(len(self.num_obs)):
+                self.C_new[idx] += (1/self.num_obs[idx])
+                
+        if self.D is not None:
+            self.D_new = self.D
+        else:
+            self.D_new = obj_array_zeros(self.new_num_states)
+            for idx in range(len(self.num_states)):
+                self.D_new[idx] += 1 / self.num_states[idx]
+                
     # Planning with forward tree search (sophisticated inference)
     def plan_tree_search(self, modalities = False):
+        
+        self.melting_factors_for_planning()
+        
         self.G = np.zeros((self.numA))
         self.Q_actions = np.zeros((self.numA))
+        
+        self.qs_new = obj_array_zeros(self.new_num_states)
+        if self.qs is not None:
+            q = 1
+            for i in range(len(self.num_states)):
+                q = np.kron(q, self.qs[i])
+            self.qs_new[0] = q
 
         #print("Planning")
 
@@ -129,20 +139,22 @@ class si_agent(Agent):
             if(self.N < 1):
                 print("No planning, agent will take equi-probable random actions")
             else:
-                self.G = self.forward_search(mod, N, pre = self.qs[0])
+                self.G = self.forward_search(mod, N, pre = self.qs_new[0])
+                
+        self.q_pi = softmax(-1*self.alpha*self.G)
 
     def forward_search(self, mod, N, pre):
         self.countt += 1
         N += 1
         # Tree search
-        Q_po = np.zeros((self.A[mod].shape[0], self.numA))
+        Q_po = np.zeros((self.A_new[mod].shape[0], self.numA))
         G = np.zeros((self.numA))
         post_l = []
         for j in range(self.numA):
-            post = np.matmul(self.B[0][:,:,j], pre)
+            post = np.matmul(self.B_new[0][:,:,j], pre)
             post_l.append(post)
-            Q_po[:,j] = self.A[mod].dot(post)
-            val = kl_div(Q_po[:,j],self.C[mod]) + np.dot(post, entropy(self.A[mod]))
+            Q_po[:,j] = self.A_new[mod].dot(post)
+            val = kl_div(Q_po[:,j],self.C_new[mod]) + np.dot(post, entropy(self.A_new[mod]))
             G[j] += val
         # Proxy action selection distribution
         self.Q_actions[:] = softmax(-1*self.gamma*G[:])
@@ -167,14 +179,6 @@ class si_agent(Agent):
                     G[j] += val
         return G
     
-    
-    # Decision making
-    def take_decision(self):
-        self.action_probability = softmax(-1*self.alpha*self.G)
-        action = np.random.choice(list(range(0, self.numA)), size = None, replace = True, p = self.action_probability)
-        self.action = np.array([action])
-        return(action)
-    
     #Step function combining exisisting functions for agent-environment loop
     def step(self, obs_list, learning = True):
         """
@@ -186,7 +190,6 @@ class si_agent(Agent):
         Returns: Action(s) from agent to environment
         """
         if(self.tau == 0):
-
             # Inference
             self.infer_states(obs_list)
             self.qs_prev = np.copy(self.qs)
@@ -194,7 +197,7 @@ class si_agent(Agent):
             self.plan_tree_search()
             
             # Decision making
-            self.take_decision()
+            self.sample_action()
             self.tau += 1
             
             # Learning D
@@ -217,7 +220,7 @@ class si_agent(Agent):
             self.plan_tree_search()
             
             # Decision making
-            self.take_decision()
+            self.sample_action()
             self.tau += 1
 
         return(self.action)
