@@ -159,3 +159,4 @@ For a more in-depth, tutorial-style introduction to the package and a mathematic
 - Daphne Demekas [@daphnedemekas](https://github.com/daphnedemekas)
 - Aswin Paul [@aswinpaul](https://github.com/aswinpaul)
 - Tim Verbelen [@tverbele](https://github.com/tverbele)
+- Dimitrije Markovic [@dimarkov](https://github.com/dimarkov)
