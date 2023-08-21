@@ -48,12 +48,14 @@ class si_agent(Agent):
     Combines Inference, planning, learning, and decision-making
     Generative model will be learned and updated over time if learning = True
     """
-    def __init__(self, num_states, num_obs, num_controls,
-                 planning_horizon = 1, 
-                 A = None, B = None, C = None, D = None, 
+    def __init__(self, A = None, B = None, C = None, D = None,
+                 planning_horizon = 1,
                  action_precision = 1,
                  planning_precision = 1, 
                  search_threshold = 1/16):
+        
+        # Normalising prior preference as a distribution over modalities
+        C = softmax_obj_arr(C)
         
         # Initialising the exisiting pymdp agent for Inference, and Learning
         super().__init__(A = A, B = B, C = C, D = D, 
@@ -64,15 +66,18 @@ class si_agent(Agent):
         # Parameters for sophisticated inference
         self.N = planning_horizon
         self.tau = 0
+        
         # Tree-pruning parameter in sophisticated inference
         self.tree_threshold = search_threshold
         
-    #Sophisticated inference functions for planning and decision making. Author: Aswin Paul
+    # Sophisticated inference functions for planning and decision making. Author: Aswin Paul
     
     # Melting hidden state factors as single hidden state modality to use locally for planning
     def melting_factors_for_planning(self):
+        # Melting here refers to numerically transforming multiple hidden state factors 
+        # as one hidden state factor using tensor products
         
-        self.EPS_VAL = 1e-16
+        # new dimentions of paramters (only for planning)
         self.numS = 1
         self.numA = 1
         for i in self.num_states:
@@ -80,88 +85,81 @@ class si_agent(Agent):
         for i in self.num_controls:
             self.numA *= i
 
-        self.new_num_states = [self.numS]
-        self.new_num_factors = len(self.num_states)
-        self.new_num_controls = [self.numA]
-        self.new_num_obs = self.num_obs
+        self.melted_ns = [self.numS]
+        self.melted_nc = [self.numA]
+        self.melted_no = self.num_obs
         
-        self.A_new = random_A_matrix(self.new_num_obs, self.new_num_states)
+        # New A-matrix for planning
+        self.A_melted = random_A_matrix(self.melted_no, self.melted_ns)
         if self.A is not None:
             for i in range(len(self.num_obs)):
-                self.A_new[i] = self.A[i].reshape(self.new_num_obs[i], self.numS)
-
-        self.B_new = random_B_matrix(self.new_num_states, self.new_num_controls)
+                self.A_melted[i] = self.A[i].reshape(self.melted_no[i], self.numS)
+        
+        # New B-matrix for planning
+        self.B_melted = random_B_matrix(self.melted_ns, self.melted_nc)
         if self.B is not None:
             bb = 1
             for i in range(len(self.num_states)):
                 bb = np.kron(bb, self.B[i])
-            self.B_new[0] = bb
-            
-        if self.C is not None:
-            self.C_new = softmax_obj_arr(self.C)
-        else:
-            self.C_new = obj_array_zeros(self.num_obs)
-            for idx in range(len(self.num_obs)):
-                self.C_new[idx] += (1/self.num_obs[idx])
-                
-        if self.D is not None:
-            self.D_new = self.D
-        else:
-            self.D_new = obj_array_zeros(self.new_num_states)
-            for idx in range(len(self.num_states)):
-                self.D_new[idx] += 1 / self.num_states[idx]
-                
+            self.B_melted[0] = bb
+        
+        # New belief for planning
+        self.qs_melted = obj_array_zeros(self.melted_ns)
+        if self.qs is not None:
+            q = 1
+            for i in range(len(self.num_states)):
+                q = np.kron(q, self.qs[i])
+            self.qs_melted[0] = q
+                            
     # Planning with forward tree search (sophisticated inference)
     def plan_tree_search(self, modalities = False):
         
         self.melting_factors_for_planning()
         
+        # Expected free energy and action-distributions in SI
         self.G = np.zeros((self.numA))
         self.Q_actions = np.zeros((self.numA))
         
-        self.qs_new = obj_array_zeros(self.new_num_states)
-        if self.qs is not None:
-            q = 1
-            for i in range(len(self.num_states)):
-                q = np.kron(q, self.qs[i])
-            self.qs_new[0] = q
-
-        #print("Planning")
-
+        # Planning for given/all observation modalities
         if(modalities == False):
             moda = list(range(self.num_modalities))
         else:
             moda = modalities
-
+        
+        # For observation modalities (planning)
         for mod in moda:
             N = 0
             self.countt = 0
             if(self.N < 1):
                 print("No planning, agent will take equi-probable random actions")
             else:
-                self.G = self.forward_search(mod, N, pre = self.qs_new[0])
-                
+                self.G = self.forward_search(mod, N, pre = self.qs_melted[0])
+        
+        # Action distribution (policies of length 1)
         self.q_pi = softmax(-1*self.alpha*self.G)
-
+    
+    # Tree search algorithm
     def forward_search(self, mod, N, pre):
         self.countt += 1
         N += 1
         # Tree search
-        Q_po = np.zeros((self.A_new[mod].shape[0], self.numA))
+        Q_po = np.zeros((self.A_melted[mod].shape[0], self.numA))
         G = np.zeros((self.numA))
         post_l = []
         for j in range(self.numA):
-            post = np.matmul(self.B_new[0][:,:,j], pre)
+            post = np.matmul(self.B_melted[0][:,:,j], pre)
             post_l.append(post)
-            Q_po[:,j] = self.A_new[mod].dot(post)
-            val = kl_div(Q_po[:,j],self.C_new[mod]) + np.dot(post, entropy(self.A_new[mod]))
+            Q_po[:,j] = self.A_melted[mod].dot(post)
+            val = kl_div(Q_po[:,j],self.C[mod]) + np.dot(post, entropy(self.A_melted[mod]))
             G[j] += val
         # Proxy action selection distribution
         self.Q_actions[:] = softmax(-1*self.gamma*G[:])
+        
         # Further tree search till planning horizon
         if(N < self.N):
             # Tree search pruning over actions
             for j in list(np.where(self.Q_actions[:] >= self.tree_threshold)[0]):
+                
                 # Tree search pruning over states
                 for i in list(np.where(post_l[j] >= self.tree_threshold)[0]):
                     # Proxy next state belief
