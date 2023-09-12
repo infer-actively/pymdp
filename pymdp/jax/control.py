@@ -152,6 +152,19 @@ def compute_expected_state(qs_prior, B, u_t):
         
     return qs_next
 
+def compute_expected_state_and_Bs(qs_prior, B, u_t): 
+    """
+    Compute posterior over next state, given belief about previous state, transition model and action...
+    """
+    assert len(u_t) == len(B)  
+    qs_next = []
+    Bs = []
+    for qs_f, B_f, u_f in zip(qs_prior, B, u_t):
+        qs_next.append( B_f[..., u_f].dot(qs_f) )
+        Bs.append(B_f[..., u_f])
+    
+    return qs_next, Bs
+
 def factor_dot(A, qs):
     """ Dot product of a multidimensional array with `x`.
     

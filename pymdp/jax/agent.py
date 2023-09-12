@@ -143,7 +143,7 @@ class Agent(Module):
         raise NotImplementedError
     
     @vmap
-    def infer_states(self, observations, past_actions,  empirical_prior):
+    def infer_states(self, observations, past_actions,  empirical_prior, *args):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
@@ -154,8 +154,8 @@ class Agent(Module):
         past_actions: ``list`` or ``tuple`` of ints
             The action input. Each entry ``past_actions[f]`` stores indices (or one-hots?) representing the actions for control factor ``f``.
         empirical_prior: ``list`` or ``tuple`` of ``jax.numpy.ndarray`` of dtype object
-            Empirical prior beliefs over hidden states. Depending on the inference algorithm chosen, the resulting ``empirical_prior`` variable will have additional sub-structure to reflect whether
-
+            Empirical prior beliefs over hidden states. Depending on the inference algorithm chosen, the resulting ``empirical_prior`` variable may be a matrix (or list of matrices) 
+            of additional dimensions to encode extra conditioning variables like timepoint and policy.
         Returns
         ---------
         qs: ``numpy.ndarray`` of dtype object
@@ -167,20 +167,38 @@ class Agent(Module):
         """
 
         o_vec = [nn.one_hot(o, self.A[i].shape[0]) for i, o in enumerate(observations)]
-        qs = inference.update_posterior_states(
+        output = inference.update_posterior_states(
             self.A,
             self.B,
             o_vec,
             prior=empirical_prior,
-            num_iter=self.num_iter
+            A_dependencies=self.A_dependencies,
+            num_iter=self.num_iter,
+            method=self.method
         )
 
-        return qs
+        return output
 
     @vmap
-    def update_empirical_prior(self, action, qs):
+    def update_empirical_prior(self, action, beliefs):
         # return empirical_prior
-        return control.compute_expected_state(qs, self.B, action)
+        qs = beliefs[0]
+
+        # @TODO -- have this be handled within the single compute_expected_state function, rahter than have two functions
+        pred = control.compute_expected_state(qs, self.B, action)
+        if self.inference_algo == 'ovf':
+            pred, Bs = control.compute_expected_state_and_Bs(qs, self.B, action)
+             # compute reverse conditional distribution q(z_t|z_{t+1})
+            cond = jtu.tree_map(
+                lambda x, y, z: x * jnp.expand_dims(y, -2) / jnp.expand_dims(z, -1),
+                Bs,
+                qs, 
+                pred
+            )
+            beliefs[1].append(cond)
+            return (pred, beliefs[1])
+        else:
+            pred
 
     @vmap
     def infer_policies(self, qs: List):

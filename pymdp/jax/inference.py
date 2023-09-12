@@ -12,6 +12,9 @@ def update_posterior_states(A, B, obs, prior=None, A_dependencies=None, num_iter
         return run_vmp(A, B, obs, prior, A_dependencies, num_iter=num_iter)
     if method == 'mmp':
         return run_mmp(A, B, obs, prior, A_dependencies, num_iter=num_iter)
-    if method == "ovf":
-        return run_online_filtering(A, B, obs, prior, A_dependencies, num_iter=num_iter)
+    # if method == "ovf":
+    #     prior, cond_prev = prior[0], prior[1]
+    #     qs, pred, cond = run_online_filtering(A, B, obs, prior, cond_prev, A_dependencies, num_iter=num_iter)
+    #     cond = [cond, cond_prev]
+    #     return qs, pred, cond
    

@@ -287,7 +287,7 @@ def run_mmp(A, B, obs, prior, A_dependencies, num_iter=1, tau=1.):
     return qs
 
 def run_online_filtering(A, B, obs, prior, A_dependencies, num_iter=1, tau=1.):
-    """Runs online filtering (and smoothin) correponsing to belief propagation"""
+    """Runs online filtering (HAVE TO REPLACE WITH OVF CODE)"""
     qs = update_marginals(get_mmp_messages, obs, A, B, prior, A_dependencies, num_iter=num_iter, tau=tau)
     return qs 
 
