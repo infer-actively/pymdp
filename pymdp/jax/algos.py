@@ -166,20 +166,23 @@ def update_marginals(get_messages, obs, A, B, prior, A_dependencies, num_iter=1,
 def variational_filtering_step(prior, Bs, ln_As, A_dependencies):
 
     ln_prior = jtu.tree_map(log_stable, prior)
-
+    
+    #TODO: put this inside scan
+    ####
     marg_ln_As = all_marginal_log_likelihood(prior, ln_As, A_dependencies)
 
-    # compute posterior
+    # compute posterior q(z_t) -> n x 1 x d
     post = jtu.tree_map( 
             lambda x, y: nn.softmax(x + y, -1), marg_ln_As, ln_prior 
         )
+    ####
 
-    # compute prediction
+    # compute prediction p(z_{t+1}) = \int p(z_{t+1}|z_t) q(z_t) -> n x d x 1
     pred = jtu.tree_map(
             lambda x, y: jnp.sum(x * jnp.expand_dims(y, -2), -1), Bs, post
         )
     
-    # compute reverse conditional distribution
+    # compute reverse conditional distribution q(z_t|z_{t+1})
     cond = jtu.tree_map(
         lambda x, y, z: x * jnp.expand_dims(y, -2) / jnp.expand_dims(z, -1),
         Bs,
