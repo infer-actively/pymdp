@@ -143,15 +143,18 @@ class Agent(Module):
         raise NotImplementedError
     
     @vmap
-    def infer_states(self, observations, empirical_prior):
+    def infer_states(self, observations, past_actions,  empirical_prior):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
         Parameters
         ----------
-        observation: ``list`` or ``tuple`` of ints
-            The observation input. Each entry ``observation[m]`` stores the index of the discrete
-            observation for modality ``m``.
+        observations: ``list`` or ``tuple`` of ints
+            The observation input. Each entry ``observation[m]`` stores one-hot vectors representing the observations for modality ``m``.
+        past_actions: ``list`` or ``tuple`` of ints
+            The action input. Each entry ``past_actions[f]`` stores indices (or one-hots?) representing the actions for control factor ``f``.
+        empirical_prior: ``list`` or ``tuple`` of ``jax.numpy.ndarray`` of dtype object
+            Empirical prior beliefs over hidden states. Depending on the inference algorithm chosen, the resulting ``empirical_prior`` variable will have additional sub-structure to reflect whether
 
         Returns
         ---------
@@ -166,6 +169,7 @@ class Agent(Module):
         o_vec = [nn.one_hot(o, self.A[i].shape[0]) for i, o in enumerate(observations)]
         qs = inference.update_posterior_states(
             self.A,
+            self.B,
             o_vec,
             prior=empirical_prior,
             num_iter=self.num_iter

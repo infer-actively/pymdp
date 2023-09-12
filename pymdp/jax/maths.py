@@ -6,23 +6,26 @@ MINVAL = jnp.finfo(float).eps
 def log_stable(x):
     return jnp.log(jnp.clip(x, a_min=MINVAL))
 
-def compute_log_likelihood_single_modality(o_m, A_m):
+def compute_log_likelihood_single_modality(o_m, A_m, distr_obs=True):
     """ Compute observation likelihood for a single modality (observation and likelihood)"""
-    expanded_obs = jnp.expand_dims(o_m, tuple(range(1, A_m.ndim)))
-    likelihood = (expanded_obs * A_m).sum(axis=0)
+    if distr_obs:
+        expanded_obs = jnp.expand_dims(o_m, tuple(range(1, A_m.ndim)))
+        likelihood = (expanded_obs * A_m).sum(axis=0)
+    else:
+        likelihood = A_m[o_m]
     
     return log_stable(likelihood)
 
-def compute_log_likelihood(obs, A):
+def compute_log_likelihood(obs, A, distr_obs=True):
     """ Compute likelihood over hidden states across observations from different modalities """
-    result = tree_util.tree_map(compute_log_likelihood_single_modality, obs, A)
+    result = tree_util.tree_map(lambda o, a: compute_log_likelihood_single_modality(o, a, distr_obs=distr_obs), obs, A)
     ll = jnp.sum(jnp.stack(result), 0)
 
     return ll
 
-def compute_log_likelihood_per_modality(obs, A):
+def compute_log_likelihood_per_modality(obs, A, distr_obs=True):
     """ Compute likelihood over hidden states across observations from different modalities, and return them per modality """
-    ll_all = tree_util.tree_map(compute_log_likelihood_single_modality, obs, A)
+    ll_all = tree_util.tree_map(lambda o, a: compute_log_likelihood_single_modality(o, a, distr_obs=distr_obs), obs, A)
 
     return ll_all
 

@@ -4,7 +4,7 @@
 
 from .algos import run_vanilla_fpi, run_mmp, run_vmp, run_online_filtering
 
-def update_posterior_states(A, B, obs,  prior=None, num_iter=16, method='vmp'):
+def update_posterior_states(A, B, obs, prior=None, A_dependencies=None, num_iter=16, method='fpi'):
 
     if method == 'fpi':
         return run_vanilla_fpi(A, obs, prior, num_iter=num_iter)
