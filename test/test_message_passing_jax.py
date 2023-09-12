@@ -15,6 +15,7 @@ from jax import vmap, nn
 
 from pymdp.jax.algos import run_vanilla_fpi as fpi_jax
 from pymdp.jax.algos import run_factorized_fpi as fpi_jax_factorized
+from pymdp.jax.algos import update_variational_filtering as ovf_jax
 from pymdp.algos import run_vanilla_fpi as fpi_numpy
 from pymdp.algos import run_mmp as mmp_numpy
 from pymdp.jax.algos import run_mmp as mmp_jax
@@ -461,6 +462,99 @@ class TestMessagePassing(unittest.TestCase):
 
             for f in range(len(qs_full)):
                 self.assertTrue(jnp.allclose(qs_full[f], qs_reduced[f]))
+    
+    def test_online_variational_filtering(self):
+        """ Unit test for @dimarkov's implementation of online variational filtering, also where it's conditional on actions (vmapped across policies) """
+
+        num_states_list = [ 
+                    [2, 2, 5],
+                    [2, 2, 2],
+                    [4, 4]
+        ]
+
+        num_controls_list = [
+                            [2, 1, 3],
+                            [2, 1, 2],
+                            [1, 3]
+        ]
+
+        num_obs_list = [
+                        [5, 10],
+                        [4, 3, 2],
+                        [5, 2, 6, 3]
+        ]
+
+        A_dependencies_list = [
+                            [[0, 1], [1, 2]],
+                            [[0], [1], [2]],
+                            [[0,1], [1], [0], [1]],
+        ]
+
+        batch_dim, T = 13, 4 # batch dimension (e.g. number of agents, parallel realizations, etc.) and time steps
+        n_policies = 3
+
+        for (num_states, A_dependencies, num_controls, num_obs) in zip(num_states_list, A_dependencies_list, num_controls_list, num_obs_list):
+            
+            A_reduced_numpy = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_dependencies)
+            A_reduced = jtu.tree_map(lambda x: jnp.broadcast_to(x, (batch_dim,) + x.shape), list(A_reduced_numpy))
+                
+            A_full_numpy = []
+            for m, no in enumerate(num_obs):
+                other_factors = list(set(range(len(num_states))) - set(A_dependencies[m])) # list of the factors that modality `m` does not depend on
+
+                # broadcast or tile the reduced A matrix (`A_reduced`) along the dimensions of corresponding to `other_factors`
+                expanded_dims = [no] + [1 if f in other_factors else ns for (f, ns) in enumerate(num_states)]
+                tile_dims = [1] + [ns if f in other_factors else 1 for (f, ns) in enumerate(num_states)]
+                A_full_numpy.append(np.tile(A_reduced_numpy[m].reshape(expanded_dims), tile_dims))
+            
+            A_full = jtu.tree_map(lambda x: jnp.broadcast_to(x, (batch_dim,) + x.shape), list(A_full_numpy))
+
+            B_numpy = utils.random_B_matrix(num_states, num_controls)
+            B = jtu.tree_map(lambda x: jnp.broadcast_to(x, (batch_dim,) + x.shape), list(B_numpy))
+
+            prior_numpy = utils.random_single_categorical(num_states)
+            prior = jtu.tree_map(lambda x: jnp.broadcast_to(x, (batch_dim,) + x.shape), list(prior_numpy))
+                
+            # initialization observation sequences in jax
+            obs_seq = []
+            for n_obs in num_obs:
+                obs_ints = np.random.randint(0, high=n_obs, size=(T,1))
+                obs_array_mod_i = jnp.broadcast_to(nn.one_hot(obs_ints, num_classes=n_obs), (T, batch_dim, n_obs))
+                obs_seq.append(obs_array_mod_i)
+
+            # create random policies
+            policies = []
+            for n_controls in num_controls:
+                policies.append(jnp.array(np.random.randint(0, high=n_controls, size=(n_policies, T-1))))
+
+            def test_sparse(action_sequence):
+                B_policy = jtu.tree_map(lambda b, a_idx: b[..., a_idx].transpose(3, 0, 1, 2), B, action_sequence)
+                qs, ps, qss = ovf_jax(obs_seq, A_reduced, B_policy, prior, A_dependencies)
+                return qs, ps, qss
+
+            qs_pi_sparse, ps_pi_sparse, qss_pi_sparse = vmap(test_sparse)(policies)
+
+            for f, (qs, ps, qss) in enumerate(zip(qs_pi_sparse, ps_pi_sparse, qss_pi_sparse)):
+                self.assertTrue(qs.shape == (n_policies, batch_dim, num_states[f]))
+                self.assertTrue(ps.shape == (n_policies, batch_dim, num_states[f]))
+                self.assertTrue(qss.shape == (n_policies, T, batch_dim, num_states[f], num_states[f]))
+
+                #Note: qs/ps are of dimension [n_policies x num_agents x dim_state_f] * num_factors
+                #Note: qss is of dimension [n_policies x time_steps x num_agents x dim_state_f x dim_state_f] * num_factors
+            
+            def test_full(action_sequence):
+                B_policy = jtu.tree_map(lambda b, a_idx: b[..., a_idx].transpose(3, 0, 1, 2), B, action_sequence)
+                dependencies_fully_connected = [list(range(len(num_states))) for _ in range(len(num_obs))]
+                qs, ps, qss = ovf_jax(obs_seq, A_full, B_policy, prior, dependencies_fully_connected)
+                return qs, ps, qss
+
+            qs_pi_full, ps_pi_full, qss_pi_full = vmap(test_full)(policies)
+
+            # test that the sparse and fully connected versions of OVF give the same results
+            for (qs_sparse, ps_sparse, qss_sparse, qs_full, ps_full, qss_full) in zip(qs_pi_sparse, ps_pi_sparse, qss_pi_sparse, qs_pi_full, ps_pi_full, qss_pi_full):
+                self.assertTrue(np.allclose(qs_sparse, qs_full))
+                self.assertTrue(np.allclose(ps_sparse, ps_full))
+                self.assertTrue(np.allclose(qss_sparse, qss_full))
 
 if __name__ == "__main__":
     unittest.main()
