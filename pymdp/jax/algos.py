@@ -78,9 +78,9 @@ def run_vanilla_fpi(A, obs, prior, num_iter=1, distr_obs=True):
     qs = jtu.tree_map(nn.softmax, res)
     return qs
 
-def run_factorized_fpi(A, obs, prior, factor_lists, num_iter=1):
+def run_factorized_fpi(A, obs, prior, A_dependencies, num_iter=1):
     """
-    Run the fixed point iteration algorithm with sparse dependencies between factors and outcomes (stored in `factor_lists`)
+    Run the fixed point iteration algorithm with sparse dependencies between factors and outcomes (stored in `A_dependencies`)
     """
 
     nf = len(prior)
@@ -96,7 +96,7 @@ def run_factorized_fpi(A, obs, prior, factor_lists, num_iter=1):
     def scan_fn(carry, t):
         log_q = carry
         q = jtu.tree_map(nn.softmax, log_q)
-        marginal_ll = all_marginal_log_likelihood(q, log_likelihoods, factor_lists)
+        marginal_ll = all_marginal_log_likelihood(q, log_likelihoods, A_dependencies)
         log_q = jtu.tree_map(add, marginal_ll, log_prior)
 
         return log_q, None
