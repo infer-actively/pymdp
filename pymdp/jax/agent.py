@@ -171,7 +171,8 @@ class Agent(Module):
             self.A,
             self.B,
             o_vec,
-            prior=empirical_prior,
+            prior=empirical_prior[0],
+            qs_hist=empirical_prior[1],
             A_dependencies=self.A_dependencies,
             num_iter=self.num_iter,
             method=self.method
@@ -180,25 +181,12 @@ class Agent(Module):
         return output
 
     @vmap
-    def update_empirical_prior(self, action, beliefs):
-        # return empirical_prior
-        qs = beliefs[0]
+    def update_empirical_prior(self, action, qs):
+        # return empirical_prior, and the history of posterior beliefs (filtering distributions) held about hidden states at times 1, 2 ... t
 
-        # @TODO -- have this be handled within the single compute_expected_state function, rahter than have two functions
-        pred = control.compute_expected_state(qs, self.B, action)
-        if self.inference_algo == 'ovf':
-            pred, Bs = control.compute_expected_state_and_Bs(qs, self.B, action)
-             # compute reverse conditional distribution q(z_t|z_{t+1})
-            cond = jtu.tree_map(
-                lambda x, y, z: x * jnp.expand_dims(y, -2) / jnp.expand_dims(z, -1),
-                Bs,
-                qs, 
-                pred
-            )
-            beliefs[1].append(cond)
-            return (pred, beliefs[1])
-        else:
-            pred
+        pred = control.compute_expected_state(qs[-1], self.B, action)
+        
+        return (pred, qs)
 
     @vmap
     def infer_policies(self, qs: List):
