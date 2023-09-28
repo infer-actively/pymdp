@@ -171,6 +171,7 @@ class Agent(Module):
             self.A,
             self.B,
             o_vec,
+            past_actions,
             prior=empirical_prior[0],
             qs_hist=empirical_prior[1],
             A_dependencies=self.A_dependencies,
