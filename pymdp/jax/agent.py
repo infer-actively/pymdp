@@ -41,8 +41,9 @@ class Agent(Module):
     gamma: jnp.ndarray
     qs: Optional[List]
     q_pi: Optional[List]
-
+    
     # static parameters not leaves of the PyTree
+    A_dependencies: Optional[List] = static_field()
     num_iter: int = static_field()
     num_obs: List = static_field()
     num_modalities: int = static_field()
@@ -65,6 +66,7 @@ class Agent(Module):
         C,
         D,
         E,
+        A_dependencies=None,
         qs=None,
         q_pi=None,
         policy_len=1,
@@ -75,7 +77,7 @@ class Agent(Module):
         use_states_info_gain=True,
         use_param_info_gain=False,
         action_selection="deterministic",
-        inference_algo="VANILLA",
+        inference_algo="fpi",
         num_iter=16,
     ):
         ### PyTree leaves
@@ -88,6 +90,14 @@ class Agent(Module):
         self.E = E
         self.qs = qs
         self.q_pi = q_pi
+
+        if A_dependencies is not None:
+            self.A_dependencies = A_dependencies
+        else:
+            num_factors = len(B)
+            num_modalities = len(A)
+            self.A_dependencies = [list(range(num_factors)) for _ in range(num_modalities)]
+
 
         batch_dim = (self.A[0].shape[0],)
 
@@ -143,7 +153,7 @@ class Agent(Module):
         raise NotImplementedError
     
     @vmap
-    def infer_states(self, observations, past_actions,  empirical_prior, *args):
+    def infer_states(self, observations, past_actions,  empirical_prior, qs_hist):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
@@ -172,11 +182,11 @@ class Agent(Module):
             self.B,
             o_vec,
             past_actions,
-            prior=empirical_prior[0],
-            qs_hist=empirical_prior[1],
+            prior=empirical_prior,
+            qs_hist=qs_hist,
             A_dependencies=self.A_dependencies,
             num_iter=self.num_iter,
-            method=self.method
+            method=self.inference_algo
         )
 
         return output
