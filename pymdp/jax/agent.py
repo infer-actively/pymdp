@@ -41,6 +41,9 @@ class Agent(Module):
     gamma: jnp.ndarray
     qs: Optional[List]
     q_pi: Optional[List]
+
+    pA: List
+    pB: List
     
     # static parameters not leaves of the PyTree
     A_dependencies: Optional[List] = static_field()
@@ -66,6 +69,8 @@ class Agent(Module):
         C,
         D,
         E,
+        pA,
+        pB,
         A_dependencies=None,
         qs=None,
         q_pi=None,
@@ -88,6 +93,8 @@ class Agent(Module):
         self.D = D
         # self.empirical_prior = D
         self.E = E
+        self.pA = pA
+        self.pB = pB
         self.qs = qs
         self.q_pi = q_pi
 
@@ -215,13 +222,19 @@ class Agent(Module):
             Negative expected free energies of each policy, i.e. a vector containing one negative expected free energy per policy.
         """
 
+        latest_belief = jtu.tree_map(lambda x: x[-1], qs) # only get the posterior belief held at the current timepoint
         q_pi, G = control.update_posterior_policies(
             self.policies,
-            qs,
+            latest_belief, 
             self.A,
             self.B,
             self.C,
-            gamma = self.gamma
+            self.pA,
+            self.pB,
+            gamma=self.gamma,
+            use_utility=self.use_utility,
+            use_states_info_gain=self.use_states_info_gain,
+            use_param_info_gain=self.use_param_info_gain
         )
 
         return q_pi, G
