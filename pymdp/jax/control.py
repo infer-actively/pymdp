@@ -126,11 +126,11 @@ def construct_policies(num_states, num_controls = None, policy_len=1, control_fa
     return jnp.stack(policies)
 
 
-def update_posterior_policies(policy_matrix, qs_init, A, B, C, gamma=16.0):
+def update_posterior_policies(policy_matrix, qs_init, A, B, C, pA, pB, gamma=16.0, use_utility=True, use_states_info_gain=True, use_param_info_gain=False):
     # policy --> n_levels_factor_f x 1
     # factor --> n_levels_factor_f x n_policies
     ## vmap across policies
-    compute_G_fixed_states = partial(compute_G_policy, qs_init, A, B, C)
+    compute_G_fixed_states = partial(compute_G_policy, qs_init, A, B, C, pA, pB, use_utility=use_utility, use_states_info_gain=use_states_info_gain, use_param_info_gain=use_param_info_gain)
 
     # only in the case of policy-dependent qs_inits
     # in_axes_list = (1,) * n_factors
@@ -216,28 +216,110 @@ def compute_expected_utility(qo, C):
     
     return util
 
-def compute_G_policy(qs_init, A, B, C, policy_i):
+def calc_pA_info_gain(pA, qo, qs):
+    """
+    Compute expected Dirichlet information gain about parameters ``pA`` for a given posterior predictive distribution over observations ``qo`` and states ``qs``.
+
+    Parameters
+    ----------
+    pA: ``numpy.ndarray`` of dtype object
+        Dirichlet parameters over observation model (same shape as ``A``)
+    qo: ``list`` of ``numpy.ndarray`` of dtype object
+        Predictive posterior beliefs over observations; stores the beliefs about
+        observations expected under the policy at some arbitrary time ``t``
+    qs: ``list`` of ``numpy.ndarray`` of dtype object
+        Predictive posterior beliefs over hidden states, stores the beliefs about
+        hidden states expected under the policy at some arbitrary time ``t``
+
+    Returns
+    -------
+    infogain_pA: float
+        Surprise (about Dirichlet parameters) expected for the pair of posterior predictive distributions ``qo`` and ``qs``
+    """
+
+    wA = jtu.tree_map(spm_wnorm, pA)    
+    wA_per_modality = jtu.tree_map(lambda wa, pa: wa * (pa > 0.), wA, pA)
+    pA_infogain_per_modality = jtu.tree_map(lambda wa, qo: qo.dot(factor_dot(wa, qs)[...,None]), wA_per_modality, qo)
+    infogain_pA = jtu.tree_reduce(lambda x, y: x + y, pA_infogain_per_modality)[0]
+    return infogain_pA
+
+def calc_pB_info_gain(pB, qs_t, qs_t_minus_1):
+    """ Placeholder, not implemented yet """
+    # """
+    # Compute expected Dirichlet information gain about parameters ``pB`` under a given policy
+
+    # Parameters
+    # ----------
+    # pB: ``numpy.ndarray`` of dtype object
+    #     Dirichlet parameters over transition model (same shape as ``B``)
+    # qs_pi: ``list`` of ``numpy.ndarray`` of dtype object
+    #     Predictive posterior beliefs over hidden states expected under the policy, where ``qs_pi[t]`` stores the beliefs about
+    #     hidden states expected under the policy at time ``t``
+    # qs_prev: ``numpy.ndarray`` of dtype object
+    #     Posterior over hidden states at beginning of trajectory (before receiving observations)
+    # policy: 2D ``numpy.ndarray``
+    #     Array that stores actions entailed by a policy over time. Shape is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
+    #     depth of the policy and ``num_factors`` is the number of control factors.
+    
+    # Returns
+    # -------
+    # infogain_pB: float
+    #     Surprise (about dirichlet parameters) expected under the policy in question
+    # """
+
+    # n_steps = len(qs_pi)
+
+    # num_factors = len(pB)
+    # wB = utils.obj_array(num_factors)
+    # for factor, pB_f in enumerate(pB):
+    #     wB[factor] = spm_wnorm(pB_f)
+
+    # pB_infogain = 0
+
+    # for t in range(n_steps):
+    #     # the 'past posterior' used for the information gain about pB here is the posterior
+    #     # over expected states at the timestep previous to the one under consideration
+    #     # if we're on the first timestep, we just use the latest posterior in the
+    #     # entire action-perception cycle as the previous posterior
+    #     if t == 0:
+    #         previous_qs = qs_prev
+    #     # otherwise, we use the expected states for the timestep previous to the timestep under consideration
+    #     else:
+    #         previous_qs = qs_pi[t - 1]
+
+    #     # get the list of action-indices for the current timestep
+    #     policy_t = policy[t, :]
+    #     for factor, a_i in enumerate(policy_t):
+    #         wB_factor_t = wB[factor][:, :, int(a_i)] * (pB[factor][:, :, int(a_i)] > 0).astype("float")
+    #         pB_infogain -= qs_pi[t][factor].dot(wB_factor_t.dot(previous_qs[factor]))
+    return 0.
+
+def compute_G_policy(qs_init, A, B, C, pA, pB, policy_i, use_utility=True, use_states_info_gain=True, use_param_info_gain=False):
+    """ Write a version of compute_G_policy that does the same computations as `compute_G_policy` but using `lax.scan` instead of a for loop. """
+
+    def scan_body(carry, t):
+
+        qs, neg_G = carry
+
+        qs_next = compute_expected_state(qs, B, policy_i[t])
+
+        qo = compute_expected_obs(qs_next, A)
+
+        info_gain = compute_info_gain(qs_next, qo, A) if use_states_info_gain else 0.
+
+        utility = compute_expected_utility(qo, C) if use_utility else 0.
+
+        param_info_gain = calc_pA_info_gain(pA, qo, qs_next) if use_param_info_gain else 0.
+        param_info_gain += calc_pB_info_gain(pB, qs_next, qs) if use_param_info_gain else 0.
+
+        neg_G += info_gain + utility + param_info_gain
+
+        return (qs_next, neg_G), None
 
     qs = qs_init
     neg_G = 0.
-    for t_step in range(policy_i.shape[0]):
-
-        qs = compute_expected_state(qs, B, policy_i[t_step])
-
-        qo = compute_expected_obs(qs, A)
-
-        info_gain = compute_info_gain(qs, qo, A)
-        utility = compute_expected_utility(qo, C)
-
-        # if we're doing scan we'll need some of those control-flow workarounds from lax
-        # jnp.where(conditition, f_eval_if_true, 0)
-        # calculate pA info gain
-        # calculate pB info gain
-        
-        # Q(s, A) = E_{Q(o)}[D_KL(Q(s|o, \pi) Q(A| o, pi)|| Q(s|pi) Q(A))]
-
-        neg_G += info_gain + utility
-
+    final_state, _ = lax.scan(scan_body, (qs, neg_G), jnp.arange(policy_i.shape[0]))
+    qs_final, neg_G = final_state
     return neg_G
 
 
