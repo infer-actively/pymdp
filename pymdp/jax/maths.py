@@ -70,6 +70,18 @@ def multidimensional_outer(arrs):
 
     return x
 
+def spm_wnorm(A):
+    """ 
+    Returns Expectation of logarithm of Dirichlet parameters over a set of 
+    Categorical distributions, stored in the columns of A.
+    """
+    A = jnp.clip(A, a_min=MINVAL)
+    norm = 1. / A.sum(axis=0)
+    avg = 1. / A
+    wA = norm - avg
+    return wA
+
+
 if __name__ == '__main__':
     obs = [0, 1, 2]
     obs_vec = [ nn.one_hot(o, 3) for o in obs]
