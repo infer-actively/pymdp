@@ -112,8 +112,7 @@ def mirror_gradient_descent_step(tau, ln_A, lnB_past, lnB_future, ln_qs):
     u_{k+1} = u_{k} - \nabla_p F_k
     p_k = softmax(u_k)
     """
-
-    err = ln_A + lnB_past + lnB_future - ln_qs
+    err = ln_A - ln_qs + lnB_past + lnB_future
     ln_qs = ln_qs + tau * err
     qs = nn.softmax(ln_qs - ln_qs.mean(axis=-1, keepdims=True))
 
@@ -130,8 +129,9 @@ def update_marginals(get_messages, obs, A, B, prior, A_dependencies, num_iter=1,
     # for $k > t$ we have $\ln(A) = 0$
 
     def get_log_likelihood(obs_t, A):
-        # mapping over batch dimension
-        return vmap(compute_log_likelihood_per_modality)(obs_t, A)
+       # # mapping over batch dimension
+       # return vmap(compute_log_likelihood_per_modality)(obs_t, A)
+       return compute_log_likelihood_per_modality(obs_t, A)
 
     # mapping over time dimension of obs array
     log_likelihoods = vmap(get_log_likelihood, (0, None))(obs, A) # this gives a sequence of log-likelihoods (one for each `t`)
@@ -227,23 +227,22 @@ def update_variational_filtering(obs, A, B, prior, A_dependencies, **kwargs):
 
 def get_vmp_messages(ln_B, B, qs, ln_prior):
     
-    # @vmap(in_axes=(0, 1, 0), out_axes=1)
     def forward(ln_b, q, ln_prior):
-        msg = lax.batch_matmul(q[:-1, None], ln_b.transpose(0, 2, 1)).squeeze()
+        msg = vmap(lambda x, y: y @ x)(q[:-1], ln_b)
         return jnp.concatenate([jnp.expand_dims(ln_prior, 0), msg], axis=0)
     
-    fwd = vmap(forward, in_axes=(0, 1, 0), out_axes=1)
-
-    # @vmap(in_axes=(0, 1), out_axes=1)
     def backward(ln_b, q):
         # q_i B_ij
-        msg = lax.batch_matmul(q[1:, None], ln_b).squeeze()
+        msg = vmap(lambda x, y: x @ y)(q[1:], ln_b)
         return jnp.pad(msg, ((0, 1), (0, 0)))
-    bkwd = vmap(backward, in_axes=(0, 1), out_axes=1)
 
-    lnB_future = jtu.tree_map(fwd, ln_B, qs, ln_prior)
-    lnB_past = jtu.tree_map(bkwd, ln_B, qs)
-
+    if ln_B is not None:
+        lnB_future = jtu.tree_map(forward, ln_B, qs, ln_prior)
+        lnB_past = jtu.tree_map(backward, ln_B, qs)
+    else:
+        lnB_future = jtu.tree_map(lambda x: 0., qs)
+        lnB_past = jtu.tree_map(lambda x: 0., qs)
+    
     return lnB_future, lnB_past 
 
 def run_vmp(A, B, obs, prior, A_dependencies, num_iter=1, tau=1.):
@@ -259,7 +258,7 @@ def get_mmp_messages(ln_B, B, qs, ln_prior):
     
     def forward(b, q, ln_prior):
         if len(q) > 1:
-            msg = lax.batch_matmul(q[:-1, None], b.transpose(0, 2, 1)).squeeze()
+            msg = vmap(lambda x, y: y @ x)(q[:-1], b)
             msg = log_stable(msg)
             n = len(msg) 
             if n > 1: # this is the case where there are at least 3 observations. If you have two observations, then you weight the single past message from t = 0 by 1.0
@@ -268,17 +267,17 @@ def get_mmp_messages(ln_B, B, qs, ln_prior):
         else: # this is case where this is a single observation / single-timestep posterior
             return jnp.expand_dims(ln_prior, 0)
 
-    fwd = vmap(forward, in_axes=(0, 1, 0), out_axes=1)
-        
     def backward(b, q):
-        msg = lax.batch_matmul(q[:-1, None], b.transpose(0, 2, 1)).squeeze()
+        msg = vmap(lambda x, y: x @ y)(q[1:], b)
         msg = log_stable(msg) * 0.5
         return jnp.pad(msg, ((0, 1), (0, 0)))
-
-    bkwd = vmap(backward, in_axes=(0, 1), out_axes=1)
-
-    lnB_future = jtu.tree_map(fwd, B, qs, ln_prior)
-    lnB_past = jtu.tree_map(bkwd, B, qs)
+    
+    if ln_B is not None:
+        lnB_future = jtu.tree_map(forward, B, qs, ln_prior)
+        lnB_past = jtu.tree_map(backward, B, qs)
+    else:
+        lnB_future = jtu.tree_map(lambda x: 0., qs)
+        lnB_past = jtu.tree_map(lambda x: 0., qs)
 
     return lnB_future, lnB_past
 
