@@ -202,7 +202,8 @@ class Agent(Module):
     def update_empirical_prior(self, action, qs):
         # return empirical_prior, and the history of posterior beliefs (filtering distributions) held about hidden states at times 1, 2 ... t
 
-        pred = control.compute_expected_state(qs[-1], self.B, action)
+        qs_last = jtu.tree_map( lambda x: x[-1], qs)
+        pred = control.compute_expected_state(qs_last, self.B, action)
         
         return (pred, qs)
 
