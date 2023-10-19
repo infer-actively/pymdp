@@ -196,6 +196,9 @@ class Agent(Module):
             method=self.inference_algo
         )
 
+        # if ovf_smooth:
+        #     output = inference.smoothing(output)
+
         return output
 
     @vmap
