@@ -81,6 +81,14 @@ def spm_wnorm(A):
     wA = norm - avg
     return wA
 
+def dirichlet_expected_value(dir_arr):
+    """ 
+    Returns Expectation of Dirichlet parameters over a set of 
+    Categorical distributions, stored in the columns of A.
+    """
+    dir_arr = jnp.clip(dir_arr, a_min=MINVAL)
+    expected_val = jnp.divide(dir_arr, dir_arr.sum(axis=0, keepdims=True))
+    return expected_val
 
 if __name__ == '__main__':
     obs = [0, 1, 2]

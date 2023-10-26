@@ -10,12 +10,22 @@ import jax.numpy as jnp
 
 def update_obs_likelihood_dirichlet_m(pA_m, A_m, obs_m, qs, dependencies_m, lr=1.0):
     """ JAX version of ``pymdp.learning.update_obs_likelihood_dirichlet_m`` """
+    # pA_m - parameters of the dirichlet from the prior
+    # pA_m.shape = (no_m x num_states[k] x num_states[j] x ... x num_states[n]) where (k, j, n) are indices of the hidden state factors that are parents of modality m
 
-    # relevant_factors = [qs[f] for f in dependencies_m]
+    # \alpha^{*} = \alpha_{0} + \kappa * \sum_{t=t_begin}^{t=T} o_{m,t} \otimes \mathbf{s}_{f \in parents(m), t}
+
+    # \alpha^{*} is the VFE-minimizing solution for the parameters of q(A)
+    # \alpha_{0} are the Dirichlet parameters of p(A)
+    # o_{m,t} = observation (one-hot vector) of modality m at time t
+    # \mathbf{s}_{f \in parents(m), t} = categorical parameters of marginal posteriors over hidden state factors that are parents of modality m, at time t
+    # \otimes is a multidimensional outer product, not just a outer product of two vectors
+    # \kappa is an optional learning rate
+
     relevant_factors = tree_map(lambda f_idx: qs[f_idx], dependencies_m)
 
-    dfda = multidimensional_outer([obs_m]+ relevant_factors)
-    dfda = jnp.where(A_m > 0, dfda, 0.0)
+    dfda = vmap(multidimensional_outer)([obs_m]+ relevant_factors).sum(axis=0)
+    # dfda = jnp.where(A_m > 0, dfda, 0.0) # this doesn't make sense
     qA_m = pA_m + (lr * dfda)
 
     return qA_m

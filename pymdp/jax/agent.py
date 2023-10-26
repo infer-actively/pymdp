@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 from jax import nn, vmap
 from . import inference, control, learning, utils, maths
-from equinox import Module, static_field
+from equinox import Module, static_field, tree_at
 
 from typing import Any, List, AnyStr, Optional
 
@@ -61,6 +61,11 @@ class Agent(Module):
     use_states_info_gain: bool = static_field()
     use_param_info_gain: bool = static_field()
     action_selection: AnyStr = static_field()
+    learn_A: bool = static_field()
+    learn_B: bool = static_field()
+    learn_C: bool = static_field()
+    learn_D: bool = static_field()
+    learn_E: bool = static_field()
 
     def __init__(
         self,
@@ -84,6 +89,11 @@ class Agent(Module):
         action_selection="deterministic",
         inference_algo="fpi",
         num_iter=16,
+        learn_A=True,
+        learn_B=True,
+        learn_C=False,
+        learn_D=True,
+        learn_E=False
     ):
         ### PyTree leaves
 
@@ -123,6 +133,13 @@ class Agent(Module):
         self.use_states_info_gain = use_states_info_gain
         self.use_param_info_gain = use_param_info_gain
 
+        # learning parameters
+        self.learn_A = learn_A
+        self.learn_B = learn_B
+        self.learn_C = learn_C
+        self.learn_D = learn_D
+        self.learn_E = learn_E
+
         """ Determine number of observation modalities and their respective dimensions """
         self.num_obs = [self.A[m].shape[1] for m in range(len(self.A))]
         self.num_modalities = len(self.num_obs)
@@ -150,14 +167,34 @@ class Agent(Module):
         )
 
     @vmap
-    def learning(self, *args, **kwargs):
+    def learning(self, beliefs, outcomes, **kwargs):
+
+        if self.learn_A:
+            o_vec_seq = jtu.tree_map(lambda o, dim: nn.one_hot(o, dim), outcomes, self.num_obs)
+            # qA = learning.update_A(self.A, beliefs, o_vec_seq, self.A_dependencies)
+            qA = learning.update_obs_likelihood_dirichlet(self.pA, self.A, o_vec_seq, beliefs, self.A_dependencies, lr=1.)
+            E_qA = jtu.tree_map(lambda x: maths.dirichlet_expected_value(x), qA)
+        # if self.learn_B:
+        #     self.qB = learning.update_B(self.B, *args, **kwargs)
+        #     self.B = jtu.tree_map(lambda x: maths.dirichlet_expected_value(x), self.qB)
+        # if self.learn_C:
+        #     self.qC = learning.update_C(self.C, *args, **kwargs)
+        #     self.C = jtu.tree_map(lambda x: maths.dirichlet_expected_value(x), self.qC)
+        # if self.learn_D:
+        #     self.qD = learning.update_D(self.D, *args, **kwargs)
+        #     self.D = jtu.tree_map(lambda x: maths.dirichlet_expected_value(x), self.qD)
+        # if self.learn_E:
+        #     self.qE = learning.update_E(self.E, *args, **kwargs)
+        #     self.E = maths.dirichlet_expected_value(self.qE)
+
         # do stuff
         # variables = ...
         # parameters = ...
         # varibles = {'A': jnp.ones(5)}
 
-        # return Agent(variables, parameters)
-        raise NotImplementedError
+        agent = tree_at(lambda x: (x.A, x.pA), self, (E_qA, qA))
+
+        return agent
     
     @vmap
     def infer_states(self, observations, past_actions,  empirical_prior, qs_hist):
@@ -183,7 +220,7 @@ class Agent(Module):
             at timepoint ``t_idx``.
         """
 
-        o_vec = [nn.one_hot(o, self.A[i].shape[0]) for i, o in enumerate(observations)]
+        o_vec = [nn.one_hot(o, self.num_obs[m]) for m, o in enumerate(observations)]
         output = inference.update_posterior_states(
             self.A,
             self.B,
