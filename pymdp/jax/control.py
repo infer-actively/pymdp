@@ -6,9 +6,11 @@
 import itertools
 import jax.numpy as jnp
 import jax.tree_util as jtu
+from typing import Tuple, Optional
 from functools import partial
 from jax import lax, jit, vmap, nn
 from itertools import chain
+from opt_einsum import contract
 
 from pymdp.jax.maths import *
 # import pymdp.jax.utils as utils
@@ -168,26 +170,30 @@ def compute_expected_state_and_Bs(qs_prior, B, u_t):
     
     return qs_next, Bs
 
-def factor_dot(A, qs, keep_dims=None):
+@partial(jit, static_argnames=['keep_dims'])
+def factor_dot(M, xs, keep_dims: Optional[Tuple[int]] = None):
     """ Dot product of a multidimensional array with `x`.
     
     Parameters
     ----------
-    - `x` [1D numpy.ndarray] - either vector or array of arrays
-        The alternative array to perform the dot product with
+    - `qs` [list of 1D numpy.ndarray] - list of jnp.ndarrays
     
     Returns 
     -------
     - `Y` [1D numpy.ndarray] - the result of the dot product
     """
-    
-    dims = list(range(A.ndim - len(qs),len(qs)+A.ndim - len(qs)))
+    d = len(keep_dims) if keep_dims is not None else 0
+    assert M.ndim == len(xs) + d
 
-    arg_list = [A, list(range(A.ndim))] + list(chain(*([qs[f],[dims[f]]] for f in range(len(qs))))) + [keep_dims]
+    all_dims = list(range(M.ndim))
+    dims = all_dims if keep_dims is None else [i for i in range(M.ndim) if i not in keep_dims]
+    matrix = [[xs[f], [dims[f]]] for f in range(len(xs))]
+    args = [M, all_dims]
+    for row in matrix:
+        args.extend(row)
 
-    res = jnp.einsum(*arg_list)
-
-    return res
+    args += [keep_dims]
+    return contract(*args, backend='jax')
 
 def compute_expected_obs(qs, A, A_dependencies):
     """"
@@ -202,12 +208,25 @@ def compute_expected_obs(qs, A, A_dependencies):
 
     return qo
 
+
 def compute_info_gain(qs, qo, A, A_dependencies):
     """"
     New version of expected information gain that takes into account sparse dependencies between observation
     modalities and hidden state factors
     """
-    
+
+    def compute_info_gain_for_modality(qo_m, A_m, m):
+        H_qo = - (qo_m * log_stable(qo_m)).sum()
+        H_A_m = - (A_m * log_stable(A_m)).sum(0)
+        deps = A_dependencies[m]
+        einsum(H_A_m, )
+
+            dims = list(range(A.ndim - len(qs),len(qs)+A.ndim - len(qs)))
+
+    arg_list = [A, list(range(A.ndim))] + list(chain(*([qs[f],[dims[f]]] for f in range(len(qs))))) + [[0]]
+
+    res = jnp.einsum(*arg_list)
+
     qs_H_A = 0 # expected entropy of the likelihood, under Q(s)
     H_qo = 0 # marginal entropy of Q(o)
     for a, o, deps in zip(A, qo, A_dependencies):
