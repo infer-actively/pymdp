@@ -168,7 +168,7 @@ def compute_expected_state_and_Bs(qs_prior, B, u_t):
     
     return qs_next, Bs
 
-def factor_dot(A, qs):
+def factor_dot(A, qs, keep_dims=None):
     """ Dot product of a multidimensional array with `x`.
     
     Parameters
@@ -183,7 +183,7 @@ def factor_dot(A, qs):
     
     dims = list(range(A.ndim - len(qs),len(qs)+A.ndim - len(qs)))
 
-    arg_list = [A, list(range(A.ndim))] + list(chain(*([qs[f],[dims[f]]] for f in range(len(qs))))) + [[0]]
+    arg_list = [A, list(range(A.ndim))] + list(chain(*([qs[f],[dims[f]]] for f in range(len(qs))))) + [keep_dims]
 
     res = jnp.einsum(*arg_list)
 
