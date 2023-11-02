@@ -47,6 +47,7 @@ class Agent(Module):
     
     # static parameters not leaves of the PyTree
     A_dependencies: Optional[List] = static_field()
+    B_dependencies: Optional[List] = static_field()
     num_iter: int = static_field()
     num_obs: List = static_field()
     num_modalities: int = static_field()
@@ -77,6 +78,7 @@ class Agent(Module):
         pA,
         pB,
         A_dependencies=None,
+        B_dependencies=None,
         qs=None,
         q_pi=None,
         policy_len=1,
@@ -108,13 +110,40 @@ class Agent(Module):
         self.qs = qs
         self.q_pi = q_pi
 
+        element_size = lambda x: x.shape[1]
+        self.num_factors = len(self.B)
+        self.num_states = jtu.tree_map(element_size, self.B) 
+
+        self.num_modalities = len(self.A)
+        self.num_obs = jtu.tree_map(element_size, self.A)
+
+        # Ensure consistency of A_dependencies with num_states and num_factors
         if A_dependencies is not None:
             self.A_dependencies = A_dependencies
         else:
+            # assume full dependence of A matrices and state factors
+            self.A_dependencies = [list(range(self.num_factors)) for _ in range(self.num_modalities)]
+        
+        for m in range(self.num_modalities):
+            factor_dims = tuple([self.num_states[f] for f in self.A_dependencies[m]])
+            assert self.A[m].shape[2:] == factor_dims, f"Please input an `A_dependencies` whose {m}-th indices correspond to the hidden state factors that line up with lagging dimensions of A[{m}]..." 
+            if self.pA != None:
+                assert self.pA[m].shape[2:] == factor_dims, f"Please input an `A_dependencies` whose {m}-th indices correspond to the hidden state factors that line up with lagging dimensions of pA[{m}]..." 
+            assert max(self.A_dependencies[m]) <= (self.num_factors - 1), f"Check modality {m} of `A_dependencies` - must be consistent with `num_states` and `num_factors`..."
+           
+        # Ensure consistency of B_dependencies with num_states and num_factors
+        if B_dependencies is not None:
+            self.B_dependencies
+        else:
             num_factors = len(B)
-            num_modalities = len(A)
-            self.A_dependencies = [list(range(num_factors)) for _ in range(num_modalities)]
+            self.B_dependencies = [[f] for f in range(self.num_factors)] # defaults to having all factors depend only on themselves
 
+        for f in range(self.num_factors):
+            factor_dims = tuple([self.num_states[f] for f in self.B_dependencies[f]])
+            assert self.B[f].shape[2:-1] == factor_dims, f"Please input a `B_dependencies` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of B[{f}]..." 
+            if self.pB != None:
+                assert self.pB[f].shape[2:-1] == factor_dims, f"Please input a `B_dependencies` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of pB[{f}]..." 
+            assert max(self.B_dependencies[f]) <= (self.num_factors - 1), f"Check factor {f} of `B_dependencies` - must be consistent with `num_states` and `num_factors`..."
 
         batch_dim = (self.A[0].shape[0],)
 
@@ -144,17 +173,23 @@ class Agent(Module):
         self.num_obs = [self.A[m].shape[1] for m in range(len(self.A))]
         self.num_modalities = len(self.num_obs)
 
-        # Determine number of hidden state factors and their dimensionalities
-        self.num_states = [self.B[f].shape[1] for f in range(len(self.B))]
-        self.num_factors = len(self.num_states)
-
         # If no `num_controls` are given, then this is inferred from the shapes of the input B matrices
         self.num_controls = [self.B[f].shape[-1] for f in range(self.num_factors)]
 
         # Users have the option to make only certain factors controllable.
         # default behaviour is to make all hidden state factors controllable
         # (i.e. self.num_states == self.num_controls)
-        self.control_fac_idx = control_fac_idx
+        # Users have the option to make only certain factors controllable.
+        # default behaviour is to make all hidden state factors controllable, i.e. `self.num_factors == len(self.num_controls)`
+        if control_fac_idx == None:
+            self.control_fac_idx = [f for f in range(self.num_factors) if self.num_controls[f] > 1]
+        else:
+            assert max(control_fac_idx) <= (self.num_factors - 1), "Check control_fac_idx - must be consistent with `num_states` and `num_factors`..."
+            self.control_fac_idx = control_fac_idx
+
+            for factor_idx in self.control_fac_idx:
+                assert self.num_controls[factor_idx] > 1, "Control factor (and B matrix) dimensions are not consistent with user-given control_fac_idx"
+
         if policies is not None:
             self.policies = policies
         else:
@@ -229,6 +264,7 @@ class Agent(Module):
             prior=empirical_prior,
             qs_hist=qs_hist,
             A_dependencies=self.A_dependencies,
+            B_dependencies=self.B_dependencies,
             num_iter=self.num_iter,
             method=self.inference_algo
         )
@@ -243,7 +279,7 @@ class Agent(Module):
         # return empirical_prior, and the history of posterior beliefs (filtering distributions) held about hidden states at times 1, 2 ... t
 
         qs_last = jtu.tree_map( lambda x: x[-1], qs)
-        pred = control.compute_expected_state(qs_last, self.B, action)
+        pred = control.compute_expected_state(qs_last, self.B, action, B_dependencies=self.B_dependencies)
         
         return (pred, qs)
 
@@ -272,6 +308,8 @@ class Agent(Module):
             self.C,
             self.pA,
             self.pB,
+            A_dependencies=self.A_dependencies,
+            B_dependencies=self.B_dependencies,
             gamma=self.gamma,
             use_utility=self.use_utility,
             use_states_info_gain=self.use_states_info_gain,

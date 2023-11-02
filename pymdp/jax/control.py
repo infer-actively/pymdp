@@ -126,11 +126,12 @@ def construct_policies(num_states, num_controls = None, policy_len=1, control_fa
     return jnp.stack(policies)
 
 
-def update_posterior_policies(policy_matrix, qs_init, A, B, C, pA, pB, gamma=16.0, use_utility=True, use_states_info_gain=True, use_param_info_gain=False):
+def update_posterior_policies(policy_matrix, qs_init, A, B, C, pA, pB, A_dependencies, B_dependencies, gamma=16.0, use_utility=True, use_states_info_gain=True, use_param_info_gain=False):
     # policy --> n_levels_factor_f x 1
     # factor --> n_levels_factor_f x n_policies
     ## vmap across policies
-    compute_G_fixed_states = partial(compute_G_policy, qs_init, A, B, C, pA, pB, use_utility=use_utility, use_states_info_gain=use_states_info_gain, use_param_info_gain=use_param_info_gain)
+    compute_G_fixed_states = partial(compute_G_policy, qs_init, A, B, C, pA, pB, A_dependencies, B_dependencies,
+                                     use_utility=use_utility, use_states_info_gain=use_states_info_gain, use_param_info_gain=use_param_info_gain)
 
     # only in the case of policy-dependent qs_inits
     # in_axes_list = (1,) * n_factors
@@ -141,14 +142,16 @@ def update_posterior_policies(policy_matrix, qs_init, A, B, C, pA, pB, gamma=16.
 
     return nn.softmax(gamma * neg_efe_all_policies), neg_efe_all_policies
 
-def compute_expected_state(qs_prior, B, u_t): 
+def compute_expected_state(qs_prior, B, u_t, B_dependencies=None): 
     """
     Compute posterior over next state, given belief about previous state, transition model and action...
     """
     assert len(u_t) == len(B)  
     qs_next = []
-    for qs_f, B_f, u_f in zip(qs_prior, B, u_t):
-        qs_next.append( B_f[..., u_f].dot(qs_f) )
+    for B_f, u_f, deps in zip(B, u_t, B_dependencies):
+        # qs_next.append( B_f[..., u_f].dot(qs_f) )
+        qs_next_f = factor_dot(B_f[...,u_f], qs_prior[deps])
+        qs_next.append(qs_next_f)
         
     return qs_next
 
@@ -186,27 +189,38 @@ def factor_dot(A, qs):
 
     return res
 
-def compute_expected_obs(qs, A):
+def compute_expected_obs(qs, A, A_dependencies):
+    """"
+    New version of expected observation (computation of Q(o|pi)) that takes into account sparse dependencies between observation
+    modalities and hidden state factors
+    """
 
     qo = []
-    for A_m in A:
-        qo.append( factor_dot(A_m, qs) )
+    for A_m, deps in zip(A, A_dependencies):
+        relevant_factors = jtu.tree_map(lambda idx: qs[idx], deps)
+        qo.append( factor_dot(A_m, relevant_factors) )
 
     return qo
 
-def compute_info_gain(qs, qo, A):
+def compute_info_gain(qs, qo, A, A_dependencies):
+    """"
+    New version of expected information gain that takes into account sparse dependencies between observation
+    modalities and hidden state factors
+    """
     
-    x = qs[0]
-    for q in qs[1:]:
-        x = jnp.expand_dims(x, -1) * q
-
     qs_H_A = 0 # expected entropy of the likelihood, under Q(s)
     H_qo = 0 # marginal entropy of Q(o)
-    for a, o in zip(A, qo):
-        qs_H_A -= (a * log_stable(a)).sum(0)
+    for a, o, deps in zip(A, qo, A_dependencies):
+        relevant_factors = jtu.tree_map(lambda idx: qs[idx], deps)
+        qs_joint_relevant = relevant_factors[0]
+        for q in relevant_factors[1:]:
+            qs_joint_relevant = jnp.expand_dims(qs_joint_relevant, -1) * q
+        H_A_m = -(a * log_stable(a)).sum(0)
+        qs_H_A += (H_A_m * qs_joint_relevant).sum()
+
         H_qo -= (o * log_stable(o)).sum()
     
-    return H_qo - (qs_H_A * x).sum()
+    return H_qo - qs_H_A
     
 def compute_expected_utility(qo, C):
     
@@ -294,16 +308,16 @@ def calc_pB_info_gain(pB, qs_t, qs_t_minus_1):
     #         pB_infogain -= qs_pi[t][factor].dot(wB_factor_t.dot(previous_qs[factor]))
     return 0.
 
-def compute_G_policy(qs_init, A, B, C, pA, pB, policy_i, use_utility=True, use_states_info_gain=True, use_param_info_gain=False):
+def compute_G_policy(qs_init, A, B, C, pA, pB, A_dependencies, B_dependencies, policy_i, use_utility=True, use_states_info_gain=True, use_param_info_gain=False):
     """ Write a version of compute_G_policy that does the same computations as `compute_G_policy` but using `lax.scan` instead of a for loop. """
 
     def scan_body(carry, t):
 
         qs, neg_G = carry
 
-        qs_next = compute_expected_state(qs, B, policy_i[t])
+        qs_next = compute_expected_state(qs, B, policy_i[t], B_dependencies)
 
-        qo = compute_expected_obs(qs_next, A)
+        qo = compute_expected_obs(qs_next, A, A_dependencies)
 
         info_gain = compute_info_gain(qs_next, qo, A) if use_states_info_gain else 0.
 
@@ -323,21 +337,21 @@ def compute_G_policy(qs_init, A, B, C, pA, pB, policy_i, use_utility=True, use_s
     return neg_G
 
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
 
-    from jax import random
-    key = random.PRNGKey(1)
-    num_obs = [3, 4]
+#     from jax import random
+#     key = random.PRNGKey(1)
+#     num_obs = [3, 4]
 
-    A = [random.uniform(key, shape = (no, 2, 2)) for no in num_obs]
-    B = [random.uniform(key, shape = (2, 2, 2)), random.uniform(key, shape = (2, 2, 2))]
-    C = [log_stable(jnp.array([0.8, 0.1, 0.1])), log_stable(jnp.ones(4)/4)]
-    policy_1 = jnp.array([[0, 1],
-                         [1, 1]])
-    policy_2 = jnp.array([[1, 0],
-                         [0, 0]])
-    policy_matrix = jnp.stack([policy_1, policy_2]) # 2 x 2 x 2 tensor
+#     A = [random.uniform(key, shape = (no, 2, 2)) for no in num_obs]
+#     B = [random.uniform(key, shape = (2, 2, 2)), random.uniform(key, shape = (2, 2, 2))]
+#     C = [log_stable(jnp.array([0.8, 0.1, 0.1])), log_stable(jnp.ones(4)/4)]
+#     policy_1 = jnp.array([[0, 1],
+#                          [1, 1]])
+#     policy_2 = jnp.array([[1, 0],
+#                          [0, 0]])
+#     policy_matrix = jnp.stack([policy_1, policy_2]) # 2 x 2 x 2 tensor
     
-    qs_init = [jnp.ones(2)/2, jnp.ones(2)/2]
-    neg_G_all_policies = jit(update_posterior_policies)(policy_matrix, qs_init, A, B, C)
-    print(neg_G_all_policies)
+#     qs_init = [jnp.ones(2)/2, jnp.ones(2)/2]
+#     neg_G_all_policies = jit(update_posterior_policies)(policy_matrix, qs_init, A, B, C)
+#     print(neg_G_all_policies)
