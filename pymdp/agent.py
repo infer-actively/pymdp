@@ -37,6 +37,7 @@ class Agent(object):
         C=None,
         D=None,
         E = None,
+        H = None,
         pA=None,
         pB = None,
         pD = None,
@@ -248,6 +249,12 @@ class Agent(object):
         else:
             self.E = self._construct_E_prior()
         
+        # Construct I for backwards induction (if H specified)
+        if H is not None:
+            self.I = control.backwards_induction(H, B, B_factor_list, threshold=1/16, depth=5)
+        else:
+            self.I = None
+
         self.edge_handling_params = {}
         self.edge_handling_params['use_BMA'] = use_BMA # creates a 'D-like' moving prior
         self.edge_handling_params['policy_sep_prior'] = policy_sep_prior # carries forward last timesteps posterior, in a policy-conditioned way
@@ -669,6 +676,7 @@ class Agent(object):
                 self.pA,
                 self.pB,
                 E = self.E,
+                I = self.I,
                 gamma = self.gamma
             )
         elif self.inference_algo == "MMP":

@@ -346,6 +346,7 @@ def update_posterior_policies_factorized(
     pA=None,
     pB=None,
     E = None,
+    I = None,
     gamma=16.0
 ):
     """
@@ -420,6 +421,9 @@ def update_posterior_policies_factorized(
 
         if use_states_info_gain:
             G[idx] += calc_states_info_gain_factorized(A, qs_pi, A_factor_list)
+
+        if I is not None:
+            G[idx] += calc_inductive_cost(qs, qs_pi, I)
 
         if use_param_info_gain:
             if pA is not None:
@@ -579,6 +583,49 @@ def get_expected_obs_factorized(qs_pi, A, A_factor_list):
             qo_pi[t][modality] = spm_dot(A_m, qs_pi[t][factor_idx])
 
     return qo_pi
+
+def calc_inductive_cost(qs, qs_pi, I, epsilon=1e-3):
+    """
+    Computes the inductive cost of a state.
+
+    Parameters
+    ----------
+    qs: ``numpy.ndarray`` of dtype object
+        Marginal posterior beliefs over hidden states at a given timepoint.
+    qs_pi: ``list`` of ``numpy.ndarray`` of dtype object
+        Predictive posterior beliefs over hidden states expected under the policy, where ``qs_pi[t]`` stores the beliefs about
+        states expected under the policy at time ``t``
+    I: ``numpy.ndarray`` of dtype object
+        For each state factor, contains a 2D ``numpy.ndarray`` whose element i,j yields the probability 
+        of reaching the goal state backwards from state j after i steps.
+
+    Returns
+    -------
+    inductive_cost: float
+        Cost of visited this state using backwards induction under the policy in question
+    """
+    n_steps = len(qs_pi)
+    
+    # initialise inductive cost
+    inductive_cost = 0
+
+    # loop over time points and modalities
+    num_factors = len(I)
+
+    for t in range(n_steps):
+        for factor in range(num_factors):
+            # we also assume precise beliefs here?!
+            idx = np.argmax(qs[factor])
+            # m = arg max_n p_n < sup p
+            # i.e. find first I idx equals 1 and m is the index before
+            m = np.where(I[factor][:, idx] == 1)[0]
+            # we might find no path to goal (i.e. when no goal specified)
+            if len(m) > 0:
+                m = np.max(m[0]-1, 0)
+                I_m = (1-I[factor][m, :]) * np.log(epsilon)
+                inductive_cost += I_m.dot(qs_pi[t][factor])
+                
+    return inductive_cost
 
 def calc_expected_utility(qo_pi, C):
     """
@@ -1175,3 +1222,62 @@ def _select_highest_test(options_array, seed=None):
         return int(same_prob[rng.choice(len(same_prob))])
 
     return int(same_prob[0])
+
+
+def backwards_induction(H, B, B_factor_list, threshold, depth):
+    """
+    Runs backwards induction of reaching a goal state H given a transition model B.
+    
+    Parameters
+    ----------    
+    H: ``numpy.ndarray`` of dtype object
+       Prior over states
+    B: ``numpy.ndarray`` of dtype object
+        Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
+        Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
+        of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
+    B_factor_list: ``list`` of ``list`` of ``int``
+        List of lists of hidden state factors each hidden state factor depends on. Each element ``B_factor_list[i]`` is a list of the factor indices that factor i's dynamics depend on.
+    threshold: ``float``
+        The threshold for pruning transitions that are below a certain probability
+    depth: ``int``
+        The temporal depth of the backward induction
+
+    Returns
+    ----------
+    I: ``numpy.ndarray`` of dtype object
+        For each state factor, contains a 2D ``numpy.ndarray`` whose element i,j yields the probability 
+        of reaching the goal state backwards from state j after i steps.
+    """
+    # TODO can this be done with arbitrary B_factor_list?
+    
+    num_factors = len(H)
+    I = utils.obj_array(num_factors)
+    for factor in range(num_factors):
+        I[factor] = np.zeros((depth, H[factor].shape[0]))
+        I[factor][0, :] = H[factor]
+
+        bf = factor
+        if B_factor_list is not None:
+            if len(B_factor_list[factor]) > 1:
+                raise ValueError("Backwards induction with factorized transition model not yet implemented")
+            bf = B_factor_list[factor][0]
+
+        num_states, _, _ = B[bf].shape
+        b = np.zeros((num_states, num_states))
+        
+        for state in range(num_states):
+            for next_state in range(num_states):
+                # If there exists an action that allows transitioning 
+                # from state to next_state, with probability larger than threshold
+                # set b[state, next_state] to 1
+                if np.any(B[bf][next_state, state, :] > threshold):
+                    b[next_state, state] = 1
+
+        for i in range(1, depth):
+            I[factor][i, :] = np.dot(b, I[factor][i-1, :])
+            I[factor][i, :] = np.where(I[factor][i, :] > 0.1, 1.0, 0.0)
+
+    return I
+    
+
