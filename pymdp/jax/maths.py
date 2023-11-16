@@ -1,10 +1,39 @@
-from jax import tree_util, nn, jit
 import jax.numpy as jnp
+
+from functools import partial
+from typing import Optional, Tuple
+from jax import tree_util, nn, jit
+from opt_einsum import contract
 
 MINVAL = jnp.finfo(float).eps
 
 def log_stable(x):
     return jnp.log(jnp.clip(x, a_min=MINVAL))
+
+@partial(jit, static_argnames=['keep_dims'])
+def factor_dot(M, xs, keep_dims: Optional[Tuple[int]] = None):
+    """ Dot product of a multidimensional array with `x`.
+    
+    Parameters
+    ----------
+    - `qs` [list of 1D numpy.ndarray] - list of jnp.ndarrays
+    
+    Returns 
+    -------
+    - `Y` [1D numpy.ndarray] - the result of the dot product
+    """
+    d = len(keep_dims) if keep_dims is not None else 0
+    assert M.ndim == len(xs) + d
+
+    all_dims = list(range(M.ndim))
+    dims = all_dims if keep_dims is None else [i for i in range(M.ndim) if i not in keep_dims]
+    matrix = [[xs[f], [dims[f]]] for f in range(len(xs))]
+    args = [M, all_dims]
+    for row in matrix:
+        args.extend(row)
+
+    args += [keep_dims]
+    return contract(*args, backend='jax')
 
 def compute_log_likelihood_single_modality(o_m, A_m, distr_obs=True):
     """ Compute observation likelihood for a single modality (observation and likelihood)"""
