@@ -10,7 +10,6 @@ from typing import Tuple, Optional
 from functools import partial
 from jax import lax, jit, vmap, nn
 from itertools import chain
-from opt_einsum import contract
 
 from pymdp.jax.maths import *
 # import pymdp.jax.utils as utils
@@ -170,77 +169,48 @@ def compute_expected_state_and_Bs(qs_prior, B, u_t):
     
     return qs_next, Bs
 
-@partial(jit, static_argnames=['keep_dims'])
-def factor_dot(M, xs, keep_dims: Optional[Tuple[int]] = None):
-    """ Dot product of a multidimensional array with `x`.
-    
-    Parameters
-    ----------
-    - `qs` [list of 1D numpy.ndarray] - list of jnp.ndarrays
-    
-    Returns 
-    -------
-    - `Y` [1D numpy.ndarray] - the result of the dot product
-    """
-    d = len(keep_dims) if keep_dims is not None else 0
-    assert M.ndim == len(xs) + d
-
-    all_dims = list(range(M.ndim))
-    dims = all_dims if keep_dims is None else [i for i in range(M.ndim) if i not in keep_dims]
-    matrix = [[xs[f], [dims[f]]] for f in range(len(xs))]
-    args = [M, all_dims]
-    for row in matrix:
-        args.extend(row)
-
-    args += [keep_dims]
-    return contract(*args, backend='jax')
-
 def compute_expected_obs(qs, A, A_dependencies):
-    """"
+    """
     New version of expected observation (computation of Q(o|pi)) that takes into account sparse dependencies between observation
     modalities and hidden state factors
     """
+        
+    def compute_expected_obs_modality(A_m, m):
+        deps = A_dependencies[m]
+        relevant_factors = [qs[idx] for idx in deps]
+        return factor_dot(A_m, relevant_factors, keep_dims=(0,))
 
-    qo = []
-    for A_m, deps in zip(A, A_dependencies):
-        relevant_factors = jtu.tree_map(lambda idx: qs[idx], deps)
-        qo.append( factor_dot(A_m, relevant_factors) )
-
-    return qo
-
+    return jtu.tree_map(compute_expected_obs_modality, A, list(range(len(A))))
 
 def compute_info_gain(qs, qo, A, A_dependencies):
-    """"
-    New version of expected information gain that takes into account sparse dependencies between observation
-    modalities and hidden state factors
+    """
+    New version of expected information gain that takes into account sparse dependencies between observation modalities and hidden state factors.
     """
 
     def compute_info_gain_for_modality(qo_m, A_m, m):
         H_qo = - (qo_m * log_stable(qo_m)).sum()
         H_A_m = - (A_m * log_stable(A_m)).sum(0)
         deps = A_dependencies[m]
-        einsum(H_A_m, )
-
-            dims = list(range(A.ndim - len(qs),len(qs)+A.ndim - len(qs)))
-
-    arg_list = [A, list(range(A.ndim))] + list(chain(*([qs[f],[dims[f]]] for f in range(len(qs))))) + [[0]]
-
-    res = jnp.einsum(*arg_list)
-
-    qs_H_A = 0 # expected entropy of the likelihood, under Q(s)
-    H_qo = 0 # marginal entropy of Q(o)
-    for a, o, deps in zip(A, qo, A_dependencies):
-        relevant_factors = jtu.tree_map(lambda idx: qs[idx], deps)
-        qs_joint_relevant = relevant_factors[0]
-        for q in relevant_factors[1:]:
-            qs_joint_relevant = jnp.expand_dims(qs_joint_relevant, -1) * q
-        H_A_m = -(a * log_stable(a)).sum(0)
-        qs_H_A += (H_A_m * qs_joint_relevant).sum()
-
-        H_qo -= (o * log_stable(o)).sum()
+        relevant_factors = [qs[idx] for idx in deps]
+        qs_H_A_m = factor_dot(H_A_m, relevant_factors)
+        return H_qo - qs_H_A_m
     
-    return H_qo - qs_H_A
-    
+    info_gains_per_modality = jtu.tree_map(compute_info_gain_for_modality, qo, A, list(range(len(A))))
+        
+    return jtu.tree_reduce(lambda x,y: x+y, info_gains_per_modality)
+
+# qs_H_A = 0 # expected entropy of the likelihood, under Q(s)
+# H_qo = 0 # marginal entropy of Q(o)
+# for a, o, deps in zip(A, qo, A_dependencies):
+#     relevant_factors = jtu.tree_map(lambda idx: qs[idx], deps)
+#     qs_joint_relevant = relevant_factors[0]
+#     for q in relevant_factors[1:]:
+#         qs_joint_relevant = jnp.expand_dims(qs_joint_relevant, -1) * q
+#     H_A_m = -(a * log_stable(a)).sum(0)
+#     qs_H_A += (H_A_m * qs_joint_relevant).sum()
+
+#     H_qo -= (o * log_stable(o)).sum()
+
 def compute_expected_utility(qo, C):
     
     util = 0.
