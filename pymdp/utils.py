@@ -100,7 +100,8 @@ def random_A_matrix(num_obs, num_states, A_factor_list=None):
 
     A = obj_array(num_modalities)
     for modality, modality_obs in enumerate(num_obs):
-        lagging_dimensions = [ns for i, ns in enumerate(num_states) if i in A_factor_list[modality]]
+        # lagging_dimensions = [ns for i, ns in enumerate(num_states) if i in A_factor_list[modality]] # enforces sortedness of A_factor_list
+        lagging_dimensions = [num_states[idx] for idx in A_factor_list[modality]]
         modality_shape = [modality_obs] + lagging_dimensions
         modality_dist = np.random.rand(*modality_shape)
         A[modality] = norm_dist(modality_dist)
