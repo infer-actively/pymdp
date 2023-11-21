@@ -552,3 +552,37 @@ def spm_MDP_G(A, x):
 
     return G
 
+def kl_div(P,Q):
+    """
+    Parameters
+    ----------
+    P : Categorical probability distribution
+    Q : Categorical probability distribution
+
+    Returns
+    -------
+    The KL-divergence of P and Q
+
+    """
+    dkl = 0
+    for i in range(len(P)):
+        dkl += np.dot(P[i], np.log(P[i] + EPS_VAL) - np.log(Q[i] + EPS_VAL))
+    return(dkl)
+
+def entropy(A):
+    """
+    Compute the entropy term H of the likelihood matrix,
+    i.e. one entropy value per column
+    """
+    entropies = np.empty(len(A), dtype=object)
+    for i in range(len(A)):
+        if len(A[i].shape) > 2:
+            obs_dim = A[i].shape[0]
+            s_dim = A[i].size // obs_dim
+            A_merged = A[i].reshape(obs_dim, s_dim)
+        else:
+            A_merged = A[i]
+
+        H = - np.diag(np.matmul(A_merged.T, np.log(A_merged + EPS_VAL)))
+        entropies[i] = H.reshape(*A[i].shape[1:])
+    return entropies
