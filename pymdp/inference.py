@@ -108,11 +108,14 @@ def update_posterior_states_full_factorized(
         stores an ``numpy.ndarray`` multidimensional array for observation modality ``m``, whose entries ``A[m][i, j, k, ...]`` store 
         the probability of observation level ``i`` given hidden state levels ``j, k, ...``
     mb_dict: ``Dict``
+        Dictionary with two keys (``A_factor_list`` and ``A_modality_list``), that stores the factor indices that influence each modality (``A_factor_list``)
+        and the modality indices influenced by each factor (``A_modality_list``).
     B: ``numpy.ndarray`` of dtype object
         Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
         Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
         of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
-    B_factor_list: ``list`` of ``list``
+    B_factor_list: ``list`` of ``list`` of ``int``
+        List of lists of hidden state factors each hidden state factor depends on. Each element ``B_factor_list[i]`` is a list of the factor indices that factor i's dynamics depend on.
     prev_obs: ``list``
         List of observations over time. Each observation in the list can be an ``int``, a ``list`` of ints, a ``tuple`` of ints, a one-hot vector or an object array of one-hot vectors.
     policies: ``list`` of 2D ``numpy.ndarray``
