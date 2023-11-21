@@ -36,11 +36,11 @@ class Agent(object):
         B,
         C=None,
         D=None,
-        E = None,
-        H = None,
+        E=None,
+        H=None,
         pA=None,
-        pB = None,
-        pD = None,
+        pB=None,
+        pD=None,
         num_controls=None,
         policy_len=1,
         inference_horizon=1,
@@ -61,10 +61,10 @@ class Agent(object):
         lr_pB=1.0,
         lr_pD=1.0,
         use_BMA = True,
-        policy_sep_prior = False,
-        save_belief_hist = False,
-        A_factor_list = None,
-        B_factor_list = None
+        policy_sep_prior=False,
+        save_belief_hist=False,
+        A_factor_list=None,
+        B_factor_list=None
     ):
 
         ### Constant parameters ###
@@ -611,8 +611,9 @@ class Agent(object):
                 self.use_param_info_gain,
                 self.pA,
                 self.pB,
-                E = self.E,
-                gamma = self.gamma
+                E=self.E,
+                I=self.I,
+                gamma=self.gamma
             )
         elif self.inference_algo == "MMP":
 
@@ -632,6 +633,7 @@ class Agent(object):
                 self.pB,
                 F = self.F,
                 E = self.E,
+                I=self.I,
                 gamma = self.gamma
             )
 
@@ -675,9 +677,9 @@ class Agent(object):
                 self.use_param_info_gain,
                 self.pA,
                 self.pB,
-                E = self.E,
-                I = self.I,
-                gamma = self.gamma
+                E=self.E,
+                I=self.I,
+                gamma=self.gamma
             )
         elif self.inference_algo == "MMP":
 
@@ -697,9 +699,10 @@ class Agent(object):
                 self.latest_belief,
                 self.pA,
                 self.pB,
-                F = self.F,
-                E = self.E,
-                gamma = self.gamma
+                F=self.F,
+                E=self.E,
+                I=self.I,
+                gamma=self.gamma
             )
 
         if hasattr(self, "q_pi_hist"):
