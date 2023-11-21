@@ -5,8 +5,8 @@
 import numpy as np
 
 from pymdp import utils
-from pymdp.maths import get_joint_likelihood_seq
-from pymdp.algos import run_vanilla_fpi, run_vanilla_fpi_factorized, run_mmp, _run_mmp_testing
+from pymdp.maths import get_joint_likelihood_seq, get_joint_likelihood_seq_by_modality
+from pymdp.algos import run_vanilla_fpi, run_vanilla_fpi_factorized, run_mmp, run_mmp_factorized, _run_mmp_testing
 
 VANILLA = "VANILLA"
 VMP = "VMP"
@@ -78,6 +78,83 @@ def update_posterior_states_full(
             qs_seq_pi[p_idx], F[p_idx] = run_mmp(
                 lh_seq,
                 B,
+                policy,
+                prev_actions=prev_actions,
+                prior= prior[p_idx] if policy_sep_prior else prior, 
+                **kwargs
+            )
+
+    return qs_seq_pi, F
+
+def update_posterior_states_full_factorized(
+    A,
+    mb_dict,
+    B,
+    B_factor_list,
+    prev_obs,
+    policies,
+    prev_actions=None,
+    prior=None,
+    policy_sep_prior = True,
+    **kwargs,
+):
+    """
+    Update posterior over hidden states using marginal message passing
+
+    Parameters
+    ----------
+    A: ``numpy.ndarray`` of dtype object
+        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element ``A[m]`` of
+        stores an ``numpy.ndarray`` multidimensional array for observation modality ``m``, whose entries ``A[m][i, j, k, ...]`` store 
+        the probability of observation level ``i`` given hidden state levels ``j, k, ...``
+    mb_dict: ``Dict``
+    B: ``numpy.ndarray`` of dtype object
+        Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
+        Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
+        of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
+    B_factor_list: ``list`` of ``list``
+    prev_obs: ``list``
+        List of observations over time. Each observation in the list can be an ``int``, a ``list`` of ints, a ``tuple`` of ints, a one-hot vector or an object array of one-hot vectors.
+    policies: ``list`` of 2D ``numpy.ndarray``
+        List that stores each policy in ``policies[p_idx]``. Shape of ``policies[p_idx]`` is ``(num_timesteps, num_factors)`` where `num_timesteps` is the temporal
+        depth of the policy and ``num_factors`` is the number of control factors.
+    prior: ``numpy.ndarray`` of dtype object, default ``None``
+        If provided, this a ``numpy.ndarray`` of dtype object, with one sub-array per hidden state factor, that stores the prior beliefs about initial states. 
+        If ``None``, this defaults to a flat (uninformative) prior over hidden states.
+    policy_sep_prior: ``Bool``, default ``True``
+        Flag determining whether the prior beliefs from the past are unconditioned on policy, or separated by /conditioned on the policy variable.
+    **kwargs: keyword arguments
+        Optional keyword arguments for the function ``algos.mmp.run_mmp``
+
+    Returns
+    ---------
+    qs_seq_pi: ``numpy.ndarray`` of dtype object
+        Posterior beliefs over hidden states for each policy. Nesting structure is policies, timepoints, factors,
+        where e.g. ``qs_seq_pi[p][t][f]`` stores the marginal belief about factor ``f`` at timepoint ``t`` under policy ``p``.
+    F: 1D ``numpy.ndarray``
+        Vector of variational free energies for each policy
+    """
+
+    num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A, B)
+    
+    prev_obs = utils.process_observation_seq(prev_obs, num_modalities, num_obs)
+   
+    lh_seq = get_joint_likelihood_seq_by_modality(A, prev_obs, num_states)
+
+    if prev_actions is not None:
+        prev_actions = np.stack(prev_actions,0)
+
+    qs_seq_pi = utils.obj_array(len(policies))
+    F = np.zeros(len(policies)) # variational free energy of policies
+
+    for p_idx, policy in enumerate(policies):
+
+            # get sequence and the free energy for policy
+            qs_seq_pi[p_idx], F[p_idx] = run_mmp_factorized(
+                lh_seq,
+                mb_dict,
+                B,
+                B_factor_list,
                 policy,
                 prev_actions=prev_actions,
                 prior= prior[p_idx] if policy_sep_prior else prior, 

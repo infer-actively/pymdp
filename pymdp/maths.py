@@ -250,6 +250,23 @@ def get_joint_likelihood_seq(A, obs, num_states):
         ll_seq[t] = get_joint_likelihood(A, obs_t, num_states)
     return ll_seq
 
+def get_joint_likelihood_seq_by_modality(A, obs, num_states):
+    """
+    Returns joint likelihoods for each modality separately
+    """
+
+    ll_seq = utils.obj_array(len(obs))
+    n_modalities = len(A)
+
+    for t, obs_t in enumerate(obs):
+        likelihood = utils.obj_array(n_modalities)
+        obs_t_obj = utils.to_obj_array(obs_t)
+        for (m, A_m) in enumerate(A):
+            likelihood[m] = dot_likelihood(A_m, obs_t_obj[m])
+        ll_seq[t] = likelihood
+    
+    return ll_seq
+
 
 def spm_norm(A):
     """ 

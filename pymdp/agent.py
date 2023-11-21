@@ -500,9 +500,11 @@ class Agent(object):
                 latest_obs = self.prev_obs
                 latest_actions = self.prev_actions
 
-            qs, F = inference.update_posterior_states_full(
+            qs, F = inference.update_posterior_states_full_factorized(
                 self.A,
+                self.mb_dict,
                 self.B,
+                self.B_factor_list,
                 latest_obs,
                 self.policies, 
                 latest_actions, 
@@ -575,7 +577,7 @@ class Agent(object):
         else:
             return qs
 
-    def infer_policies(self):
+    def infer_policies_old(self):
         """
         Perform policy inference by optimizing a posterior (categorical) distribution over policies.
         This distribution is computed as the softmax of ``G * gamma + lnE`` where ``G`` is the negative expected
@@ -635,7 +637,7 @@ class Agent(object):
         self.G = G
         return q_pi, G
     
-    def infer_policies_factorized(self):
+    def infer_policies(self):
         """
         Perform policy inference by optimizing a posterior (categorical) distribution over policies.
         This distribution is computed as the softmax of ``G * gamma + lnE`` where ``G`` is the negative expected
@@ -670,26 +672,27 @@ class Agent(object):
                 gamma = self.gamma
             )
         elif self.inference_algo == "MMP":
-            Raise(NotImplementedError("Factorized inference not implemented for MMP"))
 
-        #     future_qs_seq = self.get_future_qs()
+            future_qs_seq = self.get_future_qs()
 
-        #     q_pi, G = control.update_posterior_policies_full(
-        #         future_qs_seq,
-        #         self.A,
-        #         self.B,
-        #         self.C,
-        #         self.policies,
-        #         self.use_utility,
-        #         self.use_states_info_gain,
-        #         self.use_param_info_gain,
-        #         self.latest_belief,
-        #         self.pA,
-        #         self.pB,
-        #         F = self.F,
-        #         E = self.E,
-        #         gamma = self.gamma
-        #     )
+            q_pi, G = control.update_posterior_policies_full_factorized(
+                future_qs_seq,
+                self.A,
+                self.B,
+                self.C,
+                self.A_factor_list,
+                self.B_factor_list,
+                self.policies,
+                self.use_utility,
+                self.use_states_info_gain,
+                self.use_param_info_gain,
+                self.latest_belief,
+                self.pA,
+                self.pB,
+                F = self.F,
+                E = self.E,
+                gamma = self.gamma
+            )
 
         if hasattr(self, "q_pi_hist"):
             self.q_pi_hist.append(q_pi)
