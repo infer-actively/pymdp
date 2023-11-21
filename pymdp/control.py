@@ -21,8 +21,9 @@ def update_posterior_policies_full(
     prior=None,
     pA=None,
     pB=None,
-    F = None,
-    E = None,
+    F=None,
+    E=None,
+    I=None,
     gamma=16.0
 ):  
     """
@@ -67,6 +68,9 @@ def update_posterior_policies_full(
         Vector of variational free energies for each policy
     E: 1D ``numpy.ndarray``, default ``None``
         Vector of prior probabilities of each policy (what's referred to in the active inference literature as "habits"). If ``None``, this defaults to a flat (uninformative) prior over policies.
+    I: ``numpy.ndarray`` of dtype object
+        For each state factor, contains a 2D ``numpy.ndarray`` whose element i,j yields the probability 
+        of reaching the goal state backwards from state j after i steps.
     gamma: ``float``, default 16.0
         Prior precision over policies, scales the contribution of the expected free energy to the posterior over policies
 
@@ -100,6 +104,9 @@ def update_posterior_policies_full(
     else:
         lnE = spm_log_single(E) 
 
+    if I is not None:
+        init_qs_all_pi = [qs_seq_pi[p][0] for p in range(num_policies)]
+        qs_bma = inference.average_states_over_policies(init_qs_all_pi, softmax(E))
 
     for p_idx, policy in enumerate(policies):
 
@@ -116,6 +123,9 @@ def update_posterior_policies_full(
                 G[p_idx] += calc_pA_info_gain(pA, qo_seq_pi[p_idx], qs_seq_pi[p_idx])
             if pB is not None:
                 G[p_idx] += calc_pB_info_gain(pB, qs_seq_pi[p_idx], prior, policy)
+        
+        if I is not None:
+            G[p_idx] += calc_inductive_cost(qs_bma, qs_seq_pi[p_idx], I)
 
     q_pi = softmax(G * gamma - F + lnE)
     
@@ -135,8 +145,9 @@ def update_posterior_policies_full_factorized(
     prior=None,
     pA=None,
     pB=None,
-    F = None,
-    E = None,
+    F=None,
+    E=None,
+    I=None,
     gamma=16.0
 ):  
     """
@@ -187,6 +198,9 @@ def update_posterior_policies_full_factorized(
         Vector of variational free energies for each policy
     E: 1D ``numpy.ndarray``, default ``None``
         Vector of prior probabilities of each policy (what's referred to in the active inference literature as "habits"). If ``None``, this defaults to a flat (uninformative) prior over policies.
+    I: ``numpy.ndarray`` of dtype object
+        For each state factor, contains a 2D ``numpy.ndarray`` whose element i,j yields the probability 
+        of reaching the goal state backwards from state j after i steps.
     gamma: ``float``, default 16.0
         Prior precision over policies, scales the contribution of the expected free energy to the posterior over policies
 
@@ -220,6 +234,10 @@ def update_posterior_policies_full_factorized(
     else:
         lnE = spm_log_single(E) 
 
+    if I is not None:
+        init_qs_all_pi = [qs_seq_pi[p][0] for p in range(num_policies)]
+        qs_bma = inference.average_states_over_policies(init_qs_all_pi, softmax(E))
+
     for p_idx, policy in enumerate(policies):
 
         qo_seq_pi[p_idx] = get_expected_obs_factorized(qs_seq_pi[p_idx], A, A_factor_list)
@@ -235,7 +253,10 @@ def update_posterior_policies_full_factorized(
                 G[idx] += calc_pA_info_gain_factorized(pA, qo_seq_pi[p_idx], qs_seq_pi[p_idx], A_factor_list)
             if pB is not None:
                 G[idx] += calc_pB_info_gain_interactions(pB, qs_seq_pi[p_idx], qs, B_factor_list, policy)
-
+        
+        if I is not None:
+            G[p_idx] += calc_inductive_cost(qs_bma, qs_seq_pi[p_idx], I)
+            
     q_pi = softmax(G * gamma - F + lnE)
     
     return q_pi, G
@@ -252,7 +273,8 @@ def update_posterior_policies(
     use_param_info_gain=False,
     pA=None,
     pB=None,
-    E = None,
+    E=None,
+    I=None,
     gamma=16.0
 ):
     """
@@ -292,6 +314,9 @@ def update_posterior_policies(
         Dirichlet parameters over transition model (same shape as ``B``)
     E: 1D ``numpy.ndarray``, optional
         Vector of prior probabilities of each policy (what's referred to in the active inference literature as "habits")
+    I: ``numpy.ndarray`` of dtype object
+        For each state factor, contains a 2D ``numpy.ndarray`` whose element i,j yields the probability 
+        of reaching the goal state backwards from state j after i steps.
     gamma: float, default 16.0
         Prior precision over policies, scales the contribution of the expected free energy to the posterior over policies
 
@@ -327,6 +352,9 @@ def update_posterior_policies(
                 G[idx] += calc_pA_info_gain(pA, qo_pi, qs_pi)
             if pB is not None:
                 G[idx] += calc_pB_info_gain(pB, qs_pi, qs, policy)
+        
+        if I is not None:
+            G[idx] += calc_inductive_cost(qs, qs_pi, I)
 
     q_pi = softmax(G * gamma + lnE)    
 
@@ -345,8 +373,8 @@ def update_posterior_policies_factorized(
     use_param_info_gain=False,
     pA=None,
     pB=None,
-    E = None,
-    I = None,
+    E=None,
+    I=None,
     gamma=16.0
 ):
     """
@@ -392,6 +420,9 @@ def update_posterior_policies_factorized(
         Dirichlet parameters over transition model (same shape as ``B``)
     E: 1D ``numpy.ndarray``, optional
         Vector of prior probabilities of each policy (what's referred to in the active inference literature as "habits")
+    I: ``numpy.ndarray`` of dtype object
+        For each state factor, contains a 2D ``numpy.ndarray`` whose element i,j yields the probability 
+        of reaching the goal state backwards from state j after i steps.
     gamma: float, default 16.0
         Prior precision over policies, scales the contribution of the expected free energy to the posterior over policies
 
@@ -422,14 +453,14 @@ def update_posterior_policies_factorized(
         if use_states_info_gain:
             G[idx] += calc_states_info_gain_factorized(A, qs_pi, A_factor_list)
 
-        if I is not None:
-            G[idx] += calc_inductive_cost(qs, qs_pi, I)
-
         if use_param_info_gain:
             if pA is not None:
                 G[idx] += calc_pA_info_gain_factorized(pA, qo_pi, qs_pi, A_factor_list)
             if pB is not None:
                 G[idx] += calc_pB_info_gain_interactions(pB, qs_pi, qs, B_factor_list, policy)
+        
+        if I is not None:
+            G[idx] += calc_inductive_cost(qs, qs_pi, I)
 
     q_pi = softmax(G * gamma + lnE)    
 
@@ -583,49 +614,6 @@ def get_expected_obs_factorized(qs_pi, A, A_factor_list):
             qo_pi[t][modality] = spm_dot(A_m, qs_pi[t][factor_idx])
 
     return qo_pi
-
-def calc_inductive_cost(qs, qs_pi, I, epsilon=1e-3):
-    """
-    Computes the inductive cost of a state.
-
-    Parameters
-    ----------
-    qs: ``numpy.ndarray`` of dtype object
-        Marginal posterior beliefs over hidden states at a given timepoint.
-    qs_pi: ``list`` of ``numpy.ndarray`` of dtype object
-        Predictive posterior beliefs over hidden states expected under the policy, where ``qs_pi[t]`` stores the beliefs about
-        states expected under the policy at time ``t``
-    I: ``numpy.ndarray`` of dtype object
-        For each state factor, contains a 2D ``numpy.ndarray`` whose element i,j yields the probability 
-        of reaching the goal state backwards from state j after i steps.
-
-    Returns
-    -------
-    inductive_cost: float
-        Cost of visited this state using backwards induction under the policy in question
-    """
-    n_steps = len(qs_pi)
-    
-    # initialise inductive cost
-    inductive_cost = 0
-
-    # loop over time points and modalities
-    num_factors = len(I)
-
-    for t in range(n_steps):
-        for factor in range(num_factors):
-            # we also assume precise beliefs here?!
-            idx = np.argmax(qs[factor])
-            # m = arg max_n p_n < sup p
-            # i.e. find first I idx equals 1 and m is the index before
-            m = np.where(I[factor][:, idx] == 1)[0]
-            # we might find no path to goal (i.e. when no goal specified)
-            if len(m) > 0:
-                m = np.max(m[0]-1, 0)
-                I_m = (1-I[factor][m, :]) * np.log(epsilon)
-                inductive_cost += I_m.dot(qs_pi[t][factor])
-                
-    return inductive_cost
 
 def calc_expected_utility(qo_pi, C):
     """
@@ -917,6 +905,49 @@ def calc_pB_info_gain_interactions(pB, qs_pi, qs_prev, B_factor_list, policy):
             pB_infogain -= qs_pi[t][factor].dot(spm_dot(wB_factor_t, previous_qs[f_idx]))
 
     return pB_infogain
+
+def calc_inductive_cost(qs, qs_pi, I, epsilon=1e-3):
+    """
+    Computes the inductive cost of a state.
+
+    Parameters
+    ----------
+    qs: ``numpy.ndarray`` of dtype object
+        Marginal posterior beliefs over hidden states at a given timepoint.
+    qs_pi: ``list`` of ``numpy.ndarray`` of dtype object
+        Predictive posterior beliefs over hidden states expected under the policy, where ``qs_pi[t]`` stores the beliefs about
+        states expected under the policy at time ``t``
+    I: ``numpy.ndarray`` of dtype object
+        For each state factor, contains a 2D ``numpy.ndarray`` whose element i,j yields the probability 
+        of reaching the goal state backwards from state j after i steps.
+
+    Returns
+    -------
+    inductive_cost: float
+        Cost of visited this state using backwards induction under the policy in question
+    """
+    n_steps = len(qs_pi)
+    
+    # initialise inductive cost
+    inductive_cost = 0
+
+    # loop over time points and modalities
+    num_factors = len(I)
+
+    for t in range(n_steps):
+        for factor in range(num_factors):
+            # we also assume precise beliefs here?!
+            idx = np.argmax(qs[factor])
+            # m = arg max_n p_n < sup p
+            # i.e. find first I idx equals 1 and m is the index before
+            m = np.where(I[factor][:, idx] == 1)[0]
+            # we might find no path to goal (i.e. when no goal specified)
+            if len(m) > 0:
+                m = np.max(m[0]-1, 0)
+                I_m = (1-I[factor][m, :]) * np.log(epsilon)
+                inductive_cost += I_m.dot(qs_pi[t][factor])
+                
+    return inductive_cost
 
 def construct_policies(num_states, num_controls = None, policy_len=1, control_fac_idx=None):
     """
