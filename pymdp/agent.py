@@ -60,11 +60,16 @@ class Agent(object):
         factors_to_learn="all",
         lr_pB=1.0,
         lr_pD=1.0,
-        use_BMA = True,
+        use_BMA=True,
         policy_sep_prior=False,
         save_belief_hist=False,
         A_factor_list=None,
-        B_factor_list=None
+        B_factor_list=None,
+        sophisticated=False,
+        si_horizon=3,
+        si_policy_prune_threshold=1/16,
+        si_state_prune_threshold=1/16,
+        si_prune_penalty=512
     ):
 
         ### Constant parameters ###
@@ -85,6 +90,15 @@ class Agent(object):
         self.factors_to_learn = factors_to_learn
         self.lr_pB = lr_pB
         self.lr_pD = lr_pD
+
+        # sophisticated inference parameters
+        self.sophisticated = sophisticated
+        if self.sophisticated:
+            assert self.policy_len == 1, "Sophisticated inference only works with policy_len = 1"
+        self.si_horizon = si_horizon
+        self.si_policy_prune_threshold = si_policy_prune_threshold
+        self.si_state_prune_threshold = si_state_prune_threshold
+        self.si_prune_penalty = si_prune_penalty
 
         # Initialise observation model (A matrices)
         if not isinstance(A, np.ndarray):
@@ -603,26 +617,28 @@ class Agent(object):
         """
 
         if self.inference_algo == "VANILLA":
-            q_pi, G = control.update_posterior_policies_factorized(
+            q_pi, G = control.update_posterior_policies(
                 self.qs,
                 self.A,
                 self.B,
                 self.C,
-                self.A_factor_list,
-                self.B_factor_list,
                 self.policies,
                 self.use_utility,
                 self.use_states_info_gain,
                 self.use_param_info_gain,
                 self.pA,
                 self.pB,
-                E = self.E,
-                I = self.I,
-                gamma = self.gamma
+                E=self.E,
+                I=self.I,
+                gamma=self.gamma
             )
         elif self.inference_algo == "MMP":
             if self.factorized:
                 raise NotImplementedError("Factorized inference not implemented for MMP")
+            
+            if self.sophisticated:
+                raise NotImplementedError("Sophisticated inference not implemented for MMP")
+
 
             future_qs_seq = self.get_future_qs()
 
@@ -671,23 +687,41 @@ class Agent(object):
         """
 
         if self.inference_algo == "VANILLA":
-            q_pi, G = control.update_posterior_policies_factorized(
-                self.qs,
-                self.A,
-                self.B,
-                self.C,
-                self.A_factor_list,
-                self.B_factor_list,
-                self.policies,
-                self.use_utility,
-                self.use_states_info_gain,
-                self.use_param_info_gain,
-                self.pA,
-                self.pB,
-                E=self.E,
-                I=self.I,
-                gamma=self.gamma
-            )
+            if self.sophisticated:
+                q_pi, G = control.sophisticated_inference_search(
+                    self.qs, 
+                    self.policies, 
+                    self.A, 
+                    self.B, 
+                    self.C, 
+                    self.A_factor_list, 
+                    self.B_factor_list, 
+                    self.I,
+                    self.si_horizon,
+                    self.si_policy_prune_threshold, 
+                    self.si_state_prune_threshold, 
+                    self.si_prune_penalty,
+                    self.gamma,
+                    n=0
+                )
+            else:
+                q_pi, G = control.update_posterior_policies_factorized(
+                    self.qs,
+                    self.A,
+                    self.B,
+                    self.C,
+                    self.A_factor_list,
+                    self.B_factor_list,
+                    self.policies,
+                    self.use_utility,
+                    self.use_states_info_gain,
+                    self.use_param_info_gain,
+                    self.pA,
+                    self.pB,
+                    E = self.E,
+                    I = self.I,
+                    gamma = self.gamma
+                )
         elif self.inference_algo == "MMP":
 
             future_qs_seq = self.get_future_qs()
