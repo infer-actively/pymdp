@@ -186,7 +186,7 @@ class Agent(object):
 
         # Again, the use can specify a set of possible policies, or
         # all possible combinations of actions and timesteps will be considered
-        if policies == None:
+        if policies is None:
             policies = self._construct_policies()
         self.policies = policies
 
