@@ -268,8 +268,10 @@ class Agent(object):
         
         # Construct I for backwards induction (if H specified)
         if H is not None:
+            self.H = H
             self.I = control.backwards_induction(H, B, B_factor_list, threshold=1/16, depth=5)
         else:
+            self.H = None
             self.I = None
 
         self.edge_handling_params = {}
@@ -688,7 +690,28 @@ class Agent(object):
 
         if self.inference_algo == "VANILLA":
             if self.sophisticated:
-                q_pi, G = control.sophisticated_inference_search(
+                # q_pi, G = control.sophisticated_inference_search(
+                #     self.qs, 
+                #     self.policies, 
+                #     self.A, 
+                #     self.B, 
+                #     self.C, 
+                #     self.A_factor_list, 
+                #     self.B_factor_list, 
+                #     self.I,
+                #     self.si_horizon,
+                #     self.si_policy_prune_threshold, 
+                #     self.si_state_prune_threshold, 
+                #     self.si_prune_penalty,
+                #     1.0,
+                #     n=0
+                # )
+
+                # print("Sophisticated 1")
+                # for i in range(len(self.policies)):
+                #     print(G[i], [(p[0], p[1]) for p in self.policies[i]])
+
+                q_pi, G = control.sophisticated_inference_search2(
                     self.qs, 
                     self.policies, 
                     self.A, 
@@ -701,9 +724,13 @@ class Agent(object):
                     self.si_policy_prune_threshold, 
                     self.si_state_prune_threshold, 
                     self.si_prune_penalty,
-                    self.gamma,
+                    1.0,
                     n=0
                 )
+
+                # print("Sophisticated 2")
+                # for i in range(len(self.policies)):
+                #     print(G[i], [(p[0], p[1]) for p in self.policies[i]])
             else:
                 q_pi, G = control.update_posterior_policies_factorized(
                     self.qs,
