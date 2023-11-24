@@ -133,7 +133,7 @@ class si_agent(Agent):
             if(self.N < 1):
                 print("No planning, agent will take equi-probable random actions")
             else:
-                self.G = self.forward_search(mod, N, pre = self.qs_melted[0])
+                self.G += self.forward_search(mod, N, pre = self.qs_melted[0]) #Error spotted in line 136 by Paul Kinghorn corrected.
         
         # Action distribution (policies of length 1)
         self.q_pi = softmax(-1*self.alpha*self.G)
