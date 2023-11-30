@@ -9,6 +9,7 @@ import jax.tree_util as jtu
 from typing import Tuple, Optional
 from functools import partial
 from jax import lax, jit, vmap, nn
+from jax import random as jr
 from itertools import chain
 
 from pymdp.jax.maths import *
@@ -34,7 +35,7 @@ def get_marginals(q_pi, policies, num_controls):
     action_marginals: ``list`` of ``jax.numpy.ndarrays``
        List of arrays corresponding to marginal probability of each action possible action
     """
-    num_factors = len(num_controls)
+    num_factors = len(num_controls)    
 
     action_marginals = []
     for factor_i in range(num_factors):
@@ -42,7 +43,6 @@ def get_marginals(q_pi, policies, num_controls):
         action_marginals.append(jnp.where(actions==policies[:, 0, factor_i], q_pi, 0).sum(-1))
     
     return action_marginals
-
 
 def sample_action(q_pi, policies, num_controls, action_selection="deterministic", alpha=16.0, rng_key=None):
     """
@@ -76,12 +76,25 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
     if action_selection == 'deterministic':
         selected_policy = jtu.tree_map(lambda x: jnp.argmax(x, -1), marginal)
     elif action_selection == 'stochastic':
-        selected_policy = jtu.tree_map( lambda x: random.categorical(rng_key, alpha * log_stable(x)), marginal)
+        selected_policy = jtu.tree_map(lambda x: jr.categorical(rng_key, nn.softmax(alpha * log_stable(x))), marginal)
     else:
         raise NotImplementedError
 
     return jnp.array(selected_policy)
 
+def sample_policy(q_pi, policies, num_controls, action_selection="deterministic", alpha = 16.0, rng_key=None):
+
+    num_factors = len(num_controls)
+
+    if action_selection == "deterministic":
+        policy_idx = jnp.argmax(q_pi)
+    elif action_selection == "stochastic":
+        p_policies = nn.softmax(log_stable(q_pi) * alpha)
+        policy_idx = jr.categorical(rng_key, p_policies)
+
+    selected_policy = jtu.tree_map(lambda f: policies[policy_idx][0,f], list(range(num_factors)))
+
+    return jnp.array(selected_policy)
 
 def construct_policies(num_states, num_controls = None, policy_len=1, control_fac_idx=None):
     """
@@ -150,8 +163,8 @@ def compute_expected_state(qs_prior, B, u_t, B_dependencies=None):
     assert len(u_t) == len(B)  
     qs_next = []
     for B_f, u_f, deps in zip(B, u_t, B_dependencies):
-        # qs_next.append( B_f[..., u_f].dot(qs_f) )
-        qs_next_f = factor_dot(B_f[...,u_f], qs_prior[deps])
+        relevant_factors = [qs_prior[idx] for idx in deps]
+        qs_next_f = factor_dot(B_f[...,u_f], relevant_factors, keep_dims=(0,))
         qs_next.append(qs_next_f)
         
     return qs_next
@@ -242,7 +255,7 @@ def calc_pA_info_gain(pA, qo, qs):
 
     wA = jtu.tree_map(spm_wnorm, pA)    
     wA_per_modality = jtu.tree_map(lambda wa, pa: wa * (pa > 0.), wA, pA)
-    pA_infogain_per_modality = jtu.tree_map(lambda wa, qo: qo.dot(factor_dot(wa, qs)[...,None]), wA_per_modality, qo)
+    pA_infogain_per_modality = jtu.tree_map(lambda wa, qo: qo.dot(factor_dot(wa, qs, keep_dims=(0,))[...,None]), wA_per_modality, qo)
     infogain_pA = jtu.tree_reduce(lambda x, y: x + y, pA_infogain_per_modality)[0]
     return infogain_pA
 
@@ -308,7 +321,7 @@ def compute_G_policy(qs_init, A, B, C, pA, pB, A_dependencies, B_dependencies, p
 
         qo = compute_expected_obs(qs_next, A, A_dependencies)
 
-        info_gain = compute_info_gain(qs_next, qo, A) if use_states_info_gain else 0.
+        info_gain = compute_info_gain(qs_next, qo, A, A_dependencies) if use_states_info_gain else 0.
 
         utility = compute_expected_utility(qo, C) if use_utility else 0.
 
@@ -328,12 +341,12 @@ def compute_G_policy(qs_init, A, B, C, pA, pB, A_dependencies, B_dependencies, p
 
 # if __name__ == '__main__':
 
-#     from jax import random
-#     key = random.PRNGKey(1)
+#     from jax import random as jr
+#     key = jr.PRNGKey(1)
 #     num_obs = [3, 4]
 
-#     A = [random.uniform(key, shape = (no, 2, 2)) for no in num_obs]
-#     B = [random.uniform(key, shape = (2, 2, 2)), random.uniform(key, shape = (2, 2, 2))]
+#     A = [jr.uniform(key, shape = (no, 2, 2)) for no in num_obs]
+#     B = [jr.uniform(key, shape = (2, 2, 2)), jr.uniform(key, shape = (2, 2, 2))]
 #     C = [log_stable(jnp.array([0.8, 0.1, 0.1])), log_stable(jnp.ones(4)/4)]
 #     policy_1 = jnp.array([[0, 1],
 #                          [1, 1]])

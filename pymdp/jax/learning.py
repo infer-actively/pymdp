@@ -25,7 +25,6 @@ def update_obs_likelihood_dirichlet_m(pA_m, A_m, obs_m, qs, dependencies_m, lr=1
     relevant_factors = tree_map(lambda f_idx: qs[f_idx], dependencies_m)
 
     dfda = vmap(multidimensional_outer)([obs_m]+ relevant_factors).sum(axis=0)
-    # dfda = jnp.where(A_m > 0, dfda, 0.0) # this doesn't make sense
     qA_m = pA_m + (lr * dfda)
 
     return qA_m
@@ -38,53 +37,33 @@ def update_obs_likelihood_dirichlet(pA, A, obs, qs, A_dependencies, lr=1.0):
 
     return qA
 
-def update_state_likelihood_dirichlet(
-    pB, B, actions, qs, qs_prev, lr=1.0, factors="all"
-):
-    """
-    Update Dirichlet parameters of the transition distribution. 
+def update_state_likelihood_dirichlet_f(pB_f, B_f, actions_f, current_qs, qs_seq, dependencies_f, lr=1.0):
+    """ JAX version of ``pymdp.learning.update_state_likelihood_dirichlet_f`` """
+    # pB_f - parameters of the dirichlet from the prior
+    # pB_f.shape = (num_states[f] x num_states[f] x num_actions[f]) where f is the index of the hidden state factor
 
-    Parameters
-    -----------
-    pB: ``numpy.ndarray`` of dtype object
-        Prior Dirichlet parameters over transition model (same shape as ``B``)
-    B: ``numpy.ndarray`` of dtype object
-        Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
-        Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
-        of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
-    actions: 1D ``numpy.ndarray``
-        A vector with length equal to the number of control factors, where each element contains the index of the action (for that control factor) performed at 
-        a given timestep.
-    qs: 1D ``numpy.ndarray`` or ``numpy.ndarray`` of dtype object
-        Marginal posterior beliefs over hidden states at current timepoint.
-    qs_prev: 1D ``numpy.ndarray`` or ``numpy.ndarray`` of dtype object
-        Marginal posterior beliefs over hidden states at previous timepoint.
-    lr: float, default ``1.0``
-        Learning rate, scale of the Dirichlet pseudo-count update.
-    factors: ``list``, default "all"
-        Indices (ranging from 0 to ``n_factors - 1``) of the hidden state factors to include 
-        in learning. Defaults to "all", meaning that factor-specific sub-arrays of ``pB``
-        are all updated using the corresponding hidden state distributions and actions.
+    # \alpha^{*} = \alpha_{0} + \kappa * \sum_{t=t_begin}^{t=T} \mathbf{s}_{f, t} \otimes \mathbf{s}_{f, t-1} \otimes \mathbf{a}_{f, t-1}
 
-    Returns
-    -----------
-    qB: ``numpy.ndarray`` of dtype object
-        Posterior Dirichlet parameters over transition model (same shape as ``B``), after having updated it with state beliefs and actions.
-    """
+    # \alpha^{*} is the VFE-minimizing solution for the parameters of q(B)
+    # \alpha_{0} are the Dirichlet parameters of p(B)
+    # \mathbf{s}_{f, t} = categorical parameters of marginal posteriors over hidden state factor f, at time t
+    # \mathbf{a}_{f, t-1} = categorical parameters of marginal posteriors over control factor f, at time t-1
+    # \otimes is a multidimensional outer product, not just a outer product of two vectors
+    # \kappa is an optional learning rate
 
-    num_factors = len(pB)
+    past_qs = tree_map(lambda f_idx: qs_seq[f_idx][:-1], dependencies_f)
+    dfdb = vmap(multidimensional_outer)([current_qs[1:]] + past_qs + [actions_f]).sum(axis=0)
+    qB_f = pB_f + (lr * dfdb)
 
-    qB = copy.deepcopy(pB)
-   
-    if factors == "all":
-        factors = list(range(num_factors))
+    return qB_f
 
-    for factor in factors:
-        dfdb = maths.spm_cross(qs[factor], qs_prev[factor])
-        dfdb *= (B[factor][:, :, actions[factor]] > 0).astype("float")
-        qB[factor][:,:,int(actions[factor])] += (lr*dfdb)
+def update_state_likelihood_dirichlet(pB, B, beliefs, actions_onehot, B_dependencies, lr=1.0):
+
+    update_B_f_fn = lambda pB_f, B_f, action_f, qs_f, dependencies_f: update_state_likelihood_dirichlet_f(pB_f, B_f, action_f, qs_f, beliefs, dependencies_f, lr=lr)    
+    qB = tree_map(update_B_f_fn, pB, B, actions_onehot, beliefs, B_dependencies)
 
     return qB
+    
 
 def update_state_prior_dirichlet(
     pD, qs, lr=1.0, factors="all"
