@@ -351,7 +351,28 @@ class Agent(Module):
 
         return jnp.stack(marginals, -2)
 
+    @vmap
     def sample_action(self, q_pi: jnp.ndarray, rng_key=None):
+        """
+        Sample or select a discrete action from the posterior over control states.
+        
+        Returns
+        ----------
+        action: 1D ``jax.numpy.ndarray``
+            Vector containing the indices of the actions for each control factor
+        """
+
+        if (rng_key is None) and (self.action_selection == "stochastic"):
+            raise ValueError("Please provide a random number generator key to sample actions stochastically")
+
+        if self.sampling_mode == "marginal":
+            action = control.sample_action(q_pi, self.policies, self.num_controls, self.action_selection, self.alpha, rng_key=rng_key)
+        elif self.sampling_mode == "full":
+            action = control.sample_policy(q_pi, self.policies, self.num_controls, self.action_selection, self.alpha, rng_key=rng_key)
+
+        return action
+
+    def sample_action_old(self, q_pi: jnp.ndarray, rng_key=None):
         """
         Sample or select a discrete action from the posterior over control states.
         
