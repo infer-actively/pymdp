@@ -9,7 +9,7 @@ __author__: Conor Heins, Dimitrije Markovic, Alexander Tschantz, Daphne Demekas,
 
 import jax.numpy as jnp
 import jax.tree_util as jtu
-from jax import nn, vmap
+from jax import nn, vmap, random
 from . import inference, control, learning, utils, maths
 from equinox import Module, static_field, tree_at
 
@@ -202,7 +202,7 @@ class Agent(Module):
         )
 
     @vmap
-    def learning(self, beliefs, outcomes, **kwargs):
+    def learning(self, beliefs, outcomes, actions, **kwargs):
 
         if self.learn_A:
             o_vec_seq = jtu.tree_map(lambda o, dim: nn.one_hot(o, dim), outcomes, self.num_obs)
@@ -264,7 +264,7 @@ class Agent(Module):
             prior=empirical_prior,
             qs_hist=qs_hist,
             A_dependencies=self.A_dependencies,
-            B_dependencies=self.B_dependencies,
+            # B_dependencies=self.B_dependencies,
             num_iter=self.num_iter,
             method=self.inference_algo
         )
@@ -344,7 +344,7 @@ class Agent(Module):
         return jnp.stack(marginals, -2)
 
 
-    def sample_action(self, q_pi: jnp.ndarray):
+    def sample_action(self, key, q_pi: jnp.ndarray, actions: jnp.ndarray = None):
         """
         Sample or select a discrete action from the posterior over control states.
         
@@ -352,13 +352,26 @@ class Agent(Module):
         ----------
         action: 1D ``jax.numpy.ndarray``
             Vector containing the indices of the actions for each control factor
+        action_probs: 2D ``jax.numpy.ndarray``
+            Array of action probabilities
         """
 
-        sample_action = lambda x: control.sample_action(x, self.policies, self.num_controls, self.action_selection)
+        marginals = lambda x: control.get_marginals(x, self.policies, self.num_controls)
+        action_probs = vmap(marginals)(q_pi)
 
-        action = vmap(sample_action)(q_pi)
+        if actions is None:
+            if self.action_selection == 'deterministic':
+                selected_actions = jtu.tree_map(lambda x: jnp.argmax(x, -1), action_probs)
+            elif self.action_selection == 'stochastic':
+                selected_actions = jtu.tree_map( 
+                    lambda x: random.categorical(key, alpha * log_stable(x)), action_probs
+                )
+            else:
+                raise NotImplementedError
+        else:
+            selected_actions = action
 
-        return action
+        return selected_actions, action_probs
 
     def _get_default_params(self):
         method = self.inference_algo
