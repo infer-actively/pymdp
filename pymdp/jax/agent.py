@@ -39,6 +39,7 @@ class Agent(Module):
     E: jnp.ndarray
     # empirical_prior: List
     gamma: jnp.ndarray
+    alpha: jnp.ndarray
     qs: Optional[List]
     q_pi: Optional[List]
 
@@ -54,14 +55,16 @@ class Agent(Module):
     num_states: List = static_field()
     num_factors: int = static_field()
     num_controls: List = static_field()
-    inference_algo: AnyStr = static_field()
     control_fac_idx: Any = static_field()
     policy_len: int = static_field()
     policies: Any = static_field()
     use_utility: bool = static_field()
     use_states_info_gain: bool = static_field()
     use_param_info_gain: bool = static_field()
-    action_selection: AnyStr = static_field()
+    action_selection: AnyStr = static_field() # determinstic or stochastic
+    sampling_mode : AnyStr = static_field() # whether to sample from full posterior over policies ("full") or from marginal posterior over actions ("marginal")
+    inference_algo: AnyStr = static_field() # fpi, vmp, mmp, ovf
+
     learn_A: bool = static_field()
     learn_B: bool = static_field()
     learn_C: bool = static_field()
@@ -85,10 +88,12 @@ class Agent(Module):
         control_fac_idx=None,
         policies=None,
         gamma=16.0,
+        alpha=16.0,
         use_utility=True,
         use_states_info_gain=True,
         use_param_info_gain=False,
         action_selection="deterministic",
+        sampling_mode="marginal",
         inference_algo="fpi",
         num_iter=16,
         learn_A=True,
@@ -148,6 +153,7 @@ class Agent(Module):
         batch_dim = (self.A[0].shape[0],)
 
         self.gamma = jnp.broadcast_to(gamma, batch_dim) 
+        self.alpha = jnp.broadcast_to(alpha, batch_dim) 
 
         ### Static parameters ###
 
@@ -158,6 +164,7 @@ class Agent(Module):
         # policy parameters
         self.policy_len = policy_len
         self.action_selection = action_selection
+        self.sampling_mode = sampling_mode
         self.use_utility = use_utility
         self.use_states_info_gain = use_states_info_gain
         self.use_param_info_gain = use_param_info_gain
@@ -344,8 +351,7 @@ class Agent(Module):
 
         return jnp.stack(marginals, -2)
 
-
-    def sample_action(self, q_pi: jnp.ndarray):
+    def sample_action(self, q_pi: jnp.ndarray, rng_key=None):
         """
         Sample or select a discrete action from the posterior over control states.
         
@@ -353,14 +359,20 @@ class Agent(Module):
         ----------
         action: 1D ``jax.numpy.ndarray``
             Vector containing the indices of the actions for each control factor
-        """
+        """ 
 
-        sample_action = lambda x: control.sample_action(x, self.policies, self.num_controls, self.action_selection)
+        if (rng_key is None) and (self.action_selection == "stochastic"):
+            raise ValueError("Please provide a random number generator key to sample actions stochastically")
 
-        action = vmap(sample_action)(q_pi)
+        if self.sampling_mode == "marginal":
+            sample_action = lambda x, alpha: control.sample_action(x, self.policies, self.num_controls, self.action_selection, alpha, rng_key=rng_key)
+            action = vmap(sample_action)(q_pi, self.alpha)
+        elif self.sampling_mode == "full":
+            sample_policy = lambda x, alpha: control.sample_policy(x, self.policies, self.num_controls, self.action_selection, alpha, rng_key=rng_key)
+            action = vmap(sample_policy)(q_pi, self.alpha)
 
         return action
-
+    
     def _get_default_params(self):
         method = self.inference_algo
         default_params = None
