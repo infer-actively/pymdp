@@ -69,7 +69,9 @@ class Agent(object):
         si_horizon=3,
         si_policy_prune_threshold=1/16,
         si_state_prune_threshold=1/16,
-        si_prune_penalty=512
+        si_prune_penalty=512,
+        ii_depth=10,
+        ii_threshold=1/16,
     ):
 
         ### Constant parameters ###
@@ -269,7 +271,7 @@ class Agent(object):
         # Construct I for backwards induction (if H specified)
         if H is not None:
             self.H = H
-            self.I = control.backwards_induction(H, B, B_factor_list, threshold=1/16, depth=5)
+            self.I = control.backwards_induction(H, B, B_factor_list, threshold=ii_threshold, depth=ii_depth)
         else:
             self.H = None
             self.I = None

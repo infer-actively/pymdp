@@ -1309,6 +1309,7 @@ def backwards_induction(H, B, B_factor_list, threshold, depth):
         for i in range(1, depth):
             I[factor][i, :] = np.dot(b, I[factor][i-1, :])
             I[factor][i, :] = np.where(I[factor][i, :] > 0.1, 1.0, 0.0)
+            # TODO stop when all 1s?
 
     return I
 
