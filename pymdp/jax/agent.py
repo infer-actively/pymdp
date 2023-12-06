@@ -39,6 +39,7 @@ class Agent(Module):
     E: jnp.ndarray
     # empirical_prior: List
     gamma: jnp.ndarray
+    alpha: jnp.ndarray
     qs: Optional[List]
     q_pi: Optional[List]
 
@@ -54,14 +55,16 @@ class Agent(Module):
     num_states: List = static_field()
     num_factors: int = static_field()
     num_controls: List = static_field()
-    inference_algo: AnyStr = static_field()
     control_fac_idx: Any = static_field()
     policy_len: int = static_field()
     policies: Any = static_field()
     use_utility: bool = static_field()
     use_states_info_gain: bool = static_field()
     use_param_info_gain: bool = static_field()
-    action_selection: AnyStr = static_field()
+    action_selection: AnyStr = static_field() # determinstic or stochastic
+    sampling_mode : AnyStr = static_field() # whether to sample from full posterior over policies ("full") or from marginal posterior over actions ("marginal")
+    inference_algo: AnyStr = static_field() # fpi, vmp, mmp, ovf
+
     learn_A: bool = static_field()
     learn_B: bool = static_field()
     learn_C: bool = static_field()
@@ -85,10 +88,12 @@ class Agent(Module):
         control_fac_idx=None,
         policies=None,
         gamma=16.0,
+        alpha=16.0,
         use_utility=True,
         use_states_info_gain=True,
         use_param_info_gain=False,
         action_selection="deterministic",
+        sampling_mode="marginal",
         inference_algo="fpi",
         num_iter=16,
         learn_A=True,
@@ -133,9 +138,8 @@ class Agent(Module):
            
         # Ensure consistency of B_dependencies with num_states and num_factors
         if B_dependencies is not None:
-            self.B_dependencies
+            self.B_dependencies = B_dependencies
         else:
-            num_factors = len(B)
             self.B_dependencies = [[f] for f in range(self.num_factors)] # defaults to having all factors depend only on themselves
 
         for f in range(self.num_factors):
@@ -148,6 +152,7 @@ class Agent(Module):
         batch_dim = (self.A[0].shape[0],)
 
         self.gamma = jnp.broadcast_to(gamma, batch_dim) 
+        self.alpha = jnp.broadcast_to(alpha, batch_dim) 
 
         ### Static parameters ###
 
@@ -158,6 +163,7 @@ class Agent(Module):
         # policy parameters
         self.policy_len = policy_len
         self.action_selection = action_selection
+        self.sampling_mode = sampling_mode
         self.use_utility = use_utility
         self.use_states_info_gain = use_states_info_gain
         self.use_param_info_gain = use_param_info_gain
@@ -344,8 +350,8 @@ class Agent(Module):
 
         return jnp.stack(marginals, -2)
 
-
-    def sample_action(self, key, q_pi: jnp.ndarray, actions: jnp.ndarray = None):
+    @vmap
+    def sample_action(self, q_pi: jnp.ndarray, rng_key=None):
         """
         Sample or select a discrete action from the posterior over control states.
         
@@ -357,23 +363,16 @@ class Agent(Module):
             Array of action probabilities
         """
 
-        marginals = lambda x: control.get_marginals(x, self.policies, self.num_controls)
-        action_probs = vmap(marginals)(q_pi)
+        if (rng_key is None) and (self.action_selection == "stochastic"):
+            raise ValueError("Please provide a random number generator key to sample actions stochastically")
 
-        if actions is None:
-            if self.action_selection == 'deterministic':
-                selected_actions = jtu.tree_map(lambda x: jnp.argmax(x, -1), action_probs)
-            elif self.action_selection == 'stochastic':
-                selected_actions = jtu.tree_map( 
-                    lambda x: random.categorical(key, alpha * log_stable(x)), action_probs
-                )
-            else:
-                raise NotImplementedError
-        else:
-            selected_actions = action
+        if self.sampling_mode == "marginal":
+            action = control.sample_action(q_pi, self.policies, self.num_controls, self.action_selection, self.alpha, rng_key=rng_key)
+        elif self.sampling_mode == "full":
+            action = control.sample_policy(q_pi, self.policies, self.num_controls, self.action_selection, self.alpha, rng_key=rng_key)
 
-        return selected_actions, action_probs
-
+        return action
+    
     def _get_default_params(self):
         method = self.inference_algo
         default_params = None
