@@ -7,6 +7,7 @@ __author__: Conor Heins, Dimitrije Markovic, Alexander Tschantz, Daphne Demekas,
 
 """
 
+import itertools
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from jax import nn, vmap, random
@@ -14,6 +15,7 @@ from . import inference, control, learning, utils, maths
 from equinox import Module, static_field, tree_at
 
 from typing import Any, List, AnyStr, Optional
+from jaxtyping import Array
 
 class Agent(Module):
     """ 
@@ -36,10 +38,10 @@ class Agent(Module):
     B: List
     C: List 
     D: List
-    E: jnp.ndarray
+    E: Array
     # empirical_prior: List
-    gamma: jnp.ndarray
-    alpha: jnp.ndarray
+    gamma: Array
+    alpha: Array
     qs: Optional[List]
     q_pi: Optional[List]
 
@@ -325,8 +327,13 @@ class Agent(Module):
 
         return q_pi, G
     
+    @property
+    def unique_multiactions(self):
+        return jnp.unique(self.policies[:, 0], axis=0)
+    
+
     @vmap
-    def action_probabilities(self, q_pi: jnp.ndarray):
+    def action_probabilities(self, q_pi: Array):
         """
         Compute probabilities of discrete actions from the posterior over policies.
 
@@ -341,17 +348,27 @@ class Agent(Module):
             Vector containing probabilities of possible actions for different factors
         """
 
-        marginals = control.get_marginals(q_pi, self.policies, self.num_controls)
+        if self.sampling_mode == "marginal":
+            marginals = control.get_marginals(q_pi, self.policies, self.num_controls)
+            outer = lambda a, b: jnp.outer(a, b).reshape(-1)
+            marginals = jtu.tree_reduce(outer, marginals)
 
-        # make all arrays same length (add 0 probability)
-        lengths = jtu.tree_map(lambda x: len(x), marginals)
-        max_length = max(lengths)
-        marginals = jtu.tree_map(lambda x: jnp.pad(x, (0, max_length - len(x))), marginals)
+        elif self.sampling_mode == "full":
+            locs = jnp.all(
+                self.policies[:, 0] == jnp.expand_dims(self.unique_multiactions, -2),
+                  -1
+            )
+            marginals = jnp.where(locs, q_pi, 0.).sum(-1)
 
-        return jnp.stack(marginals, -2)
+        assert jnp.isclose(jnp.sum(marginals), 1.)           
+        return marginals
 
     @vmap
-    def sample_action(self, q_pi: jnp.ndarray, rng_key=None):
+    def multiaction_to_category(self, multiaction: Array):
+        return jnp.argmax(jnp.all(self.unique_multiactions == multiaction, -1))
+    
+    @vmap
+    def sample_action(self, q_pi: Array, rng_key=None):
         """
         Sample or select a discrete action from the posterior over control states.
         

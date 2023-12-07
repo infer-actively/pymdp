@@ -84,17 +84,14 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
 
 def sample_policy(q_pi, policies, num_controls, action_selection="deterministic", alpha = 16.0, rng_key=None):
 
-    num_factors = len(num_controls)
-
     if action_selection == "deterministic":
         policy_idx = jnp.argmax(q_pi)
     elif action_selection == "stochastic":
         p_policies = nn.softmax(log_stable(q_pi) * alpha)
         policy_idx = jr.categorical(rng_key, p_policies)
 
-    selected_policy = jtu.tree_map(lambda f: policies[policy_idx][0,f], list(range(num_factors)))
-
-    return jnp.array(selected_policy)
+    selected_multiaction = policies[policy_idx, 0]
+    return selected_multiaction
 
 def construct_policies(num_states, num_controls = None, policy_len=1, control_fac_idx=None):
     """
