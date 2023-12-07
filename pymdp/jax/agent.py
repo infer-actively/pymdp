@@ -209,6 +209,10 @@ class Agent(Module):
             self.num_states, self.num_controls, self.policy_len, self.control_fac_idx
         )
 
+    @property
+    def unique_multiactions(self):
+        return jnp.unique(self.policies[:, 0], axis=0)
+
     @vmap
     def learning(self, beliefs, outcomes, actions, **kwargs):
 
@@ -327,15 +331,10 @@ class Agent(Module):
 
         return q_pi, G
     
-    @property
-    def unique_multiactions(self):
-        return jnp.unique(self.policies[:, 0], axis=0)
-    
-
     @vmap
-    def action_probabilities(self, q_pi: Array):
+    def multiaction_probabilities(self, q_pi: Array):
         """
-        Compute probabilities of discrete actions from the posterior over policies.
+        Compute probabilities of unique multi-actions from the posterior over policies.
 
         Parameters
         ----------
@@ -344,8 +343,8 @@ class Agent(Module):
         
         Returns
         ----------
-        action: 2D ``jax.numpy.ndarray``
-            Vector containing probabilities of possible actions for different factors
+        multi-action: 1D ``jax.numpy.ndarray``
+            Vector containing probabilities of possible multi-actions for different factors
         """
 
         if self.sampling_mode == "marginal":
@@ -363,10 +362,6 @@ class Agent(Module):
         assert jnp.isclose(jnp.sum(marginals), 1.)           
         return marginals
 
-    @vmap
-    def multiaction_to_category(self, multiaction: Array):
-        return jnp.argmax(jnp.all(self.unique_multiactions == multiaction, -1))
-    
     @vmap
     def sample_action(self, q_pi: Array, rng_key=None):
         """
