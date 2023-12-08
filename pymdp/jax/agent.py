@@ -7,7 +7,7 @@ __author__: Conor Heins, Dimitrije Markovic, Alexander Tschantz, Daphne Demekas,
 
 """
 
-import itertools
+import math as pymath
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from jax import nn, vmap, random
@@ -51,6 +51,7 @@ class Agent(Module):
     # static parameters not leaves of the PyTree
     A_dependencies: Optional[List] = static_field()
     B_dependencies: Optional[List] = static_field()
+    batch_size: int = static_field()
     num_iter: int = static_field()
     num_obs: List = static_field()
     num_modalities: int = static_field()
@@ -151,10 +152,10 @@ class Agent(Module):
                 assert self.pB[f].shape[2:-1] == factor_dims, f"Please input a `B_dependencies` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of pB[{f}]..." 
             assert max(self.B_dependencies[f]) <= (self.num_factors - 1), f"Check factor {f} of `B_dependencies` - must be consistent with `num_states` and `num_factors`..."
 
-        batch_dim = (self.A[0].shape[0],)
+        self.batch_size = self.A[0].shape[0]
 
-        self.gamma = jnp.broadcast_to(gamma, batch_dim) 
-        self.alpha = jnp.broadcast_to(alpha, batch_dim) 
+        self.gamma = jnp.broadcast_to(gamma, (self.batch_size,))
+        self.alpha = jnp.broadcast_to(alpha, (self.batch_size,))
 
         ### Static parameters ###
 
@@ -211,7 +212,8 @@ class Agent(Module):
 
     @property
     def unique_multiactions(self):
-        return jnp.unique(self.policies[:, 0], axis=0)
+        size = pymath.prod(self.num_controls)
+        return jnp.unique(self.policies[:, 0], axis=0, size=size, fill_value=-1)
 
     @vmap
     def learning(self, beliefs, outcomes, actions, **kwargs):
@@ -359,7 +361,7 @@ class Agent(Module):
             )
             marginals = jnp.where(locs, q_pi, 0.).sum(-1)
 
-        assert jnp.isclose(jnp.sum(marginals), 1.)           
+        # assert jnp.isclose(jnp.sum(marginals), 1.)  # this fails inside scan           
         return marginals
 
     @vmap
