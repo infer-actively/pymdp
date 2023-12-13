@@ -19,7 +19,7 @@ def update_posterior_states(A, B, obs, past_actions, prior=None, qs_hist=None, A
             nf = len(B)
             actions_tree = [past_actions[:, i] for i in range(nf)]
             
-            B = jtu.tree_map(lambda b, a_idx: jnp.moveaxis(b[..., a_idx], 0, -1), B, actions_tree) # this needs to be changed in case of `B_dependencies` because we have more than 3 dims in the B tensors
+            B = jtu.tree_map(lambda b, a_idx: jnp.moveaxis(b[..., a_idx], -1, 0), B, actions_tree) # this needs to be changed in case of `B_dependencies` because we have more than 3 dims in the B tensors
         else:
             B = None
 

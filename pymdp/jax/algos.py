@@ -1,10 +1,11 @@
 import jax.numpy as jnp
-from jax import jit, vmap, grad, lax, nn
 import jax.tree_util as jtu
+
+from jax import jit, vmap, grad, lax, nn
 # from jax.config import config
 # config.update("jax_enable_x64", True)
 
-from pymdp.jax.maths import compute_log_likelihood, compute_log_likelihood_per_modality, log_stable, MINVAL
+from .maths import compute_log_likelihood, compute_log_likelihood_per_modality, log_stable, MINVAL, factor_dot
 from typing import Any, List
 
 def add(x, y):
@@ -228,10 +229,17 @@ def update_variational_filtering(obs, A, B, prior, A_dependencies, **kwargs):
 
 def get_vmp_messages(ln_B, B, qs, ln_prior, B_dependencies):
     
-    num_factors = len(ln_B)
+    num_factors = len(qs)
     get_deps = lambda x, f_idx: [x[f] for f in f_idx]
-    all_deps_except_f = jtu.tree_map(lambda deps, f: [d for d in deps if d != f], B_dependencies, list(range(num_factors)))
-    ln_B_marg = jtu.tree_map(lambda b, deps, f: factor_dot(b, get_deps(qs, deps), keepdims=(0,1,f)), ln_B, all_deps_except_f, list(range(num_factors)))  # shape = (T, states_f, states_f)
+    all_deps_except_f = jtu.tree_map(
+        lambda deps, f: [d for d in deps if d != f], B_dependencies, list(range(num_factors))
+    )
+    ln_B_marg = jtu.tree_map(
+        lambda b, deps, f: factor_dot(b, get_deps(qs, deps), keepdims=(0,1,f)),
+        ln_B, 
+        all_deps_except_f, 
+        list(range(num_factors))
+    )  # shape = (T, states_f, states_f)
 
     def forward(ln_b, q, ln_prior):
         msg = vmap(lambda x, y: y @ x)(q[:-1], ln_b) # ln_b has shape (num_states, num_states) qs[:-1] has shape (T-1, num_states)
@@ -256,15 +264,40 @@ def run_vmp(A, B, obs, prior, A_dependencies, B_dependencies, num_iter=1, tau=1.
     Run variational message passing (VMP) on a sequence of observations
     '''
 
-    qs = update_marginals(get_vmp_messages, obs, A, B, prior, A_dependencies, B_dependencies, num_iter=num_iter, tau=tau)
+    qs = update_marginals(
+        get_vmp_messages, 
+        obs, 
+        A, 
+        B, 
+        prior, 
+        A_dependencies, 
+        B_dependencies, 
+        num_iter=num_iter, 
+        tau=tau
+    )
     return qs
 
 def get_mmp_messages(ln_B, B, qs, ln_prior, B_dependencies):
 
-    num_factors = len(ln_B)
+    num_factors = len(qs)
+    factors = list(range(num_factors))
     get_deps = lambda x, f_idx: [x[f] for f in f_idx]
-    all_deps_except_f = jtu.tree_map(lambda f: [d for d in B_dependencies[f] if d != f], list(range(num_factors)))
-    B_marg = jtu.tree_map(lambda b, f: factor_dot(b, get_deps(qs, all_deps_except_f[f]), keepdims=(0,1,f)), B, list(range(num_factors)))  # shape = (T, states_f_{t+1}, states_f_{t})
+    all_deps_except_f = jtu.tree_map(
+        lambda f: [d for d in B_dependencies[f] if d != f], 
+        factors
+    )
+    position = jtu.tree_map(
+        lambda f: B_dependencies[f].index(f),
+        factors
+    )
+    if B is not None:
+        B_marg = jtu.tree_map(
+            lambda b, f: factor_dot(b, get_deps(qs, all_deps_except_f[f]), keep_dims=(0, 1, 2 + position[f])), 
+            B, 
+            factors
+        )  # shape = (T, states_f_{t+1}, states_f_{t})
+    else:
+        B_marg = None
 
     def forward(b, q, ln_prior):
         if len(q) > 1:
@@ -282,7 +315,7 @@ def get_mmp_messages(ln_B, B, qs, ln_prior, B_dependencies):
         msg = log_stable(msg) * 0.5
         return jnp.pad(msg, ((0, 1), (0, 0)))
     
-    if ln_B is not None:
+    if B_marg is not None:
         lnB_future = jtu.tree_map(forward, B_marg, qs, ln_prior)
         lnB_past = jtu.tree_map(backward, B_marg, qs)
     else:
@@ -291,8 +324,18 @@ def get_mmp_messages(ln_B, B, qs, ln_prior, B_dependencies):
 
     return lnB_future, lnB_past
 
-def run_mmp(A, B, obs, prior, A_dependencies, num_iter=1, tau=1.):
-    qs = update_marginals(get_mmp_messages, obs, A, B, prior, A_dependencies, num_iter=num_iter, tau=tau)
+def run_mmp(A, B, obs, prior, A_dependencies, B_dependencies, num_iter=1, tau=1.):
+    qs = update_marginals(
+        get_mmp_messages, 
+        obs, 
+        A, 
+        B, 
+        prior, 
+        A_dependencies, 
+        B_dependencies, 
+        num_iter=num_iter, 
+        tau=tau
+    )
     return qs
 
 def run_online_filtering(A, B, obs, prior, A_dependencies, num_iter=1, tau=1.):

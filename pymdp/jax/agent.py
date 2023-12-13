@@ -279,7 +279,7 @@ class Agent(Module):
             prior=empirical_prior,
             qs_hist=qs_hist,
             A_dependencies=self.A_dependencies,
-            # B_dependencies=self.B_dependencies,
+            B_dependencies=self.B_dependencies,
             num_iter=self.num_iter,
             method=self.inference_algo
         )
