@@ -118,7 +118,7 @@ def mirror_gradient_descent_step(tau, ln_A, lnB_past, lnB_future, ln_qs):
 
     return qs
 
-def update_marginals(get_messages, obs, A, B, prior, A_dependencies, num_iter=1, tau=1.,):
+def update_marginals(get_messages, obs, A, B, prior, A_dependencies, B_dependencies, num_iter=1, tau=1.,):
     """" Version of marginal update that uses a sparse dependency matrix for A """
 
     nf = len(prior)
@@ -149,7 +149,8 @@ def update_marginals(get_messages, obs, A, B, prior, A_dependencies, num_iter=1,
 
         ln_qs = jtu.tree_map(log_stable, qs)
         # messages from future $m_+(s_t)$ and past $m_-(s_t)$ for all time steps and factors. For t = T we have that $m_+(s_T) = 0$
-        lnB_past, lnB_future = get_messages(ln_B, B, qs, ln_prior)
+
+        lnB_past, lnB_future = get_messages(ln_B, B, qs, ln_prior, B_dependencies)
 
         mgds = jtu.Partial(mirror_gradient_descent_step, tau)
 
@@ -225,10 +226,15 @@ def update_variational_filtering(obs, A, B, prior, A_dependencies, **kwargs):
 
     return qs, ps, qss
 
-def get_vmp_messages(ln_B, B, qs, ln_prior):
+def get_vmp_messages(ln_B, B, qs, ln_prior, B_dependencies):
     
+    num_factors = len(ln_B)
+    get_deps = lambda x, f_idx: [x[f] for f in f_idx]
+    all_deps_except_f = jtu.tree_map(lambda deps, f: [d for d in deps if d != f], B_dependencies, list(range(num_factors)))
+    ln_B_marg = jtu.tree_map(lambda b, deps, f: factor_dot(b, get_deps(qs, deps), keepdims=(0,1,f)), ln_B, all_deps_except_f, list(range(num_factors)))  # shape = (T, states_f, states_f)
+
     def forward(ln_b, q, ln_prior):
-        msg = vmap(lambda x, y: y @ x)(q[:-1], ln_b)
+        msg = vmap(lambda x, y: y @ x)(q[:-1], ln_b) # ln_b has shape (num_states, num_states) qs[:-1] has shape (T-1, num_states)
         return jnp.concatenate([jnp.expand_dims(ln_prior, 0), msg], axis=0)
     
     def backward(ln_b, q):
@@ -237,25 +243,29 @@ def get_vmp_messages(ln_B, B, qs, ln_prior):
         return jnp.pad(msg, ((0, 1), (0, 0)))
 
     if ln_B is not None:
-        lnB_future = jtu.tree_map(forward, ln_B, qs, ln_prior)
-        lnB_past = jtu.tree_map(backward, ln_B, qs)
+        lnB_future = jtu.tree_map(forward, ln_B_marg, qs, ln_prior)
+        lnB_past = jtu.tree_map(backward, ln_B_marg, qs)
     else:
         lnB_future = jtu.tree_map(lambda x: 0., qs)
         lnB_past = jtu.tree_map(lambda x: 0., qs)
     
     return lnB_future, lnB_past 
 
-def run_vmp(A, B, obs, prior, A_dependencies, num_iter=1, tau=1.):
+def run_vmp(A, B, obs, prior, A_dependencies, B_dependencies, num_iter=1, tau=1.):
     '''
     Run variational message passing (VMP) on a sequence of observations
     '''
 
-    qs = update_marginals(get_vmp_messages, obs, A, B, prior, A_dependencies, num_iter=num_iter, tau=tau)
+    qs = update_marginals(get_vmp_messages, obs, A, B, prior, A_dependencies, B_dependencies, num_iter=num_iter, tau=tau)
     return qs
 
+def get_mmp_messages(ln_B, B, qs, ln_prior, B_dependencies):
 
-def get_mmp_messages(ln_B, B, qs, ln_prior):
-    
+    num_factors = len(ln_B)
+    get_deps = lambda x, f_idx: [x[f] for f in f_idx]
+    all_deps_except_f = jtu.tree_map(lambda f: [d for d in B_dependencies[f] if d != f], list(range(num_factors)))
+    B_marg = jtu.tree_map(lambda b, f: factor_dot(b, get_deps(qs, all_deps_except_f[f]), keepdims=(0,1,f)), B, list(range(num_factors)))  # shape = (T, states_f_{t+1}, states_f_{t})
+
     def forward(b, q, ln_prior):
         if len(q) > 1:
             msg = vmap(lambda x, y: y @ x)(q[:-1], b)
@@ -273,8 +283,8 @@ def get_mmp_messages(ln_B, B, qs, ln_prior):
         return jnp.pad(msg, ((0, 1), (0, 0)))
     
     if ln_B is not None:
-        lnB_future = jtu.tree_map(forward, B, qs, ln_prior)
-        lnB_past = jtu.tree_map(backward, B, qs)
+        lnB_future = jtu.tree_map(forward, B_marg, qs, ln_prior)
+        lnB_past = jtu.tree_map(backward, B_marg, qs)
     else:
         lnB_future = jtu.tree_map(lambda x: 0., qs)
         lnB_past = jtu.tree_map(lambda x: 0., qs)
