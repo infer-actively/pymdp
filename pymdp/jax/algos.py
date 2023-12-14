@@ -230,16 +230,25 @@ def update_variational_filtering(obs, A, B, prior, A_dependencies, **kwargs):
 def get_vmp_messages(ln_B, B, qs, ln_prior, B_dependencies):
     
     num_factors = len(qs)
-    get_deps = lambda x, f_idx: [x[f] for f in f_idx]
-    all_deps_except_f = jtu.tree_map(
-        lambda deps, f: [d for d in deps if d != f], B_dependencies, list(range(num_factors))
+    factors = list(range(num_factors))
+    get_deps = lambda x, f_idx: [x[f] for f in f_idx] # function that effectively "slices" a list with a set of indices `f_idx`
+    all_deps_except_f = jtu.tree_map( # this is a list of lists, where each list contains all dependencies of a factor except itself
+        lambda f: [d for d in B_dependencies[f] if d != f], 
+        factors
     )
-    ln_B_marg = jtu.tree_map(
-        lambda b, deps, f: factor_dot(b, get_deps(qs, deps), keepdims=(0,1,f)),
-        ln_B, 
-        all_deps_except_f, 
-        list(range(num_factors))
-    )  # shape = (T, states_f, states_f)
+    position = jtu.tree_map( # this is a list of integers, where each integer is the position of the self-factor in its dependencies list
+        lambda f: B_dependencies[f].index(f),
+        factors
+    )
+
+    if ln_B is not None:
+        ln_B_marg = jtu.tree_map( # this is a list of matrices, where each matrix is the marginal transition tensor for factor f
+            lambda b, f: factor_dot(b, get_deps(qs, all_deps_except_f[f]), keep_dims=(0, 1, 2 + position[f])), 
+            ln_B, 
+            factors
+        )  # shape = (T, states_f_{t+1}, states_f_{t})
+    else:
+        ln_B_marg = None
 
     def forward(ln_b, q, ln_prior):
         msg = vmap(lambda x, y: y @ x)(q[:-1], ln_b) # ln_b has shape (num_states, num_states) qs[:-1] has shape (T-1, num_states)
@@ -250,7 +259,7 @@ def get_vmp_messages(ln_B, B, qs, ln_prior, B_dependencies):
         msg = vmap(lambda x, y: x @ y)(q[1:], ln_b)
         return jnp.pad(msg, ((0, 1), (0, 0)))
 
-    if ln_B is not None:
+    if ln_B_marg is not None:
         lnB_future = jtu.tree_map(forward, ln_B_marg, qs, ln_prior)
         lnB_past = jtu.tree_map(backward, ln_B_marg, qs)
     else:
