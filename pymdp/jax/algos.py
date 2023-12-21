@@ -232,11 +232,15 @@ def get_vmp_messages(ln_B, B, qs, ln_prior, B_dependencies):
     num_factors = len(qs)
     factors = list(range(num_factors))
     get_deps = lambda x, f_idx: [x[f] for f in f_idx] # function that effectively "slices" a list with a set of indices `f_idx`
-    all_deps_except_f = jtu.tree_map( # this is a list of lists, where each list contains all dependencies of a factor except itself
+
+    # make a list of lists, where each list contains all dependencies of a factor except itself
+    all_deps_except_f = jtu.tree_map( 
         lambda f: [d for d in B_dependencies[f] if d != f], 
         factors
     )
-    position = jtu.tree_map( # this is a list of integers, where each integer is the position of the self-factor in its dependencies list
+
+    # make list of integers, where each integer is the position of the self-factor in its dependencies list
+    position = jtu.tree_map(
         lambda f: B_dependencies[f].index(f),
         factors
     )

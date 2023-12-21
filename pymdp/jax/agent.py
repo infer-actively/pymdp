@@ -222,6 +222,7 @@ class Agent(Module):
             o_vec_seq = jtu.tree_map(lambda o, dim: nn.one_hot(o, dim), outcomes, self.num_obs)
             qA = learning.update_obs_likelihood_dirichlet(self.pA, self.A, o_vec_seq, beliefs, self.A_dependencies, lr=1.)
             E_qA = jtu.tree_map(lambda x: maths.dirichlet_expected_value(x), qA)
+            
         if self.learn_B:
             actions_seq = [actions[...,i] for i in range(actions.shape[-1])] # as many elements as there are control factors, where each element is a jnp.ndarray of shape (n_timesteps, )
             actions_onehot = jtu.tree_map(lambda a, dim: nn.one_hot(a, dim, axis=-1), actions_seq, self.num_controls)
