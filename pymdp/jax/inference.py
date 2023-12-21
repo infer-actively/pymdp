@@ -6,7 +6,18 @@ import jax.numpy as jnp
 from .algos import run_factorized_fpi, run_mmp, run_vmp
 from jax import tree_util as jtu
 
-def update_posterior_states(A, B, obs, past_actions, prior=None, qs_hist=None, A_dependencies=None, B_dependencies=None, num_iter=16, method='fpi'):
+def update_posterior_states(
+        A, 
+        B, 
+        obs, 
+        past_actions, 
+        prior=None, 
+        qs_hist=None, 
+        A_dependencies=None, 
+        B_dependencies=None, 
+        num_iter=16, 
+        method='fpi'
+    ):
 
     if method == 'fpi' or method == "ovf":
         # format obs to select only last observation
