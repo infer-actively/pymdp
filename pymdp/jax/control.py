@@ -157,6 +157,8 @@ def compute_expected_state(qs_prior, B, u_t, B_dependencies=None):
     """
     Compute posterior over next state, given belief about previous state, transition model and action...
     """
+    #Note: this algorithm is only correct if each factor depends only on itself. For any interactions, 
+    # we will have empirical priors with codependent factors. 
     assert len(u_t) == len(B)  
     qs_next = []
     for B_f, u_f, deps in zip(B, u_t, B_dependencies):

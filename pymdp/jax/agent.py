@@ -12,9 +12,9 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 from jax import nn, vmap, random
 from . import inference, control, learning, utils, maths
-from equinox import Module, static_field, tree_at
+from equinox import Module, field, tree_at
 
-from typing import Any, List, AnyStr, Optional
+from typing import List, Optional
 from jaxtyping import Array
 
 class Agent(Module):
@@ -34,45 +34,45 @@ class Agent(Module):
     observations and takes actions as inputs, would entail a dynamic agent-environment interaction.
     """
 
-    A: List
-    B: List
-    C: List 
-    D: List
+    A: List[Array]
+    B: List[Array]
+    C: List[Array] 
+    D: List[Array]
     E: Array
     # empirical_prior: List
     gamma: Array
     alpha: Array
-    qs: Optional[List]
-    q_pi: Optional[List]
+    qs: Optional[List[Array]]
+    q_pi: Optional[List[Array]]
 
-    pA: List
-    pB: List
+    pA: List[Array]
+    pB: List[Array]
     
     # static parameters not leaves of the PyTree
-    A_dependencies: Optional[List] = static_field()
-    B_dependencies: Optional[List] = static_field()
-    batch_size: int = static_field()
-    num_iter: int = static_field()
-    num_obs: List = static_field()
-    num_modalities: int = static_field()
-    num_states: List = static_field()
-    num_factors: int = static_field()
-    num_controls: List = static_field()
-    control_fac_idx: Any = static_field()
-    policy_len: int = static_field()
-    policies: Any = static_field()
-    use_utility: bool = static_field()
-    use_states_info_gain: bool = static_field()
-    use_param_info_gain: bool = static_field()
-    action_selection: AnyStr = static_field() # determinstic or stochastic
-    sampling_mode : AnyStr = static_field() # whether to sample from full posterior over policies ("full") or from marginal posterior over actions ("marginal")
-    inference_algo: AnyStr = static_field() # fpi, vmp, mmp, ovf
+    A_dependencies: Optional[List] = field(static=True)
+    B_dependencies: Optional[List] = field(static=True)
+    batch_size: int = field(static=True)
+    num_iter: int = field(static=True)
+    num_obs: List[int] = field(static=True)
+    num_modalities: int = field(static=True)
+    num_states: List[int] = field(static=True)
+    num_factors: int = field(static=True)
+    num_controls: List[int] = field(static=True)
+    control_fac_idx: Optional[List[int]] = field(static=True)
+    policy_len: int = field(static=True)
+    policies: Array = field(static=True)
+    use_utility: bool = field(static=True)
+    use_states_info_gain: bool = field(static=True)
+    use_param_info_gain: bool = field(static=True)
+    action_selection: str = field(static=True) # determinstic or stochastic
+    sampling_mode : str = field(static=True) # whether to sample from full posterior over policies ("full") or from marginal posterior over actions ("marginal")
+    inference_algo: str = field(static=True) # fpi, vmp, mmp, ovf
 
-    learn_A: bool = static_field()
-    learn_B: bool = static_field()
-    learn_C: bool = static_field()
-    learn_D: bool = static_field()
-    learn_E: bool = static_field()
+    learn_A: bool = field(static=True)
+    learn_B: bool = field(static=True)
+    learn_C: bool = field(static=True)
+    learn_D: bool = field(static=True)
+    learn_E: bool = field(static=True)
 
     def __init__(
         self,
