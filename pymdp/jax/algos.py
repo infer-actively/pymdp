@@ -12,24 +12,8 @@ def add(x, y):
     return x + y
 
 def marginal_log_likelihood(qs, log_likelihood, i):
-    if i == 0:
-        x = jnp.ones_like(qs[0])
-    else: 
-        x = qs[0]
-
-    parallel_ndim = len(x.shape[:-1])
-
-    tpl = (-2,)
-    for (f, q) in enumerate(qs[1:]):
-        if (f + 1) != i:
-            x = jnp.expand_dims(x, -1) * jnp.expand_dims(q, tpl)
-        else:
-            x = jnp.expand_dims(x, -1) * jnp.expand_dims(jnp.ones_like(q), tpl)
-        tpl = tpl + (tpl[f] - 1,)
-    
-    joint = log_likelihood * x
-    dims = (f + parallel_ndim for f in range(len(qs)) if f != i)
-    return joint.sum(dims)
+    xs = [q for j, q in enumerate(qs) if j != i]
+    return factor_dot(log_likelihood, xs, keep_dims=(i,))
 
 def all_marginal_log_likelihood(qs, log_likelihoods, all_factor_lists):
     qL_marginals = jtu.tree_map(lambda ll_m, factor_list_m: mll_factors(qs, ll_m, factor_list_m), log_likelihoods, all_factor_lists)
@@ -84,8 +68,6 @@ def run_factorized_fpi(A, obs, prior, A_dependencies, num_iter=1):
     Run the fixed point iteration algorithm with sparse dependencies between factors and outcomes (stored in `A_dependencies`)
     """
 
-    nf = len(prior)
-    factors = list(range(nf))
     # Step 1: Compute log likelihoods for each factor
     log_likelihoods = compute_log_likelihood_per_modality(obs, A)
 
