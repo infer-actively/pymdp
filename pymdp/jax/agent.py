@@ -16,6 +16,7 @@ from equinox import Module, field, tree_at
 
 from typing import List, Optional
 from jaxtyping import Array
+from functools import partial
 
 class Agent(Module):
     """ 
@@ -248,7 +249,7 @@ class Agent(Module):
         return agent
     
     @vmap
-    def infer_states(self, observations, past_actions,  empirical_prior, qs_hist):
+    def infer_states(self, observations, past_actions, empirical_prior, qs_hist):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
@@ -285,12 +286,9 @@ class Agent(Module):
             method=self.inference_algo
         )
 
-        # if ovf_smooth:
-        #     output = inference.smoothing(output)
-
         return output
 
-    @vmap
+    @partial(vmap, in_axes=(0, 0, 0))
     def update_empirical_prior(self, action, qs):
         # return empirical_prior, and the history of posterior beliefs (filtering distributions) held about hidden states at times 1, 2 ... t
 
@@ -392,7 +390,7 @@ class Agent(Module):
         method = self.inference_algo
         default_params = None
         if method == "VANILLA":
-            default_params = {"num_iter": 10, "dF": 1.0, "dF_tol": 0.001}
+            default_params = {"num_iter": 8, "dF": 1.0, "dF_tol": 0.001}
         elif method == "MMP":
             raise NotImplementedError("MMP is not implemented")
         elif method == "VMP":
