@@ -5,7 +5,7 @@ from jax import jit, vmap, grad, lax, nn
 # from jax.config import config
 # config.update("jax_enable_x64", True)
 
-from .maths import compute_log_likelihood, compute_log_likelihood_per_modality, log_stable, MINVAL, factor_dot
+from .maths import compute_log_likelihood, compute_log_likelihood_per_modality, log_stable, MINVAL, factor_dot, factor_dot_flex
 from typing import Any, List
 
 def add(x, y):
@@ -20,7 +20,9 @@ def all_marginal_log_likelihood(qs, log_likelihoods, all_factor_lists):
     
     num_factors = len(qs)
 
-    qL_all = [0.] * num_factors
+    # insted of a double loop we could have a list defining m to f mapping
+    # which could be resolved with a single tree_map cast
+    qL_all = [jnp.zeros(1)] * num_factors
     for m, factor_list_m in enumerate(all_factor_lists):
         for l, f in enumerate(factor_list_m):
             qL_all[f] += qL_marginals[m][l]
@@ -106,7 +108,6 @@ def update_marginals(get_messages, obs, A, B, prior, A_dependencies, B_dependenc
 
     nf = len(prior)
     T = obs[0].shape[0]
-    factors = list(range(nf))
     ln_B = jtu.tree_map(log_stable, B)
     # log likelihoods -> $\ln(A)$ for all time steps
     # for $k > t$ we have $\ln(A) = 0$
@@ -137,7 +138,7 @@ def update_marginals(get_messages, obs, A, B, prior, A_dependencies, B_dependenc
 
         mgds = jtu.Partial(mirror_gradient_descent_step, tau)
 
-        ln_As = all_marginal_log_likelihood(qs, log_likelihoods, A_dependencies)
+        ln_As = vmap(all_marginal_log_likelihood, in_axes=(0, 0, None))(qs, log_likelihoods, A_dependencies)
 
         qs = jtu.tree_map(mgds, ln_As, lnB_past, lnB_future, ln_qs)
 
@@ -272,27 +273,26 @@ def run_vmp(A, B, obs, prior, A_dependencies, B_dependencies, num_iter=1, tau=1.
     )
     return qs
 
-def get_mmp_messages(ln_B, B, qs, ln_prior, B_dependencies):
+def get_mmp_messages(ln_B, B, qs, ln_prior, B_deps):
 
     num_factors = len(qs)
     factors = list(range(num_factors))
-    get_deps = lambda x, f_idx: [x[f] for f in f_idx]
+    get_deps = lambda x, f_idx: [x[f][:-1] for f in f_idx]
     all_deps_except_f = jtu.tree_map(
-        lambda f: [d for d in B_dependencies[f] if d != f], 
+        lambda f: [d for d in B_deps[f] if d != f], 
         factors
     )
     position = jtu.tree_map(
-        lambda f: B_dependencies[f].index(f),
+        lambda f: B_deps[f].index(f),
         factors
     )
-    if B is not None:
-        B_marg = jtu.tree_map(
-            lambda b, f: factor_dot(b, get_deps(qs, all_deps_except_f[f]), keep_dims=(0, 1, 2 + position[f])), 
-            B, 
-            factors
-        )  # shape = (T, states_f_{t+1}, states_f_{t})
-    else:
-        B_marg = None
+
+    dims = jtu.tree_map(lambda f: tuple((0,) + (2 + B_deps[f].index(i),) for i in all_deps_except_f[f]), factors)
+    def func(b, f):
+        xs = get_deps(qs, all_deps_except_f[f])
+        return factor_dot_flex(b, xs, dims[f], keep_dims=(0, 1, 2 + position[f]) )
+    
+    B_marg = jtu.tree_map(func, B, factors) if B is not None else None
 
     def forward(b, q, ln_prior):
         if len(q) > 1:
