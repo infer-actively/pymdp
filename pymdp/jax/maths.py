@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 
 from functools import partial
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 from jax import tree_util, nn, jit
 from opt_einsum import contract
 
@@ -24,10 +24,26 @@ def factor_dot(M, xs, keep_dims: Optional[Tuple[int]] = None):
     """
     d = len(keep_dims) if keep_dims is not None else 0
     assert M.ndim == len(xs) + d
+    keep_dims = () if keep_dims is None else keep_dims
+    dims = tuple((i,) for i in range(M.ndim) if i not in keep_dims)
+    return factor_dot_flex(M, xs, dims, keep_dims=keep_dims)
 
-    all_dims = list(range(M.ndim))
-    dims = all_dims if keep_dims is None else [i for i in range(M.ndim) if i not in keep_dims]
-    matrix = [[xs[f], [dims[f]]] for f in range(len(xs))]
+@partial(jit, static_argnames=['dims', 'keep_dims'])
+def factor_dot_flex(M, xs, dims: List[Tuple[int]], keep_dims: Optional[Tuple[int]] = None):
+    """ Dot product of a multidimensional array with `x`.
+    
+    Parameters
+    ----------
+    - `M` [numpy.ndarray] - tensor
+    - 'xs' [list of numpyr.ndarray] - list of tensors
+    - 'dims' [list of tuples] - list of dimensions of xs tensors in tensor M
+    - 'keep_dims' [tuple] - tuple of integers denoting dimesions to keep
+    Returns 
+    -------
+    - `Y` [1D numpy.ndarray] - the result of the dot product
+    """
+    all_dims = tuple(range(M.ndim))
+    matrix = [[xs[f], dims[f]] for f in range(len(xs))]
     args = [M, all_dims]
     for row in matrix:
         args.extend(row)
