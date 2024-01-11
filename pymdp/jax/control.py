@@ -138,7 +138,7 @@ def construct_policies(num_states, num_controls = None, policy_len=1, control_fa
     return jnp.stack(policies)
 
 
-def update_posterior_policies(policy_matrix, qs_init, A, B, C, pA, pB, A_dependencies, B_dependencies, gamma=16.0, use_utility=True, use_states_info_gain=True, use_param_info_gain=False):
+def update_posterior_policies(policy_matrix, qs_init, A, B, C, E, pA, pB, A_dependencies, B_dependencies, gamma=16.0, use_utility=True, use_states_info_gain=True, use_param_info_gain=False):
     # policy --> n_levels_factor_f x 1
     # factor --> n_levels_factor_f x n_policies
     ## vmap across policies
@@ -152,7 +152,7 @@ def update_posterior_policies(policy_matrix, qs_init, A, B, C, pA, pB, A_depende
     # policies needs to be an NDarray of shape (n_policies, n_timepoints, n_control_factors)
     neg_efe_all_policies = vmap(compute_G_fixed_states)(policy_matrix)
 
-    return nn.softmax(gamma * neg_efe_all_policies), neg_efe_all_policies
+    return nn.softmax(gamma * neg_efe_all_policies + log_stable(E)), neg_efe_all_policies
 
 def compute_expected_state(qs_prior, B, u_t, B_dependencies=None): 
     """
@@ -372,7 +372,7 @@ def compute_G_policy_inductive(qs_init, A, B, C, pA, pB, A_dependencies, B_depen
     qs_final, neg_G = final_state
     return neg_G
 
-def update_posterior_policies_inductive(policy_matrix, qs_init, A, B, C, pA, pB, A_dependencies, B_dependencies, I, gamma=16.0, inductive_epsilon=1e-3, use_utility=True, use_states_info_gain=True, use_param_info_gain=False, use_inductive=True):
+def update_posterior_policies_inductive(policy_matrix, qs_init, A, B, C, E, pA, pB, A_dependencies, B_dependencies, I, gamma=16.0, inductive_epsilon=1e-3, use_utility=True, use_states_info_gain=True, use_param_info_gain=False, use_inductive=True):
     # policy --> n_levels_factor_f x 1
     # factor --> n_levels_factor_f x n_policies
     ## vmap across policies
@@ -386,7 +386,7 @@ def update_posterior_policies_inductive(policy_matrix, qs_init, A, B, C, pA, pB,
     # policies needs to be an NDarray of shape (n_policies, n_timepoints, n_control_factors)
     neg_efe_all_policies = vmap(compute_G_fixed_states)(policy_matrix)
 
-    return nn.softmax(gamma * neg_efe_all_policies), neg_efe_all_policies
+    return nn.softmax(gamma * neg_efe_all_policies + log_stable(E)), neg_efe_all_policies
 
 def generate_I_matrix(H: List[Array], B: List[Array], threshold: float, depth: int):
     """ 

@@ -126,7 +126,6 @@ class Agent(Module):
         self.C = C
         self.D = D
         # self.empirical_prior = D
-        self.E = E
         self.H = H
         self.pA = pA
         self.pB = pB
@@ -226,6 +225,12 @@ class Agent(Module):
             self.policies = policies
         else:
             self._construct_policies()
+        
+        # set E to uniform/uninformative prior over policies if not given
+        if E is None:
+            self.E = jnp.ones((self.batch_size, len(self.policies)))/ len(self.policies)
+        else:
+            self.E = E
 
     def _construct_policies(self):
         
@@ -350,6 +355,7 @@ class Agent(Module):
             self.A,
             self.B,
             self.C,
+            self.E,
             self.pA,
             self.pB,
             A_dependencies=self.A_dependencies,
