@@ -51,7 +51,7 @@ class Agent(Module):
     inductive_epsilon: Array # epsilon for inductive inference (trade-off/weight for how much inductive value contributes to EFE of policies)
 
     H: List[Array] # H vectors (one per hidden state factor) used for inductive inference -- these encode goal states or constraints
-    # I: List[Array] # I matrices (one per hidden state factor) used for inductive inference -- these encode the 'reachability' matrices of goal states encoded in `self.H`
+    I: List[Array] # I matrices (one per hidden state factor) used for inductive inference -- these encode the 'reachability' matrices of goal states encoded in `self.H`
 
     pA: List[Array]
     pB: List[Array]
@@ -70,7 +70,6 @@ class Agent(Module):
     policy_len: int = field(static=True) # depth of planning during roll-outs (i.e. number of timesteps to look ahead when computing expected free energy of policies)
     inductive_depth: int = field(static=True) # depth of inductive inference (i.e. number of future timesteps to use when computing inductive `I` matrix)
     policies: Array = field(static=True)  # matrix of all possible policies (each row is a policy of shape (num_controls[0], num_controls[1], ..., num_controls[num_control_factors-1])
-    I: Array = field(static=False)  # I matrices (one per hidden state factor) used for inductive inference -- these encode the 'reachability' matrices of goal states encoded in `self.H`
     use_utility: bool = field(static=True) # flag for whether to use expected utility ("reward" or "preference satisfaction") when computing expected free energy
     use_states_info_gain: bool = field(static=True) # flag for whether to use state information gain ("salience") when computing expected free energy
     use_param_info_gain: bool = field(static=True)  # flag for whether to use parameter information gain ("novelty") when computing expected free energy
@@ -102,7 +101,6 @@ class Agent(Module):
         policy_len=1,
         control_fac_idx=None,
         policies=None,
-        I=None,
         gamma=16.0,
         alpha=16.0,
         inductive_depth=1,
@@ -129,6 +127,7 @@ class Agent(Module):
         self.D = D
         # self.empirical_prior = D
         self.E = E
+        self.H = H
         self.pA = pA
         self.pB = pB
         self.qs = qs
@@ -188,16 +187,12 @@ class Agent(Module):
         self.use_states_info_gain = use_states_info_gain
         self.use_param_info_gain = use_param_info_gain
         self.use_inductive = use_inductive
-        
-        self.H = H
-        if I is not None:
-            self.I = I
+
+        if self.use_inductive and self.H is not None:
+            print("Using inductive inference...")
+            self.I = self._construct_I()
         else:
-            if self.use_inductive and self.H is not None:
-                print("Using inductive inference...")
-                self._construct_I()
-            else:
-                self.I = jtu.tree_map(lambda x: jnp.zeros_like(x), self.D)
+            self.I = jtu.tree_map(lambda x: jnp.expand_dims(jnp.zeros_like(x), 1), self.D)
 
         # learning parameters
         self.learn_A = learn_A
@@ -240,7 +235,7 @@ class Agent(Module):
 
     @vmap
     def _construct_I(self):
-        self.I = control.generate_I_matrix(self.H, self.B, self.inductive_threshold, self.inductive_depth)
+        return control.generate_I_matrix(self.H, self.B, self.inductive_threshold, self.inductive_depth)
 
     @property
     def unique_multiactions(self):
