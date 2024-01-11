@@ -46,6 +46,13 @@ class Agent(Module):
     qs: Optional[List[Array]]
     q_pi: Optional[List[Array]]
 
+    # parameters used for inductive inference
+    inductive_threshold: Array # threshold for inductive inference (the threshold for pruning transitions that are below a certain probability)
+    inductive_epsilon: Array # epsilon for inductive inference (trade-off/weight for how much inductive value contributes to EFE of policies)
+
+    H: List[Array] # H vectors (one per hidden state factor) used for inductive inference -- these encode goal states or constraints
+    # I: List[Array] # I matrices (one per hidden state factor) used for inductive inference -- these encode the 'reachability' matrices of goal states encoded in `self.H`
+
     pA: List[Array]
     pB: List[Array]
     
@@ -60,12 +67,15 @@ class Agent(Module):
     num_factors: int = field(static=True)
     num_controls: List[int] = field(static=True)
     control_fac_idx: Optional[List[int]] = field(static=True)
-    policy_len: int = field(static=True)
-    policies: Array = field(static=True)
-    use_utility: bool = field(static=True)
-    use_states_info_gain: bool = field(static=True)
-    use_param_info_gain: bool = field(static=True)
-    action_selection: str = field(static=True) # determinstic or stochastic
+    policy_len: int = field(static=True) # depth of planning during roll-outs (i.e. number of timesteps to look ahead when computing expected free energy of policies)
+    inductive_depth: int = field(static=True) # depth of inductive inference (i.e. number of future timesteps to use when computing inductive `I` matrix)
+    policies: Array = field(static=True)  # matrix of all possible policies (each row is a policy of shape (num_controls[0], num_controls[1], ..., num_controls[num_control_factors-1])
+    I: Array = field(static=False)  # I matrices (one per hidden state factor) used for inductive inference -- these encode the 'reachability' matrices of goal states encoded in `self.H`
+    use_utility: bool = field(static=True) # flag for whether to use expected utility ("reward" or "preference satisfaction") when computing expected free energy
+    use_states_info_gain: bool = field(static=True) # flag for whether to use state information gain ("salience") when computing expected free energy
+    use_param_info_gain: bool = field(static=True)  # flag for whether to use parameter information gain ("novelty") when computing expected free energy
+    use_inductive: bool = field(static=True)   # flag for whether to use inductive inference ("intentional inference") when computing expected free energy
+    action_selection: str = field(static=True) # determinstic or stochastic action selection 
     sampling_mode : str = field(static=True) # whether to sample from full posterior over policies ("full") or from marginal posterior over actions ("marginal")
     inference_algo: str = field(static=True) # fpi, vmp, mmp, ovf
 
@@ -88,14 +98,20 @@ class Agent(Module):
         B_dependencies=None,
         qs=None,
         q_pi=None,
+        H=None,
         policy_len=1,
         control_fac_idx=None,
         policies=None,
+        I=None,
         gamma=16.0,
         alpha=16.0,
+        inductive_depth=1,
+        inductive_threshold=0.1,
+        inductive_epsilon=1e-3,
         use_utility=True,
         use_states_info_gain=True,
         use_param_info_gain=False,
+        use_inductive=False,
         action_selection="deterministic",
         sampling_mode="marginal",
         inference_algo="fpi",
@@ -107,7 +123,6 @@ class Agent(Module):
         learn_E=False
     ):
         ### PyTree leaves
-
         self.A = A
         self.B = B
         self.C = C
@@ -157,12 +172,13 @@ class Agent(Module):
 
         self.gamma = jnp.broadcast_to(gamma, (self.batch_size,))
         self.alpha = jnp.broadcast_to(alpha, (self.batch_size,))
+        self.inductive_threshold = jnp.broadcast_to(inductive_threshold, (self.batch_size,))
+        self.inductive_epsilon = jnp.broadcast_to(inductive_epsilon, (self.batch_size,))
 
         ### Static parameters ###
-
         self.num_iter = num_iter
-
         self.inference_algo = inference_algo
+        self.inductive_depth = inductive_depth
 
         # policy parameters
         self.policy_len = policy_len
@@ -171,6 +187,17 @@ class Agent(Module):
         self.use_utility = use_utility
         self.use_states_info_gain = use_states_info_gain
         self.use_param_info_gain = use_param_info_gain
+        self.use_inductive = use_inductive
+        
+        self.H = H
+        if I is not None:
+            self.I = I
+        else:
+            if self.use_inductive and self.H is not None:
+                print("Using inductive inference...")
+                self._construct_I()
+            else:
+                self.I = jtu.tree_map(lambda x: jnp.zeros_like(x), self.D)
 
         # learning parameters
         self.learn_A = learn_A
@@ -211,6 +238,10 @@ class Agent(Module):
             self.num_states, self.num_controls, self.policy_len, self.control_fac_idx
         )
 
+    @vmap
+    def _construct_I(self):
+        self.I = control.generate_I_matrix(self.H, self.B, self.inductive_threshold, self.inductive_depth)
+
     @property
     def unique_multiactions(self):
         size = pymath.prod(self.num_controls)
@@ -229,6 +260,10 @@ class Agent(Module):
             actions_onehot = jtu.tree_map(lambda a, dim: nn.one_hot(a, dim, axis=-1), actions_seq, self.num_controls)
             qB = learning.update_state_likelihood_dirichlet(self.pB, self.B, beliefs, actions_onehot, self.B_dependencies)
             E_qB = jtu.tree_map(lambda x: maths.dirichlet_expected_value(x), qB)
+
+            # if you have updated your beliefs about transitions, you need to re-compute the I matrix used for inductive inferenece
+            if self.use_inductive and self.H is not None:
+                I_updated = control.generate_I_matrix(self.H, E_qB, self.inductive_threshold, self.inductive_depth)
         # if self.learn_C:
         #     self.qC = learning.update_C(self.C, *args, **kwargs)
         #     self.C = jtu.tree_map(lambda x: maths.dirichlet_expected_value(x), self.qC)
@@ -244,7 +279,7 @@ class Agent(Module):
         # parameters = ...
         # varibles = {'A': jnp.ones(5)}
 
-        agent = tree_at(lambda x: (x.A, x.pA, x.B, x.pB), self, (E_qA, qA, E_qB, qB))
+        agent = tree_at(lambda x: (x.A, x.pA, x.B, x.pB, x.I), self, (E_qA, qA, E_qB, qB, I_updated))
 
         return agent
     
@@ -314,7 +349,7 @@ class Agent(Module):
         """
 
         latest_belief = jtu.tree_map(lambda x: x[-1], qs) # only get the posterior belief held at the current timepoint
-        q_pi, G = control.update_posterior_policies(
+        q_pi, G = control.update_posterior_policies_inductive(
             self.policies,
             latest_belief, 
             self.A,
@@ -324,10 +359,13 @@ class Agent(Module):
             self.pB,
             A_dependencies=self.A_dependencies,
             B_dependencies=self.B_dependencies,
+            I = self.I,
             gamma=self.gamma,
+            inductive_epsilon=self.inductive_epsilon,
             use_utility=self.use_utility,
             use_states_info_gain=self.use_states_info_gain,
-            use_param_info_gain=self.use_param_info_gain
+            use_param_info_gain=self.use_param_info_gain,
+            use_inductive=self.use_inductive
         )
 
         return q_pi, G
