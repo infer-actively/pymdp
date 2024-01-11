@@ -167,6 +167,7 @@ def compute_expected_state(qs_prior, B, u_t, B_dependencies=None):
         qs_next_f = factor_dot(B_f[...,u_f], relevant_factors, keep_dims=(0,))
         qs_next.append(qs_next_f)
         
+    # P(s'|s, u) = \sum_{s, u} P(s'|s) P(s|u) P(u|pi)P(pi) because u </-> pi
     return qs_next
 
 def compute_expected_state_and_Bs(qs_prior, B, u_t): 
@@ -338,10 +339,10 @@ def compute_G_policy(qs_init, A, B, C, pA, pB, A_dependencies, B_dependencies, p
     qs_final, neg_G = final_state
     return neg_G
 
-def compute_G_policy_inductive(qs_init, A, B, C, A_dependencies, B_dependencies, I, policy_i, use_utility=True, use_inductive=True, inductive_epsilon=1e-3):
+def compute_G_policy_inductive(qs_init, A, B, C, pA, pB, A_dependencies, B_dependencies, I, policy_i, inductive_epsilon=1e-3, use_utility=True, use_states_info_gain=True, use_param_info_gain=False, use_inductive=False):
     """ 
     Write a version of compute_G_policy that does the same computations as `compute_G_policy` but using `lax.scan` instead of a for loop.
-    @NOTE: THis one further includes computations used for inductive planning, which only works in case of deterministic generative models so info gain is excluded (for now)
+    This one further adds computations used for inductive planning.
     """
 
     def scan_body(carry, t):
@@ -352,18 +353,16 @@ def compute_G_policy_inductive(qs_init, A, B, C, A_dependencies, B_dependencies,
 
         qo = compute_expected_obs(qs_next, A, A_dependencies)
 
-        # info_gain = compute_info_gain(qs_next, qo, A, A_dependencies) if use_states_info_gain else 0.
+        info_gain = compute_info_gain(qs_next, qo, A, A_dependencies) if use_states_info_gain else 0.
 
         utility = compute_expected_utility(qo, C) if use_utility else 0.
 
         inductive_value = calc_inductive_value_t(qs_init, qs_next, I, epsilon=inductive_epsilon) if use_inductive else 0.
 
-        neg_G = utility + inductive_value
+        param_info_gain = calc_pA_info_gain(pA, qo, qs_next) if use_param_info_gain else 0.
+        param_info_gain += calc_pB_info_gain(pB, qs_next, qs) if use_param_info_gain else 0.
 
-        # param_info_gain = calc_pA_info_gain(pA, qo, qs_next) if use_param_info_gain else 0.
-        # param_info_gain += calc_pB_info_gain(pB, qs_next, qs) if use_param_info_gain else 0.
-
-        # neg_G += info_gain + utility + param_info_gain
+        neg_G += info_gain + utility + param_info_gain + inductive_value
 
         return (qs_next, neg_G), None
 
@@ -373,12 +372,12 @@ def compute_G_policy_inductive(qs_init, A, B, C, A_dependencies, B_dependencies,
     qs_final, neg_G = final_state
     return neg_G
 
-def update_posterior_policies_inductive(policy_matrix, qs_init, A, B, C, A_dependencies, B_dependencies, I, gamma=16.0, use_utility=True, use_inductive=True, inductive_epsilon=1e-3):
+def update_posterior_policies_inductive(policy_matrix, qs_init, A, B, C, pA, pB, A_dependencies, B_dependencies, I, gamma=16.0, inductive_epsilon=1e-3, use_utility=True, use_states_info_gain=True, use_param_info_gain=False, use_inductive=True):
     # policy --> n_levels_factor_f x 1
     # factor --> n_levels_factor_f x n_policies
     ## vmap across policies
-    compute_G_fixed_states = partial(compute_G_policy_inductive, qs_init, A, B, C, A_dependencies, B_dependencies, I,
-                                     use_utility=use_utility, use_inductive=use_inductive, inductive_epsilon=inductive_epsilon)
+    compute_G_fixed_states = partial(compute_G_policy_inductive, qs_init, A, B, C, pA, pB, A_dependencies, B_dependencies, I, inductive_epsilon=inductive_epsilon,
+                                     use_utility=use_utility,  use_states_info_gain=use_states_info_gain, use_param_info_gain=use_param_info_gain, use_inductive=use_inductive)
 
     # only in the case of policy-dependent qs_inits
     # in_axes_list = (1,) * n_factors
@@ -452,6 +451,8 @@ def calc_inductive_value_t(qs, qs_next, I, epsilon=1e-3):
     I: ``numpy.ndarray`` of dtype object
         For each state factor, contains a 2D ``numpy.ndarray`` whose element i,j yields the probability 
         of reaching the goal state backwards from state j after i steps.
+    epsilon: ``float``
+        Value that tunes the strength of the inductive value (how much it contributes to the expected free energy of policies)
 
     Returns
     -------
@@ -474,15 +475,6 @@ def calc_inductive_value_t(qs, qs_next, I, epsilon=1e-3):
         path_available = jnp.clip(I[f][:,idx].sum(0), a_min=0, a_max=1) # if there are any 1's at all in that column of I, then this == 1, otherwise 0
         inductive_val += path_available * I_m.dot(qs_next[f]) # scaling by path_available will nullify the addition of inductive value in the case we find no path to goal (i.e. when no goal specified)
 
-        # The below is the straight translation from numpy, but unfortunately doesn't work due to non-statically sized arrays (AKA the call to jnp.where)
-        # # i.e. find first I idx equals 1 and m is the index before
-        # m = jnp.where(I[f][:, idx] == 1)[0]
-        # # we might find no path to goal (i.e. when no goal specified)
-        # if len(m) > 0:
-        #     m = jnp.maximum(m[0]-1, 0)
-        #     I_m = (1.-I[f][m, :]) * log_eps
-        #     inductive_val += I_m.dot(qs_next[f])
-                
     return inductive_val
 
 # if __name__ == '__main__':
