@@ -254,9 +254,10 @@ class Agent(Module):
             o_vec_seq = jtu.tree_map(lambda o, dim: nn.one_hot(o, dim), outcomes, self.num_obs)
             qA = learning.update_obs_likelihood_dirichlet(self.pA, self.A, o_vec_seq, beliefs, self.A_dependencies, lr=1.)
             E_qA = jtu.tree_map(lambda x: maths.dirichlet_expected_value(x), qA)
+            agent = tree_at(lambda x: (x.A, x.pA), self, (E_qA, qA))
             
         if self.learn_B:
-            actions_seq = [actions[...,i] for i in range(actions.shape[-1])] # as many elements as there are control factors, where each element is a jnp.ndarray of shape (n_timesteps, )
+            actions_seq = [actions[..., i] for i in range(actions.shape[-1])] # as many elements as there are control factors, where each element is a jnp.ndarray of shape (n_timesteps, )
             actions_onehot = jtu.tree_map(lambda a, dim: nn.one_hot(a, dim, axis=-1), actions_seq, self.num_controls)
             qB = learning.update_state_likelihood_dirichlet(self.pB, self.B, beliefs, actions_onehot, self.B_dependencies)
             E_qB = jtu.tree_map(lambda x: maths.dirichlet_expected_value(x), qB)
@@ -264,6 +265,7 @@ class Agent(Module):
             # if you have updated your beliefs about transitions, you need to re-compute the I matrix used for inductive inferenece
             if self.use_inductive and self.H is not None:
                 I_updated = control.generate_I_matrix(self.H, E_qB, self.inductive_threshold, self.inductive_depth)
+ 
         # if self.learn_C:
         #     self.qC = learning.update_C(self.C, *args, **kwargs)
         #     self.C = jtu.tree_map(lambda x: maths.dirichlet_expected_value(x), self.qC)
@@ -284,7 +286,7 @@ class Agent(Module):
         return agent
     
     @vmap
-    def infer_states(self, observations, past_actions, empirical_prior, qs_hist):
+    def infer_states(self, observations, past_actions, empirical_prior, qs_hist, mask=None):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
@@ -306,10 +308,18 @@ class Agent(Module):
             ``qs[p_idx][t_idx][f_idx]`` refers to beliefs about marginal factor ``f_idx`` expected under policy ``p_idx`` 
             at timepoint ``t_idx``.
         """
-
-        o_vec = [nn.one_hot(o, self.num_obs[m]) for m, o in enumerate(observations)]
+        if mask is None:
+            o_vec = [nn.one_hot(o, self.num_obs[m]) for m, o in enumerate(observations)]
+            A = self.A
+        else:
+            A = []
+            o_vec = []
+            for i, m in enumerate(mask):
+                o_vec.append( m * nn.one_hot(observations[i], self.num_obs[i]) * (1 - m) / self.num_obs[i] )
+                A.append(m * self.A[i] + (1 - m) * jnp.ones_like(self.A[i]) / self.num_obs[i])
+        
         output = inference.update_posterior_states(
-            self.A,
+            A,
             self.B,
             o_vec,
             past_actions,
@@ -328,6 +338,7 @@ class Agent(Module):
         # return empirical_prior, and the history of posterior beliefs (filtering distributions) held about hidden states at times 1, 2 ... t
 
         qs_last = jtu.tree_map( lambda x: x[-1], qs)
+        # this computation of the predictive prior is correct only for fully factorised Bs.
         pred = control.compute_expected_state(qs_last, self.B, action, B_dependencies=self.B_dependencies)
         
         return (pred, qs)

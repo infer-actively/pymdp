@@ -106,7 +106,6 @@ def mirror_gradient_descent_step(tau, ln_A, lnB_past, lnB_future, ln_qs):
 def update_marginals(get_messages, obs, A, B, prior, A_dependencies, B_dependencies, num_iter=1, tau=1.,):
     """" Version of marginal update that uses a sparse dependency matrix for A """
 
-    nf = len(prior)
     T = obs[0].shape[0]
     ln_B = jtu.tree_map(log_stable, B)
     # log likelihoods -> $\ln(A)$ for all time steps
@@ -274,46 +273,58 @@ def run_vmp(A, B, obs, prior, A_dependencies, B_dependencies, num_iter=1, tau=1.
     return qs
 
 def get_mmp_messages(ln_B, B, qs, ln_prior, B_deps):
-
+    
     num_factors = len(qs)
     factors = list(range(num_factors))
-    get_deps = lambda x, f_idx: [x[f][:-1] for f in f_idx]
-    all_deps_except_f = jtu.tree_map(
-        lambda f: [d for d in B_deps[f] if d != f], 
-        factors
-    )
-    position = jtu.tree_map(
-        lambda f: B_deps[f].index(f),
-        factors
-    )
 
-    dims = jtu.tree_map(lambda f: tuple((0,) + (2 + B_deps[f].index(i),) for i in all_deps_except_f[f]), factors)
-    def func(b, f):
-        xs = get_deps(qs, all_deps_except_f[f])
-        return factor_dot_flex(b, xs, dims[f], keep_dims=(0, 1, 2 + position[f]) )
+    get_deps_forw = lambda x, f_idx: [x[f][:-1] for f in f_idx]
+    get_deps_back = lambda x, f_idx: [x[f][1:] for f in f_idx]
+
+    def forward(b, ln_prior, f):
+        xs = get_deps_forw(qs, B_deps[f])
+        dims = tuple((0, 2 + i) for i in range(len(B_deps[f])))
+        msg = log_stable(factor_dot_flex(b, xs, dims, keep_dims=(0, 1) ))
+        # append log_prior as a first message 
+        msg = jnp.concatenate([jnp.expand_dims(ln_prior, 0), msg], axis=0)
+        # mutliply with 1/2 all but the last msg
+        T = len(msg)
+        if T > 1:
+            msg = msg * jnp.pad( 0.5 * jnp.ones(T - 1), (0, 1), constant_values=1.)[:, None]
+
+        return msg
     
-    B_marg = jtu.tree_map(func, B, factors) if B is not None else None
-
-    def forward(b, q, ln_prior):
-        if len(q) > 1:
-            msg = vmap(lambda x, y: y @ x)(q[:-1], b)
-            msg = log_stable(msg)
-            n = len(msg) 
-            if n > 1: # this is the case where there are at least 3 observations. If you have two observations, then you weight the single past message from t = 0 by 1.0
-                msg = msg * jnp.pad( 0.5 * jnp.ones(n-1), (0, 1), constant_values=1.)[:, None]
-            return jnp.concatenate([jnp.expand_dims(ln_prior, 0), msg], axis=0) # @TODO: look up whether we want to decrease influence of prior by half as well
-        else: # this is case where this is a single observation / single-timestep posterior
-            return jnp.expand_dims(ln_prior, 0)
-
-    def backward(b, q):
-        msg = vmap(lambda x, y: x @ y)(q[1:], b)
-        msg = log_stable(msg) * 0.5
+    def backward(Bs, xs):
+        msg = 0.
+        for i, b in enumerate(Bs):
+            b_norm = b / (b.sum(-1, keepdims=True) + 1e-16)
+            msg += log_stable(vmap(lambda x, y: y @ x)(b_norm, xs[i])) * .5
+        
         return jnp.pad(msg, ((0, 1), (0, 0)))
-    
-    if B_marg is not None:
-        lnB_future = jtu.tree_map(forward, B_marg, qs, ln_prior)
-        lnB_past = jtu.tree_map(backward, B_marg, qs)
-    else:
+
+    inv_B_deps = [[i for i, d in enumerate(B_deps) if f in d] for f in factors]
+
+    def marg(inv_deps, f):
+        B_marg = []
+        for i in inv_deps:
+            b = B[i]
+            keep_dims = (0, 1, 2 + B_deps[i].index(f))
+            dims = []
+            idxs = []
+            for j, d in enumerate(B_deps[i]):
+                if f != d:
+                    dims.append((0, 2 + j))
+                    idxs.append(d)
+            xs = get_deps_forw(qs, idxs)
+            B_marg.append( factor_dot_flex(b, xs, tuple(dims), keep_dims=keep_dims) )
+        
+        return B_marg
+
+    B_marg = jtu.tree_map(lambda f: marg(inv_B_deps[f], f), factors)
+
+    if B is not None:
+        lnB_future = jtu.tree_map(forward, B, ln_prior, factors) 
+        lnB_past = jtu.tree_map(lambda f: backward(B_marg[f], get_deps_back(qs, inv_B_deps[f])), factors)
+    else: 
         lnB_future = jtu.tree_map(lambda x: 0., qs)
         lnB_past = jtu.tree_map(lambda x: 0., qs)
 
