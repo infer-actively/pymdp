@@ -1348,9 +1348,11 @@ def calc_ambiguity_factorized(qs_pi, A, A_factor_list):
             ambiguity += np.sum(spm_dot(H_m, qs_pi[t][factor_idx]))
 
     return ambiguity
-    
+
+
 def sophisticated_inference_search(qs, policies, A, B, C, A_factor_list, B_factor_list, I=None, horizon=1,
-                                   policy_prune_threshold=1/16, state_prune_threshold=1/16, prune_penalty=512, gamma=16, n=0):
+                                   policy_prune_threshold=1/16, state_prune_threshold=1/16, prune_penalty=512, gamma=16,
+                                   inference_params = {"num_iter": 10, "dF": 1.0, "dF_tol": 0.001, "compute_vfe": False}, n=0):
     """
     Performs sophisticated inference to find the optimal policy for a given generative model and prior preferences.
 
@@ -1358,109 +1360,8 @@ def sophisticated_inference_search(qs, policies, A, B, C, A_factor_list, B_facto
     ----------
     qs: ``numpy.ndarray`` of dtype object
         Marginal posterior beliefs over hidden states at a given timepoint.
-    policies: ``list`` of 1D ``numpy.ndarray``
-        ``list`` that stores each policy as a 1D array in ``policies[p_idx]``. Shape of ``policies[p_idx]`` 
-        is ``(num_factors)`` where ``num_factors`` is the number of control factors.        
-    A: ``numpy.ndarray`` of dtype object
-        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element ``A[m]`` of
-        stores an ``numpy.ndarray`` multidimensional array for observation modality ``m``, whose entries ``A[m][i, j, k, ...]`` store 
-        the probability of observation level ``i`` given hidden state levels ``j, k, ...``
-    B: ``numpy.ndarray`` of dtype object
-        Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
-        Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
-        of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
-    C: ``numpy.ndarray`` of dtype object
-       Prior over observations or 'prior preferences', storing the "value" of each outcome in terms of relative log probabilities. 
-       This is softmaxed to form a proper probability distribution before being used to compute the expected utility term of the expected free energy.
-    A_factor_list: ``list`` of ``list`` of ``int``
-        List of lists, where ``A_factor_list[m]`` is a list of the hidden state factor indices that observation modality with the index ``m`` depends on
-    B_factor_list: ``list`` of ``list`` of ``int``
-        List of lists of hidden state factors each hidden state factor depends on. Each element ``B_factor_list[i]`` is a list of the factor indices that factor i's dynamics depend on.
-    I: ``numpy.ndarray`` of dtype object
-        For each state factor, contains a 2D ``numpy.ndarray`` whose element i,j yields the probability 
-        of reaching the goal state backwards from state j after i steps.
-    horizon: ``int``
-        The temporal depth of the policy
-    policy_prune_threshold: ``float``
-        The threshold for pruning policies that are below a certain probability
-    state_prune_threshold: ``float``
-        The threshold for pruning states in the expectation that are below a certain probability
-    prune_penalty: ``float``
-        Penalty to add to the EFE when a policy is pruned
-    gamma: ``float``, default 16.0
-        Prior precision over policies, scales the contribution of the expected free energy to the posterior over policies
-    n: ``int``
-        timestep in the future we are calculating
-        
-    Returns
-    ----------
-    q_pi: 1D ``numpy.ndarray``
-        Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
-     
-    G: 1D ``numpy.ndarray``
-        Negative expected free energies of each policy, i.e. a vector containing one negative expected free energy per policy.
-    """
+    policies: ``list`` of 1D ``numpy.ndarray``                    inference_params = {"num_iter": 10, "dF": 1.0, "dF_tol": 0.001, "compute_vfe": False}
 
-    n_policies = len(policies)
-    G = np.zeros(n_policies)
-    q_pi = np.zeros((n_policies, 1))
-    qs_pi = utils.obj_array(n_policies)
-
-    for idx, policy in enumerate(policies):
-        qs_pi[idx] = get_expected_states_interactions(qs, B, B_factor_list, policy)
-        qo_pi = get_expected_obs_factorized(qs_pi[idx], A, A_factor_list)
-
-        C_prob = softmax_obj_arr(C) 
-        G[idx] += -kl_div(qo_pi[0], C_prob)
-        G[idx] += -calc_ambiguity_factorized(qs_pi[idx], A, A_factor_list)
-        if I is not None:
-            G[idx] += calc_inductive_cost(qs, qs_pi[idx], I)
-
-    q_pi = softmax(G * gamma)
-
-    if n < horizon - 1:
-        # ignore low probability actions in the search tree
-        # TODO shouldnt we have to add extra penalty for branches no longer considered?
-        # or assume these are already low EFE (high NEFE) anyway?
-        policies_to_consider = list(np.where(q_pi >= policy_prune_threshold)[0])
-        for idx in range(n_policies):
-            if idx not in policies_to_consider:
-                G[idx] -= prune_penalty
-            else :
-                # average over states
-                qs_next = qs_pi[idx][0]
-                for k in itertools.product(*[range(s.shape[0]) for s in qs_next]):
-                    prob = 1.0
-                    for i in range(len(k)):
-                        prob *= qs_pi[idx][0][i][k[i]]
-                    
-                    # ignore low probability states in the search tree
-                    if prob < state_prune_threshold:
-                        continue
-
-                    qs_one_hot = utils.obj_array(len(qs))
-                    for i in range(len(qs)):
-                        qs_one_hot[i] = utils.onehot(k[i], qs_next[i].shape[0])
-                    
-                    q_pi_next, G_next = sophisticated_inference_search(qs_one_hot, policies, A, B, C, A_factor_list, B_factor_list, I,
-                                                                       horizon, policy_prune_threshold, state_prune_threshold, n=n+1)
-                    G_weighted = np.dot(q_pi_next, G_next) * prob
-                    G[idx] += G_weighted
-
-    q_pi = softmax(G * gamma)
-    return q_pi, G
-
-
-def sophisticated_inference_search2(qs, policies, A, B, C, A_factor_list, B_factor_list, I=None, horizon=1,
-                                   policy_prune_threshold=1/16, state_prune_threshold=1/16, prune_penalty=512, gamma=16, n=0):
-    """
-    Performs sophisticated inference to find the optimal policy for a given generative model and prior preferences.
-
-    Parameters
-    ----------
-    qs: ``numpy.ndarray`` of dtype object
-        Marginal posterior beliefs over hidden states at a given timepoint.
-    policies: ``list`` of 1D ``numpy.ndarray``
         ``list`` that stores each policy as a 1D array in ``policies[p_idx]``. Shape of ``policies[p_idx]`` 
         is ``(num_factors)`` where ``num_factors`` is the number of control factors.        
     A: ``numpy.ndarray`` of dtype object
@@ -1554,10 +1455,10 @@ def sophisticated_inference_search2(qs, policies, A, B, C, A_factor_list, B_fact
                         'A_factor_list': A_factor_list,
                         'A_modality_list': A_modality_list
                         }
-                    inference_params = {"num_iter": 10, "dF": 1.0, "dF_tol": 0.001, "compute_vfe": False}
                     qs_next = update_posterior_states_factorized(A, qo_one_hot, num_obs, num_states, mb_dict, qs_pi[idx][0], **inference_params)
-                    q_pi_next, G_next = sophisticated_inference_search2(qs_next, policies, A, B, C, A_factor_list, B_factor_list, I,
-                                                                       horizon, policy_prune_threshold, state_prune_threshold, n=n+1)
+                    q_pi_next, G_next = sophisticated_inference_search(qs_next, policies, A, B, C, A_factor_list, B_factor_list, I,
+                                                                       horizon, policy_prune_threshold, state_prune_threshold,
+                                                                       prune_penalty, gamma, inference_params, n+1)
                     G_weighted = np.dot(q_pi_next, G_next) * prob
                     G[idx] += G_weighted
 
