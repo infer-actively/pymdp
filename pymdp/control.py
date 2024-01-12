@@ -6,7 +6,7 @@
 import itertools
 import numpy as np
 from pymdp.maths import softmax, softmax_obj_arr, spm_dot, spm_wnorm, spm_MDP_G, spm_log_single, kl_div, entropy
-from pymdp.inference import update_posterior_states_factorized
+from pymdp.inference import update_posterior_states_factorized, average_states_over_policies
 from pymdp import utils
 import copy
 
@@ -107,7 +107,7 @@ def update_posterior_policies_full(
 
     if I is not None:
         init_qs_all_pi = [qs_seq_pi[p][0] for p in range(num_policies)]
-        qs_bma = inference.average_states_over_policies(init_qs_all_pi, softmax(E))
+        qs_bma = average_states_over_policies(init_qs_all_pi, softmax(E))
 
     for p_idx, policy in enumerate(policies):
 
@@ -237,7 +237,7 @@ def update_posterior_policies_full_factorized(
 
     if I is not None:
         init_qs_all_pi = [qs_seq_pi[p][0] for p in range(num_policies)]
-        qs_bma = inference.average_states_over_policies(init_qs_all_pi, softmax(E))
+        qs_bma = average_states_over_policies(init_qs_all_pi, softmax(E))
 
     for p_idx, policy in enumerate(policies):
 
