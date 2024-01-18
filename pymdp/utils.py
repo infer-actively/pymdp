@@ -106,21 +106,28 @@ def random_A_matrix(num_obs, num_states, A_factor_list=None):
         A[modality] = norm_dist(modality_dist)
     return A
 
-def random_B_matrix(num_states, num_controls, B_factor_list=None):
+def random_B_matrix(num_states, num_controls, B_factor_list=None, B_factor_control_list=None):
     if type(num_states) is int:
         num_states = [num_states]
     if type(num_controls) is int:
         num_controls = [num_controls]
     num_factors = len(num_states)
-    assert len(num_controls) == len(num_states)
 
     if B_factor_list is None:
         B_factor_list = [[f] for f in range(num_factors)]
 
+    if B_factor_control_list is None:
+        assert len(num_controls) == len(num_states)
+        B_factor_control_list = [[f] for f in range(num_factors)]
+    else:
+        unique_controls = list(set(sum(B_factor_control_list, [])))        
+        assert unique_controls == list(range(len(num_controls)))
+
     B = obj_array(num_factors)
     for factor in range(num_factors):
         lagging_shape = [ns for i, ns in enumerate(num_states) if i in B_factor_list[factor]]
-        factor_shape = [num_states[factor]] + lagging_shape + [num_controls[factor]]
+        control_shape = [num_controls[i] for i in B_factor_control_list[factor]]
+        factor_shape = [num_states[factor]] + lagging_shape + control_shape
         # factor_shape = (num_states[factor], num_states[factor], num_controls[factor])
         factor_dist = np.random.rand(*factor_shape)
         B[factor] = norm_dist(factor_dist)
@@ -615,6 +622,15 @@ def convert_B_stubs_to_ndarray(B_stubs, model_labels):
 #                 belief_array[policy_i, :, timestep] = qx[policy_i][timestep][0]
     
 #     return belief_array
+
+def condition_B_on_action(B, action_idx):
+    """
+    This function conditions the B matrix on all action variables.
+    """
+    B_a = B.copy()
+    for a in action_idx[::-1]:
+        B_a = B_a[..., int(a)]
+    return B_a
 
 def build_xn_vn_array(xn):
 

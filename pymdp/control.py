@@ -9,6 +9,7 @@ from pymdp.maths import softmax, softmax_obj_arr, spm_dot, spm_wnorm, spm_MDP_G,
 from pymdp import utils
 import copy
 
+"""NOTE: this function and the one below seem not maintained"""
 def update_posterior_policies_full(
     qs_seq_pi,
     A,
@@ -367,6 +368,7 @@ def update_posterior_policies_factorized(
     C,
     A_factor_list,
     B_factor_list,
+    B_factor_control_list,
     policies,
     use_utility=True,
     use_states_info_gain=True,
@@ -403,8 +405,11 @@ def update_posterior_policies_factorized(
         ``list`` that stores the indices of the hidden state factor indices that each observation modality depends on. For example, if ``A_factor_list[m] = [0, 1]``, then
         observation modality ``m`` depends on hidden state factors 0 and 1.
     B_factor_list: ``list`` of ``list``s of ``int``
-        ``list`` that stores the indices of the hidden state factor indices that each hidden state factor depends on. For example, if ``B_factor_list[f] = [0, 1]``, then
+        ``list`` that stores the indices of the hidden state indices that each hidden state factor depends on. For example, if ``B_factor_list[f] = [0, 1]``, then
         the transitions in hidden state factor ``f`` depend on hidden state factors 0 and 1.
+    B_factor_control_list: ``list`` of ``list``s of ``int``
+        ``list`` that stores the indices of the action indices that each hidden state factor depends on. For example, if ``B_factor_list[f] = [0, 1]``, then
+        the transitions in hidden state factor ``f`` depend on action 0 and 1.
     policies: ``list`` of 2D ``numpy.ndarray``
         ``list`` that stores each policy in ``policies[p_idx]``. Shape of ``policies[p_idx]`` is ``(num_timesteps, num_factors)`` where `num_timesteps` is the temporal
         depth of the policy and ``num_factors`` is the number of control factors.
@@ -444,7 +449,7 @@ def update_posterior_policies_factorized(
         lnE = spm_log_single(E) 
 
     for idx, policy in enumerate(policies):
-        qs_pi = get_expected_states_interactions(qs, B, B_factor_list, policy)
+        qs_pi = get_expected_states_interactions(qs, B, B_factor_list, B_factor_control_list, policy)
         qo_pi = get_expected_obs_factorized(qs_pi, A, A_factor_list)
 
         if use_utility:
@@ -457,7 +462,7 @@ def update_posterior_policies_factorized(
             if pA is not None:
                 G[idx] += calc_pA_info_gain_factorized(pA, qo_pi, qs_pi, A_factor_list)
             if pB is not None:
-                G[idx] += calc_pB_info_gain_interactions(pB, qs_pi, qs, B_factor_list, policy)
+                G[idx] += calc_pB_info_gain_interactions(pB, qs_pi, qs, B_factor_list, B_factor_control_list, policy)
         
         if I is not None:
             G[idx] += calc_inductive_cost(qs, qs_pi, I)
@@ -501,7 +506,7 @@ def get_expected_states(qs, B, policy):
 
     return qs_pi[1:]
     
-def get_expected_states_interactions(qs, B, B_factor_list, policy):
+def get_expected_states_interactions(qs, B, B_factor_list, B_factor_control_list, policy):
     """
     Compute the expected states under a policy, also known as the posterior predictive density over states
 
@@ -514,7 +519,9 @@ def get_expected_states_interactions(qs, B, B_factor_list, policy):
         Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
         of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
     B_factor_list: ``list`` of ``list`` of ``int``
-        List of lists of hidden state factors each hidden state factor depends on. Each element ``B_factor_list[i]`` is a list of the factor indices that factor i's dynamics depend on.
+        List of lists of hidden states each hidden state factor depends on. Each element ``B_factor_list[i]`` is a list of the state indices that factor i's dynamics depend on.
+    B_factor_control_list: ``list`` of ``list`` of ``int``
+        List of lists of controls each hidden state factor depends on. Each element ``B_factor_control_list[i]`` is a list of the control indices that factor i's dynamics depend on.
     policy: 2D ``numpy.ndarray``
         Array that stores actions entailed by a policy over time. Shape is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
         depth of the policy and ``num_factors`` is the number of control factors.
@@ -526,17 +533,18 @@ def get_expected_states_interactions(qs, B, B_factor_list, policy):
         hidden states expected under the policy at time ``t``
     """
     n_steps = policy.shape[0]
-    n_factors = policy.shape[1]
+    n_factors = len(B)
 
     # initialise posterior predictive density as a list of beliefs over time, including current posterior beliefs about hidden states as the first element
     qs_pi = [qs] + [utils.obj_array(n_factors) for t in range(n_steps)]
     
     # get expected states over time
     for t in range(n_steps):
-        for control_factor, action in enumerate(policy[t,:]):
-            factor_idx = B_factor_list[control_factor] # list of the hidden state factor indices that the dynamics of `qs[control_factor]` depend on
-            qs_pi[t+1][control_factor] = spm_dot(B[control_factor][...,int(action)], qs_pi[t][factor_idx])
-
+        for factor in range(n_factors):
+            factor_idx = B_factor_list[factor] # list of the hidden state indices that the dynamics of `qs[control_factor]` depend on
+            action_idx = policy[t, B_factor_control_list[factor]] # list of the action indices that the dynamics of `qs[control_factor]` depend on
+            B_a = utils.condition_B_on_action(B[factor], action_idx)
+            qs_pi[t+1][factor] = spm_dot(B_a, qs_pi[t][factor_idx])
     return qs_pi[1:]
  
 def get_expected_obs(qs_pi, A):
@@ -852,7 +860,7 @@ def calc_pB_info_gain(pB, qs_pi, qs_prev, policy):
 
     return pB_infogain
 
-def calc_pB_info_gain_interactions(pB, qs_pi, qs_prev, B_factor_list, policy):
+def calc_pB_info_gain_interactions(pB, qs_pi, qs_prev, B_factor_list, B_factor_control_list, policy):
     """
     Compute expected Dirichlet information gain about parameters ``pB`` under a given policy
 
@@ -867,6 +875,8 @@ def calc_pB_info_gain_interactions(pB, qs_pi, qs_prev, B_factor_list, policy):
         Posterior over hidden states at beginning of trajectory (before receiving observations)
     B_factor_list: ``list`` of ``list`` of ``int``
         List of lists, where ``B_factor_list[f]`` is a list of the hidden state factor indices that hidden state factor with the index ``f`` depends on
+    B_factor_control_list: ``list`` of ``list`` of ``int``
+        List of lists, where ``B_factor_control_list[f]`` is a list of the action indices that hidden state factor with the index ``f`` depends on
     policy: 2D ``numpy.ndarray``
         Array that stores actions entailed by a policy over time. Shape is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
         depth of the policy and ``num_factors`` is the number of control factors.
@@ -899,8 +909,11 @@ def calc_pB_info_gain_interactions(pB, qs_pi, qs_prev, B_factor_list, policy):
 
         # get the list of action-indices for the current timestep
         policy_t = policy[t, :]
-        for factor, a_i in enumerate(policy_t):
-            wB_factor_t = wB[factor][...,int(a_i)] * (pB[factor][...,int(a_i)] > 0).astype("float")
+        for factor in range(num_factors):
+            action_idx = policy_t[B_factor_control_list[factor]]
+            wB_a = utils.condition_B_on_action(wB[factor], action_idx)
+            pB_a = utils.condition_B_on_action(pB[factor], action_idx)
+            wB_factor_t = wB_a * (pB_a > 0).astype("float")
             f_idx = B_factor_list[factor]
             pB_infogain -= qs_pi[t][factor].dot(spm_dot(wB_factor_t, previous_qs[f_idx]))
 
@@ -987,8 +1000,7 @@ def construct_policies(num_states, num_controls = None, policy_len=1, control_fa
     x = num_controls * policy_len
     policies = list(itertools.product(*[list(range(i)) for i in x]))
     for pol_i in range(len(policies)):
-        policies[pol_i] = np.array(policies[pol_i]).reshape(policy_len, num_factors)
-
+        policies[pol_i] = np.array(policies[pol_i]).reshape(policy_len, len(num_controls))
     return policies
     
 def get_num_controls_from_policies(policies):

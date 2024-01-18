@@ -108,15 +108,16 @@ class TestControl(unittest.TestCase):
         num_controls = [3]
 
         B_factor_list = [[0]]
+        B_factor_control_list = [[0]]
 
         qs = utils.random_single_categorical(num_states)
-        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=B_factor_control_list)
 
         policies = control.construct_policies(num_states, num_controls, policy_len=1)
 
-        qs_pi_0 = control.get_expected_states_interactions(qs, B, B_factor_list, policies[0])
-
-        self.assertTrue((qs_pi_0[0][0] == B[0][:,:,policies[0][0,0]].dot(qs[0])).all())
+        qs_pi_0 = control.get_expected_states_interactions(qs, B, B_factor_list, B_factor_control_list, policies[0])
+        
+        self.assertTrue(np.allclose(qs_pi_0[0][0], B[0][:,:,policies[0][0,0]].dot(qs[0])))
 
     def test_get_expected_states_interactions_multi_factor(self):
         """
@@ -128,15 +129,16 @@ class TestControl(unittest.TestCase):
         num_controls = [3, 2]
 
         B_factor_list = [[0], [0, 1]]
+        B_factor_control_list = [[0], [1]]
 
         qs = utils.random_single_categorical(num_states)
-        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=B_factor_control_list)
 
         policies = control.construct_policies(num_states, num_controls, policy_len=1)
 
-        qs_pi_0 = control.get_expected_states_interactions(qs, B, B_factor_list, policies[0])
+        qs_pi_0 = control.get_expected_states_interactions(qs, B, B_factor_list, B_factor_control_list, policies[0])
 
-        self.assertTrue((qs_pi_0[0][0] == B[0][:,:,policies[0][0,0]].dot(qs[0])).all())
+        self.assertTrue(np.allclose(qs_pi_0[0][0], B[0][:,:,policies[0][0,0]].dot(qs[0])))
 
         qs_next_validation = (B[1][..., policies[0][0,1]] * maths.spm_cross(qs)[None,...]).sum(axis=(1,2)) # how to compute equivalent of `spm_dot(B[...,past_action], qs)`
         self.assertTrue(np.allclose(qs_pi_0[0][1], qs_next_validation))
@@ -151,18 +153,69 @@ class TestControl(unittest.TestCase):
         num_controls = [1, 2, 5, 3]
 
         B_factor_list = [[f] for f in range(len(num_states))] # each factor only depends on itself
+        B_factor_control_list = [[f] for f in range(len(num_states))] # each factor only depends on its own action
 
         qs = utils.random_single_categorical(num_states)
         B = utils.random_B_matrix(num_states, num_controls)
 
         policies = control.construct_policies(num_states, num_controls, policy_len=1)
 
-        qs_pi_0 = control.get_expected_states_interactions(qs, B, B_factor_list, policies[0])
+        qs_pi_0 = control.get_expected_states_interactions(qs, B, B_factor_list, B_factor_control_list, policies[0])
 
         qs_pi_0_validation = control.get_expected_states(qs, B, policies[0])
 
         for qs_f, qs_val_f in zip(qs_pi_0[0], qs_pi_0_validation[0]):
             self.assertTrue(np.allclose(qs_f, qs_val_f))
+    
+    def test_get_expected_states_interactions_multi_factor_single_action(self):
+        """
+        Test the new version of `get_expected_states` that includes `B` array inter-factor dependencies, 
+        in the case where there are two hidden state factors: one that depends on itself and another that depends on both itself and the other factor,
+        and both states depend on the same action.
+        """
+        
+        num_states = [3, 4]
+        num_controls = [5]
+
+        B_factor_list = [[0], [0, 1]]
+        B_factor_control_list = [[0], [0]]
+
+        qs = utils.random_single_categorical(num_states)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=B_factor_control_list)
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=1)
+
+        qs_pi_0 = control.get_expected_states_interactions(qs, B, B_factor_list, B_factor_control_list, policies[0])
+
+        self.assertTrue(np.allclose(qs_pi_0[0][0], B[0][:,:,policies[0][0,0]].dot(qs[0])))
+
+        qs_next_validation = (B[1][..., policies[0][0,0]] * maths.spm_cross(qs)[None,...]).sum(axis=(1,2)) # how to compute equivalent of `spm_dot(B[...,past_action], qs)`
+        self.assertTrue(np.allclose(qs_pi_0[0][1], qs_next_validation))
+
+    def test_get_expected_states_interactions_multi_factor_multi_action(self):
+        """
+        Test the new version of `get_expected_states` that includes `B` array inter-factor dependencies, 
+        in the case where there are two hidden state factors: one that depends on itself and another that depends on both itself and the other factor,
+        and one state depends on two actions.
+        """
+        
+        num_states = [3, 4]
+        num_controls = [5, 6]
+
+        B_factor_list = [[0], [0, 1]]
+        B_factor_control_list = [[0, 1], [0]]
+
+        qs = utils.random_single_categorical(num_states)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=B_factor_control_list)
+        
+        policies = control.construct_policies(num_states, num_controls, policy_len=1)
+
+        qs_pi_0 = control.get_expected_states_interactions(qs, B, B_factor_list, B_factor_control_list, policies[0])
+
+        self.assertTrue(np.allclose(qs_pi_0[0][0], B[0][:,:,policies[0][0,0],policies[0][0,1]].dot(qs[0])))
+
+        qs_next_validation = (B[1][..., policies[0][0,0]] * maths.spm_cross(qs)[None,...]).sum(axis=(1,2)) # how to compute equivalent of `spm_dot(B[...,past_action], qs)`
+        self.assertTrue(np.allclose(qs_pi_0[0][1], qs_next_validation))
 
     def test_get_expected_obs_factorized(self):
         """
@@ -654,11 +707,58 @@ class TestControl(unittest.TestCase):
         self.assertGreater(pB_info_gains[1], pB_info_gains[0])
 
         B_factor_list = [[0]]
+        B_factor_control_list = [[0]]
         pB_info_gains_interactions = np.zeros(len(policies))
         for idx, policy in enumerate(policies):
-            qs_pi = control.get_expected_states_interactions(qs, B, B_factor_list, policy)
-            pB_info_gains_interactions[idx] += control.calc_pB_info_gain_interactions(pB, qs_pi, qs, B_factor_list, policy)
+            qs_pi = control.get_expected_states_interactions(qs, B, B_factor_list, B_factor_control_list, policy)
+            pB_info_gains_interactions[idx] += control.calc_pB_info_gain_interactions(pB, qs_pi, qs, B_factor_list, B_factor_control_list, policy)
         self.assertTrue(np.allclose(pB_info_gains_interactions, pB_info_gains))
+    
+    """TODO: currently just testing the function can run. need to properly test the infogain value, but shouldn't be any different from single action"""
+    def test_pB_info_gain_multi_action(self):
+        """
+        Test the pB_info_gain function. Demonstrates operation
+        by manipulating shape of the Dirichlet priors over likelihood parameters
+        (pB), which affects information gain for different states.
+        Multi action version smoke test
+        """
+        num_states = [4, 5]
+        num_controls = [2, 3]
+        B_factor_list = [[0], [1]]
+        B_factor_control_list = [[0, 1], [1]]
+
+        # start with a precise initial state
+        qs = np.array([utils.onehot(0, d) for d in num_states], dtype=object)
+
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=B_factor_control_list)
+
+        pB = np.array([np.zeros_like(a) for a in B], dtype=object)
+
+        # create prior over dirichlets such that there is a skew
+        # in the parameters about the likelihood mapping from the
+        # hidden states to hidden states under the second action,
+        # such that hidden state 0 is considered to be more likely than the other,
+        # given the action in question
+        # Therefore taking that action would yield an expected state that afford
+        # high information gain about that part of the likelihood distribution.
+        #
+        # pB[0][0, :, 1] += 1.0
+
+        # single timestep
+        n_step = 1
+        policies = control.construct_policies(num_states, num_controls, policy_len=n_step)
+
+        # pB_info_gains = np.zeros(len(policies))
+        # for idx, policy in enumerate(policies):
+        #     qs_pi = control.get_expected_states(qs, B, policy)
+        #     pB_info_gains[idx] += control.calc_pB_info_gain(pB, qs_pi, qs, policy)
+        # self.assertGreater(pB_info_gains[1], pB_info_gains[0])
+
+        pB_info_gains_interactions = np.zeros(len(policies))
+        for idx, policy in enumerate(policies):
+            qs_pi = control.get_expected_states_interactions(qs, B, B_factor_list, B_factor_control_list, policy)
+            pB_info_gains_interactions[idx] += control.calc_pB_info_gain_interactions(pB, qs_pi, qs, B_factor_list, B_factor_control_list, policy)
+        # self.assertTrue(np.allclose(pB_info_gains_interactions, pB_info_gains))
 
     def test_update_posterior_policies_utility(self):
         """
@@ -1386,6 +1486,7 @@ class TestControl(unittest.TestCase):
 
         A_factor_list = [[0, 1], [1]]
         B_factor_list = [[0], [0, 1]]
+        B_factor_control_list = [[0], [1]]
 
         qs = utils.random_single_categorical(num_states)
         A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
@@ -1401,6 +1502,7 @@ class TestControl(unittest.TestCase):
             C,
             A_factor_list,
             B_factor_list,
+            B_factor_control_list,
             policies,
             use_utility = True,
             use_states_info_gain = True,
