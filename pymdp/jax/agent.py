@@ -74,6 +74,7 @@ class Agent(Module):
     use_states_info_gain: bool = field(static=True) # flag for whether to use state information gain ("salience") when computing expected free energy
     use_param_info_gain: bool = field(static=True)  # flag for whether to use parameter information gain ("novelty") when computing expected free energy
     use_inductive: bool = field(static=True)   # flag for whether to use inductive inference ("intentional inference") when computing expected free energy
+    onehot_obs: bool = field(static=True)
     action_selection: str = field(static=True) # determinstic or stochastic action selection 
     sampling_mode : str = field(static=True) # whether to sample from full posterior over policies ("full") or from marginal posterior over actions ("marginal")
     inference_algo: str = field(static=True) # fpi, vmp, mmp, ovf
@@ -110,6 +111,7 @@ class Agent(Module):
         use_states_info_gain=True,
         use_param_info_gain=False,
         use_inductive=False,
+        onehot_obs=True,
         action_selection="deterministic",
         sampling_mode="marginal",
         inference_algo="fpi",
@@ -131,6 +133,8 @@ class Agent(Module):
         self.pB = pB
         self.qs = qs
         self.q_pi = q_pi
+
+        self.onehot_obs = onehot_obs
 
         element_size = lambda x: x.shape[1]
         self.num_factors = len(self.B)
@@ -308,15 +312,16 @@ class Agent(Module):
             ``qs[p_idx][t_idx][f_idx]`` refers to beliefs about marginal factor ``f_idx`` expected under policy ``p_idx`` 
             at timepoint ``t_idx``.
         """
-        if mask is None:
+        if not self.onehot_obs:
             o_vec = [nn.one_hot(o, self.num_obs[m]) for m, o in enumerate(observations)]
-            A = self.A
         else:
-            A = []
-            o_vec = []
+            o_vec = observations
+        
+        A = self.A
+        if mask is not None:
             for i, m in enumerate(mask):
-                o_vec.append( m * nn.one_hot(observations[i], self.num_obs[i]) * (1 - m) / self.num_obs[i] )
-                A.append(m * self.A[i] + (1 - m) * jnp.ones_like(self.A[i]) / self.num_obs[i])
+                o_vec[i] = m * o_vec[i] + (1 - m) * o_vec[i] / self.num_obs[i]
+                A[i] = m * A[i] + (1 - m) * jnp.ones_like(A[i]) / self.num_obs[i]
         
         output = inference.update_posterior_states(
             A,
