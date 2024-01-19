@@ -623,15 +623,6 @@ def convert_B_stubs_to_ndarray(B_stubs, model_labels):
     
 #     return belief_array
 
-def condition_B_on_action(B, action_idx):
-    """
-    This function conditions the B matrix on all action variables.
-    """
-    B_a = B.copy()
-    for a in action_idx[::-1]:
-        B_a = B_a[..., int(a)]
-    return B_a
-
 def build_xn_vn_array(xn):
 
     """

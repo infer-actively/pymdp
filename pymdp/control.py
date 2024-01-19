@@ -543,7 +543,7 @@ def get_expected_states_interactions(qs, B, B_factor_list, B_factor_control_list
         for factor in range(n_factors):
             factor_idx = B_factor_list[factor] # list of the hidden state indices that the dynamics of `qs[control_factor]` depend on
             action_idx = policy[t, B_factor_control_list[factor]] # list of the action indices that the dynamics of `qs[control_factor]` depend on
-            B_a = utils.condition_B_on_action(B[factor], action_idx)
+            B_a = B[factor][..., *action_idx.astype(int)]
             qs_pi[t+1][factor] = spm_dot(B_a, qs_pi[t][factor_idx])
     return qs_pi[1:]
  
@@ -911,8 +911,8 @@ def calc_pB_info_gain_interactions(pB, qs_pi, qs_prev, B_factor_list, B_factor_c
         policy_t = policy[t, :]
         for factor in range(num_factors):
             action_idx = policy_t[B_factor_control_list[factor]]
-            wB_a = utils.condition_B_on_action(wB[factor], action_idx)
-            pB_a = utils.condition_B_on_action(pB[factor], action_idx)
+            wB_a = wB[factor][..., *action_idx.astype(int)]
+            pB_a = pB[factor][..., *action_idx.astype(int)]
             wB_factor_t = wB_a * (pB_a > 0).astype("float")
             f_idx = B_factor_list[factor]
             pB_infogain -= qs_pi[t][factor].dot(spm_dot(wB_factor_t, previous_qs[f_idx]))
