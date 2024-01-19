@@ -159,7 +159,7 @@ def update_state_likelihood_dirichlet(
     return qB
 
 def update_state_likelihood_dirichlet_interactions(
-    pB, B, actions, qs, qs_prev, B_factor_list, lr=1.0, factors="all"
+    pB, B, actions, qs, qs_prev, B_factor_list, B_factor_control_list, lr=1.0, factors="all"
 ):
     """
     Update Dirichlet parameters of the transition distribution, in the case when 'interacting' hidden state factors are present, i.e.
@@ -181,7 +181,9 @@ def update_state_likelihood_dirichlet_interactions(
     qs_prev: 1D ``numpy.ndarray`` or ``numpy.ndarray`` of dtype object
         Marginal posterior beliefs over hidden states at previous timepoint.
     B_factor_list: ``list`` of ``list`` of ``int``
-        A list of lists, where each element ``B_factor_list[f]`` is a list of indices of hidden state factors that that are needed to predict the dynamics of hidden state factor ``f``.
+        A list of lists, where each element ``B_factor_list[f]`` is a list of indices of hidden states hidden state factor ``f`` depends on.
+    B_factor_control_list: ``list`` of ``list`` of ``int``
+        A list of lists, where each element ``B_factor_list[f]`` is a list of indices of actions that hidden state factor ``f`` depends on.
     lr: float, default ``1.0``
         Learning rate, scale of the Dirichlet pseudo-count update.
     factors: ``list``, default "all"
@@ -203,9 +205,12 @@ def update_state_likelihood_dirichlet_interactions(
         factors = list(range(num_factors))
 
     for factor in factors:
+        action_idx = actions[B_factor_control_list[factor]]
+        B_a = B[factor][..., *action_idx.astype(int)]
+
         dfdb = maths.spm_cross(qs[factor], qs_prev[B_factor_list[factor]])
-        dfdb *= (B[factor][...,int(actions[factor])] > 0).astype("float")
-        qB[factor][...,int(actions[factor])] += (lr*dfdb)
+        dfdb *= (B_a > 0).astype("float")
+        qB[factor][...,*action_idx.astype(int)] += lr * dfdb
 
     return qB
 
