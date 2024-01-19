@@ -64,8 +64,12 @@ class Agent(object):
         policy_sep_prior=False,
         save_belief_hist=False,
         A_factor_list=None,
-        B_factor_list=None
+        B_factor_list=None,
+        B_factor_control_list=None,
     ):
+        if B_factor_control_list is not None:
+            assert inference_algo == "VANILLA", "User specified action dependencies only work for VANILLA inference at the moment"
+            assert num_controls is not None, "User specified action dependecies must be supplied with action dimensions"
 
         ### Constant parameters ###
 
@@ -120,28 +124,20 @@ class Agent(object):
         # Assigning prior parameters on transition model (pB matrices) 
         self.pB = pB
 
-        # If no `num_controls` are given, then this is inferred from the shapes of the input B matrices
-        if num_controls == None:
-            self.num_controls = [self.B[f].shape[-1] for f in range(self.num_factors)]
-        else:
-            inferred_num_controls = [self.B[f].shape[-1] for f in range(self.num_factors)]
-            assert num_controls == inferred_num_controls, "num_controls must be consistent with the shapes of the input B matrices"
-            self.num_controls = num_controls
-
         # checking that `A_factor_list` and `B_factor_list` are consistent with `num_factors`, `num_states`, and lagging dimensions of `A` and `B` tensors
         if A_factor_list == None:
             self.A_factor_list = self.num_modalities * [list(range(self.num_factors))] # defaults to having all modalities depend on all factors
             for m in range(self.num_modalities):
                 factor_dims = tuple([self.num_states[f] for f in self.A_factor_list[m]])
                 assert self.A[m].shape[1:] == factor_dims, f"Please input an `A_factor_list` whose {m}-th indices pick out the hidden state factors that line up with lagging dimensions of A{m}..." 
-                if self.pA != None:
+                if self.pA is not None:
                     assert self.pA[m].shape[1:] == factor_dims, f"Please input an `A_factor_list` whose {m}-th indices pick out the hidden state factors that line up with lagging dimensions of pA{m}..." 
         else:
             for m in range(self.num_modalities):
                 assert max(A_factor_list[m]) <= (self.num_factors - 1), f"Check modality {m} of A_factor_list - must be consistent with `num_states` and `num_factors`..."
                 factor_dims = tuple([self.num_states[f] for f in A_factor_list[m]])
                 assert self.A[m].shape[1:] == factor_dims, f"Check modality {m} of A_factor_list. It must coincide with lagging dimensions of A{m}..." 
-                if self.pA != None:
+                if self.pA is not None:
                     assert self.pA[m].shape[1:] == factor_dims, f"Check modality {m} of A_factor_list. It must coincide with lagging dimensions of pA{m}..."
             self.A_factor_list = A_factor_list
 
@@ -161,29 +157,44 @@ class Agent(object):
             for f in range(self.num_factors):
                 factor_dims = tuple([self.num_states[f] for f in self.B_factor_list[f]])
                 assert self.B[f].shape[1:-1] == factor_dims, f"Please input a `B_factor_list` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of B{f}..." 
-                if self.pB != None:
+                if self.pB is not None:
                     assert self.pB[f].shape[1:-1] == factor_dims, f"Please input a `B_factor_list` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of pB{f}..." 
         else:
             for f in range(self.num_factors):
                 assert max(B_factor_list[f]) <= (self.num_factors - 1), f"Check factor {f} of B_factor_list - must be consistent with `num_states` and `num_factors`..."
                 factor_dims = tuple([self.num_states[f] for f in B_factor_list[f]])
                 assert self.B[f].shape[1:-1] == factor_dims, f"Check factor {f} of B_factor_list. It must coincide with all-but-final lagging dimensions of B{f}..." 
-                if self.pB != None:
+                if self.pB is not None:
                     assert self.pB[f].shape[1:-1] == factor_dims, f"Check factor {f} of B_factor_list. It must coincide with all-but-final lagging dimensions of pB{f}..."
             self.B_factor_list = B_factor_list
+        
+        # a list storing the control variables each factor is conditioned on
+        if B_factor_control_list == None:
+            self.B_factor_control_list = [[f] for f in range(self.num_factors)]
+        else:
+            self.B_factor_control_list = B_factor_control_list
+        
+        # If no `num_controls` are given, then this is inferred from the shapes of the input B matrices
+        if num_controls == None:
+            self.num_controls = [self.B[f].shape[-1] for f in range(self.num_factors)]
+        else:
+            inferred_num_controls_per_B = [list(self.B[f].shape)[len(self.B_factor_list[f])+1:] for f in range(self.num_factors)]
+            num_controls_per_B = [[num_controls[i] for i in item] for item in self.B_factor_control_list]
+            assert num_controls_per_B == inferred_num_controls_per_B, "num_controls when applied to self.B_factor_control_list must be consistent with the last shapes of the input B matrices"
+            self.num_controls = num_controls
 
         # Users have the option to make only certain factors controllable.
         # default behaviour is to make all hidden state factors controllable, i.e. `self.num_factors == len(self.num_controls)`
         if control_fac_idx == None:
-            self.control_fac_idx = [f for f in range(self.num_factors) if self.num_controls[f] > 1]
+            self.control_fac_idx = [f for f in range(self.num_factors) if any([self.num_controls[i] > 1 for i in self.B_factor_control_list[f]])]
         else:
 
             assert max(control_fac_idx) <= (self.num_factors - 1), "Check control_fac_idx - must be consistent with `num_states` and `num_factors`..."
             self.control_fac_idx = control_fac_idx
 
             for factor_idx in self.control_fac_idx:
-                assert self.num_controls[factor_idx] > 1, "Control factor (and B matrix) dimensions are not consistent with user-given control_fac_idx"
-
+                assert any([self.num_controls[i] > 1 for i in self.B_factor_control_list[factor_idx]]), "B matrix for user-given control_fac_idx must have at least one controllable dimension"
+        
         # Again, the use can specify a set of possible policies, or
         # all possible combinations of actions and timesteps will be considered
         if policies == None:
@@ -364,10 +375,10 @@ class Agent(object):
         else:
             self.qs = init_qs
         
-        if self.pA != None:
+        if self.pA is not None:
             self.A = utils.norm_dist_obj_arr(self.pA)
         
-        if self.pB != None:
+        if self.pB is not None:
             self.B = utils.norm_dist_obj_arr(self.pB)
 
         return self.qs
@@ -484,7 +495,7 @@ class Agent(object):
         if self.inference_algo == "VANILLA":
             if self.action is not None:
                 empirical_prior = control.get_expected_states_interactions(
-                    self.qs, self.B, self.B_factor_list, self.action.reshape(1, -1) 
+                    self.qs, self.B, self.B_factor_list, self.B_factor_control_list, self.action.reshape(1, -1) 
                 )[0]
             else:
                 empirical_prior = self.D
@@ -671,6 +682,7 @@ class Agent(object):
                 self.C,
                 self.A_factor_list,
                 self.B_factor_list,
+                self.B_factor_control_list,
                 self.policies,
                 self.use_utility,
                 self.use_states_info_gain,
