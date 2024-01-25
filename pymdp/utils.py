@@ -126,9 +126,8 @@ def random_B_matrix(num_states, num_controls, B_factor_list=None, B_factor_contr
     B = obj_array(num_factors)
     for factor in range(num_factors):
         lagging_shape = [ns for i, ns in enumerate(num_states) if i in B_factor_list[factor]]
-        control_shape = [num_controls[i] for i in B_factor_control_list[factor]]
+        control_shape = [na for i, na in enumerate(num_controls) if i in B_factor_control_list[factor]]
         factor_shape = [num_states[factor]] + lagging_shape + control_shape
-        # factor_shape = (num_states[factor], num_states[factor], num_controls[factor])
         factor_dist = np.random.rand(*factor_shape)
         B[factor] = norm_dist(factor_dist)
     return B
@@ -258,7 +257,7 @@ def is_normalized(dist):
     if is_obj_array(dist):
         normed_arrays = []
         for i, arr in enumerate(dist):
-            column_sums = arr.sum(axis=0)
+            column_sums = arr.sum(axis=0).astype(float)
             normed_arrays.append(np.allclose(column_sums, np.ones_like(column_sums)))
         out = all(normed_arrays)
     else:

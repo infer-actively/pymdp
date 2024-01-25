@@ -161,7 +161,8 @@ class Agent(object):
                     assert self.pB[f].shape[1:-1] == factor_dims, f"Please input a `B_factor_list` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of pB{f}..." 
         else:
             for f in range(self.num_factors):
-                assert max(B_factor_list[f]) <= (self.num_factors - 1), f"Check factor {f} of B_factor_list - must be consistent with `num_states` and `num_factors`..."
+                if B_factor_list[f] != []:
+                    assert max(B_factor_list[f]) <= (self.num_factors - 1), f"Check factor {f} of B_factor_list - must be consistent with `num_states` and `num_factors`..."
                 factor_dims = tuple([self.num_states[f]] + [self.num_states[i] for i in B_factor_list[f]])
                 assert self.B[f].shape[:len(factor_dims)] == factor_dims, f"Check factor {f} of B_factor_list. It must coincide with all-but-final lagging dimensions of B{f}..." 
                 if self.pB is not None:
