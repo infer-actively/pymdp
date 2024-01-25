@@ -216,6 +216,31 @@ class TestControl(unittest.TestCase):
 
         qs_next_validation = (B[1][..., policies[0][0,0]] * maths.spm_cross(qs)[None,...]).sum(axis=(1,2)) # how to compute equivalent of `spm_dot(B[...,past_action], qs)`
         self.assertTrue(np.allclose(qs_pi_0[0][1], qs_next_validation))
+    
+    def test_get_expected_states_interactions_multi_factor_multi_action_sparse(self):
+        """
+        Test the new version of `get_expected_states` that includes `B` array inter-factor dependencies, 
+        in the case where there are two hidden state factors: one that depends on itself and another that depends on both itself and the other factor,
+        and one state depends on two actions the other state does not depend on any action.
+        """
+        
+        num_states = [3, 4]
+        num_controls = [5, 6]
+
+        B_factor_list = [[0], [0, 1]]
+        B_factor_control_list = [[0, 1], []]
+
+        qs = utils.random_single_categorical(num_states)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=B_factor_control_list)
+        
+        policies = control.construct_policies(num_states, num_controls, policy_len=1)
+
+        qs_pi_0 = control.get_expected_states_interactions(qs, B, B_factor_list, B_factor_control_list, policies[0])
+
+        self.assertTrue(np.allclose(qs_pi_0[0][0], B[0][:,:,policies[0][0,0],policies[0][0,1]].dot(qs[0])))
+        
+        qs_next_validation = (B[1] * maths.spm_cross(qs)[None,...]).sum(axis=(1,2)) # how to compute equivalent of `spm_dot(B[...,past_action], qs)`
+        self.assertTrue(np.allclose(qs_pi_0[0][1], qs_next_validation))
 
     def test_get_expected_obs_factorized(self):
         """
