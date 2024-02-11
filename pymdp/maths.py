@@ -250,6 +250,23 @@ def get_joint_likelihood_seq(A, obs, num_states):
         ll_seq[t] = get_joint_likelihood(A, obs_t, num_states)
     return ll_seq
 
+def get_joint_likelihood_seq_by_modality(A, obs, num_states):
+    """
+    Returns joint likelihoods for each modality separately
+    """
+
+    ll_seq = utils.obj_array(len(obs))
+    n_modalities = len(A)
+
+    for t, obs_t in enumerate(obs):
+        likelihood = utils.obj_array(n_modalities)
+        obs_t_obj = utils.to_obj_array(obs_t)
+        for (m, A_m) in enumerate(A):
+            likelihood[m] = dot_likelihood(A_m, obs_t_obj[m])
+        ll_seq[t] = likelihood
+    
+    return ll_seq
+
 
 def spm_norm(A):
     """ 
@@ -372,6 +389,110 @@ def calc_free_energy(qs, prior, n_factors, likelihood=None):
         free_energy -= compute_accuracy(likelihood, qs)
     return free_energy
 
+def spm_calc_qo_entropy(A, x):
+    """ 
+    Function that just calculates the entropy part of the state information gain, using the same method used in 
+    spm_MDP_G.m in the original matlab code.
+
+    Parameters
+    ----------
+    A (numpy ndarray or array-object):
+        array assigning likelihoods of observations/outcomes under the various 
+        hidden state configurations
+    
+    x (numpy ndarray or array-object):
+        Categorical distribution presenting probabilities of hidden states 
+        (this can also be interpreted as the predictive density over hidden 
+        states/causes if you're calculating the expected Bayesian surprise)
+        
+    Returns
+    -------
+    H (float):
+        the entropy of the marginal distribution over observations/outcomes
+    """
+
+    num_modalities = len(A)
+
+    # Probability distribution over the hidden causes: i.e., Q(x)
+    qx = spm_cross(x)
+    qo = 0
+    idx = np.array(np.where(qx > np.exp(-16))).T
+
+    if utils.is_obj_array(A):
+        # Accumulate expectation of entropy: i.e., E_{Q(o, x)}[lnP(o|x)] = E_{P(o|x)Q(x)}[lnP(o|x)] = E_{Q(x)}[P(o|x)lnP(o|x)] = E_{Q(x)}[H[P(o|x)]]
+        for i in idx:
+            # Probability over outcomes for this combination of causes
+            po = np.ones(1)
+            for modality_idx, A_m in enumerate(A):
+                index_vector = [slice(0, A_m.shape[0])] + list(i)
+                po = spm_cross(po, A_m[tuple(index_vector)])
+            po = po.ravel()
+            qo += qx[tuple(i)] * po
+    else:
+        for i in idx:
+            po = np.ones(1)
+            index_vector = [slice(0, A.shape[0])] + list(i)
+            po = spm_cross(po, A[tuple(index_vector)])
+            po = po.ravel()
+            qo += qx[tuple(i)] * po
+   
+    # Compute entropy of expectations: i.e., -E_{Q(o)}[lnQ(o)]
+    H = - qo.dot(spm_log_single(qo))
+
+    return H
+
+def spm_calc_neg_ambig(A, x):
+    """
+    Function that just calculates the negativity ambiguity part of the state information gain, using the same method used in 
+    spm_MDP_G.m in the original matlab code.
+    
+    Parameters
+    ----------
+    A (numpy ndarray or array-object):
+        array assigning likelihoods of observations/outcomes under the various 
+        hidden state configurations
+    
+    x (numpy ndarray or array-object):
+        Categorical distribution presenting probabilities of hidden states 
+        (this can also be interpreted as the predictive density over hidden 
+        states/causes if you're calculating the expected Bayesian surprise)
+        
+    Returns
+    -------
+    G (float):
+        the negative ambiguity (negative entropy of the likelihood of observations given hidden states, expected under current posterior over hidden states)
+    """
+
+    num_modalities = len(A)
+
+    # Probability distribution over the hidden causes: i.e., Q(x)
+    qx = spm_cross(x)
+    G = 0
+    qo = 0
+    idx = np.array(np.where(qx > np.exp(-16))).T
+
+    if utils.is_obj_array(A):
+        # Accumulate expectation of entropy: i.e., E_{Q(o, x)}[lnP(o|x)] = E_{P(o|x)Q(x)}[lnP(o|x)] = E_{Q(x)}[P(o|x)lnP(o|x)] = E_{Q(x)}[H[P(o|x)]]
+        for i in idx:
+            # Probability over outcomes for this combination of causes
+            po = np.ones(1)
+            for modality_idx, A_m in enumerate(A):
+                index_vector = [slice(0, A_m.shape[0])] + list(i)
+                po = spm_cross(po, A_m[tuple(index_vector)])
+
+            po = po.ravel()
+            qo += qx[tuple(i)] * po
+            G += qx[tuple(i)] * po.dot(np.log(po + np.exp(-16)))
+    else:
+        for i in idx:
+            po = np.ones(1)
+            index_vector = [slice(0, A.shape[0])] + list(i)
+            po = spm_cross(po, A[tuple(index_vector)])
+            po = po.ravel()
+            qo += qx[tuple(i)] * po
+            G += qx[tuple(i)] * po.dot(np.log(po + np.exp(-16)))
+
+    return G
 
 def spm_MDP_G(A, x):
     """
@@ -406,7 +527,7 @@ def spm_MDP_G(A, x):
     idx = np.array(np.where(qx > np.exp(-16))).T
 
     if utils.is_obj_array(A):
-        # Accumulate expectation of entropy: i.e., E_{Q(o, s)}[lnP(o|x)]
+        # Accumulate expectation of entropy: i.e., E_{Q(o, x)}[lnP(o|x)] = E_{P(o|x)Q(x)}[lnP(o|x)] = E_{Q(x)}[P(o|x)lnP(o|x)] = E_{Q(x)}[H[P(o|x)]]
         for i in idx:
             # Probability over outcomes for this combination of causes
             po = np.ones(1)
@@ -431,3 +552,37 @@ def spm_MDP_G(A, x):
 
     return G
 
+def kl_div(P,Q):
+    """
+    Parameters
+    ----------
+    P : Categorical probability distribution
+    Q : Categorical probability distribution
+
+    Returns
+    -------
+    The KL-divergence of P and Q
+
+    """
+    dkl = 0
+    for i in range(len(P)):
+        dkl += np.dot(P[i], np.log(P[i] + EPS_VAL) - np.log(Q[i] + EPS_VAL))
+    return(dkl)
+
+def entropy(A):
+    """
+    Compute the entropy term H of the likelihood matrix,
+    i.e. one entropy value per column
+    """
+    entropies = np.empty(len(A), dtype=object)
+    for i in range(len(A)):
+        if len(A[i].shape) > 2:
+            obs_dim = A[i].shape[0]
+            s_dim = A[i].size // obs_dim
+            A_merged = A[i].reshape(obs_dim, s_dim)
+        else:
+            A_merged = A[i]
+
+        H = - np.diag(np.matmul(A_merged.T, np.log(A_merged + EPS_VAL)))
+        entropies[i] = H.reshape(*A[i].shape[1:])
+    return entropies

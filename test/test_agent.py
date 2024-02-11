@@ -164,7 +164,7 @@ class TestAgent(unittest.TestCase):
 
         policies = control.construct_policies(num_states, num_controls, policy_len = planning_horizon)
 
-        qs_pi_validation, _ = inference.update_posterior_states_full(A, B, [o], policies, prior = agent.D, policy_sep_prior = False)
+        qs_pi_validation, _ = inference.update_posterior_states_full_factorized(A, agent.mb_dict, B, agent.B_factor_list, [o], policies, prior = agent.D, policy_sep_prior = False)
 
         for p_idx in range(len(policies)):
             for t in range(planning_horizon+backwards_horizon):
@@ -200,6 +200,98 @@ class TestAgent(unittest.TestCase):
         
         self.assertEqual(len(agent.prev_obs), T)
         self.assertEqual(len(agent.prev_actions), T)
+
+    def test_agent_with_A_learning_vanilla(self):
+        """ Unit test for updating prior Dirichlet parameters over likelihood model (pA) with the ``Agent`` class,
+        in the case that you're using "vanilla" inference mode.
+        """
+
+        # 3 x 3, 2-dimensional grid world
+        num_obs = [9]
+        num_states = [9]
+        num_controls = [4]
+
+        A = utils.obj_array_zeros([ [num_obs[0], num_states[0]] ])
+        A[0] = np.eye(num_obs[0])
+
+        pA = utils.dirichlet_like(A, scale=1.)
+
+        action_labels = ["LEFT", "DOWN", "RIGHT", "UP"]
+
+        # get some true transition dynamics
+        true_transition_matrix = generate_grid_world_transitions(action_labels, num_rows = 3, num_cols = 3)
+        B = utils.to_obj_array(true_transition_matrix)
+        
+        # instantiate the agent
+        learning_rate_pA = np.random.rand()
+        agent = Agent(A=A, B=B, pA=pA, inference_algo="VANILLA", action_selection="stochastic", lr_pA=learning_rate_pA)
+
+        # time horizon
+        T = 10
+        next_state = 0
+
+        for t in range(T):
+            
+            prev_state = next_state
+            o = [prev_state] 
+            qx = agent.infer_states(o)
+            agent.infer_policies()
+            agent.sample_action()
+
+            # sample the next state given the true transition dynamics and the sampled action
+            next_state = utils.sample(true_transition_matrix[:,prev_state,int(agent.action[0])])
+            
+            # compute the predicted update to the action-conditioned slice of qB
+            predicted_update = agent.pA[0] + learning_rate_pA*maths.spm_cross(utils.onehot(o[0], num_obs[0]), qx[0])
+            qA = agent.update_A(o) # update qA using the agent function
+
+            # check if the predicted update and the actual update are the same
+            self.assertTrue(np.allclose(predicted_update, qA[0]))
+    
+    def test_agent_with_A_learning_vanilla_factorized(self):
+        """ Unit test for updating prior Dirichlet parameters over likelihood model (pA) with the ``Agent`` class,
+        in the case that you're using "vanilla" inference mode. In this case, we encode sparse conditional dependencies by specifying
+        a non-all-to-all `A_factor_list`, that specifies the subset of hidden state factors that different modalities depend on.
+        """
+
+        num_obs = [5, 4, 3]
+        num_states = [9, 8, 2, 4]
+        num_controls = [2, 2, 1, 1]
+
+        A_factor_list = [[0, 1], [0, 2], [3]]
+
+        A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+        pA = utils.dirichlet_like(A, scale=1.)
+
+        B = utils.random_B_matrix(num_states, num_controls)
+        
+        # instantiate the agent
+        learning_rate_pA = np.random.rand()
+        agent = Agent(A=A, B=B, pA=pA, A_factor_list=A_factor_list, inference_algo="VANILLA", action_selection="stochastic", lr_pA=learning_rate_pA)
+
+        # time horizon
+        T = 10
+
+        obs_seq = []
+        for t in range(T):
+            obs_seq.append([np.random.randint(obs_dim) for obs_dim in num_obs])
+        
+        for t in range(T):
+            print(t)
+            
+            qx = agent.infer_states(obs_seq[t])
+            agent.infer_policies()
+            agent.sample_action()
+            
+            # compute the predicted update to the action-conditioned slice of qB
+            qA_valid = utils.obj_array_zeros([A_m.shape for A_m in A])
+            for m, pA_m in enumerate(agent.pA):
+                qA_valid[m] = pA_m + learning_rate_pA*maths.spm_cross(utils.onehot(obs_seq[t][m], num_obs[m]), qx[A_factor_list[m]])
+            qA_test = agent.update_A(obs_seq[t]) # update qA using the agent function
+
+            # check if the predicted update and the actual update are the same
+            for m, qA_valid_m in enumerate(qA_valid):
+                self.assertTrue(np.allclose(qA_valid_m, qA_test[m]))
 
     def test_agent_with_B_learning_vanilla(self):
         """ Unit test for updating prior Dirichlet parameters over transition model (pB) with the ``Agent`` class,
@@ -570,12 +662,149 @@ class TestAgent(unittest.TestCase):
 
         policies = control.construct_policies(num_states, num_controls, policy_len = planning_horizon)
 
-        qs_pi_validation, _ = inference.update_posterior_states_full(A, B, [p_o], policies, prior = agent.D, policy_sep_prior = False)
+        qs_pi_validation, _ = inference.update_posterior_states_full_factorized(A, agent.mb_dict, B, agent.B_factor_list, [p_o], policies, prior = agent.D, policy_sep_prior = False)
 
         for p_idx in range(len(policies)):
             for t in range(planning_horizon+backwards_horizon):
                 for f in range(len(num_states)):
                     self.assertTrue(np.isclose(qs_pi_validation[p_idx][t][f], qs_pi_out[p_idx][t][f]).all())
+
+    def test_agent_with_factorized_inference(self):
+        """
+        Test that an instance of the `Agent` class can be initialized with a provided `A_factor_list` and run the factorized inference algorithm. Validate
+        against an equivalent `Agent` whose `A` matrix represents the full set of (redundant) conditional dependence relationships.
+        """
+
+        num_obs = [5, 4]
+        num_states = [2, 3]
+        num_controls = [2, 3]
+
+        A_factor_list = [ [0], [1] ]
+        A_reduced = utils.random_A_matrix(num_obs, num_states, A_factor_list)
+        B = utils.random_B_matrix(num_states, num_controls)
+
+        agent = Agent(A=A_reduced, B=B, A_factor_list=A_factor_list, inference_algo = "VANILLA")
+
+        obs = [np.random.randint(obs_dim) for obs_dim in num_obs]
+
+        qs_out = agent.infer_states(obs)
+
+        A_full = utils.initialize_empty_A(num_obs, num_states)
+        for m, A_m in enumerate(A_full):
+            other_factors = list(set(range(len(num_states))) - set(A_factor_list[m])) # list of the factors that modality `m` does not depend on
+
+            # broadcast or tile the reduced A matrix (`A_reduced`) along the dimensions of corresponding to `other_factors`
+            expanded_dims = [num_obs[m]] + [1 if f in other_factors else ns for (f, ns) in enumerate(num_states)]
+            tile_dims = [1] + [ns if f in other_factors else 1 for (f, ns) in enumerate(num_states)]
+            A_full[m] = np.tile(A_reduced[m].reshape(expanded_dims), tile_dims)
+        
+        agent = Agent(A=A_full, B=B, inference_algo = "VANILLA")
+        qs_validation = agent._infer_states_test(obs)
+
+        for qs_out_f, qs_val_f in zip(qs_out, qs_validation):
+            self.assertTrue(np.isclose(qs_out_f, qs_val_f).all())
+    
+    def test_agent_with_interactions_in_B(self):
+        """
+        Test that an instance of the `Agent` class can be initialized with a provided `B_factor_list` and run a time loop of active inferece
+        """
+
+        num_obs = [5, 4]
+        num_states = [2, 3]
+        num_controls = [2, 3]
+
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+
+        agent_test = Agent(A=A, B=B, B_factor_list=[[0], [1]])
+        agent_val = Agent(A=A, B=B)
+
+        obs_seq = []
+        for t in range(5):
+            obs_seq.append([np.random.randint(obs_dim) for obs_dim in num_obs])
+        
+        for t in range(5):
+            qs_out = agent_test.infer_states(obs_seq[t])
+            qs_val = agent_val._infer_states_test(obs_seq[t])
+            for qs_out_f, qs_val_f in zip(qs_out, qs_val):
+                self.assertTrue(np.isclose(qs_out_f, qs_val_f).all())
+            
+            agent_test.infer_policies()
+            agent_val.infer_policies()
+
+            agent_test.sample_action()
+            agent_val.sample_action()
+    
+    def test_actinfloop_factorized(self):
+        """
+        Test that an instance of the `Agent` class can be initialized and run
+        with the fully-factorized generative model functions (including policy inference)
+        """
+
+        num_obs = [5, 4, 4]
+        num_states = [2, 3, 5]
+        num_controls = [2, 3, 2]
+
+        A_factor_list = [[0], [0, 1], [0, 1, 2]]
+        B_factor_list = [[0], [0, 1], [1, 2]]
+        A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list)
+
+        agent = Agent(A=A, B=B, A_factor_list=A_factor_list, B_factor_list=B_factor_list, inference_algo="VANILLA")
+
+        obs_seq = []
+        for t in range(5):
+            obs_seq.append([np.random.randint(obs_dim) for obs_dim in num_obs])
+        
+        for t in range(5):
+            qs_out = agent.infer_states(obs_seq[t])
+            agent.infer_policies()
+            agent.sample_action()
+
+        """ Test to make sure it works even when generative model sparsity is not taken advantage of """
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+
+        agent = Agent(A=A, B=B, inference_algo="VANILLA")
+
+        obs_seq = []
+        for t in range(5):
+            obs_seq.append([np.random.randint(obs_dim) for obs_dim in num_obs])
+        
+        for t in range(5):
+            qs_out = agent.infer_states(obs_seq[t])
+            agent.infer_policies()
+            agent.sample_action()
+        
+        """ Test with pA and pB learning & information gain """
+
+        num_obs = [5, 4, 4]
+        num_states = [2, 3, 5]
+        num_controls = [2, 3, 2]
+
+        A_factor_list = [[0], [0, 1], [0, 1, 2]]
+        B_factor_list = [[0], [0, 1], [1, 2]]
+        A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list)
+        pA = utils.dirichlet_like(A)
+        pB = utils.dirichlet_like(B)
+
+        agent = Agent(A=A, pA=pA, B=B, pB=pB, save_belief_hist=True, use_param_info_gain=True, A_factor_list=A_factor_list, B_factor_list=B_factor_list, inference_algo="VANILLA")
+
+        obs_seq = []
+        for t in range(5):
+            obs_seq.append([np.random.randint(obs_dim) for obs_dim in num_obs])
+        
+        for t in range(5):
+            qs_out = agent.infer_states(obs_seq[t])
+            agent.infer_policies()
+            agent.sample_action()
+            agent.update_A(obs_seq[t])
+            if t > 0:
+                agent.update_B(qs_prev = agent.qs_hist[-2]) # need to have `save_belief_hist=True` for this to work
+
+
+        
 
 
         

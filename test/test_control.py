@@ -99,6 +99,118 @@ class TestControl(unittest.TestCase):
                     else:
                         self.assertTrue((qs_pi[p_idx][t_idx][factor_idx] == B[factor_idx][:,:,policies[p_idx][t_idx,factor_idx]].dot(qs_pi[p_idx][t_idx-1][factor_idx])).all())
 
+    def test_get_expected_states_interactions_single_factor(self):
+        """
+        Test the new version of `get_expected_states` that includes `B` array inter-factor dependencies, in case a of trivial single factor
+        """
+        
+        num_states = [3]
+        num_controls = [3]
+
+        B_factor_list = [[0]]
+
+        qs = utils.random_single_categorical(num_states)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list)
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=1)
+
+        qs_pi_0 = control.get_expected_states_interactions(qs, B, B_factor_list, policies[0])
+
+        self.assertTrue((qs_pi_0[0][0] == B[0][:,:,policies[0][0,0]].dot(qs[0])).all())
+
+    def test_get_expected_states_interactions_multi_factor(self):
+        """
+        Test the new version of `get_expected_states` that includes `B` array inter-factor dependencies, 
+        in the case where there are two hidden state factors: one that depends on itself and another that depends on both itself and the other factor.
+        """
+        
+        num_states = [3, 4]
+        num_controls = [3, 2]
+
+        B_factor_list = [[0], [0, 1]]
+
+        qs = utils.random_single_categorical(num_states)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list)
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=1)
+
+        qs_pi_0 = control.get_expected_states_interactions(qs, B, B_factor_list, policies[0])
+
+        self.assertTrue((qs_pi_0[0][0] == B[0][:,:,policies[0][0,0]].dot(qs[0])).all())
+
+        qs_next_validation = (B[1][..., policies[0][0,1]] * maths.spm_cross(qs)[None,...]).sum(axis=(1,2)) # how to compute equivalent of `spm_dot(B[...,past_action], qs)`
+        self.assertTrue(np.allclose(qs_pi_0[0][1], qs_next_validation))
+    
+    def test_get_expected_states_interactions_multi_factor_independent(self):
+        """
+        Test the new version of `get_expected_states` that includes `B` array inter-factor dependencies, 
+        in the case where there are multiple hidden state factors, but they all only depend on themselves
+        """
+        
+        num_states = [3, 4, 5, 6]
+        num_controls = [1, 2, 5, 3]
+
+        B_factor_list = [[f] for f in range(len(num_states))] # each factor only depends on itself
+
+        qs = utils.random_single_categorical(num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=1)
+
+        qs_pi_0 = control.get_expected_states_interactions(qs, B, B_factor_list, policies[0])
+
+        qs_pi_0_validation = control.get_expected_states(qs, B, policies[0])
+
+        for qs_f, qs_val_f in zip(qs_pi_0[0], qs_pi_0_validation[0]):
+            self.assertTrue(np.allclose(qs_f, qs_val_f))
+
+    def test_get_expected_obs_factorized(self):
+        """
+        Test the new version of `get_expected_obs` that includes sparse dependencies of `A` array on hidden state factors (not all observation modalities depend on all hidden state factors)
+        """
+
+        """ Case 1, where all modalities depend on all hidden state factors """
+
+        num_states = [3, 4]
+        num_obs = [3, 4]
+
+        A_factor_list = [[0, 1], [0, 1]]
+
+        qs = utils.random_single_categorical(num_states)
+        A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+
+        qo_test = control.get_expected_obs_factorized([qs], A, A_factor_list) # need to wrap `qs` in list because `get_expected_obs_factorized` expects a list of `qs` (representing multiple timesteps)
+        qo_val = control.get_expected_obs([qs], A) # need to wrap `qs` in list because `get_expected_obs` expects a list of `qs` (representing multiple timesteps)
+
+        for qo_m, qo_val_m in zip(qo_test[0], qo_val[0]): # need to extract first index of `qo_test` and `qo_val` because `get_expected_obs_factorized` returns a list of `qo` (representing multiple timesteps)
+            self.assertTrue(np.allclose(qo_m, qo_val_m))
+        
+        """ Case 2, where some modalities depend on some hidden state factors """
+
+        num_states = [3, 4]
+        num_obs = [3, 4]
+
+        A_factor_list = [[0], [0, 1]]
+
+        qs = utils.random_single_categorical(num_states)
+        A_reduced = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+
+        qo_test = control.get_expected_obs_factorized([qs], A_reduced, A_factor_list) # need to wrap `qs` in list because `get_expected_obs_factorized` expects a list of `qs` (representing multiple timesteps)
+
+        A_full = utils.initialize_empty_A(num_obs, num_states)
+        for m, A_m in enumerate(A_full):
+            other_factors = list(set(range(len(num_states))) - set(A_factor_list[m])) # list of the factors that modality `m` does not depend on
+
+            # broadcast or tile the reduced A matrix (`A_reduced`) along the dimensions of corresponding to `other_factors`
+            expanded_dims = [num_obs[m]] + [1 if f in other_factors else ns for (f, ns) in enumerate(num_states)]
+            tile_dims = [1] + [ns if f in other_factors else 1 for (f, ns) in enumerate(num_states)]
+            A_full[m] = np.tile(A_reduced[m].reshape(expanded_dims), tile_dims)
+        
+        qo_val = control.get_expected_obs([qs], A_full) # need to wrap `qs` in list because `get_expected_obs` expects a list of `qs` (representing multiple timesteps)
+        
+        for qo_m, qo_val_m in zip(qo_test[0], qo_val[0]): # need to extract first index of `qo_test` and `qo_val` because `get_expected_obs_factorized` returns a list of `qo` (representing multiple timesteps)
+            self.assertTrue(np.allclose(qo_m, qo_val_m))
+
     def test_get_expected_states_and_obs(self):
         """
         Tests the refactored (Categorical-less) versions of `get_expected_states` and `get_expected_obs` together
@@ -351,9 +463,109 @@ class TestControl(unittest.TestCase):
             qs_pi = control.get_expected_states(qs, B, policy)
             state_info_gains[idx] += control.calc_states_info_gain(A, qs_pi)
         self.assertGreater(state_info_gains[1], state_info_gains[0])
-    
-    def test_pA_info_gain(self):
 
+    def test_state_info_gain_factorized(self):
+        """ 
+        Unit test the `calc_states_info_gain_factorized` function by qualitatively checking that in the T-Maze (contextual bandit)
+        example, the state info gain is higher for the policy that leads to visiting the cue, which is higher than state info gain
+        for visiting the bandit arm, which in turn is higher than the state info gain for the policy that leads to staying in the start state.
+        """
+
+        num_states = [2, 3]  
+        num_obs = [3, 3, 3]
+        num_controls = [1, 3]
+
+        A_factor_list = [[0, 1], [0, 1], [1]] 
+        
+        A = utils.obj_array(len(num_obs))
+        for m, obs in enumerate(num_obs):
+            lagging_dimensions = [ns for i, ns in enumerate(num_states) if i in A_factor_list[m]]
+            modality_shape = [obs] + lagging_dimensions
+            A[m] = np.zeros(modality_shape)
+            if m == 0:
+                A[m][:, :, 0] = np.ones( (num_obs[m], num_states[0]) ) / num_obs[m]
+                A[m][:, :, 1] = np.ones( (num_obs[m], num_states[0]) ) / num_obs[m]
+                A[m][:, :, 2] = np.array([[0.9, 0.1], [0.0, 0.0], [0.1, 0.9]]) # cue statistics
+            if m == 1:
+                A[m][2, :, 0] = np.ones(num_states[0])
+                A[m][0:2, :, 1] = np.array([[0.6, 0.4], [0.6, 0.4]]) # bandit statistics (mapping between reward-state (first hidden state factor) and rewards (Good vs Bad))
+                A[m][2, :, 2] = np.ones(num_states[0])
+            if m == 2:
+                A[m] = np.eye(obs)
+
+        qs_start = utils.obj_array_uniform(num_states)
+        qs_start[1] = np.array([1., 0., 0.]) # agent believes it's in the start state
+
+        state_info_gain_visit_start = 0.
+        for m, A_m in enumerate(A):
+            if len(A_factor_list[m]) == 1:
+                qs_that_matter = utils.to_obj_array(qs_start[A_factor_list[m]])
+            else:
+                qs_that_matter = qs_start[A_factor_list[m]]
+            state_info_gain_visit_start += control.calc_states_info_gain(A_m, [qs_that_matter])
+
+        qs_arm = utils.obj_array_uniform(num_states)
+        qs_arm[1] = np.array([0., 1., 0.]) # agent believes it's in the arm-visiting state
+
+        state_info_gain_visit_arm = 0.
+        for m, A_m in enumerate(A):
+            if len(A_factor_list[m]) == 1:
+                qs_that_matter = utils.to_obj_array(qs_arm[A_factor_list[m]])
+            else:
+                qs_that_matter = qs_arm[A_factor_list[m]]
+            state_info_gain_visit_arm += control.calc_states_info_gain(A_m, [qs_that_matter])
+
+        qs_cue = utils.obj_array_uniform(num_states)
+        qs_cue[1] = np.array([0., 0., 1.]) # agent believes it's in the cue-visiting state
+
+        state_info_gain_visit_cue = 0.
+        for m, A_m in enumerate(A):
+            if len(A_factor_list[m]) == 1:
+                qs_that_matter = utils.to_obj_array(qs_cue[A_factor_list[m]])
+            else:
+                qs_that_matter = qs_cue[A_factor_list[m]]
+            state_info_gain_visit_cue += control.calc_states_info_gain(A_m, [qs_that_matter])
+        
+        self.assertGreater(state_info_gain_visit_arm, state_info_gain_visit_start)
+        self.assertGreater(state_info_gain_visit_cue, state_info_gain_visit_arm)
+
+    # def test_neg_ambiguity_modality_sum(self):
+    #     """
+    #     Test that the negativity ambiguity function is the same when computed using the full (unfactorized) joint distribution over observations and hidden state factors vs. when computed for each modality separately and summed together.
+    #     """
+
+    #     num_states = [10, 20, 10, 10]
+    #     num_obs = [2, 25, 10, 8]
+
+    #     qs = utils.random_single_categorical(num_states)
+    #     A = utils.random_A_matrix(num_obs, num_states)
+
+    #     neg_ambig_full = maths.spm_calc_neg_ambig(A, qs) # need to wrap `qs` in a list because the function expects a list of policy-conditioned posterior beliefs (corresponding to each timestep)
+    #     neg_ambig_by_modality = 0.
+    #     for m, A_m in enumerate(A):
+    #         neg_ambig_by_modality += maths.spm_calc_neg_ambig(A_m, qs)
+        
+    #     self.assertEqual(neg_ambig_full, neg_ambig_by_modality)
+    
+    # def test_entropy_modality_sum(self):
+    #     """
+    #     Test that the negativity ambiguity function is the same when computed using the full (unfactorized) joint distribution over observations and hidden state factors vs. when computed for each modality separately and summed together.
+    #     """
+
+    #     num_states = [10, 20, 10, 10]
+    #     num_obs = [2, 25, 10, 8]
+
+    #     qs = utils.random_single_categorical(num_states)
+    #     A = utils.random_A_matrix(num_obs, num_states)
+
+    #     H_full = maths.spm_calc_qo_entropy(A, qs) # need to wrap `qs` in a list because the function expects a list of policy-conditioned posterior beliefs (corresponding to each timestep)
+    #     H_by_modality = 0.
+    #     for m, A_m in enumerate(A):
+    #         H_by_modality += maths.spm_calc_qo_entropy(A_m, qs)
+        
+    #     self.assertEqual(H_full, H_by_modality)
+
+    def test_pA_info_gain(self):
         """
         Test the pA_info_gain function. Demonstrates operation
         by manipulating shape of the Dirichlet priors over likelihood parameters
@@ -395,6 +607,15 @@ class TestControl(unittest.TestCase):
             pA_info_gains[idx] += control.calc_pA_info_gain(pA, qo_pi, qs_pi)
 
         self.assertGreater(pA_info_gains[1], pA_info_gains[0])
+
+        """ Test the factorized version of the pA_info_gain function. """
+        pA_info_gains_fac = np.zeros(len(policies))
+        for idx, policy in enumerate(policies):
+            qs_pi = control.get_expected_states(qs, B, policy)
+            qo_pi = control.get_expected_obs_factorized(qs_pi, A, A_factor_list=[[0]])
+            pA_info_gains_fac[idx] += control.calc_pA_info_gain_factorized(pA, qo_pi, qs_pi, A_factor_list=[[0]])
+
+        self.assertTrue(np.allclose(pA_info_gains_fac,  pA_info_gains))  
     
     def test_pB_info_gain(self):
         """
@@ -431,6 +652,13 @@ class TestControl(unittest.TestCase):
             qs_pi = control.get_expected_states(qs, B, policy)
             pB_info_gains[idx] += control.calc_pB_info_gain(pB, qs_pi, qs, policy)
         self.assertGreater(pB_info_gains[1], pB_info_gains[0])
+
+        B_factor_list = [[0]]
+        pB_info_gains_interactions = np.zeros(len(policies))
+        for idx, policy in enumerate(policies):
+            qs_pi = control.get_expected_states_interactions(qs, B, B_factor_list, policy)
+            pB_info_gains_interactions[idx] += control.calc_pB_info_gain_interactions(pB, qs_pi, qs, B_factor_list, policy)
+        self.assertTrue(np.allclose(pB_info_gains_interactions, pB_info_gains))
 
     def test_update_posterior_policies_utility(self):
         """
@@ -1146,6 +1374,43 @@ class TestControl(unittest.TestCase):
 
         self.assertTrue(np.allclose(efe, efe_valid))
         self.assertTrue(np.allclose(q_pi, q_pi_valid))
+    
+    def test_update_posterior_policies_factorized(self):
+        """ 
+        Test new update_posterior_policies_factorized function, just to make sure it runs through and outputs correct shapes
+        """
+
+        num_obs = [3, 3]
+        num_states = [3, 2]
+        num_controls = [3, 2]
+
+        A_factor_list = [[0, 1], [1]]
+        B_factor_list = [[0], [0, 1]]
+
+        qs = utils.random_single_categorical(num_states)
+        A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list)
+        C = utils.obj_array_zeros(num_obs)
+
+        policies = control.construct_policies(num_states, num_controls, policy_len=1)
+
+        q_pi, efe = control.update_posterior_policies_factorized(
+            qs,
+            A,
+            B,
+            C,
+            A_factor_list,
+            B_factor_list,
+            policies,
+            use_utility = True,
+            use_states_info_gain = True,
+            gamma=16.0
+        )
+
+        self.assertEqual(len(q_pi), len(policies))
+        self.assertEqual(len(efe), len(policies))
+
+        chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
 
     def test_sample_action(self):
         """
