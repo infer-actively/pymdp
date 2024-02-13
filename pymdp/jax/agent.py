@@ -99,6 +99,7 @@ class Agent(Module):
         qs=None,
         q_pi=None,
         H=None,
+        I=None,
         policy_len=1,
         control_fac_idx=None,
         policies=None,
@@ -111,7 +112,7 @@ class Agent(Module):
         use_states_info_gain=True,
         use_param_info_gain=False,
         use_inductive=False,
-        onehot_obs=True,
+        onehot_obs=False,
         action_selection="deterministic",
         sampling_mode="marginal",
         inference_algo="fpi",
@@ -192,8 +193,10 @@ class Agent(Module):
         self.use_inductive = use_inductive
 
         if self.use_inductive and self.H is not None:
-            print("Using inductive inference...")
+            # print("Using inductive inference...")
             self.I = self._construct_I()
+        elif self.use_inductive and I is not None:
+            self.I = I
         else:
             self.I = jtu.tree_map(lambda x: jnp.expand_dims(jnp.zeros_like(x), 1), self.D)
 
@@ -269,6 +272,8 @@ class Agent(Module):
             # if you have updated your beliefs about transitions, you need to re-compute the I matrix used for inductive inferenece
             if self.use_inductive and self.H is not None:
                 I_updated = control.generate_I_matrix(self.H, E_qB, self.inductive_threshold, self.inductive_depth)
+            else:
+                I_updated = self.I
  
         # if self.learn_C:
         #     self.qC = learning.update_C(self.C, *args, **kwargs)
@@ -320,7 +325,7 @@ class Agent(Module):
         A = self.A
         if mask is not None:
             for i, m in enumerate(mask):
-                o_vec[i] = m * o_vec[i] + (1 - m) * o_vec[i] / self.num_obs[i]
+                o_vec[i] = m * o_vec[i] + (1 - m) * jnp.ones_like(o_vec[i]) / self.num_obs[i]
                 A[i] = m * A[i] + (1 - m) * jnp.ones_like(A[i]) / self.num_obs[i]
         
         output = inference.update_posterior_states(
