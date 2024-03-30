@@ -471,8 +471,8 @@ def calc_inductive_value_t(qs, qs_next, I, epsilon=1e-3):
 
         # i.e. find first entry at which I_idx equals 1, and then m is the index before that
         m = jnp.maximum(jnp.argmax(I[f][:, idx])-1, 0)
-        I_m = (1.-I[f][m, :]) * log_eps
-        path_available = jnp.clip(I[f][:,idx].sum(0), a_min=0, a_max=1) # if there are any 1's at all in that column of I, then this == 1, otherwise 0
+        I_m = (1. - I[f][m, :]) * log_eps
+        path_available = jnp.clip(I[f][:, idx].sum(0), a_min=0, a_max=1) # if there are any 1's at all in that column of I, then this == 1, otherwise 0
         inductive_val += path_available * I_m.dot(qs_next[f]) # scaling by path_available will nullify the addition of inductive value in the case we find no path to goal (i.e. when no goal specified)
 
     return inductive_val
