@@ -256,12 +256,12 @@ class Agent(Module):
 
     @vmap
     def learning(self, beliefs, outcomes, actions, **kwargs):
-
+        agent = self
         if self.learn_A:
             o_vec_seq = jtu.tree_map(lambda o, dim: nn.one_hot(o, dim), outcomes, self.num_obs)
             qA = learning.update_obs_likelihood_dirichlet(self.pA, self.A, o_vec_seq, beliefs, self.A_dependencies, lr=1.)
             E_qA = jtu.tree_map(lambda x: maths.dirichlet_expected_value(x), qA)
-            agent = tree_at(lambda x: (x.A, x.pA), self, (E_qA, qA))
+            agent = tree_at(lambda x: (x.A, x.pA), agent, (E_qA, qA))
             
         if self.learn_B:
             actions_seq = [actions[..., i] for i in range(actions.shape[-1])] # as many elements as there are control factors, where each element is a jnp.ndarray of shape (n_timesteps, )
@@ -274,6 +274,8 @@ class Agent(Module):
                 I_updated = control.generate_I_matrix(self.H, E_qB, self.inductive_threshold, self.inductive_depth)
             else:
                 I_updated = self.I
+
+            agent = tree_at(lambda x: (x.B, x.pB, x.I), agent, (E_qB, qB, I_updated))
  
         # if self.learn_C:
         #     self.qC = learning.update_C(self.C, *args, **kwargs)
@@ -290,7 +292,7 @@ class Agent(Module):
         # parameters = ...
         # varibles = {'A': jnp.ones(5)}
 
-        agent = tree_at(lambda x: (x.A, x.pA, x.B, x.pB, x.I), self, (E_qA, qA, E_qB, qB, I_updated))
+        # agent = tree_at(lambda x: (x.A, x.pA, x.B, x.pB, x.I), self, (E_qA, qA, E_qB, qB, I_updated))
 
         return agent
     
