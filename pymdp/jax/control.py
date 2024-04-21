@@ -233,7 +233,7 @@ def compute_expected_utility(qo, C):
     
     return util
 
-def calc_pA_info_gain(pA, qo, qs):
+def calc_pA_info_gain(pA, qo, qs, A_dependencies):
     """
     Compute expected Dirichlet information gain about parameters ``pA`` for a given posterior predictive distribution over observations ``qo`` and states ``qs``.
 
@@ -256,11 +256,12 @@ def calc_pA_info_gain(pA, qo, qs):
 
     wA = jtu.tree_map(spm_wnorm, pA)    
     wA_per_modality = jtu.tree_map(lambda wa, pa: wa * (pa > 0.), wA, pA)
-    pA_infogain_per_modality = jtu.tree_map(lambda wa, qo: qo.dot(factor_dot(wa, qs, keep_dims=(0,))[...,None]), wA_per_modality, qo)
+    fd = lambda x, i: factor_dot(x, [s for f, s in enumerate(qs) if f in A_dependencies[i]], keep_dims=(0,))[..., None]
+    pA_infogain_per_modality = jtu.tree_map(lambda wa, qo, m: qo.dot(fd(wa, m)), wA_per_modality, qo, list(range(len(qo))))
     infogain_pA = jtu.tree_reduce(lambda x, y: x + y, pA_infogain_per_modality)[0]
     return infogain_pA
 
-def calc_pB_info_gain(pB, qs_t, qs_t_minus_1):
+def calc_pB_info_gain(pB, qs_t, qs_t_minus_1, B_dependencies):
     """ Placeholder, not implemented yet """
     # """
     # Compute expected Dirichlet information gain about parameters ``pB`` under a given policy
@@ -359,8 +360,8 @@ def compute_G_policy_inductive(qs_init, A, B, C, pA, pB, A_dependencies, B_depen
 
         inductive_value = calc_inductive_value_t(qs_init, qs_next, I, epsilon=inductive_epsilon) if use_inductive else 0.
 
-        param_info_gain = calc_pA_info_gain(pA, qo, qs_next) if use_param_info_gain else 0.
-        param_info_gain += calc_pB_info_gain(pB, qs_next, qs) if use_param_info_gain else 0.
+        param_info_gain = calc_pA_info_gain(pA, qo, qs_next, A_dependencies) if use_param_info_gain else 0.
+        param_info_gain += calc_pB_info_gain(pB, qs_next, qs, B_dependencies) if use_param_info_gain else 0.
 
         neg_G += info_gain + utility + param_info_gain + inductive_value
 
