@@ -8,7 +8,7 @@ from jax.tree_util import tree_map
 from jax import vmap
 import jax.numpy as jnp
 
-def update_obs_likelihood_dirichlet_m(pA_m, A_m, obs_m, qs, dependencies_m, lr=1.0):
+def update_obs_likelihood_dirichlet_m(pA_m, obs_m, qs, dependencies_m, lr=1.0):
     """ JAX version of ``pymdp.learning.update_obs_likelihood_dirichlet_m`` """
     # pA_m - parameters of the dirichlet from the prior
     # pA_m.shape = (no_m x num_states[k] x num_states[j] x ... x num_states[n]) where (k, j, n) are indices of the hidden state factors that are parents of modality m
@@ -24,16 +24,15 @@ def update_obs_likelihood_dirichlet_m(pA_m, A_m, obs_m, qs, dependencies_m, lr=1
 
     relevant_factors = tree_map(lambda f_idx: qs[f_idx], dependencies_m)
 
-    dfda = vmap(multidimensional_outer)([obs_m]+ relevant_factors).sum(axis=0)
-    qA_m = pA_m + (lr * dfda)
+    dfda = vmap(multidimensional_outer)([obs_m] + relevant_factors).sum(axis=0)
 
-    return qA_m
+    return pA_m + lr * dfda
     
-def update_obs_likelihood_dirichlet(pA, A, obs, qs, A_dependencies, lr=1.0):
+def update_obs_likelihood_dirichlet(pA, obs, qs, A_dependencies, lr=1.0):
     """ JAX version of ``pymdp.learning.update_obs_likelihood_dirichlet`` """
 
-    update_A_fn = lambda pA_m, A_m, obs_m, dependencies_m: update_obs_likelihood_dirichlet_m(pA_m, A_m, obs_m, qs, dependencies_m, lr=lr)
-    qA = tree_map(update_A_fn, pA, A, obs, A_dependencies)
+    update_A_fn = lambda pA_m, obs_m, dependencies_m: update_obs_likelihood_dirichlet_m(pA_m, obs_m, qs, dependencies_m, lr=lr)
+    qA = tree_map(update_A_fn, pA, obs, A_dependencies)
 
     return qA
 
