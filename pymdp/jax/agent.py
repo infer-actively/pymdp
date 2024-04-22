@@ -259,7 +259,7 @@ class Agent(Module):
         agent = self
         if self.learn_A:
             o_vec_seq = jtu.tree_map(lambda o, dim: nn.one_hot(o, dim), outcomes, self.num_obs)
-            qA = learning.update_obs_likelihood_dirichlet(self.pA, self.A, o_vec_seq, beliefs, self.A_dependencies, lr=1.)
+            qA = learning.update_obs_likelihood_dirichlet(self.pA, o_vec_seq, beliefs, self.A_dependencies, lr=1.)
             E_qA = jtu.tree_map(lambda x: maths.dirichlet_expected_value(x), qA)
             agent = tree_at(lambda x: (x.A, x.pA), agent, (E_qA, qA))
             
