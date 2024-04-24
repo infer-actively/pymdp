@@ -4,7 +4,7 @@ from jaxtyping import Array, PRNGKeyArray
 from functools import partial
 
 from equinox import Module, field, tree_at
-from jax import vmap, random as jr, tree_map as jtu
+from jax import vmap, random as jr, tree_util as jtu
 import jax.numpy as jnp
 
 def select_probs(positions, matrix, dependency_list, actions=None):
