@@ -7,4 +7,5 @@ __pycache__
 .ipynb_checkpoints/
 .pytest_cache
 env/
-*.egg-info
+pymdp.egg-info
+inferactively_pymdp.egg-info
