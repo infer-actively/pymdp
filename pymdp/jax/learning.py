@@ -36,7 +36,7 @@ def update_obs_likelihood_dirichlet(pA, obs, qs, A_dependencies, lr=1.0):
 
     return qA
 
-def update_state_likelihood_dirichlet_f(pB_f, B_f, actions_f, current_qs, qs_seq, dependencies_f, lr=1.0):
+def update_state_likelihood_dirichlet_f(pB_f, actions_f, current_qs, qs_seq, dependencies_f, lr=1.0):
     """ JAX version of ``pymdp.learning.update_state_likelihood_dirichlet_f`` """
     # pB_f - parameters of the dirichlet from the prior
     # pB_f.shape = (num_states[f] x num_states[f] x num_actions[f]) where f is the index of the hidden state factor
@@ -52,14 +52,14 @@ def update_state_likelihood_dirichlet_f(pB_f, B_f, actions_f, current_qs, qs_seq
 
     past_qs = tree_map(lambda f_idx: qs_seq[f_idx][:-1], dependencies_f)
     dfdb = vmap(multidimensional_outer)([current_qs[1:]] + past_qs + [actions_f]).sum(axis=0)
-    qB_f = pB_f + (lr * dfdb)
+    qB_f = pB_f + lr * dfdb
 
     return qB_f
 
-def update_state_likelihood_dirichlet(pB, B, beliefs, actions_onehot, B_dependencies, lr=1.0):
+def update_state_likelihood_dirichlet(pB, beliefs, actions_onehot, B_dependencies, lr=1.0):
 
-    update_B_f_fn = lambda pB_f, B_f, action_f, qs_f, dependencies_f: update_state_likelihood_dirichlet_f(pB_f, B_f, action_f, qs_f, beliefs, dependencies_f, lr=lr)    
-    qB = tree_map(update_B_f_fn, pB, B, actions_onehot, beliefs, B_dependencies)
+    update_B_f_fn = lambda pB_f, action_f, qs_f, dependencies_f: update_state_likelihood_dirichlet_f(pB_f, action_f, qs_f, beliefs, dependencies_f, lr=lr)    
+    qB = tree_map(update_B_f_fn, pB, actions_onehot, beliefs, B_dependencies)
 
     return qB
     

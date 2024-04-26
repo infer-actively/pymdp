@@ -255,18 +255,20 @@ class Agent(Module):
         return jnp.unique(self.policies[:, 0], axis=0, size=size, fill_value=-1)
 
     @vmap
-    def learning(self, beliefs, outcomes, actions, lr_pA=1., lr_pB=1., **kwargs):
+    def learning(self, beliefs_A, outcomes, actions, beliefs_B=None, lr_pA=1., lr_pB=1., **kwargs):
         agent = self
         if self.learn_A:
             o_vec_seq = jtu.tree_map(lambda o, dim: nn.one_hot(o, dim), outcomes, self.num_obs)
-            qA = learning.update_obs_likelihood_dirichlet(self.pA, o_vec_seq, beliefs, self.A_dependencies, lr=lr_pA)
+            qA = learning.update_obs_likelihood_dirichlet(self.pA, o_vec_seq, beliefs_A, self.A_dependencies, lr=lr_pA)
             E_qA = jtu.tree_map(lambda x: maths.dirichlet_expected_value(x), qA)
             agent = tree_at(lambda x: (x.A, x.pA), agent, (E_qA, qA))
             
         if self.learn_B:
+            beliefs_B = beliefs_A if beliefs_B is None else beliefs_B
             actions_seq = [actions[..., i] for i in range(actions.shape[-1])] # as many elements as there are control factors, where each element is a jnp.ndarray of shape (n_timesteps, )
+            assert beliefs_B[0].shape[0] == actions_seq[0].shape[0] + 1
             actions_onehot = jtu.tree_map(lambda a, dim: nn.one_hot(a, dim, axis=-1), actions_seq, self.num_controls)
-            qB = learning.update_state_likelihood_dirichlet(self.pB, self.B, beliefs, actions_onehot, self.B_dependencies, lr=lr_pB)
+            qB = learning.update_state_likelihood_dirichlet(self.pB, beliefs_B, actions_onehot, self.B_dependencies, lr=lr_pB)
             E_qB = jtu.tree_map(lambda x: maths.dirichlet_expected_value(x), qB)
 
             # if you have updated your beliefs about transitions, you need to re-compute the I matrix used for inductive inferenece

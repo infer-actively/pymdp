@@ -301,8 +301,6 @@ def get_mmp_messages(ln_B, B, qs, ln_prior, B_deps):
         
         return jnp.pad(msg, ((0, 1), (0, 0)))
 
-    inv_B_deps = [[i for i, d in enumerate(B_deps) if f in d] for f in factors]
-
     def marg(inv_deps, f):
         B_marg = []
         for i in inv_deps:
@@ -319,9 +317,9 @@ def get_mmp_messages(ln_B, B, qs, ln_prior, B_deps):
         
         return B_marg
 
-    B_marg = jtu.tree_map(lambda f: marg(inv_B_deps[f], f), factors)
-
     if B is not None:
+        inv_B_deps = [[i for i, d in enumerate(B_deps) if f in d] for f in factors]
+        B_marg = jtu.tree_map(lambda f: marg(inv_B_deps[f], f), factors)
         lnB_future = jtu.tree_map(forward, B, ln_prior, factors) 
         lnB_past = jtu.tree_map(lambda f: backward(B_marg[f], get_deps_back(qs, inv_B_deps[f])), factors)
     else: 
