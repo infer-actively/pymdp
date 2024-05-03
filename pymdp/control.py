@@ -944,7 +944,7 @@ def calc_inductive_cost(qs, qs_pi, I, epsilon=1e-3):
             m = np.where(I[factor][:, idx] == 1)[0]
             # we might find no path to goal (i.e. when no goal specified)
             if len(m) > 0:
-                m = np.max(m[0]-1, 0)
+                m = max(m[0]-1, 0)
                 I_m = (1-I[factor][m, :]) * np.log(epsilon)
                 inductive_cost += I_m.dot(qs_pi[t][factor])
                 
