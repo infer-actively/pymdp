@@ -259,7 +259,10 @@ def obj_array_from_list(list_input):
     """
     Takes a list of `numpy.ndarray` and converts them to a `numpy.ndarray` of `dtype = object`
     """
-    return np.array(list_input, dtype = object)
+    arr = obj_array(len(list_input))
+    for i, item in enumerate(list_input):
+        arr[i] = item
+    return arr
 
 def process_observation_seq(obs_seq, n_modalities, n_observations):
     """
