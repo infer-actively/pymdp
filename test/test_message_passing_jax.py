@@ -7,6 +7,7 @@ __author__: Dimitrije Markovic, Conor Heins
 
 import os
 import unittest
+from functools import partial
 
 import numpy as np
 import jax.numpy as jnp
@@ -195,66 +196,49 @@ class TestMessagePassing(unittest.TestCase):
         num_states_list, num_obs_list, num_controls_list, A_dependencies_list, B_dependencies_list = gm_params['ns_list'], gm_params['no_list'], gm_params['nc_list'], \
                                                                                                      gm_params['A_deps_list'], gm_params['B_deps_list']
 
-        batch_size = 3
+        batch_size = 10
         n_timesteps = 4
 
-        for num_states, num_obs, A_deps, B_deps in zip(num_states_list, num_obs_list, A_dependencies_list, B_dependencies_list):
+        for num_states, num_obs, num_controls, A_deps, B_deps in zip(num_states_list, num_obs_list, num_controls_list, A_dependencies_list, B_dependencies_list):
 
             # create a version of a_deps_i where each sub-list is sorted
             prior = [jr.dirichlet(key, alpha=jnp.ones((ns,)), shape=(batch_size,)) for ns, key in zip(num_states, jr.split(jr.PRNGKey(0), len(num_states)))] 
 
-            obs = [jr.categorical(key, p=jnp.ones(no) / no, shape=(n_timesteps,batch_size)) for no, key in zip(num_obs, jr.split(jr.PRNGKey(1), len(num_obs)))]
-            obs = jtu.tree_map(lambda x: nn.one_hot(x, num_classes=x.shape[-1]), obs)
+            obs = [jr.categorical(key, logits=jnp.zeros(no), shape=(n_timesteps,batch_size)) for no, key in zip(num_obs, jr.split(jr.PRNGKey(1), len(num_obs)))]
+            obs = jtu.tree_map(lambda x, no: nn.one_hot(x, num_classes=no), obs, num_obs)
 
             A_sub_shapes = [ [ns for f, ns in enumerate(num_states) if f in a_deps_i] for a_deps_i in A_deps ]
             A_sampling_keys = jr.split(jr.PRNGKey(2), len(num_obs))
-            A = [jr.dirichlet(key, alpha=jnp.ones(no), shape=factor_shapes) for no, factor_shapes, key in zip(num_obs, A_sub_shapes, A_sampling_keys)]
+            A = [jr.dirichlet(key, alpha=jnp.ones(no) / no, shape=factor_shapes) for no, factor_shapes, key in zip(num_obs, A_sub_shapes, A_sampling_keys)]
             A = jtu.tree_map(lambda a: jnp.moveaxis(a, -1, 0), A) # move observations into leading dimensions
-            A = jtu.tree_map(lambda a: jnp.broadcast_to(a, (batch_size,) + x.shape), A)
+            A = jtu.tree_map(lambda a: jnp.broadcast_to(a, (batch_size,) + a.shape), A)
 
             B_sub_shapes = [ [ns for f, ns in enumerate(num_states) if f in b_deps_i] + [nc] for nc, b_deps_i in zip(num_controls, B_deps) ]
             B_sampling_keys = jr.split(jr.PRNGKey(3), len(num_states))
-            B = [jr.dirichlet(key, alpha=jnp.ones(ns), shape=factor_shapes) for ns, factor_shapes, key in zip(num_states, B_sub_shapes, B_sampling_keys)]
-            B = jtu.tree_map(lambda b: jnp.moveaxis(b, (-2, -1), (0, 1)), B) # move s_{t+1} and actions to first two leading dimensions
-            B = jtu.tree_map(lambda b: jnp.broadcast_to(b, (batch_size,) + x.shape), B)
-
-            # A = [ jnp.broadcast_to(jnp.array([[0.5, 0.5, 0.], 
-            #                                 [0.0,  0.0,  1.], 
-            #                                 [0.5, 0.5, 0.]]
-            #                             ), (2, 3, 3) )]
-
-            # # create two B matrices, one for each action
-            # B_1 = jnp.broadcast_to(jnp.array([[0.0, 0.75, 0.0],
-            #                                 [0.0, 0.25, 1.0],
-            #                                 [1.0, 0.0, 0.0]]
-            #             ), (2, 3, 3))
-            
-            # B_2 = jnp.broadcast_to(jnp.array([[0.0, 0.25, 0.0],
-            #                                 [0.0, 0.75, 0.0],
-            #                                 [1.0, 0.0, 1.0]]
-            #             ), (2, 3, 3))
-            
-            # B = [jnp.stack([B_1, B_2], axis=-1)] # actions are in the last dimension
+            B = [jr.dirichlet(key, alpha=jnp.ones(ns) / ns, shape=factor_shapes) for ns, factor_shapes, key in zip(num_states, B_sub_shapes, B_sampling_keys)]
+            B = jtu.tree_map(lambda b: jnp.moveaxis(b, -2, -1), B) # move u_t to the rightmost axis of the array
+            B = jtu.tree_map(lambda b: jnp.moveaxis(b, -2, 0), B) # s_t+1 to the leading dimension of the array
+            B = jtu.tree_map(lambda b: jnp.broadcast_to(b, (batch_size,) + b.shape), B)
 
             # # create a policy-dependent sequence of B matrices, but now we store the sequence dimension (action indices) in the first dimension (0th dimension is still batch dimension)
-            # policy = jnp.array([0, 1, 0])
-            # B_policy = jtu.tree_map(lambda b: b[..., policy].transpose(0, 3, 1, 2), B)
+            policy = []
+            key = jr.PRNGKey(11)
+            for nc in num_controls:
+                key, k = jr.split(key)
+                policy.append( jr.choice(k, jnp.arange(nc), shape=(n_timesteps - 1, 1)) )
+            
+            policy = jnp.concatenate(policy, -1)
+            nf = len(B)
+            actions_tree = [policy[:, i] for i in range(nf)]
+            B_seq = jtu.tree_map(lambda b, a_idx: jnp.moveaxis(b[..., a_idx], -1, 0), B, actions_tree)
 
-        
-            # # for the single modality, a sequence over time of observations (one hot vectors)
-            # obs = [
-            #         jnp.broadcast_to(jnp.array([[1., 0., 0.], 
-            #                                     [0., 1., 0.], 
-            #                                     [0., 0., 1.],
-            #                                     [1., 0., 0.]])[:, None], (4, 2, 3) )
-            #                         ]
+            mmp = vmap(
+                partial(mmp_jax, num_iter=16, tau=1.0),
+                in_axes=(0, 1, 1, 0, None, None)
+            )
+            qs_out = mmp(A, B_seq, obs, prior, A_deps, B_deps)
 
-            # prior = [jnp.ones((2, 3)) / 3.]
-
-            # A_dependencies = [list(range(len(num_states))) for _ in range(len(num_obs))]
-            # qs_out = mmp_jax(A, B_policy, obs, prior, A_dependencies, num_iter=16, tau=1.)
-
-            # self.assertTrue(qs_out[0].shape[0] == obs[0].shape[0])
+            self.assertTrue(qs_out[0].shape[0] == obs[0].shape[1])
 
     # def test_variational_message_passing(self):
 
