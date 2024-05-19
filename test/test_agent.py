@@ -164,7 +164,7 @@ class TestAgent(unittest.TestCase):
 
         policies = control.construct_policies(num_states, num_controls, policy_len = planning_horizon)
 
-        qs_pi_validation, _ = inference.update_posterior_states_full(A, B, [o], policies, prior = agent.D, policy_sep_prior = False)
+        qs_pi_validation, _ = inference.update_posterior_states_full_factorized(A, agent.mb_dict, B, agent.B_factor_list, [o], policies, prior = agent.D, policy_sep_prior = False)
 
         for p_idx in range(len(policies)):
             for t in range(planning_horizon+backwards_horizon):
@@ -280,7 +280,7 @@ class TestAgent(unittest.TestCase):
             print(t)
             
             qx = agent.infer_states(obs_seq[t])
-            agent.infer_policies_factorized()
+            agent.infer_policies()
             agent.sample_action()
             
             # compute the predicted update to the action-conditioned slice of qB
@@ -662,7 +662,7 @@ class TestAgent(unittest.TestCase):
 
         policies = control.construct_policies(num_states, num_controls, policy_len = planning_horizon)
 
-        qs_pi_validation, _ = inference.update_posterior_states_full(A, B, [p_o], policies, prior = agent.D, policy_sep_prior = False)
+        qs_pi_validation, _ = inference.update_posterior_states_full_factorized(A, agent.mb_dict, B, agent.B_factor_list, [p_o], policies, prior = agent.D, policy_sep_prior = False)
 
         for p_idx in range(len(policies)):
             for t in range(planning_horizon+backwards_horizon):
@@ -758,7 +758,7 @@ class TestAgent(unittest.TestCase):
         
         for t in range(5):
             qs_out = agent.infer_states(obs_seq[t])
-            agent.infer_policies_factorized()
+            agent.infer_policies()
             agent.sample_action()
 
         """ Test to make sure it works even when generative model sparsity is not taken advantage of """
@@ -773,7 +773,7 @@ class TestAgent(unittest.TestCase):
         
         for t in range(5):
             qs_out = agent.infer_states(obs_seq[t])
-            agent.infer_policies_factorized()
+            agent.infer_policies()
             agent.sample_action()
         
         """ Test with pA and pB learning & information gain """
@@ -797,7 +797,7 @@ class TestAgent(unittest.TestCase):
         
         for t in range(5):
             qs_out = agent.infer_states(obs_seq[t])
-            agent.infer_policies_factorized()
+            agent.infer_policies()
             agent.sample_action()
             agent.update_A(obs_seq[t])
             if t > 0:

@@ -21,8 +21,9 @@ def update_posterior_policies_full(
     prior=None,
     pA=None,
     pB=None,
-    F = None,
-    E = None,
+    F=None,
+    E=None,
+    I=None,
     gamma=16.0
 ):  
     """
@@ -67,6 +68,9 @@ def update_posterior_policies_full(
         Vector of variational free energies for each policy
     E: 1D ``numpy.ndarray``, default ``None``
         Vector of prior probabilities of each policy (what's referred to in the active inference literature as "habits"). If ``None``, this defaults to a flat (uninformative) prior over policies.
+    I: ``numpy.ndarray`` of dtype object
+        For each state factor, contains a 2D ``numpy.ndarray`` whose element i,j yields the probability 
+        of reaching the goal state backwards from state j after i steps.
     gamma: ``float``, default 16.0
         Prior precision over policies, scales the contribution of the expected free energy to the posterior over policies
 
@@ -100,6 +104,9 @@ def update_posterior_policies_full(
     else:
         lnE = spm_log_single(E) 
 
+    if I is not None:
+        init_qs_all_pi = [qs_seq_pi[p][0] for p in range(num_policies)]
+        qs_bma = inference.average_states_over_policies(init_qs_all_pi, softmax(E))
 
     for p_idx, policy in enumerate(policies):
 
@@ -116,7 +123,140 @@ def update_posterior_policies_full(
                 G[p_idx] += calc_pA_info_gain(pA, qo_seq_pi[p_idx], qs_seq_pi[p_idx])
             if pB is not None:
                 G[p_idx] += calc_pB_info_gain(pB, qs_seq_pi[p_idx], prior, policy)
+        
+        if I is not None:
+            G[p_idx] += calc_inductive_cost(qs_bma, qs_seq_pi[p_idx], I)
 
+    q_pi = softmax(G * gamma - F + lnE)
+    
+    return q_pi, G
+
+def update_posterior_policies_full_factorized(
+    qs_seq_pi,
+    A,
+    B,
+    C,
+    A_factor_list,
+    B_factor_list,
+    policies,
+    use_utility=True,
+    use_states_info_gain=True,
+    use_param_info_gain=False,
+    prior=None,
+    pA=None,
+    pB=None,
+    F=None,
+    E=None,
+    I=None,
+    gamma=16.0
+):  
+    """
+    Update posterior beliefs about policies by computing expected free energy of each policy and integrating that
+    with the variational free energy of policies ``F`` and prior over policies ``E``. This is intended to be used in conjunction
+    with the ``update_posterior_states_full`` method of ``inference.py``, since the full posterior over future timesteps, under all policies, is
+    assumed to be provided in the input array ``qs_seq_pi``.
+
+    Parameters
+    ----------
+    qs_seq_pi: ``numpy.ndarray`` of dtype object
+        Posterior beliefs over hidden states for each policy. Nesting structure is policies, timepoints, factors,
+        where e.g. ``qs_seq_pi[p][t][f]`` stores the marginal belief about factor ``f`` at timepoint ``t`` under policy ``p``.
+    A: ``numpy.ndarray`` of dtype object
+        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element ``A[m]`` of
+        stores an ``numpy.ndarray`` multidimensional array for observation modality ``m``, whose entries ``A[m][i, j, k, ...]`` store 
+        the probability of observation level ``i`` given hidden state levels ``j, k, ...``
+    B: ``numpy.ndarray`` of dtype object
+        Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
+        Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
+        of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
+    C: ``numpy.ndarray`` of dtype object
+       Prior over observations or 'prior preferences', storing the "value" of each outcome in terms of relative log probabilities. 
+       This is softmaxed to form a proper probability distribution before being used to compute the expected utility term of the expected free energy.
+    A_factor_list: ``list`` of ``list``s of ``int``
+        ``list`` that stores the indices of the hidden state factor indices that each observation modality depends on. For example, if ``A_factor_list[m] = [0, 1]``, then
+        observation modality ``m`` depends on hidden state factors 0 and 1.
+    B_factor_list: ``list`` of ``list``s of ``int``
+        ``list`` that stores the indices of the hidden state factor indices that each hidden state factor depends on. For example, if ``B_factor_list[f] = [0, 1]``, then
+        the transitions in hidden state factor ``f`` depend on hidden state factors 0 and 1.
+    policies: ``list`` of 2D ``numpy.ndarray``
+        ``list`` that stores each policy in ``policies[p_idx]``. Shape of ``policies[p_idx]`` is ``(num_timesteps, num_factors)`` where `num_timesteps` is the temporal
+        depth of the policy and ``num_factors`` is the number of control factors.
+    use_utility: ``Bool``, default ``True``
+        Boolean flag that determines whether expected utility should be incorporated into computation of EFE.
+    use_states_info_gain: ``Bool``, default ``True``
+        Boolean flag that determines whether state epistemic value (info gain about hidden states) should be incorporated into computation of EFE.
+    use_param_info_gain: ``Bool``, default ``False`` 
+        Boolean flag that determines whether parameter epistemic value (info gain about generative model parameters) should be incorporated into computation of EFE. 
+    prior: ``numpy.ndarray`` of dtype object, default ``None``
+        If provided, this is a ``numpy`` object array with one sub-array per hidden state factor, that stores the prior beliefs about initial states. 
+        If ``None``, this defaults to a flat (uninformative) prior over hidden states.
+    pA: ``numpy.ndarray`` of dtype object, default ``None``
+        Dirichlet parameters over observation model (same shape as ``A``)
+    pB: ``numpy.ndarray`` of dtype object, default ``None``
+        Dirichlet parameters over transition model (same shape as ``B``)
+    F: 1D ``numpy.ndarray``, default ``None``
+        Vector of variational free energies for each policy
+    E: 1D ``numpy.ndarray``, default ``None``
+        Vector of prior probabilities of each policy (what's referred to in the active inference literature as "habits"). If ``None``, this defaults to a flat (uninformative) prior over policies.
+    I: ``numpy.ndarray`` of dtype object
+        For each state factor, contains a 2D ``numpy.ndarray`` whose element i,j yields the probability 
+        of reaching the goal state backwards from state j after i steps.
+    gamma: ``float``, default 16.0
+        Prior precision over policies, scales the contribution of the expected free energy to the posterior over policies
+
+    Returns
+    ----------
+    q_pi: 1D ``numpy.ndarray``
+        Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
+    G: 1D ``numpy.ndarray``
+        Negative expected free energies of each policy, i.e. a vector containing one negative expected free energy per policy.
+    """
+
+    num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A, B)
+    horizon = len(qs_seq_pi[0])
+    num_policies = len(qs_seq_pi)
+
+    qo_seq = utils.obj_array(horizon)
+    for t in range(horizon):
+        qo_seq[t] = utils.obj_array_zeros(num_obs)
+
+    # initialise expected observations
+    qo_seq_pi = utils.obj_array(num_policies)
+
+    # initialize (negative) expected free energies for all policies
+    G = np.zeros(num_policies)
+
+    if F is None:
+        F = spm_log_single(np.ones(num_policies) / num_policies)
+
+    if E is None:
+        lnE = spm_log_single(np.ones(num_policies) / num_policies)
+    else:
+        lnE = spm_log_single(E) 
+
+    if I is not None:
+        init_qs_all_pi = [qs_seq_pi[p][0] for p in range(num_policies)]
+        qs_bma = inference.average_states_over_policies(init_qs_all_pi, softmax(E))
+
+    for p_idx, policy in enumerate(policies):
+
+        qo_seq_pi[p_idx] = get_expected_obs_factorized(qs_seq_pi[p_idx], A, A_factor_list)
+
+        if use_utility:
+            G[p_idx] += calc_expected_utility(qo_seq_pi[p_idx], C)
+        
+        if use_states_info_gain:
+            G[p_idx] += calc_states_info_gain_factorized(A, qs_seq_pi[p_idx], A_factor_list)
+        
+        if use_param_info_gain:
+            if pA is not None:
+                G[idx] += calc_pA_info_gain_factorized(pA, qo_seq_pi[p_idx], qs_seq_pi[p_idx], A_factor_list)
+            if pB is not None:
+                G[idx] += calc_pB_info_gain_interactions(pB, qs_seq_pi[p_idx], qs, B_factor_list, policy)
+        
+        if I is not None:
+            G[p_idx] += calc_inductive_cost(qs_bma, qs_seq_pi[p_idx], I)
+            
     q_pi = softmax(G * gamma - F + lnE)
     
     return q_pi, G
@@ -133,7 +273,8 @@ def update_posterior_policies(
     use_param_info_gain=False,
     pA=None,
     pB=None,
-    E = None,
+    E=None,
+    I=None,
     gamma=16.0
 ):
     """
@@ -173,6 +314,9 @@ def update_posterior_policies(
         Dirichlet parameters over transition model (same shape as ``B``)
     E: 1D ``numpy.ndarray``, optional
         Vector of prior probabilities of each policy (what's referred to in the active inference literature as "habits")
+    I: ``numpy.ndarray`` of dtype object
+        For each state factor, contains a 2D ``numpy.ndarray`` whose element i,j yields the probability 
+        of reaching the goal state backwards from state j after i steps.
     gamma: float, default 16.0
         Prior precision over policies, scales the contribution of the expected free energy to the posterior over policies
 
@@ -208,6 +352,9 @@ def update_posterior_policies(
                 G[idx] += calc_pA_info_gain(pA, qo_pi, qs_pi)
             if pB is not None:
                 G[idx] += calc_pB_info_gain(pB, qs_pi, qs, policy)
+        
+        if I is not None:
+            G[idx] += calc_inductive_cost(qs, qs_pi, I)
 
     q_pi = softmax(G * gamma + lnE)    
 
@@ -226,7 +373,8 @@ def update_posterior_policies_factorized(
     use_param_info_gain=False,
     pA=None,
     pB=None,
-    E = None,
+    E=None,
+    I=None,
     gamma=16.0
 ):
     """
@@ -272,6 +420,9 @@ def update_posterior_policies_factorized(
         Dirichlet parameters over transition model (same shape as ``B``)
     E: 1D ``numpy.ndarray``, optional
         Vector of prior probabilities of each policy (what's referred to in the active inference literature as "habits")
+    I: ``numpy.ndarray`` of dtype object
+        For each state factor, contains a 2D ``numpy.ndarray`` whose element i,j yields the probability 
+        of reaching the goal state backwards from state j after i steps.
     gamma: float, default 16.0
         Prior precision over policies, scales the contribution of the expected free energy to the posterior over policies
 
@@ -307,6 +458,9 @@ def update_posterior_policies_factorized(
                 G[idx] += calc_pA_info_gain_factorized(pA, qo_pi, qs_pi, A_factor_list)
             if pB is not None:
                 G[idx] += calc_pB_info_gain_interactions(pB, qs_pi, qs, B_factor_list, policy)
+        
+        if I is not None:
+            G[idx] += calc_inductive_cost(qs, qs_pi, I)
 
     q_pi = softmax(G * gamma + lnE)    
 
@@ -752,6 +906,49 @@ def calc_pB_info_gain_interactions(pB, qs_pi, qs_prev, B_factor_list, policy):
 
     return pB_infogain
 
+def calc_inductive_cost(qs, qs_pi, I, epsilon=1e-3):
+    """
+    Computes the inductive cost of a state.
+
+    Parameters
+    ----------
+    qs: ``numpy.ndarray`` of dtype object
+        Marginal posterior beliefs over hidden states at a given timepoint.
+    qs_pi: ``list`` of ``numpy.ndarray`` of dtype object
+        Predictive posterior beliefs over hidden states expected under the policy, where ``qs_pi[t]`` stores the beliefs about
+        states expected under the policy at time ``t``
+    I: ``numpy.ndarray`` of dtype object
+        For each state factor, contains a 2D ``numpy.ndarray`` whose element i,j yields the probability 
+        of reaching the goal state backwards from state j after i steps.
+
+    Returns
+    -------
+    inductive_cost: float
+        Cost of visited this state using backwards induction under the policy in question
+    """
+    n_steps = len(qs_pi)
+    
+    # initialise inductive cost
+    inductive_cost = 0
+
+    # loop over time points and modalities
+    num_factors = len(I)
+
+    for t in range(n_steps):
+        for factor in range(num_factors):
+            # we also assume precise beliefs here?!
+            idx = np.argmax(qs[factor])
+            # m = arg max_n p_n < sup p
+            # i.e. find first I idx equals 1 and m is the index before
+            m = np.where(I[factor][:, idx] == 1)[0]
+            # we might find no path to goal (i.e. when no goal specified)
+            if len(m) > 0:
+                m = np.max(m[0]-1, 0)
+                I_m = (1-I[factor][m, :]) * np.log(epsilon)
+                inductive_cost += I_m.dot(qs_pi[t][factor])
+                
+    return inductive_cost
+
 def construct_policies(num_states, num_controls = None, policy_len=1, control_fac_idx=None):
     """
     Generate a ``list`` of policies. The returned array ``policies`` is a ``list`` that stores one policy per entry.
@@ -1056,3 +1253,62 @@ def _select_highest_test(options_array, seed=None):
         return int(same_prob[rng.choice(len(same_prob))])
 
     return int(same_prob[0])
+
+
+def backwards_induction(H, B, B_factor_list, threshold, depth):
+    """
+    Runs backwards induction of reaching a goal state H given a transition model B.
+    
+    Parameters
+    ----------    
+    H: ``numpy.ndarray`` of dtype object
+       Prior over states
+    B: ``numpy.ndarray`` of dtype object
+        Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
+        Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
+        of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
+    B_factor_list: ``list`` of ``list`` of ``int``
+        List of lists of hidden state factors each hidden state factor depends on. Each element ``B_factor_list[i]`` is a list of the factor indices that factor i's dynamics depend on.
+    threshold: ``float``
+        The threshold for pruning transitions that are below a certain probability
+    depth: ``int``
+        The temporal depth of the backward induction
+
+    Returns
+    ----------
+    I: ``numpy.ndarray`` of dtype object
+        For each state factor, contains a 2D ``numpy.ndarray`` whose element i,j yields the probability 
+        of reaching the goal state backwards from state j after i steps.
+    """
+    # TODO can this be done with arbitrary B_factor_list?
+    
+    num_factors = len(H)
+    I = utils.obj_array(num_factors)
+    for factor in range(num_factors):
+        I[factor] = np.zeros((depth, H[factor].shape[0]))
+        I[factor][0, :] = H[factor]
+
+        bf = factor
+        if B_factor_list is not None:
+            if len(B_factor_list[factor]) > 1:
+                raise ValueError("Backwards induction with factorized transition model not yet implemented")
+            bf = B_factor_list[factor][0]
+
+        num_states, _, _ = B[bf].shape
+        b = np.zeros((num_states, num_states))
+        
+        for state in range(num_states):
+            for next_state in range(num_states):
+                # If there exists an action that allows transitioning 
+                # from state to next_state, with probability larger than threshold
+                # set b[state, next_state] to 1
+                if np.any(B[bf][next_state, state, :] > threshold):
+                    b[next_state, state] = 1
+
+        for i in range(1, depth):
+            I[factor][i, :] = np.dot(b, I[factor][i-1, :])
+            I[factor][i, :] = np.where(I[factor][i, :] > 0.1, 1.0, 0.0)
+
+    return I
+    
+

@@ -173,6 +173,42 @@ class TestInference(unittest.TestCase):
         for qs_f_val, qs_f_out in zip(qs_validation, qs_out):
             self.assertTrue(np.isclose(qs_f_val, qs_f_out).all())
     
+    def test_update_posterior_states_factorized_noVFE_compute(self):
+        """
+        Tests the version of `update_posterior_states` where an `mb_dict` is provided as an argument to factorize
+        the fixed-point iteration (FPI) algorithm.
+
+        In this version, we always run the total number of iterations because we don't compute the variational free energy over the course of convergence/optimization.
+        """
+
+        num_states = [3, 4]
+        num_obs = [3, 3, 5]
+
+        prior = utils.random_single_categorical(num_states)
+
+        obs_index_tuple = tuple([np.random.randint(obs_dim) for obs_dim in num_obs])
+
+        mb_dict = {'A_factor_list': [[0], [1], [0, 1]],
+                    'A_modality_list': [[0, 2], [1, 2]]}
+        
+        A_reduced = utils.random_A_matrix(num_obs, num_states, A_factor_list=mb_dict['A_factor_list'])
+
+        qs_out = inference.update_posterior_states_factorized(A_reduced, obs_index_tuple, num_obs, num_states, mb_dict, prior=prior, compute_vfe=False)
+
+        A_full = utils.initialize_empty_A(num_obs, num_states)
+        for m, A_m in enumerate(A_full):
+            other_factors = list(set(range(len(num_states))) - set(mb_dict['A_factor_list'][m])) # list of the factors that modality `m` does not depend on
+
+            # broadcast or tile the reduced A matrix (`A_reduced`) along the dimensions of corresponding to `other_factors`
+            expanded_dims = [num_obs[m]] + [1 if f in other_factors else ns for (f, ns) in enumerate(num_states)]
+            tile_dims = [1] + [ns if f in other_factors else 1 for (f, ns) in enumerate(num_states)]
+            A_full[m] = np.tile(A_reduced[m].reshape(expanded_dims), tile_dims)
+        
+        qs_validation = inference.update_posterior_states(A_full, obs_index_tuple, prior=prior, compute_vfe=False)
+
+        for qs_f_val, qs_f_out in zip(qs_validation, qs_out):
+            self.assertTrue(np.isclose(qs_f_val, qs_f_out).all())
+    
 
 if __name__ == "__main__":
     unittest.main()

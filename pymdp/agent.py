@@ -36,10 +36,11 @@ class Agent(object):
         B,
         C=None,
         D=None,
-        E = None,
+        E=None,
+        H=None,
         pA=None,
-        pB = None,
-        pD = None,
+        pB=None,
+        pD=None,
         num_controls=None,
         policy_len=1,
         inference_horizon=1,
@@ -60,10 +61,10 @@ class Agent(object):
         lr_pB=1.0,
         lr_pD=1.0,
         use_BMA = True,
-        policy_sep_prior = False,
-        save_belief_hist = False,
-        A_factor_list = None,
-        B_factor_list = None
+        policy_sep_prior=False,
+        save_belief_hist=False,
+        A_factor_list=None,
+        B_factor_list=None
     ):
 
         ### Constant parameters ###
@@ -248,6 +249,12 @@ class Agent(object):
         else:
             self.E = self._construct_E_prior()
         
+        # Construct I for backwards induction (if H specified)
+        if H is not None:
+            self.I = control.backwards_induction(H, B, B_factor_list, threshold=1/16, depth=5)
+        else:
+            self.I = None
+
         self.edge_handling_params = {}
         self.edge_handling_params['use_BMA'] = use_BMA # creates a 'D-like' moving prior
         self.edge_handling_params['policy_sep_prior'] = policy_sep_prior # carries forward last timesteps posterior, in a policy-conditioned way
@@ -500,9 +507,11 @@ class Agent(object):
                 latest_obs = self.prev_obs
                 latest_actions = self.prev_actions
 
-            qs, F = inference.update_posterior_states_full(
+            qs, F = inference.update_posterior_states_full_factorized(
                 self.A,
+                self.mb_dict,
                 self.B,
+                self.B_factor_list,
                 latest_obs,
                 self.policies, 
                 latest_actions, 
@@ -575,7 +584,7 @@ class Agent(object):
         else:
             return qs
 
-    def infer_policies(self):
+    def infer_policies_old(self):
         """
         Perform policy inference by optimizing a posterior (categorical) distribution over policies.
         This distribution is computed as the softmax of ``G * gamma + lnE`` where ``G`` is the negative expected
@@ -602,8 +611,9 @@ class Agent(object):
                 self.use_param_info_gain,
                 self.pA,
                 self.pB,
-                E = self.E,
-                gamma = self.gamma
+                E=self.E,
+                I=self.I,
+                gamma=self.gamma
             )
         elif self.inference_algo == "MMP":
 
@@ -623,6 +633,7 @@ class Agent(object):
                 self.pB,
                 F = self.F,
                 E = self.E,
+                I=self.I,
                 gamma = self.gamma
             )
 
@@ -635,7 +646,7 @@ class Agent(object):
         self.G = G
         return q_pi, G
     
-    def infer_policies_factorized(self):
+    def infer_policies(self):
         """
         Perform policy inference by optimizing a posterior (categorical) distribution over policies.
         This distribution is computed as the softmax of ``G * gamma + lnE`` where ``G`` is the negative expected
@@ -666,30 +677,33 @@ class Agent(object):
                 self.use_param_info_gain,
                 self.pA,
                 self.pB,
-                E = self.E,
-                gamma = self.gamma
+                E=self.E,
+                I=self.I,
+                gamma=self.gamma
             )
         elif self.inference_algo == "MMP":
-            Raise(NotImplementedError("Factorized inference not implemented for MMP"))
 
-        #     future_qs_seq = self.get_future_qs()
+            future_qs_seq = self.get_future_qs()
 
-        #     q_pi, G = control.update_posterior_policies_full(
-        #         future_qs_seq,
-        #         self.A,
-        #         self.B,
-        #         self.C,
-        #         self.policies,
-        #         self.use_utility,
-        #         self.use_states_info_gain,
-        #         self.use_param_info_gain,
-        #         self.latest_belief,
-        #         self.pA,
-        #         self.pB,
-        #         F = self.F,
-        #         E = self.E,
-        #         gamma = self.gamma
-        #     )
+            q_pi, G = control.update_posterior_policies_full_factorized(
+                future_qs_seq,
+                self.A,
+                self.B,
+                self.C,
+                self.A_factor_list,
+                self.B_factor_list,
+                self.policies,
+                self.use_utility,
+                self.use_states_info_gain,
+                self.use_param_info_gain,
+                self.latest_belief,
+                self.pA,
+                self.pB,
+                F=self.F,
+                E=self.E,
+                I=self.I,
+                gamma=self.gamma
+            )
 
         if hasattr(self, "q_pi_hist"):
             self.q_pi_hist.append(q_pi)
@@ -932,7 +946,7 @@ class Agent(object):
         method = self.inference_algo
         default_params = None
         if method == "VANILLA":
-            default_params = {"num_iter": 10, "dF": 1.0, "dF_tol": 0.001}
+            default_params = {"num_iter": 10, "dF": 1.0, "dF_tol": 0.001, "compute_vfe": True}
         elif method == "MMP":
             default_params = {"num_iter": 10, "grad_descent": True, "tau": 0.25}
         elif method == "VMP":
