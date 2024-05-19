@@ -69,18 +69,18 @@ class TestDemos(unittest.TestCase):
 
         '''test plotting of the observation likelihood (just plot one slice)'''
         A_gp = env.get_likelihood_dist()
-        plot_likelihood(A_gp[1][:,:,0],'Reward Right')
+        # plot_likelihood(A_gp[1][:,:,0],'Reward Right')
 
         '''test plotting of the transition likelihood (just plot one slice)'''
         B_gp = env.get_transition_dist()
-        plot_likelihood(B_gp[1][:,:,0],'Reward Condition Transitions')
+        # plot_likelihood(B_gp[1][:,:,0],'Reward Condition Transitions')
 
         A_gm = copy.deepcopy(A_gp) # make a copy of the true observation likelihood to initialize the observation model
         B_gm = copy.deepcopy(B_gp)# make a copy of the true transition likelihood to initialize the transition model
         
         control_fac_idx = [0]
         agent = Agent(A=A_gm, B=B_gm, control_fac_idx=control_fac_idx)
-        plot_beliefs(agent.D[0],"Beliefs about initial location")
+        # plot_beliefs(agent.D[0],"Beliefs about initial location")
 
         agent.C[1][1] = 3.0 # they like reward
         agent.C[1][2] = -3.0 # they don't like loss
@@ -115,7 +115,7 @@ class TestDemos(unittest.TestCase):
                     self.assertEqual(obs[2], 1) # this tests that the cue observation is 'Cue Left' in case of 'Reward on Left' condition
 
             
-        plot_beliefs(qx[1],"Final posterior beliefs about reward condition")
+        # plot_beliefs(qx[1],"Final posterior beliefs about reward condition")
     
     def test_tmaze_learning_demo(self):
         """
@@ -206,7 +206,7 @@ class TestDemos(unittest.TestCase):
 
         labels = [state_mapping[i] for i in range(A.shape[1])]
 
-        plot_likelihood(A)
+        # plot_likelihood(A)
 
         P = {}
         dim = 3
@@ -240,18 +240,18 @@ class TestDemos(unittest.TestCase):
         
         self.assertTrue(B.shape[0] == 9)
 
-        fig, axes = plt.subplots(2,3, figsize = (15,8))
-        a = list(actions.keys())
-        count = 0
-        for i in range(dim-1):
-            for j in range(dim):
-                if count >= 5:
-                    break 
-                g = sns.heatmap(B[:,:,count], cmap = "OrRd", linewidth = 2.5, cbar = False, ax = axes[i,j], xticklabels=labels, yticklabels=labels)
-                g.set_title(a[count])
-                count +=1 
-        fig.delaxes(axes.flatten()[5])
-        plt.tight_layout()
+        # fig, axes = plt.subplots(2,3, figsize = (15,8))
+        # a = list(actions.keys())
+        # count = 0
+        # for i in range(dim-1):
+        #     for j in range(dim):
+        #         if count >= 5:
+        #             break 
+        #         g = sns.heatmap(B[:,:,count], cmap = "OrRd", linewidth = 2.5, cbar = False, ax = axes[i,j], xticklabels=labels, yticklabels=labels)
+        #         g.set_title(a[count])
+        #         count +=1 
+        # fig.delaxes(axes.flatten()[5])
+        # plt.tight_layout()
     
     def test_gridworld_activeinference(self):
         """
@@ -266,38 +266,38 @@ class TestDemos(unittest.TestCase):
        
         labels = [state_mapping[i] for i in range(A.shape[1])]
        
-        def plot_empirical_prior(B):
-            fig, axes = plt.subplots(3,2, figsize=(8, 10))
-            actions = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'STAY']
-            count = 0
-            for i in range(3):
-                for j in range(2):
-                    if count >= 5:
-                        break
+        # def plot_empirical_prior(B):
+        #     fig, axes = plt.subplots(3,2, figsize=(8, 10))
+        #     actions = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'STAY']
+        #     count = 0
+        #     for i in range(3):
+        #         for j in range(2):
+        #             if count >= 5:
+        #                 break
                         
-                    g = sns.heatmap(B[:,:,count], cmap="OrRd", linewidth=2.5, cbar=False, ax=axes[i,j])
+        #             g = sns.heatmap(B[:,:,count], cmap="OrRd", linewidth=2.5, cbar=False, ax=axes[i,j])
 
-                    g.set_title(actions[count])
-                    count += 1
-            fig.delaxes(axes.flatten()[5])
-            plt.tight_layout()
+        #             g.set_title(actions[count])
+        #             count += 1
+        #     fig.delaxes(axes.flatten()[5])
+        #     plt.tight_layout()
             
-        def plot_transition(B):
-            fig, axes = plt.subplots(2,3, figsize = (15,8))
-            a = list(actions.keys())
-            count = 0
-            for i in range(dim-1):
-                for j in range(dim):
-                    if count >= 5:
-                        break 
-                    g = sns.heatmap(B[:,:,count], cmap = "OrRd", linewidth = 2.5, cbar = False, ax = axes[i,j], xticklabels=labels, yticklabels=labels)
-                    g.set_title(a[count])
-                    count +=1 
-            fig.delaxes(axes.flatten()[5])
-            plt.tight_layout()
+        # def plot_transition(B):
+        #     fig, axes = plt.subplots(2,3, figsize = (15,8))
+        #     a = list(actions.keys())
+        #     count = 0
+        #     for i in range(dim-1):
+        #         for j in range(dim):
+        #             if count >= 5:
+        #                 break 
+        #             g = sns.heatmap(B[:,:,count], cmap = "OrRd", linewidth = 2.5, cbar = False, ax = axes[i,j], xticklabels=labels, yticklabels=labels)
+        #             g.set_title(a[count])
+        #             count +=1 
+        #     fig.delaxes(axes.flatten()[5])
+        #     plt.tight_layout()
         
         A = np.eye(9)
-        plot_likelihood(A)
+        # plot_likelihood(A)
 
         P = {}
         dim = 3
@@ -330,7 +330,7 @@ class TestDemos(unittest.TestCase):
                 ns = int(P[s][a])
                 B[ns, s, a] = 1
 
-        plot_transition(B)
+        # plot_transition(B)
         
         class GridWorldEnv():
     
@@ -362,18 +362,18 @@ class TestDemos(unittest.TestCase):
         def softmax(x):
             return np.exp(x) / np.sum(np.exp(x))
 
-        def perform_inference(likelihood, prior):
-            return softmax(log_stable(likelihood) + log_stable(prior))
+        # def perform_inference(likelihood, prior):
+        #     return softmax(log_stable(likelihood) + log_stable(prior))
         
         Qs = np.ones(9) * 1/9
-        plot_beliefs(Qs)
+        # plot_beliefs(Qs)
 
         REWARD_LOCATION = 7
         reward_state = state_mapping[REWARD_LOCATION]
 
         C = np.zeros(num_states)
         C[REWARD_LOCATION] = 1. 
-        plot_beliefs(C)
+        # plot_beliefs(C)
 
         def evaluate_policy(policy, Qs, A, B, C):
             # initialize expected free energy at 0
@@ -466,7 +466,7 @@ class TestDemos(unittest.TestCase):
 
             Qs = maths.softmax(log_stable(likelihood) + log_stable(prior))
             
-            plot_beliefs(Qs, "Beliefs (Qs) at time {}".format(t))
+            # plot_beliefs(Qs, "Beliefs (Qs) at time {}".format(t))
 
         # self.assertEqual(np.argmax(Qs), REWARD_LOCATION) # @NOTE: This is not always true due to stochastic samplign!!!
         self.assertEqual(Qs.shape[0], B.shape[0])
