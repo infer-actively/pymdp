@@ -274,8 +274,8 @@ def calc_pB_info_gain(pB, qs_t, qs_t_minus_1, B_dependencies, u_t_minus_1):
         Predictive posterior beliefs over hidden states expected under the policy at time ``t``
     qs_t_minus_1: ``list`` of ``Array`` of dtype object
         Posterior over hidden states at time ``t-1`` (before receiving observations)
-    u_t: "Array"
-        Actions in time step t-1
+    u_t_minus_1: "Array"
+        Actions in time step t-1 for each factor
 
     Returns
     -------
