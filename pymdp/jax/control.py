@@ -254,63 +254,41 @@ def calc_pA_info_gain(pA, qo, qs, A_dependencies):
         Surprise (about Dirichlet parameters) expected for the pair of posterior predictive distributions ``qo`` and ``qs``
     """
 
-    wA = jtu.tree_map(spm_wnorm, pA)    
-    wA_per_modality = jtu.tree_map(lambda wa, pa: wa * (pa > 0.), wA, pA)
+    wA = lambda pa: spm_wnorm(pa) * (pa > 0.)
     fd = lambda x, i: factor_dot(x, [s for f, s in enumerate(qs) if f in A_dependencies[i]], keep_dims=(0,))[..., None]
-    pA_infogain_per_modality = jtu.tree_map(lambda wa, qo, m: qo.dot(fd(wa, m)), wA_per_modality, qo, list(range(len(qo))))
+    pA_infogain_per_modality = jtu.tree_map(
+        lambda pa, qo, m: qo.dot(fd( wA(pa), m)), pA, qo, list(range(len(qo)))
+    )
     infogain_pA = jtu.tree_reduce(lambda x, y: x + y, pA_infogain_per_modality)[0]
     return infogain_pA
 
-def calc_pB_info_gain(pB, qs_t, qs_t_minus_1, B_dependencies):
-    """ Placeholder, not implemented yet """
-    # """
-    # Compute expected Dirichlet information gain about parameters ``pB`` under a given policy
+def calc_pB_info_gain(pB, qs_t, qs_t_minus_1, B_dependencies, u_t_minus_1):
+    """
+    Compute expected Dirichlet information gain about parameters ``pB`` under a given policy
 
-    # Parameters
-    # ----------
-    # pB: ``numpy.ndarray`` of dtype object
-    #     Dirichlet parameters over transition model (same shape as ``B``)
-    # qs_pi: ``list`` of ``numpy.ndarray`` of dtype object
-    #     Predictive posterior beliefs over hidden states expected under the policy, where ``qs_pi[t]`` stores the beliefs about
-    #     hidden states expected under the policy at time ``t``
-    # qs_prev: ``numpy.ndarray`` of dtype object
-    #     Posterior over hidden states at beginning of trajectory (before receiving observations)
-    # policy: 2D ``numpy.ndarray``
-    #     Array that stores actions entailed by a policy over time. Shape is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
-    #     depth of the policy and ``num_factors`` is the number of control factors.
+    Parameters
+    ----------
+    pB: ``Array`` of dtype object
+        Dirichlet parameters over transition model (same shape as ``B``)
+    qs_t: ``list`` of ``Array`` of dtype object
+        Predictive posterior beliefs over hidden states expected under the policy at time ``t``
+    qs_t_minus_1: ``list`` of ``Array`` of dtype object
+        Posterior over hidden states at time ``t-1`` (before receiving observations)
+    u_t: "Array"
+        Actions in time step t-1
+
+    Returns
+    -------
+    infogain_pB: float
+        Surprise (about Dirichlet parameters) expected under the policy in question
+    """
     
-    # Returns
-    # -------
-    # infogain_pB: float
-    #     Surprise (about dirichlet parameters) expected under the policy in question
-    # """
-
-    # n_steps = len(qs_pi)
-
-    # num_factors = len(pB)
-    # wB = utils.obj_array(num_factors)
-    # for factor, pB_f in enumerate(pB):
-    #     wB[factor] = spm_wnorm(pB_f)
-
-    # pB_infogain = 0
-
-    # for t in range(n_steps):
-    #     # the 'past posterior' used for the information gain about pB here is the posterior
-    #     # over expected states at the timestep previous to the one under consideration
-    #     # if we're on the first timestep, we just use the latest posterior in the
-    #     # entire action-perception cycle as the previous posterior
-    #     if t == 0:
-    #         previous_qs = qs_prev
-    #     # otherwise, we use the expected states for the timestep previous to the timestep under consideration
-    #     else:
-    #         previous_qs = qs_pi[t - 1]
-
-    #     # get the list of action-indices for the current timestep
-    #     policy_t = policy[t, :]
-    #     for factor, a_i in enumerate(policy_t):
-    #         wB_factor_t = wB[factor][:, :, int(a_i)] * (pB[factor][:, :, int(a_i)] > 0).astype("float")
-    #         pB_infogain -= qs_pi[t][factor].dot(wB_factor_t.dot(previous_qs[factor]))
-    return 0.
+    wB = lambda pb:  spm_wnorm(pb) * (pb > 0.)
+    fd = lambda x, i: factor_dot(x, [s for f, s in enumerate(qs_t_minus_1) if f in B_dependencies[i]], keep_dims=(0,))[..., None]
+    
+    pB_infogain_per_factor = jtu.tree_map(lambda pb, qs, f: qs.dot(fd(wB(pb[..., u_t_minus_1[f]]), f)), pB, qs_t, list(range(len(qs_t))))
+    infogain_pB = jtu.tree_reduce(lambda x, y: x + y, pB_infogain_per_factor)[0]
+    return infogain_pB
 
 def compute_G_policy(qs_init, A, B, C, pA, pB, A_dependencies, B_dependencies, policy_i, use_utility=True, use_states_info_gain=True, use_param_info_gain=False):
     """ Write a version of compute_G_policy that does the same computations as `compute_G_policy` but using `lax.scan` instead of a for loop. """
@@ -328,7 +306,7 @@ def compute_G_policy(qs_init, A, B, C, pA, pB, A_dependencies, B_dependencies, p
         utility = compute_expected_utility(qo, C) if use_utility else 0.
 
         param_info_gain = calc_pA_info_gain(pA, qo, qs_next) if use_param_info_gain else 0.
-        param_info_gain += calc_pB_info_gain(pB, qs_next, qs) if use_param_info_gain else 0.
+        param_info_gain += calc_pB_info_gain(pB, qs_next, qs, policy_i[t]) if use_param_info_gain else 0.
 
         neg_G += info_gain + utility + param_info_gain
 
@@ -361,16 +339,16 @@ def compute_G_policy_inductive(qs_init, A, B, C, pA, pB, A_dependencies, B_depen
         inductive_value = calc_inductive_value_t(qs_init, qs_next, I, epsilon=inductive_epsilon) if use_inductive else 0.
 
         param_info_gain = calc_pA_info_gain(pA, qo, qs_next, A_dependencies) if use_param_info_gain else 0.
-        param_info_gain += calc_pB_info_gain(pB, qs_next, qs, B_dependencies) if use_param_info_gain else 0.
+        param_info_gain += calc_pB_info_gain(pB, qs_next, qs, B_dependencies, policy_i[t]) if use_param_info_gain else 0.
 
-        neg_G += info_gain + utility + param_info_gain + inductive_value
+        neg_G += info_gain + utility - param_info_gain + inductive_value
 
         return (qs_next, neg_G), None
 
     qs = qs_init
     neg_G = 0.
     final_state, _ = lax.scan(scan_body, (qs, neg_G), jnp.arange(policy_i.shape[0]))
-    qs_final, neg_G = final_state
+    _, neg_G = final_state
     return neg_G
 
 def update_posterior_policies_inductive(policy_matrix, qs_init, A, B, C, E, pA, pB, A_dependencies, B_dependencies, I, gamma=16.0, inductive_epsilon=1e-3, use_utility=True, use_states_info_gain=True, use_param_info_gain=False, use_inductive=True):
