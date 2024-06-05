@@ -8,7 +8,7 @@ from opt_einsum import contract
 MINVAL = jnp.finfo(float).eps
 
 def log_stable(x):
-    return jnp.log(jnp.clip(x, a_min=MINVAL))
+    return jnp.log(jnp.clip(x, min=MINVAL))
 
 @partial(jit, static_argnames=['keep_dims'])
 def factor_dot(M, xs, keep_dims: Optional[Tuple[int]] = None):
