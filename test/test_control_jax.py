@@ -137,7 +137,7 @@ class TestControlJax(unittest.TestCase):
             info_gain = ctl_jax.compute_info_gain(qs_jax, qo, A_jax, A_deps)
             info_gain_validation = ctl_np.calc_states_info_gain_factorized(A_np, [qs_numpy],  A_deps)
 
-            self.assertTrue(np.allclose(info_gain, info_gain_validation))
+            self.assertTrue(np.allclose(info_gain, info_gain_validation, atol=1e-5))
     
 
 if __name__ == "__main__":

@@ -205,12 +205,9 @@ def spm_cross(x, y=None, *args):
     if y is not None and utils.is_obj_array(y):
         y = spm_cross(*list(y))
 
-    reshape_dims = tuple(list(x.shape) + list(np.ones(y.ndim, dtype=int)))
-    A = x.reshape(reshape_dims)
-
-    reshape_dims = tuple(list(np.ones(x.ndim, dtype=int)) + list(y.shape))
-    B = y.reshape(reshape_dims)
-    z = np.squeeze(A * B)
+    A = np.expand_dims(x, tuple(range(-y.ndim, 0)))
+    B = np.expand_dims(y, tuple(range(x.ndim)))
+    z = A * B
 
     for x in args:
         z = spm_cross(z, x)
@@ -534,7 +531,7 @@ def spm_MDP_G(A, x):
             for modality_idx, A_m in enumerate(A):
                 index_vector = [slice(0, A_m.shape[0])] + list(i)
                 po = spm_cross(po, A_m[tuple(index_vector)])
-
+            
             po = po.ravel()
             qo += qx[tuple(i)] * po
             G += qx[tuple(i)] * po.dot(np.log(po + np.exp(-16)))
