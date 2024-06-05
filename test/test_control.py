@@ -116,7 +116,7 @@ class TestControl(unittest.TestCase):
 
         qs_pi_0 = control.get_expected_states_interactions(qs, B, B_factor_list, policies[0])
 
-        self.assertTrue((qs_pi_0[0][0] == B[0][:,:,policies[0][0,0]].dot(qs[0])).all())
+        self.assertTrue(np.allclose(qs_pi_0[0][0], B[0][:,:,policies[0][0,0]].dot(qs[0])))
 
     def test_get_expected_states_interactions_multi_factor(self):
         """
@@ -136,7 +136,7 @@ class TestControl(unittest.TestCase):
 
         qs_pi_0 = control.get_expected_states_interactions(qs, B, B_factor_list, policies[0])
 
-        self.assertTrue((qs_pi_0[0][0] == B[0][:,:,policies[0][0,0]].dot(qs[0])).all())
+        self.assertTrue(np.allclose(qs_pi_0[0][0], B[0][:,:,policies[0][0,0]].dot(qs[0])))
 
         qs_next_validation = (B[1][..., policies[0][0,1]] * maths.spm_cross(qs)[None,...]).sum(axis=(1,2)) # how to compute equivalent of `spm_dot(B[...,past_action], qs)`
         self.assertTrue(np.allclose(qs_pi_0[0][1], qs_next_validation))
