@@ -604,7 +604,7 @@ class TestControl(unittest.TestCase):
         for idx, policy in enumerate(policies):
             qs_pi = control.get_expected_states(qs, B, policy)
             qo_pi = control.get_expected_obs(qs_pi, A)
-            pA_info_gains[idx] += control.calc_pA_info_gain(pA, qo_pi, qs_pi)
+            pA_info_gains[idx] += control.calc_pA_info_gain(pA, qo_pi, qs_pi).item()
 
         self.assertGreater(pA_info_gains[1], pA_info_gains[0])
 
@@ -613,7 +613,7 @@ class TestControl(unittest.TestCase):
         for idx, policy in enumerate(policies):
             qs_pi = control.get_expected_states(qs, B, policy)
             qo_pi = control.get_expected_obs_factorized(qs_pi, A, A_factor_list=[[0]])
-            pA_info_gains_fac[idx] += control.calc_pA_info_gain_factorized(pA, qo_pi, qs_pi, A_factor_list=[[0]])
+            pA_info_gains_fac[idx] += control.calc_pA_info_gain_factorized(pA, qo_pi, qs_pi, A_factor_list=[[0]]).item()
 
         self.assertTrue(np.allclose(pA_info_gains_fac,  pA_info_gains))  
     
@@ -707,7 +707,7 @@ class TestControl(unittest.TestCase):
             qo_pi = control.get_expected_obs(qs_pi, A)
 
             lnC = maths.spm_log_single(maths.softmax(C[modality_idx][:, np.newaxis]))
-            efe_valid[idx] += qo_pi[t_idx][modality_idx].dot(lnC)
+            efe_valid[idx] += qo_pi[t_idx][modality_idx].dot(lnC).item()
         
         q_pi_valid = maths.softmax(efe_valid * 16.0)
 
@@ -755,7 +755,7 @@ class TestControl(unittest.TestCase):
 
             for modality_idx in range(len(A)):
                 lnC = maths.spm_log_single(maths.softmax(C[modality_idx][:, np.newaxis]))
-                efe_valid[idx] += qo_pi[t_idx][modality_idx].dot(lnC)
+                efe_valid[idx] += qo_pi[t_idx][modality_idx].dot(lnC).item()
         
         q_pi_valid = maths.softmax(efe_valid * 16.0)
 
@@ -802,7 +802,7 @@ class TestControl(unittest.TestCase):
             for t_idx in range(3):
                 for modality_idx in range(len(A)):
                     lnC = maths.spm_log_single(maths.softmax(C[modality_idx][:, np.newaxis]))
-                    efe_valid[idx] += qo_pi[t_idx][modality_idx].dot(lnC)
+                    efe_valid[idx] += qo_pi[t_idx][modality_idx].dot(lnC).item()
         
         q_pi_valid = maths.softmax(efe_valid * 16.0)
 
@@ -855,7 +855,7 @@ class TestControl(unittest.TestCase):
             for t_idx in range(3):
                 for modality_idx in range(len(A)):
                     lnC = maths.spm_log_single(maths.softmax(C[modality_idx][:, np.newaxis]))
-                    efe_valid[idx] += qo_pi[t_idx][modality_idx].dot(lnC)
+                    efe_valid[idx] += qo_pi[t_idx][modality_idx].dot(lnC).item()
 
         q_pi_valid = maths.softmax(efe_valid * 16.0)
 
@@ -905,7 +905,7 @@ class TestControl(unittest.TestCase):
             for t_idx in range(3):
                 for modality_idx in range(len(A)):
                     lnC = maths.spm_log_single(maths.softmax(C[modality_idx][:, t_idx]))
-                    efe_valid[idx] += qo_pi[t_idx][modality_idx].dot(lnC)
+                    efe_valid[idx] += qo_pi[t_idx][modality_idx].dot(lnC).item()
 
         q_pi_valid = maths.softmax(efe_valid * 16.0)
 
@@ -958,7 +958,7 @@ class TestControl(unittest.TestCase):
                         lnC = maths.spm_log_single(maths.softmax(C[modality_idx][:, t_idx]))
                     elif modality_idx == 1:
                         lnC = maths.spm_log_single(maths.softmax(C[modality_idx][:, np.newaxis]))
-                    efe_valid[idx] += qo_pi[t_idx][modality_idx].dot(lnC)
+                    efe_valid[idx] += qo_pi[t_idx][modality_idx].dot(lnC).item()
         
         q_pi_valid = maths.softmax(efe_valid * 16.0)
 
@@ -1143,7 +1143,7 @@ class TestControl(unittest.TestCase):
             qs_pi = control.get_expected_states(qs, B, policy)
             qo_pi = control.get_expected_obs(qs_pi, A)
             
-            efe_valid[idx] += control.calc_pA_info_gain(pA, qo_pi, qs_pi)
+            efe_valid[idx] += control.calc_pA_info_gain(pA, qo_pi, qs_pi).item()
         
         q_pi_valid = maths.softmax(efe_valid * 16.0)
 
@@ -1188,7 +1188,7 @@ class TestControl(unittest.TestCase):
             qs_pi = control.get_expected_states(qs, B, policy)
             qo_pi = control.get_expected_obs(qs_pi, A)
             
-            efe_valid[idx] += control.calc_pA_info_gain(pA, qo_pi, qs_pi)
+            efe_valid[idx] += control.calc_pA_info_gain(pA, qo_pi, qs_pi).item()
         
         q_pi_valid = maths.softmax(efe_valid * 16.0)
 
@@ -1231,7 +1231,7 @@ class TestControl(unittest.TestCase):
             qs_pi = control.get_expected_states(qs, B, policy)
             qo_pi = control.get_expected_obs(qs_pi, A)
 
-            efe_valid[idx] += control.calc_pA_info_gain(pA, qo_pi, qs_pi)
+            efe_valid[idx] += control.calc_pA_info_gain(pA, qo_pi, qs_pi).item()
     
         q_pi_valid = maths.softmax(efe_valid * 16.0)
 

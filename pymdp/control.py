@@ -349,9 +349,9 @@ def update_posterior_policies(
 
         if use_param_info_gain:
             if pA is not None:
-                G[idx] += calc_pA_info_gain(pA, qo_pi, qs_pi)
+                G[idx] += calc_pA_info_gain(pA, qo_pi, qs_pi).item()
             if pB is not None:
-                G[idx] += calc_pB_info_gain(pB, qs_pi, qs, policy)
+                G[idx] += calc_pB_info_gain(pB, qs_pi, qs, policy).item()
         
         if I is not None:
             G[idx] += calc_inductive_cost(qs, qs_pi, I)
@@ -455,9 +455,9 @@ def update_posterior_policies_factorized(
 
         if use_param_info_gain:
             if pA is not None:
-                G[idx] += calc_pA_info_gain_factorized(pA, qo_pi, qs_pi, A_factor_list)
+                G[idx] += calc_pA_info_gain_factorized(pA, qo_pi, qs_pi, A_factor_list).item()
             if pB is not None:
-                G[idx] += calc_pB_info_gain_interactions(pB, qs_pi, qs, B_factor_list, policy)
+                G[idx] += calc_pB_info_gain_interactions(pB, qs_pi, qs, B_factor_list, policy).item()
         
         if I is not None:
             G[idx] += calc_inductive_cost(qs, qs_pi, I)

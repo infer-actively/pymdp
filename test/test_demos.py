@@ -383,7 +383,7 @@ class TestDemos(unittest.TestCase):
             for t in range(len(policy)):
 
                 # get action entailed by the policy at timestep `t`
-                u = int(policy[t])
+                u = int(policy[t].item())
 
                 # work out expected state, given the action
                 Qs_pi = B[:,:,u].dot(Qs)
@@ -424,7 +424,7 @@ class TestDemos(unittest.TestCase):
             # sum probabilites of control states or actions 
             for i, policy in enumerate(policies):
                 # control state specified by policy
-                u = int(policy[0])
+                u = int(policy[0].item())
                 # add probability of policy
                 Qu[u] += Q_pi[i]
 
