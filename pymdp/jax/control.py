@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 from typing import List, Tuple, Optional
 from functools import partial
+from jax.scipy.special import xlogy
 from jax import lax, jit, vmap, nn
 from jax import random as jr
 from itertools import chain
@@ -202,8 +203,10 @@ def compute_info_gain(qs, qo, A, A_dependencies):
     """
 
     def compute_info_gain_for_modality(qo_m, A_m, m):
-        H_qo = - (qo_m * log_stable(qo_m)).sum()
-        H_A_m = - (A_m * log_stable(A_m)).sum(0)
+        H_qo = - xlogy(qo_m, qo_m).sum()
+        # H_qo = - (qo_m * log_stable(qo_m)).sum()
+        H_A_m = - xlogy(A_m, A_m).sum(0)
+        # H_A_m = - (A_m * log_stable(A_m)).sum(0)
         deps = A_dependencies[m]
         relevant_factors = [qs[idx] for idx in deps]
         qs_H_A_m = factor_dot(H_A_m, relevant_factors)
