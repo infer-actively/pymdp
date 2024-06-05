@@ -78,7 +78,8 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
     if action_selection == 'deterministic':
         selected_policy = jtu.tree_map(lambda x: jnp.argmax(x, -1), marginal)
     elif action_selection == 'stochastic':
-        selected_policy = jtu.tree_map(lambda x: jr.categorical(rng_key, nn.softmax(alpha * log_stable(x))), marginal)
+        logits = lambda x: alpha * log_stable(x)
+        selected_policy = jtu.tree_map(lambda x: jr.categorical(rng_key, logits(x)), marginal)
     else:
         raise NotImplementedError
 
@@ -89,8 +90,8 @@ def sample_policy(q_pi, policies, num_controls, action_selection="deterministic"
     if action_selection == "deterministic":
         policy_idx = jnp.argmax(q_pi)
     elif action_selection == "stochastic":
-        p_policies = nn.softmax(log_stable(q_pi) * alpha)
-        policy_idx = jr.categorical(rng_key, p_policies)
+        log_p_policies = log_stable(q_pi) * alpha
+        policy_idx = jr.categorical(rng_key, log_p_policies)
 
     selected_multiaction = policies[policy_idx, 0]
     return selected_multiaction
