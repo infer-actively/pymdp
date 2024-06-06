@@ -249,7 +249,53 @@ class TestLearning(unittest.TestCase):
             pA, A, observation_onehot, qs, lr=l_rate, modalities=modalities_to_update)
         
         self.assertTrue(np.allclose(pA_updated_1[0], pA_updated_2[0]))
+    
+    def test_update_pA_factorized(self):
+        """
+        Test for `learning.update_obs_likelihood_dirichlet_factorized`, which is the learning function updating prior Dirichlet parameters over the sensory likelihood (pA) 
+        in the case that the generative model is sparse and only some modalities depend on some hidden state factors
+        """
 
+        """ Test version with sparse conditional dependency graph (taking advantage of `A_factor_list` argument) """
+        num_states = [2, 6, 5]
+        num_obs = [3, 4, 5]
+        A_factor_list = [[0], [1, 2], [0, 2]]
+
+        qs = utils.random_single_categorical(num_states)
+        A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+        pA = utils.dirichlet_like(A, scale=1.0)
+        observation = [np.random.randint(obs_dim) for obs_dim in num_obs]
+        pA_updated_test = learning.update_obs_likelihood_dirichlet_factorized(
+            pA, A, observation, qs, A_factor_list
+            )
+
+        for modality, obs_dim in enumerate(num_obs):
+            update = maths.spm_cross(utils.onehot(observation[modality], obs_dim), qs[A_factor_list[modality]])
+            pA_updated_valid_m = pA[modality] +  update
+            self.assertTrue(np.allclose(pA_updated_test[modality], pA_updated_valid_m))
+
+        """ Test version with full conditional dependency graph (not taking advantage of `A_factor_list` argument, but including it anyway) """
+        num_states = [2, 6, 5]
+        num_obs = [3, 4, 5]
+        A_factor_list = len(num_obs) * [[0, 1, 2]]
+        qs = utils.random_single_categorical(num_states)
+        A = utils.random_A_matrix(num_obs, num_states)
+
+        modalities_to_update = [0, 2]
+        learning_rate = np.random.rand() # sample some positive learning rate
+
+        pA = utils.dirichlet_like(A, scale=1.0)
+        observation = [np.random.randint(obs_dim) for obs_dim in num_obs]
+        pA_updated_test = learning.update_obs_likelihood_dirichlet_factorized(
+            pA, A, observation, qs, A_factor_list, lr=learning_rate, modalities=modalities_to_update
+            )
+
+        pA_updated_valid = learning.update_obs_likelihood_dirichlet(
+            pA, A, observation, qs, lr=learning_rate, modalities=modalities_to_update
+            )
+
+        for modality, obs_dim in enumerate(num_obs):
+            self.assertTrue(np.allclose(pA_updated_test[modality], pA_updated_valid[modality]))
 
     def test_update_pB_single_factor_no_actions(self):
         """
@@ -552,6 +598,70 @@ class TestLearning(unittest.TestCase):
                 )
             self.assertTrue(np.all(pB_updated[factor] == validation_pB[factor]))
     
+    def test_update_pB_interactions(self):
+        """
+        Test for `learning.update_state_likelihood_dirichlet_factorized`, which is the learning function updating prior Dirichlet parameters over the transition likelihood (pB) 
+        in the case that there are allowable interactions between hidden state factors, i.e. the dynamics of factor `f` may depend on more than just its control factor and its own state.
+        """
+
+        """ Test version with interactions """
+        num_states = [3, 4, 5]
+        num_controls = [2, 1, 1]
+        B_factor_list= [[0, 1], [0,1,2], [1, 2]]
+        factors_to_update = [0, 1]
+
+        qs_prev = utils.random_single_categorical(num_states)
+        qs = utils.random_single_categorical(num_states)
+
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list)
+        pB = utils.dirichlet_like(B, scale=1.)
+        l_rate = np.random.rand() # sample some positive learning rate
+
+        action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
+
+        pB_updated_test = learning.update_state_likelihood_dirichlet_interactions(
+            pB, B, action, qs, qs_prev, B_factor_list, lr=l_rate, factors=factors_to_update
+        )
+
+        pB_updated_valid = utils.dirichlet_like(B, scale=1.)
+
+        for factor, action_i in enumerate(action):
+            
+            if factor in factors_to_update:
+                pB_updated_valid[factor][...,action_i] += (
+                    l_rate
+                    * maths.spm_cross(qs[factor], qs_prev[B_factor_list[factor]])
+                    * (B[factor][...,action_i] > 0)
+                )
+            self.assertTrue(np.all(pB_updated_test[factor] == pB_updated_valid[factor]))
+
+        """ Test version without interactions, but still use the factorized version to test it against the non-interacting version `update_state_likelihood_dirichlet` """
+        num_states = [3, 4, 5]
+        num_controls = [2, 1, 1]
+        B_factor_list= [[0], [1], [2]]
+        factors_to_update = [0, 1]
+
+        qs_prev = utils.random_single_categorical(num_states)
+        qs = utils.random_single_categorical(num_states)
+
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list)
+        pB = utils.dirichlet_like(B, scale=1.)
+        l_rate = np.random.rand() # sample some positive learning rate
+
+        action = np.array([np.random.randint(c_dim) for c_dim in num_controls])
+
+        pB_updated_test = learning.update_state_likelihood_dirichlet_interactions(
+            pB, B, action, qs, qs_prev, B_factor_list, lr=l_rate, factors=factors_to_update
+        )
+
+        pB_updated_valid = learning.update_state_likelihood_dirichlet(
+            pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update
+        )
+
+        for factor, action_i in enumerate(action):
+            self.assertTrue(np.allclose(pB_updated_test[factor], pB_updated_valid[factor]))
+
+
     def test_update_pD(self):
         """
         Test updating prior Dirichlet parameters over initial hidden states (pD). 

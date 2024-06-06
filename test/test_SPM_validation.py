@@ -49,7 +49,7 @@ class TestSPM(unittest.TestCase):
             q_pi, G= agent.infer_policies()
             action = agent.sample_action()
 
-            actions_python[t] = action
+            actions_python[t] = action.item()
 
             xn_python = build_xn_vn_array(xn_t)
             vn_python = build_xn_vn_array(vn_t)

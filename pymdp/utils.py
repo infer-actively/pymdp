@@ -108,21 +108,27 @@ def onehot(value, num_values):
     arr[value] = 1.0
     return arr
 
-def random_A_matrix(num_obs, num_states):
+def random_A_matrix(num_obs, num_states, A_factor_list=None):
     if type(num_obs) is int:
         num_obs = [num_obs]
     if type(num_states) is int:
         num_states = [num_states]
     num_modalities = len(num_obs)
 
+    if A_factor_list is None:
+        num_factors = len(num_states)
+        A_factor_list = [list(range(num_factors))] * num_modalities
+
     A = obj_array(num_modalities)
     for modality, modality_obs in enumerate(num_obs):
-        modality_shape = [modality_obs] + num_states
+        # lagging_dimensions = [ns for i, ns in enumerate(num_states) if i in A_factor_list[modality]] # enforces sortedness of A_factor_list
+        lagging_dimensions = [num_states[idx] for idx in A_factor_list[modality]]
+        modality_shape = [modality_obs] + lagging_dimensions
         modality_dist = np.random.rand(*modality_shape)
         A[modality] = norm_dist(modality_dist)
     return A
 
-def random_B_matrix(num_states, num_controls):
+def random_B_matrix(num_states, num_controls, B_factor_list=None):
     if type(num_states) is int:
         num_states = [num_states]
     if type(num_controls) is int:
@@ -130,9 +136,14 @@ def random_B_matrix(num_states, num_controls):
     num_factors = len(num_states)
     assert len(num_controls) == len(num_states)
 
+    if B_factor_list is None:
+        B_factor_list = [[f] for f in range(num_factors)]
+
     B = obj_array(num_factors)
     for factor in range(num_factors):
-        factor_shape = (num_states[factor], num_states[factor], num_controls[factor])
+        lagging_shape = [ns for i, ns in enumerate(num_states) if i in B_factor_list[factor]]
+        factor_shape = [num_states[factor]] + lagging_shape + [num_controls[factor]]
+        # factor_shape = (num_states[factor], num_states[factor], num_controls[factor])
         factor_dist = np.random.rand(*factor_shape)
         B[factor] = norm_dist(factor_dist)
     return B
@@ -189,7 +200,7 @@ def dirichlet_like(template_categorical, scale = 1.0):
 
     return dirichlet_out
 
-def get_model_dimensions(A=None, B=None):
+def get_model_dimensions(A=None, B=None, factorized=False):
 
     if A is None and B is None:
         raise ValueError(
@@ -207,8 +218,13 @@ def get_model_dimensions(A=None, B=None):
         num_factors = len(num_states)
     else:
         if A is not None:
-            num_states = list(A[0].shape[1:]) if is_obj_array(A) else list(A.shape[1:])
-            num_factors = len(num_states)
+            if not factorized:
+                num_states = list(A[0].shape[1:]) if is_obj_array(A) else list(A.shape[1:])
+                num_factors = len(num_states)
+            else:
+                raise ValueError(
+                    "`A` array is factorized and  cannot be used to infer `num_states`"
+                )
         else:
             num_states, num_factors = None, None
     
@@ -470,127 +486,6 @@ def construct_full_a(A_reduced, original_factor_idx, num_states):
         A[tuple(A_indices)] = A_reduced
     
     return A
-
-def create_A_matrix_stub(model_labels):
-
-    dimensions = get_model_dimensions_from_labels(model_labels)
-
-    obs_labels, state_labels = model_labels['observations'], model_labels['states']
-
-    state_combinations = pd.MultiIndex.from_product(list(state_labels.values()), names=list(state_labels.keys()))
-    num_rows = sum(dimensions.num_observations)
-
-    cell_values = np.zeros((num_rows, len(state_combinations)))
-
-    obs_combinations = []
-    for modality in obs_labels.keys():
-        levels_to_combine = [[modality]] + [obs_labels[modality]]
-        obs_combinations += list(itertools.product(*levels_to_combine))
-
-
-    obs_combinations = pd.MultiIndex.from_tuples(obs_combinations, names = ["Modality", "Level"])
-
-    A_matrix = pd.DataFrame(cell_values, index = obs_combinations, columns=state_combinations)
-
-    return A_matrix
-
-def create_B_matrix_stubs(model_labels):
-
-    dimensions = get_model_dimensions_from_labels(model_labels)
-
-    state_labels = model_labels['states']
-    action_labels = model_labels['actions']
-
-    B_matrices = {}
-
-    for f_idx, factor in enumerate(state_labels.keys()):
-
-        control_fac_name = list(action_labels)[f_idx]
-        factor_list = [state_labels[factor]] + [action_labels[control_fac_name]]
-
-        prev_state_action_combos = pd.MultiIndex.from_product(factor_list, names=[factor, list(action_labels.keys())[f_idx]])
-
-        num_state_action_combos = dimensions.num_states[f_idx] * dimensions.num_controls[f_idx]
-
-        num_rows = dimensions.num_states[f_idx]
-
-        cell_values = np.zeros((num_rows, num_state_action_combos))
-
-        next_state_list = state_labels[factor]
-        
-        B_matrix_f = pd.DataFrame(cell_values, index = next_state_list, columns=prev_state_action_combos)
-
-        B_matrices[factor] = B_matrix_f
-
-    return B_matrices
-
-def read_A_matrix(path, num_hidden_state_factors):
-    raw_table = pd.read_excel(path, header=None)
-    level_counts = {
-        "index": raw_table.iloc[0, :].dropna().index[0] + 1,
-        "header": raw_table.iloc[0, :].dropna().index[0] + num_hidden_state_factors - 1,
-    }
-    return pd.read_excel(
-        path,
-        index_col=list(range(level_counts["index"])),
-        header=list(range(level_counts["header"]))
-        ).astype(np.float64)
-
-def read_B_matrices(path):
-
-    all_sheets = pd.read_excel(path, sheet_name = None, header=None)
-
-    level_counts = {}
-    for sheet_name, raw_table in all_sheets.items():
-    
-        level_counts[sheet_name] = {
-            "index": raw_table.iloc[0, :].dropna().index[0]+1,
-            "header": raw_table.iloc[0, :].dropna().index[0]+2,
-        }
-
-    stub_dict = {}
-    for sheet_name, level_counts_sheet in level_counts.items():
-        sheet_f = pd.read_excel(
-            path,
-            sheet_name = sheet_name,
-            index_col=list(range(level_counts_sheet["index"])),
-            header=list(range(level_counts_sheet["header"]))
-            ).astype(np.float64)
-        stub_dict[sheet_name] = sheet_f
-        
-    return stub_dict
-
-def convert_A_stub_to_ndarray(A_stub, model_labels):
-    """
-    This function converts a multi-index pandas dataframe `A_stub` into an object array of different
-    A matrices, one per observation modality. 
-    """
-    dimensions = get_model_dimensions_from_labels(model_labels)
-
-    A = obj_array(dimensions.num_observation_modalities)
-
-    for g, modality_name in enumerate(model_labels['observations'].keys()):
-        A[g] = A_stub.loc[modality_name].to_numpy().reshape(dimensions.num_observations[g], *dimensions.num_states)
-        assert (A[g].sum(axis=0) == 1.0).all(), 'A matrix not normalized! Check your initialization....\n'
-
-    return A
-
-def convert_B_stubs_to_ndarray(B_stubs, model_labels):
-    """
-    This function converts a list of multi-index pandas dataframes `B_stubs` into an object array
-    of different B matrices, one per hidden state factor
-    """
-
-    dimensions  = get_model_dimensions_from_labels(model_labels)
-
-    B = obj_array(dimensions.num_control_factors)
-
-    for f, factor_name in enumerate(B_stubs.keys()):
-        
-        B[f] = B_stubs[factor_name].to_numpy().reshape(dimensions.num_states[f], dimensions.num_states[f], dimensions.num_controls[f])
-        assert (B[f].sum(axis=0) == 1.0).all(), 'B matrix not normalized! Check your initialization....\n'
-
-    return B
 
 # def build_belief_array(qx):
 
