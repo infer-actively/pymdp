@@ -1,16 +1,7 @@
 import os
 import unittest
 from pathlib import Path
-
-import pandas as pd
-from pandas.testing import assert_frame_equal
-
 from pymdp.utils import Dimensions, get_model_dimensions_from_labels
-
-tmp_path = Path('tmp_dir')
-
-if not os.path.isdir(tmp_path):
-    os.mkdir(tmp_path)
 
 class TestWrappers(unittest.TestCase):
 
