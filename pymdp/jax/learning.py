@@ -3,9 +3,9 @@
 # pylint: disable=no-member
 
 import numpy as np
-from .maths import multidimensional_outer
+from .maths import multidimensional_outer, dirichlet_expected_value
 from jax.tree_util import tree_map
-from jax import vmap
+from jax import vmap, nn
 import jax.numpy as jnp
 
 def update_obs_likelihood_dirichlet_m(pA_m, obs_m, qs, dependencies_m, lr=1.0):
@@ -26,17 +26,22 @@ def update_obs_likelihood_dirichlet_m(pA_m, obs_m, qs, dependencies_m, lr=1.0):
 
     dfda = vmap(multidimensional_outer)([obs_m] + relevant_factors).sum(axis=0)
 
-    return pA_m + lr * dfda
+    new_pA_m = pA_m + lr * dfda
+
+    return new_pA_m, dirichlet_expected_value(new_pA_m)
     
-def update_obs_likelihood_dirichlet(pA, obs, qs, A_dependencies, lr=1.0):
+def update_obs_likelihood_dirichlet(pA, obs, qs, *, A_dependencies, onehot_obs, num_obs, lr):
     """ JAX version of ``pymdp.learning.update_obs_likelihood_dirichlet`` """
 
-    update_A_fn = lambda pA_m, obs_m, dependencies_m: update_obs_likelihood_dirichlet_m(pA_m, obs_m, qs, dependencies_m, lr=lr)
-    qA = tree_map(update_A_fn, pA, obs, A_dependencies)
+    obs_m = lambda o, dim: nn.one_hot(o, dim) if not onehot_obs else o
+    update_A_fn = lambda pA_m, o_m, dim, dependencies_m: update_obs_likelihood_dirichlet_m(
+        pA_m, obs_m(o_m, dim), qs, dependencies_m, lr=lr
+    )
+    qA, E_qA = tree_map(update_A_fn, pA, obs, num_obs, A_dependencies)
 
-    return qA
+    return qA, E_qA
 
-def update_state_likelihood_dirichlet_f(pB_f, actions_f, current_qs, qs_seq, dependencies_f, lr=1.0):
+def update_state_transition_dirichlet_f(pB_f, actions_f, joint_qs_f, lr=1.0):
     """ JAX version of ``pymdp.learning.update_state_likelihood_dirichlet_f`` """
     # pB_f - parameters of the dirichlet from the prior
     # pB_f.shape = (num_states[f] x num_states[f] x num_actions[f]) where f is the index of the hidden state factor
@@ -50,20 +55,24 @@ def update_state_likelihood_dirichlet_f(pB_f, actions_f, current_qs, qs_seq, dep
     # \otimes is a multidimensional outer product, not just a outer product of two vectors
     # \kappa is an optional learning rate
 
-    past_qs = tree_map(lambda f_idx: qs_seq[f_idx][:-1], dependencies_f)
-    dfdb = vmap(multidimensional_outer)([current_qs[1:]] + past_qs + [actions_f]).sum(axis=0)
+    dfdb = vmap(multidimensional_outer)(joint_qs_f + [actions_f]).sum(axis=0)
     qB_f = pB_f + lr * dfdb
 
-    return qB_f
+    return qB_f, dirichlet_expected_value(qB_f)
 
-def update_state_likelihood_dirichlet(pB, beliefs, actions_onehot, B_dependencies, lr=1.0):
+def update_state_transition_dirichlet(pB, joint_beliefs, actions, *, num_controls, lr):
 
-    update_B_f_fn = lambda pB_f, action_f, qs_f, dependencies_f: update_state_likelihood_dirichlet_f(pB_f, action_f, qs_f, beliefs, dependencies_f, lr=lr)    
-    qB = tree_map(update_B_f_fn, pB, actions_onehot, beliefs, B_dependencies)
+    nf = len(pB)
+    actions_onehot_fn = lambda f, dim: nn.one_hot(actions[..., f], dim, axis=-1)
+    update_B_f_fn = lambda pB_f, joint_qs_f, f, na: update_state_transition_dirichlet_f(
+        pB_f, actions_onehot_fn(f, na), joint_qs_f, lr=lr
+    )    
+    qB, E_qB = tree_map(
+        update_B_f_fn, pB, actions, joint_beliefs, list(range(nf)), num_controls
+    )
 
-    return qB
+    return qB, E_qB
     
-
 def update_state_prior_dirichlet(
     pD, qs, lr=1.0, factors="all"
 ):

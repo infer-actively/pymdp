@@ -83,7 +83,7 @@ def compute_accuracy(qs, obs, A):
     for q in qs[1:]:
         x = jnp.expand_dims(x, -1) * q
 
-    joint = log_likelihood * x
+    joint = ll * x
     return joint.sum()
 
 def compute_free_energy(qs, prior, obs, A):
@@ -120,7 +120,7 @@ def spm_wnorm(A):
     Returns Expectation of logarithm of Dirichlet parameters over a set of 
     Categorical distributions, stored in the columns of A.
     """
-    A = jnp.clip(A, a_min=MINVAL)
+    A = jnp.clip(A, min=MINVAL)
     norm = 1. / A.sum(axis=0)
     avg = 1. / A
     wA = norm - avg
@@ -131,8 +131,10 @@ def dirichlet_expected_value(dir_arr):
     Returns Expectation of Dirichlet parameters over a set of 
     Categorical distributions, stored in the columns of A.
     """
-    dir_arr = jnp.clip(dir_arr, a_min=MINVAL)
-    expected_val = jnp.divide(dir_arr, dir_arr.sum(axis=0, keepdims=True))
+    expected_val = jnp.divide(
+        dir_arr,
+        jnp.clip(dir_arr.sum(axis=0, keepdims=True), min=MINVAL)
+    )
     return expected_val
 
 if __name__ == '__main__':
