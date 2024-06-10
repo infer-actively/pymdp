@@ -4,7 +4,7 @@
 
 import jax.numpy as jnp
 from .algos import run_factorized_fpi, run_mmp, run_vmp
-from jax import tree_util as jtu
+from jax import tree_util as jtu, lax
 
 def update_posterior_states(
         A, 
@@ -55,4 +55,51 @@ def update_posterior_states(
             qs_hist = qs
     
     return qs_hist
+
+def joint_dist_factor(b, filtered_qs, actions):
+    qs_last = filtered_qs[-1]
+    qs_filter = filtered_qs[:-1]
+
+    # conditional dist - timestep x s_{t+1} | s_{t}
+    time_b = jnp.moveaxis(b[..., actions], -1, 0)
+
+    # joint dist - timestep x s_{t+1} x s_{t}
+    qs_joint = time_b * jnp.expand_dims(qs_filter, -1)
+
+    # cond dist - timestep x s_{t} | s_{t+1}
+    qs_backward_cond = jnp.moveaxis(
+        qs_joint / qs_joint.sum(-2, keepdims=True), -2, -1
+    )
+
+    def step_fn(qs_smooth_past, backward_b):
+        qs_joint = backward_b * qs_smooth_past
+        qs_smooth = qs_joint.sum(-1)
+        
+        return qs_smooth, (qs_smooth, qs_joint)
+
+    # seq_qs will contain a sequence of smoothed marginals and joints
+    _, seq_qs = lax.scan(
+        step_fn,
+        qs_last,
+        qs_backward_cond,
+        reverse=True,
+        unroll=2
+    )
+
+    # we add the last filtered belief to smoothed beliefs
+    qs_smooth_all = jnp.concatenate([seq_qs[0], jnp.expand_dims(qs_last, 0)], 0)
+    return qs_smooth_all, seq_qs[1]
+
+
+def smoothing_ovf(filtered_post, B, past_actions):
+    assert len(filtered_post) == len(B)
+    nf = len(Bs)  # number of factors
+    joint = lambda b, qs, f: joint_dist_factor(b, qs, past_actions[..., f])
+    marginals_and_joints = jtu.tree_map(
+        joint, Bs, filtered_post, list(range(nf))
+    )
+
+    return marginals_and_joints
+
+
     
