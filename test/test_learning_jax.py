@@ -68,7 +68,15 @@ class TestLearningJax(unittest.TestCase):
             obs_jax = jtu.tree_map(lambda x: jnp.array(x)[None], list(obs_np))
             qs_jax = jtu.tree_map(lambda x: jnp.array(x)[None], list(qs_np))
 
-            qA_jax_test = update_pA_jax(pA_jax, obs_jax, qs_jax, A_dependencies, lr=l_rate)
+            qA_jax_test, E_qA_jax_test = update_pA_jax(
+                pA_jax,
+                obs_jax,
+                qs_jax,
+                A_dependencies=A_dependencies,
+                onehot_obs=True,
+                num_obs=num_obs,
+                lr=l_rate
+            )
 
             for modality, obs_dim in enumerate(num_obs):
                 self.assertTrue(np.allclose(qA_jax_test[modality], qA_np_test[modality]))
@@ -122,7 +130,15 @@ class TestLearningJax(unittest.TestCase):
             obs_jax = jtu.tree_map(lambda x: jnp.array(x)[None], list(obs_np))
             qs_jax = jtu.tree_map(lambda x: jnp.array(x)[None], list(qs_np))
 
-            qA_jax_test = update_pA_jax(pA_jax, obs_jax, qs_jax, A_dependencies, lr=l_rate)
+            qA_jax_test, E_qA_jax_test = update_pA_jax(
+                pA_jax,
+                obs_jax,
+                qs_jax,
+                A_dependencies=A_dependencies,
+                onehot_obs=True,
+                num_obs=num_obs,
+                lr=l_rate
+            )
 
             for modality, obs_dim in enumerate(num_obs):
                 self.assertTrue(np.allclose(qA_jax_test[modality],qA_np_test[modality]))

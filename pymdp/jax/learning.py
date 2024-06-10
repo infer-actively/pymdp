@@ -37,7 +37,12 @@ def update_obs_likelihood_dirichlet(pA, obs, qs, *, A_dependencies, onehot_obs, 
     update_A_fn = lambda pA_m, o_m, dim, dependencies_m: update_obs_likelihood_dirichlet_m(
         pA_m, obs_m(o_m, dim), qs, dependencies_m, lr=lr
     )
-    qA, E_qA = tree_map(update_A_fn, pA, obs, num_obs, A_dependencies)
+    result = tree_map(update_A_fn, pA, obs, num_obs, A_dependencies)
+    qA = []
+    E_qA = []
+    for r in result:
+        qA.append(r[0])
+        E_qA.append(r[1])
 
     return qA, E_qA
 
@@ -67,9 +72,15 @@ def update_state_transition_dirichlet(pB, joint_beliefs, actions, *, num_control
     update_B_f_fn = lambda pB_f, joint_qs_f, f, na: update_state_transition_dirichlet_f(
         pB_f, actions_onehot_fn(f, na), joint_qs_f, lr=lr
     )    
-    qB, E_qB = tree_map(
+    result = tree_map(
         update_B_f_fn, pB, actions, joint_beliefs, list(range(nf)), num_controls
     )
+
+    qB = []
+    E_qB = []
+    for r in result:
+        qB.append(r[0])
+        E_qB.append(r[1])
 
     return qB, E_qB
     
