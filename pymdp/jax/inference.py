@@ -93,10 +93,10 @@ def joint_dist_factor(b, filtered_qs, actions):
 
 def smoothing_ovf(filtered_post, B, past_actions):
     assert len(filtered_post) == len(B)
-    nf = len(Bs)  # number of factors
+    nf = len(B)  # number of factors
     joint = lambda b, qs, f: joint_dist_factor(b, qs, past_actions[..., f])
     marginals_and_joints = jtu.tree_map(
-        joint, Bs, filtered_post, list(range(nf))
+        joint, B, filtered_post, list(range(nf))
     )
 
     return marginals_and_joints
