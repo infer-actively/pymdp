@@ -73,7 +73,7 @@ def update_state_transition_dirichlet(pB, joint_beliefs, actions, *, num_control
         pB_f, actions_onehot_fn(f, na), joint_qs_f, lr=lr
     )    
     result = tree_map(
-        update_B_f_fn, pB, actions, joint_beliefs, list(range(nf)), num_controls
+        update_B_f_fn, pB, joint_beliefs, list(range(nf)), num_controls
     )
 
     qB = []
