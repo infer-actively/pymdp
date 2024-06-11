@@ -230,8 +230,9 @@ class GeneralizedTMaze:
         Render the environment provided that the env state from the PyMDP equivalent
         is provided
         """
-        current_position = env_state.params["D"][0].argmax()
+        current_position = env_state.state[0]
         current_position = self.index_to_position(current_position)
+        print("!", current_position)
 
         # Create a copy of the maze for rendering
         maze_copy = np.copy(self.maze)
@@ -344,6 +345,7 @@ class GeneralizedTMaze:
         buf.seek(0)
         image = PIL.Image.open(buf)
 
+        plt.grid("on")
         plt.show()
 
         return image

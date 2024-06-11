@@ -46,15 +46,16 @@ def rollout(agent: Agent, env: PyMDPEnv, num_timesteps: int, rng_key: jr.PRNGKey
         # so we don't need past actions or qs_hist
         qs = agent.infer_states(
             observations=observation_t,
-            past_actions=None,
+            past_actions=action_t,
             empirical_prior=empirical_prior,
             qs_hist=None,
         )
         qpi, nefe = agent.infer_policies(qs)
 
-        keys = jr.split(rng_key, batch_size + 1)
+        keys = jr.split(rng_key, batch_size + 2)
         rng_key = keys[0]
-        action_t = agent.sample_action(qpi, rng_key=keys[1:])
+        action_t = agent.sample_action(qpi, rng_key=keys[2:])
+        # action_t.at[0, 0].set(jr.randint(keys[1], shape=1, minval=0, maxval=4))
 
         keys = jr.split(rng_key, batch_size + 1)
         rng_key = keys[0]
