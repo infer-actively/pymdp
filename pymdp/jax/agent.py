@@ -68,6 +68,8 @@ class Agent(Module):
     num_states: List[int] = field(static=True)
     num_factors: int = field(static=True)
     num_controls: List[int] = field(static=True)
+    # Used to store original action dimensions in case there are multiple action dependencies per state
+    num_controls_multi: List[int] = field(static=True)
     control_fac_idx: Optional[List[int]] = field(static=True)
     # depth of planning during roll-outs (i.e. number of timesteps to look ahead when computing expected free energy of policies)
     policy_len: int = field(static=True)
@@ -158,7 +160,8 @@ class Agent(Module):
         A = [jnp.array(a.data) if isinstance(a, Distribution) else a for a in A]
         B = [jnp.array(b.data) if isinstance(b, Distribution) else b for b in B]
 
-        # flatten B action dims
+        # flatten B action dims for multiple action dependencies
+        self.num_controls_multi = num_controls
         if B_action_dependencies is not None:
             B = self._flatten_B_action_dims(B, self.B_action_dependencies)
 
@@ -418,6 +421,8 @@ class Agent(Module):
                 q_pi, self.policies, self.num_controls, self.action_selection, self.alpha, rng_key=rng_key
             )
 
+        if self.B_action_dependencies is not None:
+            action = self._decode_multi_actions(action, self.B_action_dependencies, self.num_controls_multi)
         return action
 
     @vmap
@@ -478,6 +483,18 @@ class Agent(Module):
             target_shape = list(B_f.shape)[:-len(action_dependency)] + [pymath.prod(dims)]
             B_flat.append(B_f.reshape(target_shape))
         return B_flat
+    
+    """NOTE: maybe use tree map"""
+    def _decode_multi_actions(self, action, B_action_dependencies, num_controls_multi):
+        action_multi = [None for _ in range(len(num_controls_multi))]
+        for f, action_dependency in enumerate(B_action_dependencies):
+            num_controls = [num_controls_multi[d] for d in action_dependency]
+            action_multi_f = utils.index_to_combination(action[f], num_controls)
+            for i, a in zip(action_dependency, action_multi_f):
+                action_multi[i] = a
+        
+        action_multi = jnp.array(action_multi)
+        return action_multi
     
     def _get_default_params(self):
         method = self.inference_algo
