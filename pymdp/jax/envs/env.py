@@ -1,4 +1,3 @@
-# Task environmnet
 from typing import Optional, List, Dict
 from jaxtyping import Array, PRNGKeyArray
 from functools import partial
