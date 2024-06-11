@@ -49,6 +49,52 @@ def list_array_scaled(shape_list: ShapeList, scale: float=1.0) -> Vector:
     
     return arr
 
+def get_combination_index(x, dims):
+    """
+    Find the index of an array of categorical values in an array of categorical dimensions
+
+    Parameters
+    ----------
+    x: ``numpy.ndarray`` or ``list`` of ``int``
+        ``numpy.ndarray`` or ``list`` of ``int`` of categorical values to be converted into combination index
+    dims: ``list`` of ``int``
+        ``list`` of ``int`` of categorical dimensions used for conversion
+    
+    Returns
+    ----------
+    index: ``int``
+        ``int`` index of the combination
+    """
+    assert len(x) == len(dims)
+    index = 0
+    product = 1
+    for i in reversed(range(len(dims))):
+        index += x[i] * product
+        product *= dims[i]
+    return index
+
+def index_to_combination(index, dims):
+    """
+    Convert the combination index according to an array of categorical dimensions back to an array of categorical values
+
+    Parameters
+    ----------
+    index: ``int``
+        ``int`` index of the combination
+    dims: ``list`` of ``int``
+        ``list`` of ``int`` of categorical dimensions used for conversion
+    
+    Returns
+    ----------
+    x: ``list`` of ``int``
+        ```list`` of ``int`` of categorical values to be converted into combination index
+    """
+    x = []
+    for base in reversed(dims):
+        x.append(index % base)
+        index //= base
+    return list(reversed(x))
+
 # def onehot(value, num_values):
 #     arr = np.zeros(num_values)
 #     arr[value] = 1.0
