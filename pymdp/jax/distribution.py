@@ -185,7 +185,6 @@ def get_dependencies(transitions, likelihoods):
     print(likelihoods[0])
     likelihood_dependencies = dict()
     transition_dependencies = dict()
-    observations = [list(like.event.keys())[0] for like in likelihoods]
     states = [list(trans.event.keys())[0] for trans in transitions]
     for like in likelihoods:
         likelihood_dependencies[list(like.event.keys())[0]] = [
