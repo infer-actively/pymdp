@@ -140,19 +140,7 @@ class Agent(Module):
         self.batch_size = batch_size
 
         # extract dependencies for A and B matrices
-        if A_dependencies is not None:
-            self.A_dependencies = A_dependencies
-        elif isinstance(A[0], Distribution) and isinstance(B[0], Distribution):
-            self.A_dependencies, _ = get_dependencies(A, B)
-        else:
-            self.A_dependencies = [list(range(self.num_factors)) for _ in range(self.num_modalities)]
-
-        if B_dependencies is not None:
-            self.B_dependencies = B_dependencies
-        elif isinstance(A[0], Distribution) and isinstance(B[0], Distribution):
-            _, self.B_dependencies = get_dependencies(A, B)
-        else:
-            self.B_dependencies = [[f] for f in range(self.num_factors)]
+        self.A_dependencies, self.B_dependencies = self._construct_dependencies(A_dependencies, B_dependencies, A, B)
 
         # extract A and B tensors
         A = [jnp.array(a.data) if isinstance(a, Distribution) else a for a in A]
@@ -203,6 +191,7 @@ class Agent(Module):
         # setup pytree leaves A, B, C, D, E, pA, pB, H, I
         A = jtu.tree_map(lambda x: jnp.broadcast_to(x, (batch_size,) + x.shape), A)
         B = jtu.tree_map(lambda x: jnp.broadcast_to(x, (batch_size,) + x.shape), B)
+
         if pA is not None:
             pA = jtu.tree_map(lambda x: jnp.broadcast_to(x, (batch_size,) + x.shape), pA)
 
@@ -224,21 +213,22 @@ class Agent(Module):
         else:
             E = jnp.ones((batch_size, len(policies))) / len(policies)
 
+        if self.use_inductive and self.H is not None:
+            I = control.generate_I_matrix(H, B, self.inductive_threshold, self.inductive_depth)
+        elif self.use_inductive and I is not None:
+            I = I
+        else:
+            I = jtu.tree_map(lambda x: jnp.expand_dims(jnp.zeros_like(x), 1), D)
+
         self.A = A
         self.B = B
         self.C = C
         self.D = D
         self.E = E
         self.H = H
+        self.I = I
         self.pA = pA
         self.pB = pB
-
-        if self.use_inductive and self.H is not None:
-            self.I = control.generate_I_matrix(self.H, self.B, self.inductive_threshold, self.inductive_depth)
-        elif self.use_inductive and I is not None:
-            self.I = I
-        else:
-            self.I = jtu.tree_map(lambda x: jnp.expand_dims(jnp.zeros_like(x), 1), self.D)
 
         self.gamma = jnp.broadcast_to(gamma, (self.batch_size,))
         self.alpha = jnp.broadcast_to(alpha, (self.batch_size,))
@@ -441,6 +431,22 @@ class Agent(Module):
 
         # assert jnp.isclose(jnp.sum(marginals), 1.)  # this fails inside scan
         return marginals
+
+    def _construct_dependencies(self, A_dependencies, B_dependencies, A, B):
+        if A_dependencies is not None:
+            A_dependencies = A_dependencies
+        elif isinstance(A[0], Distribution) and isinstance(B[0], Distribution):
+            A_dependencies, _ = get_dependencies(A, B)
+        else:
+            A_dependencies = [list(range(self.num_factors)) for _ in range(self.num_modalities)]
+
+        if B_dependencies is not None:
+            B_dependencies = B_dependencies
+        elif isinstance(A[0], Distribution) and isinstance(B[0], Distribution):
+            _, B_dependencies = get_dependencies(A, B)
+        else:
+            B_dependencies = [[f] for f in range(self.num_factors)]
+        return A_dependencies, B_dependencies
 
     def _get_default_params(self):
         method = self.inference_algo
