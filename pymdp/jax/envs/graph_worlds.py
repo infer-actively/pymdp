@@ -10,13 +10,14 @@ class GraphEnv(PyMDPEnv):
     The agent observes its own location, as well as whether the object is at its location.
     """
 
-    def __init__(self, graph: nx.Graph, object_location: int, agent_location: int, key=None):
+    def __init__(self, graph: nx.Graph, object_locations: list[int], agent_locations: list[int]):
+        batch_size = len(object_locations)
+
         A, A_dependencies = self.generate_A(graph)
-        A = [jnp.broadcast_to(a, (1,) + a.shape) for a in A]
+        A = [jnp.broadcast_to(a, (batch_size,) + a.shape) for a in A]
         B, B_dependencies = self.generate_B(graph)
-        B = [jnp.broadcast_to(b, (1,) + b.shape) for b in B]
-        D = self.generate_D(graph, object_location, agent_location)
-        D = [jnp.broadcast_to(d, (1,) + d.shape) for d in D]
+        B = [jnp.broadcast_to(b, (batch_size,) + b.shape) for b in B]
+        D = self.generate_D(graph, object_locations, agent_locations)
 
         params = {
             "A": A,
@@ -91,17 +92,19 @@ class GraphEnv(PyMDPEnv):
 
         return B, B_dependencies
 
-    def generate_D(self, graph: nx.Graph, object_location: int, agent_location: int):
+    def generate_D(self, graph: nx.Graph, object_locations: list[int], agent_locations: list[int]):
+        batch_size = len(object_locations)
         num_locations = len(graph.nodes)
         num_object_locations = num_locations + 1
 
         states = [num_locations, num_object_locations]
         D = []
         for s in states:
-            D.append(jnp.zeros(s))
+            D.append(jnp.zeros((batch_size, s)))
 
         # set the start locations
-        D[0] = D[0].at[agent_location].set(1.0)
-        D[1] = D[1].at[object_location].set(1.0)
+        for i in range(batch_size):
+            D[0] = D[0].at[i, agent_locations[i]].set(1.0)
+            D[1] = D[1].at[i, object_locations[i]].set(1.0)
 
         return D
