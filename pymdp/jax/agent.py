@@ -446,6 +446,15 @@ class Agent(Module):
 
         return action
 
+    @vmap
+    def _construct_I(self):
+        return control.generate_I_matrix(self.H, self.B, self.inductive_threshold, self.inductive_depth)
+
+    def _construct_policies(self):
+        self.policies = control.construct_policies(
+            self.num_states, self.num_controls, self.policy_len, self.control_fac_idx
+        )
+
     def _get_default_params(self):
         method = self.inference_algo
         default_params = None
@@ -463,15 +472,6 @@ class Agent(Module):
             raise NotImplementedError("CV is not implemented")
 
         return default_params
-
-    def _construct_policies(self):
-        self.policies = control.construct_policies(
-            self.num_states, self.num_controls, self.policy_len, self.control_fac_idx
-        )
-
-    @vmap
-    def _construct_I(self):
-        return control.generate_I_matrix(self.H, self.B, self.inductive_threshold, self.inductive_depth)
 
     @property
     def unique_multiactions(self):
