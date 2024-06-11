@@ -82,6 +82,50 @@ class Distribution:
 
 
 def compile_model(config):
+    """Compile a model from a config.
+
+    Takes a model description dictionary and builds the corresponding
+    Likelihood and Transition tensors. The tensors are filled with only
+    zeros and need to be filled in later by the caller of this function.
+    ---
+    The config  should consist of three top-level keys:
+        * observations
+        * controls
+        * states
+    where each entry consists of another dictionary with the name of the
+    modality as key and the modality description.
+
+    The modality description should consist out of either a `size` or `elements`
+    field indicating the named elements or the size of the integer array.
+    In the case of an observation the `depends_on` field needs to be present to
+    indicate what state factor links to this observation. In the case of states
+    the `depends_on_states` and `depends_on_control` fields are needed.
+    ---
+    example config:
+    { "observations": {
+        "observation_1": {"size": 10, "depends_on": ["factor_1"]},
+        "observation_2": {
+            "elements": ["A", "B"],
+            "depends_on": ["factor_1"],
+        },
+    },
+    "controls": {
+            "control_1": {"size": 2},
+            "control_2": {"elements": ["X", "Y"]},
+    },
+    "states": {
+        "factor_1": {
+            "elements": ["II", "JJ", "KK"],
+            "depends_on_states": ["factor_1", "factor_2"],
+            "depends_on_control": ["control_1", "control_2"],
+        },
+        "factor_2": {
+            "elements": ["foo", "bar"],
+            "depends_on_states": ["factor_2"],
+            "depends_on_control": ["control_2"],
+        },
+    }}
+    """
     # these are needed to get the ordering of the dimensions correct for pymdp
     state_dependencies = dict()
     control_dependencies = dict()
