@@ -12,7 +12,7 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 from jax import nn, vmap, random
 from . import inference, control, learning, utils, maths
-from .distribution import Distribution
+from .distribution import Distribution, get_dependencies
 from equinox import Module, field, tree_at
 
 from typing import List, Optional
@@ -134,6 +134,9 @@ class Agent(Module):
         learn_D=True,
         learn_E=False,
     ):
+
+        if A_dependencies is None and B_dependencies is None:
+            A_dependencies, B_dependencies = get_dependencies(A, B)
 
         # TODO: infer batch shape in general case, here we assume no batch in Distribution object
         A = [jnp.expand_dims(a.data, 0) if isinstance(a, Distribution) else a for a in A]
