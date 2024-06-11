@@ -132,7 +132,7 @@ def compile(config):
             batch_descr[dep] = labels[dep]
         arr = np.zeros(arr_shape)
         likelihoods.append(Distribution(arr, event_descr, batch_descr))
-    return transition, likelihoods
+    return transitions, likelihoods
 
 
 if __name__ == "__main__":
@@ -205,3 +205,9 @@ if __name__ == "__main__":
         },
     }
     trans, like = compile(model_example)
+    assert len(trans) == 2
+    assert len(like) == 2
+    assert trans[0].data.shape == (3, 3, 2, 2, 2)
+    assert trans[1].data.shape == (2, 2, 2)
+    assert like[0].data.shape == (10, 3)
+    assert like[1].data.shape == (2, 3)
