@@ -15,7 +15,7 @@ from . import inference, control, learning, utils, maths
 from .distribution import Distribution, get_dependencies
 from equinox import Module, field, tree_at
 
-from typing import List, Optional
+from typing import List, Optional, Union
 from jaxtyping import Array
 from functools import partial
 
@@ -42,16 +42,14 @@ class Agent(Module):
     C: List[Array]
     D: List[Array]
     E: Array
-    gamma: Array
-    alpha: Array
-
     pA: List[Array]
     pB: List[Array]
+    gamma: Array
+    alpha: Array
 
     # threshold for inductive inference (the threshold for pruning transitions that are below a certain probability)
     inductive_threshold: Array
     # epsilon for inductive inference (trade-off/weight for how much inductive value contributes to EFE of policies)
-
     inductive_epsilon: Array
     # H vectors (one per hidden state factor) used for inductive inference -- these encode goal states or constraints
     H: List[Array]
@@ -98,11 +96,11 @@ class Agent(Module):
 
     def __init__(
         self,
-        A,
-        B,
-        C=None,
-        D=None,
-        E=None,
+        A: Union[List[Array], List[Distribution]],
+        B: Union[List[Array], List[Distribution]],
+        C: Optional[List[Array]] = None,
+        D: Optional[List[Array]] = None,
+        E: Optional[Array] = None,
         pA=None,
         pB=None,
         H=None,
