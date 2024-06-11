@@ -5,11 +5,18 @@ from .env import PyMDPEnv
 
 
 class GraphEnv(PyMDPEnv):
+    """
+    A simple environment where an agent can move around a graph and search an object.
+    The agent observes its own location, as well as whether the object is at its location.
+    """
 
     def __init__(self, graph: nx.Graph, object_location: int, agent_location: int, key=None):
         A, A_dependencies = self.generate_A(graph)
+        A = [jnp.broadcast_to(a, (1,) + a.shape) for a in A]
         B, B_dependencies = self.generate_B(graph)
+        B = [jnp.broadcast_to(b, (1,) + b.shape) for b in B]
         D = self.generate_D(graph, object_location, agent_location)
+        D = [jnp.broadcast_to(d, (1,) + d.shape) for d in D]
 
         params = {
             "A": A,
@@ -32,11 +39,11 @@ class GraphEnv(PyMDPEnv):
         num_object_locations = num_locations + 1  # +1 for "not here"
         p = 1.0  # probability of seeing object if it is at the same location as the agent
 
-        # Agent location modality
+        # agent location modality
         A.append(jnp.eye(num_locations))
         A_dependencies.append([0])
 
-        # Object visibility modality
+        # object visibility modality
         A.append(jnp.zeros((2, num_locations, num_object_locations)))
 
         for agent_loc in range(num_locations):
@@ -63,7 +70,7 @@ class GraphEnv(PyMDPEnv):
         num_locations = len(graph.nodes)
         num_object_locations = num_locations + 1
 
-        # Own location transitions, based on graph connectivity
+        # agent location transitions, based on graph connectivity
         B.append(jnp.zeros((num_locations, num_locations, num_locations)))
         for action in range(num_locations):
             for from_loc in range(num_locations):
@@ -77,7 +84,7 @@ class GraphEnv(PyMDPEnv):
 
         B_dependencies.append([0])
 
-        # Objects don't move
+        # objects don't move
         B.append(jnp.zeros((num_object_locations, num_object_locations, 1)))
         B[1] = B[1].at[:, :, 0].set(jnp.eye(num_object_locations))
         B_dependencies.append([1])
