@@ -209,7 +209,7 @@ class Agent(Module):
         if E is not None:
             E = jnp.broadcast_to(E, (batch_size,) + E.shape)
         else:
-            E = jnp.ones((batch_size, len(policies))) / len(policies)
+            E = jnp.ones((batch_size, len(self.policies))) / len(self.policies)
 
         if self.use_inductive and self.H is not None:
             I = control.generate_I_matrix(H, B, self.inductive_threshold, self.inductive_depth)
