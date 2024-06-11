@@ -11,9 +11,9 @@ class TestDists(unittest.TestCase):
 
         data = np.zeros((len(locations), len(locations), len(controls)))
         transition = distribution.Distribution(
-            data,
             {"location": locations},
             {"location": locations, "control": controls},
+            data,
         )
         self.assertEqual(transition["A", "B", "up"], 0.0)
         self.assertEqual(transition[:, "B", "up"].shape, (4,))
@@ -34,9 +34,9 @@ class TestDists(unittest.TestCase):
 
         data = np.zeros((len(locations), len(locations), len(controls)))
         transition = distribution.Distribution(
-            data,
             {"location": locations},
             {"location": locations, "control": controls},
+            data,
         )
 
         self.assertEqual(
