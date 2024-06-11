@@ -81,7 +81,7 @@ class Distribution:
         self.data[tuple(index_list)] = value
 
 
-def compile(config):
+def compile_model(config):
     # these are needed to get the ordering of the dimensions correct for pymdp
     state_dependencies = dict()
     control_dependencies = dict()
@@ -206,7 +206,7 @@ if __name__ == "__main__":
             },
         },
     }
-    trans, like = compile(model_example)
+    trans, like = compile_model(model_example)
     assert len(trans) == 2
     assert len(like) == 2
     assert trans[0].data.shape == (3, 3, 2, 2, 2)

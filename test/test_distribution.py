@@ -99,7 +99,7 @@ class TestDists(unittest.TestCase):
                 },
             },
         }
-        trans, like = distribution.compile(model_example)
+        trans, like = distribution.compile_model(model_example)
         self.assertEqual(len(trans), 2)
         self.assertEqual(len(like), 2)
         self.assertEqual(trans[0].data.shape, (3, 3, 2, 2, 2))
