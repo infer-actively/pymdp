@@ -173,6 +173,52 @@ def random_B_matrix(num_states, num_controls, B_dependencies=None, B_act_depende
         B[factor] = norm_dist(factor_dist)
     return B
 
+def get_combination_index(x, dims):
+    """
+    Find the index of an array of categorical values in an array of categorical dimensions
+
+    Parameters
+    ----------
+    x: ``numpy.ndarray`` or ``list`` of ``int``
+        ``numpy.ndarray`` or ``list`` of ``int`` of categorical values to be converted into combination index
+    dims: ``list`` of ``int``
+        ``list`` of ``int`` of categorical dimensions used for conversion
+    
+    Returns
+    ----------
+    index: ``int``
+        ``int`` index of the combination
+    """
+    assert len(x) == len(dims)
+    index = 0
+    product = 1
+    for i in reversed(range(len(dims))):
+        index += x[i] * product
+        product *= dims[i]
+    return index
+
+def index_to_combination(index, dims):
+    """
+    Convert the combination index according to an array of categorical dimensions back to an array of categorical values
+
+    Parameters
+    ----------
+    index: ``int``
+        ``int`` index of the combination
+    dims: ``list`` of ``int``
+        ``list`` of ``int`` of categorical dimensions used for conversion
+    
+    Returns
+    ----------
+    x: ``list`` of ``int``
+        ```list`` of ``int`` of categorical values to be converted into combination index
+    """
+    x = []
+    for base in reversed(dims):
+        x.append(index % base)
+        index //= base
+    return list(reversed(x))
+
 def random_single_categorical(shape_list):
     """
     Creates a random 1-D categorical distribution (or set of 1-D categoricals, e.g. multiple marginals of different factors) and returns them in an object array 
