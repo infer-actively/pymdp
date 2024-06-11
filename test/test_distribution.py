@@ -89,13 +89,13 @@ class TestDists(unittest.TestCase):
             "states": {
                 "factor_1": {
                     "elements": ["II", "JJ", "KK"],
-                    "depends_on_states": ["factor_1", "factor_2"],
-                    "depends_on_control": ["control_1", "control_2"],
+                    "depends_on": ["factor_1", "factor_2"],
+                    "controlled_by": ["control_1", "control_2"],
                 },
                 "factor_2": {
                     "elements": ["foo", "bar"],
-                    "depends_on_states": ["factor_2"],
-                    "depends_on_control": ["control_2"],
+                    "depends_on": ["factor_2"],
+                    "controlled_by": ["control_2"],
                 },
             },
         }
