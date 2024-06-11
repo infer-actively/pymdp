@@ -6,7 +6,9 @@
 __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
+import jax
 import jax.numpy as jnp
+import numpy as np
 
 from typing import (Any, Callable, List, NamedTuple, Optional, Sequence, Union, Tuple)
 
@@ -55,21 +57,23 @@ def get_combination_index(x, dims):
 
     Parameters
     ----------
-    x: ``numpy.ndarray`` or ``list`` of ``int``
-        ``numpy.ndarray`` or ``list`` of ``int`` of categorical values to be converted into combination index
+    x: ``numpy.ndarray`` or ``jax.Array`` of shape `(batch_size, act_dims)`
+        ``numpy.ndarray`` or ``jax.Array`` of categorical values to be converted into combination index
     dims: ``list`` of ``int``
         ``list`` of ``int`` of categorical dimensions used for conversion
     
     Returns
     ----------
-    index: ``int``
-        ``int`` index of the combination
+    index: ``np.ndarray`` or `jax.Array` of shape `(batch_size)`
+        ``np.ndarray`` or `jax.Array` index of the combination
     """
-    assert len(x) == len(dims)
+    assert isinstance(x, jax.Array) or isinstance(x, np.ndarray) 
+    assert x.shape[-1] == len(dims)
+
     index = 0
     product = 1
     for i in reversed(range(len(dims))):
-        index += x[i] * product
+        index += x[..., i] * product
         product *= dims[i]
     return index
 
@@ -79,21 +83,23 @@ def index_to_combination(index, dims):
 
     Parameters
     ----------
-    index: ``int``
-        ``int`` index of the combination
+    index: ``np.ndarray`` or `jax.Array` of shape `(batch_size)`
+        ``np.ndarray`` or `jax.Array` index of the combination
     dims: ``list`` of ``int``
         ``list`` of ``int`` of categorical dimensions used for conversion
     
     Returns
     ----------
-    x: ``list`` of ``int``
-        ```list`` of ``int`` of categorical values to be converted into combination index
+    x: ``numpy.ndarray`` or ``jax.Array`` of shape `(batch_size, act_dims)`
+        ``numpy.ndarray`` or ``jax.Array`` of categorical values to be converted into combination index
     """
     x = []
     for base in reversed(dims):
         x.append(index % base)
-        index //= base
-    return list(reversed(x))
+        index = index // base
+    
+    x = np.flip(np.stack(x, axis=-1), axis=-1)
+    return x
 
 # def onehot(value, num_values):
 #     arr = np.zeros(num_values)

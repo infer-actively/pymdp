@@ -12,6 +12,7 @@ import itertools
 import numpy as np
 
 from pymdp import utils
+from pymdp.jax import utils as jax_utils
 
 class TestUtils(unittest.TestCase):
     def test_obj_array_from_list(self):
@@ -35,10 +36,14 @@ class TestUtils(unittest.TestCase):
         action_map = list(itertools.product(*[list(range(i)) for i in num_controls]))
         true_act_flat = action_map.index(tuple(act))
 
-        # find flat index without itertools
-        act_flat = utils.get_combination_index(act, num_controls)
+        batch_size = 10
+        act_vec = np.array(act)
+        act_vec = np.broadcast_to(act_vec, (batch_size,) + act_vec.shape)
 
-        self.assertEqual(act_flat, true_act_flat)
+        # find flat index without itertools
+        act_flat = jax_utils.get_combination_index(act_vec, num_controls)
+
+        self.assertTrue(np.allclose(act_flat, true_act_flat))
 
     def test_index_to_combination(self):
         """
@@ -51,10 +56,14 @@ class TestUtils(unittest.TestCase):
         action_map = list(itertools.product(*[list(range(i)) for i in num_controls]))
         act_flat = action_map.index(tuple(act))
 
-        # reconstruct categorical actions from flat index
-        act_reconstruct = utils.index_to_combination(act_flat, num_controls)
+        batch_size = 10
+        act_flat_vec = np.array([act_flat])
+        act_flat_vec = np.broadcast_to(act_flat_vec, (batch_size,))
 
-        self.assertEqual(act_reconstruct, act)
+        # reconstruct categorical actions from flat index
+        act_reconstruct = jax_utils.index_to_combination(act_flat_vec, num_controls)
+
+        self.assertTrue(np.allclose(act_reconstruct - np.array([act]), 0))
 
 if __name__ == "__main__":
     unittest.main()
