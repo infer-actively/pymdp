@@ -420,9 +420,7 @@ class Agent(Module):
             action = control.sample_policy(
                 q_pi, self.policies, self.num_controls, self.action_selection, self.alpha, rng_key=rng_key
             )
-
-        if self.B_action_dependencies is not None:
-            action = self._decode_multi_actions(action, self.B_action_dependencies, self.num_controls_multi)
+        
         return action
 
     @vmap
@@ -452,7 +450,39 @@ class Agent(Module):
 
         # assert jnp.isclose(jnp.sum(marginals), 1.)  # this fails inside scan
         return marginals
+    
+    """TODO: maybe use tree map"""
+    def decode_multi_actions(self, action):
+        """Decode flattened actions to multiple actions"""
+        if self.B_action_dependencies is None:
+            return action
+         
+        action_multi = jnp.zeros((self.batch_size, len(self.num_controls_multi))).astype(action.dtype)
+        for f, action_dependency in enumerate(self.B_action_dependencies):
+            if action_dependency == []:
+                continue
 
+            num_controls = [self.num_controls_multi[d] for d in action_dependency]
+            action_multi_f = utils.index_to_combination(action[..., f], num_controls)
+            action_multi = action_multi.at[..., action_dependency].set(action_multi_f)
+        return action_multi
+    
+    """TODO: maybe use tree map"""
+    def encode_multi_actions(self, action_multi):
+        """Encode multiple actions to flattened actions"""
+        if self.B_action_dependencies is None:
+            return action_multi
+        
+        action = jnp.zeros((self.batch_size, len(self.num_controls))).astype(action_multi.dtype)
+        for f, action_dependency in enumerate(self.B_action_dependencies):
+            num_controls = [self.num_controls_multi[d] for d in action_dependency]
+            if num_controls == []:
+                continue
+            
+            action_f = utils.get_combination_index(action_multi[..., action_dependency], num_controls)
+            action = action.at[..., f].set(action_f)
+        return action
+    
     def _construct_dependencies(self, A_dependencies, B_dependencies, B_action_dependencies, A, B):
         if A_dependencies is not None:
             A_dependencies = A_dependencies
@@ -479,22 +509,14 @@ class Agent(Module):
         assert hasattr(B[0], "shape"), "Elements of B must be tensors and have attribute shape"
         B_flat = []
         for B_f, action_dependency in zip(B, B_action_dependencies):
+            if action_dependency == []:
+                B_flat.append(jnp.expand_dims(B_f, axis=-1))
+                continue
+
             dims = [self.num_controls[d] for d in action_dependency]
             target_shape = list(B_f.shape)[:-len(action_dependency)] + [pymath.prod(dims)]
             B_flat.append(B_f.reshape(target_shape))
         return B_flat
-    
-    """NOTE: maybe use tree map"""
-    def _decode_multi_actions(self, action, B_action_dependencies, num_controls_multi):
-        action_multi = [None for _ in range(len(num_controls_multi))]
-        for f, action_dependency in enumerate(B_action_dependencies):
-            num_controls = [num_controls_multi[d] for d in action_dependency]
-            action_multi_f = utils.index_to_combination(action[f], num_controls)
-            for i, a in zip(action_dependency, action_multi_f):
-                action_multi[i] = a
-        
-        action_multi = jnp.array(action_multi)
-        return action_multi
     
     def _get_default_params(self):
         method = self.inference_algo
