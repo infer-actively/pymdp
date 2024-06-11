@@ -60,6 +60,7 @@ class Agent(Module):
     # static parameters not leaves of the PyTree
     A_dependencies: Optional[List] = field(static=True)
     B_dependencies: Optional[List] = field(static=True)
+    B_action_dependencies: Optional[List] = field(static=True)
     batch_size: int = field(static=True)
     num_iter: int = field(static=True)
     num_obs: List[int] = field(static=True)
@@ -109,6 +110,8 @@ class Agent(Module):
         I=None,
         A_dependencies=None,
         B_dependencies=None,
+        B_action_dependencies=None,
+        num_controls=None,
         control_fac_idx=None,
         batch_size=1,
         policy_len=1,
@@ -133,18 +136,31 @@ class Agent(Module):
         learn_D=True,
         learn_E=False,
     ):
-
+        if B_action_dependencies is not None:
+            assert num_controls is not None, "Please specify num_controls for complex action dependencies"
+        
         # extract high level variables
         self.num_modalities = len(A)
         self.num_factors = len(B)
+        self.num_controls = num_controls
         self.batch_size = batch_size
 
         # extract dependencies for A and B matrices
-        self.A_dependencies, self.B_dependencies = self._construct_dependencies(A_dependencies, B_dependencies, A, B)
+        (
+            self.A_dependencies, 
+            self.B_dependencies, 
+            self.B_action_dependencies,
+        ) = self._construct_dependencies(
+            A_dependencies, B_dependencies, B_action_dependencies, A, B
+        )
 
         # extract A and B tensors
         A = [jnp.array(a.data) if isinstance(a, Distribution) else a for a in A]
         B = [jnp.array(b.data) if isinstance(b, Distribution) else b for b in B]
+
+        # flatten B action dims
+        if B_action_dependencies is not None:
+            B = self._flatten_B_action_dims(B, self.B_action_dependencies)
 
         # extract shapes from A and B
         self.num_states = jtu.tree_map(lambda x: x.shape[1], B)
@@ -211,7 +227,7 @@ class Agent(Module):
         if E is not None:
             E = jnp.broadcast_to(E, (batch_size,) + E.shape)
         else:
-            E = jnp.ones((batch_size, len(policies))) / len(policies)
+            E = jnp.ones((batch_size, len(self.policies))) / len(self.policies)
 
         if self.use_inductive and self.H is not None:
             I = control.generate_I_matrix(H, B, self.inductive_threshold, self.inductive_depth)
@@ -432,7 +448,7 @@ class Agent(Module):
         # assert jnp.isclose(jnp.sum(marginals), 1.)  # this fails inside scan
         return marginals
 
-    def _construct_dependencies(self, A_dependencies, B_dependencies, A, B):
+    def _construct_dependencies(self, A_dependencies, B_dependencies, B_action_dependencies, A, B):
         if A_dependencies is not None:
             A_dependencies = A_dependencies
         elif isinstance(A[0], Distribution) and isinstance(B[0], Distribution):
@@ -446,8 +462,23 @@ class Agent(Module):
             _, B_dependencies = get_dependencies(A, B)
         else:
             B_dependencies = [[f] for f in range(self.num_factors)]
-        return A_dependencies, B_dependencies
+        
+        """TODO: check B action shape"""
+        if B_action_dependencies is not None:
+            B_action_dependencies = B_action_dependencies
+        else:
+            B_action_dependencies = [[f] for f in range(self.num_factors)]
+        return A_dependencies, B_dependencies, B_action_dependencies
 
+    def _flatten_B_action_dims(self, B, B_action_dependencies):
+        assert hasattr(B[0], "shape"), "Elements of B must be tensors and have attribute shape"
+        B_flat = []
+        for B_f, action_dependency in zip(B, B_action_dependencies):
+            dims = [self.num_controls[d] for d in action_dependency]
+            target_shape = list(B_f.shape)[:-len(action_dependency)] + [pymath.prod(dims)]
+            B_flat.append(B_f.reshape(target_shape))
+        return B_flat
+    
     def _get_default_params(self):
         method = self.inference_algo
         default_params = None
