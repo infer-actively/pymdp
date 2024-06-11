@@ -181,6 +181,25 @@ def compile_model(config):
     return transitions, likelihoods
 
 
+def get_dependencies(transitions, likelihoods):
+    print(likelihoods[0])
+    likelihood_dependencies = dict()
+    transition_dependencies = dict()
+    observations = [list(like.event.keys())[0] for like in likelihoods]
+    states = [list(trans.event.keys())[0] for trans in transitions]
+    for like in likelihoods:
+        likelihood_dependencies[list(like.event.keys())[0]] = [
+            states.index(name) for name in like.batch.keys()
+        ]
+    for trans in transitions:
+        transition_dependencies[list(trans.event.keys())[0]] = [
+            states.index(name) for name in trans.batch.keys() if name in states
+        ]
+    return list(likelihood_dependencies.values()), list(
+        transition_dependencies.values()
+    )
+
+
 if __name__ == "__main__":
     controls = ["up", "down"]
     locations = ["A", "B", "C", "D"]
@@ -230,7 +249,7 @@ if __name__ == "__main__":
             "observation_1": {"size": 10, "depends_on": ["factor_1"]},
             "observation_2": {
                 "elements": ["A", "B"],
-                "depends_on": ["factor_1"],
+                "depends_on": ["factor_2"],
             },
         },
         "controls": {
@@ -256,6 +275,8 @@ if __name__ == "__main__":
     assert trans[0].data.shape == (3, 3, 2, 2, 2)
     assert trans[1].data.shape == (2, 2, 2)
     assert like[0].data.shape == (10, 3)
-    assert like[1].data.shape == (2, 3)
+    assert like[1].data.shape == (2, 2)
     assert like[0][:, "II"] is not None
     assert like[1][1, :] is not None
+    A_deps, B_deps = get_dependencies(trans, like)
+    print(A_deps, B_deps)
