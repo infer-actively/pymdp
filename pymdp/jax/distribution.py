@@ -92,22 +92,24 @@ def compile(config):
     shape = dict()
     for mod in config:
         for k, v in config[mod].items():
-            for kw in v:
-                match kw:
+            for keyword in v:
+                match keyword:
                     case "elements":
-                        shape[k] = len(v[kw])
-                        labels[k] = [name for name in v[kw]]
+                        shape[k] = len(v[keyword])
+                        labels[k] = [name for name in v[keyword]]
                     case "size":
-                        shape[k] = v[kw]
-                        labels[k] = list(range(v[kw]))
+                        shape[k] = v[keyword]
+                        labels[k] = list(range(v[keyword]))
                     case "depends_on_states":
-                        state_dependencies[k] = [name for name in v[kw]]
-                        if k in v[kw]:
+                        state_dependencies[k] = [name for name in v[keyword]]
+                        if k in v[keyword]:
                             transition_events[k] = labels[k]
                     case "depends_on_control":
-                        control_dependencies[k] = [name for name in v[kw]]
+                        control_dependencies[k] = [name for name in v[keyword]]
                     case "depends_on":
-                        likelihood_dependencies[k] = [name for name in v[kw]]
+                        likelihood_dependencies[k] = [
+                            name for name in v[keyword]
+                        ]
                         likelihood_events[k] = labels[k]
     transitions = []
     for event, description in transition_events.items():
@@ -211,3 +213,5 @@ if __name__ == "__main__":
     assert trans[1].data.shape == (2, 2, 2)
     assert like[0].data.shape == (10, 3)
     assert like[1].data.shape == (2, 3)
+    assert like[0][:, "II"] is not None
+    assert like[1][1, :] is not None
