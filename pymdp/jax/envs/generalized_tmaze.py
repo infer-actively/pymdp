@@ -232,7 +232,6 @@ class GeneralizedTMaze:
         """
         current_position = env_state.state[0]
         current_position = self.index_to_position(current_position)
-        print("!", current_position)
 
         # Create a copy of the maze for rendering
         maze_copy = np.copy(self.maze)

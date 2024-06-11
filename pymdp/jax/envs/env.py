@@ -70,4 +70,6 @@ class PyMDPEnv(Module):
         new_obs = jtu.tree_map(cat_sample, keys, obs_probs)
         new_obs = jtu.tree_map(lambda x: jnp.expand_dims(x, -1), new_obs)
 
+        new_obs = jtu.tree_map(lambda x: jnp.expand_dims(x, -1), new_obs)
+
         return new_obs, tree_at(lambda x: (x.state), self, new_state)
