@@ -1,10 +1,10 @@
 import numpy as np
+from pymdp.utils import norm_dist
 
 
 class Distribution:
 
-    def __init__(self, data: np.ndarray, event: dict, batch: dict):
-        self.data = data
+    def __init__(self, event: dict, batch: dict, data: np.ndarray = None):
         self.event = event
         self.batch = batch
 
@@ -16,6 +16,16 @@ class Distribution:
             key: {v: i for i, v in enumerate(values)}
             for key, values in batch.items()
         }
+
+        if data is not None:
+            self.data = data
+        else:
+            shape = []
+            for v in event.values():
+                shape.append(len(v))
+            for v in batch.values():
+                shape.append(len(v))
+            self.data = np.zeros(shape)
 
     def get(self, batch=None, event=None):
         event_slices = self._get_slices(event, self.event_indices, self.event)
@@ -80,6 +90,9 @@ class Distribution:
         ]
         self.data[tuple(index_list)] = value
 
+    def normalize(self):
+        norm_dist(self.data)
+
 
 def compile_model(config):
     """Compile a model from a config.
@@ -99,7 +112,7 @@ def compile_model(config):
     field indicating the named elements or the size of the integer array.
     In the case of an observation the `depends_on` field needs to be present to
     indicate what state factor links to this observation. In the case of states
-    the `depends_on_states` and `depends_on_control` fields are needed.
+    the `depends_on` and `controlled_by` fields are needed.
     ---
     example config:
     { "observations": {
@@ -116,13 +129,13 @@ def compile_model(config):
     "states": {
         "factor_1": {
             "elements": ["II", "JJ", "KK"],
-            "depends_on_states": ["factor_1", "factor_2"],
-            "depends_on_control": ["control_1", "control_2"],
+            "depends_on": ["factor_1", "factor_2"],
+            "controlled_by": ["control_1", "control_2"],
         },
         "factor_2": {
             "elements": ["foo", "bar"],
-            "depends_on_states": ["factor_2"],
-            "depends_on_control": ["control_2"],
+            "depends_on": ["factor_2"],
+            "controlled_by": ["control_2"],
         },
     }}
     """
@@ -171,7 +184,7 @@ def compile_model(config):
             arr_shape.append(shape[dep])
             batch_descr[dep] = labels[dep]
         arr = np.zeros(arr_shape)
-        transitions.append(Distribution(arr, event_descr, batch_descr))
+        transitions.append(Distribution(event_descr, batch_descr, arr))
     likelihoods = []
     for event, description in likelihood_events.items():
         arr_shape = [len(description)]
@@ -181,7 +194,7 @@ def compile_model(config):
             arr_shape.append(shape[dep])
             batch_descr[dep] = labels[dep]
         arr = np.zeros(arr_shape)
-        likelihoods.append(Distribution(arr, event_descr, batch_descr))
+        likelihoods.append(Distribution(event_descr, batch_descr, arr))
     return likelihoods, transitions
 
 
