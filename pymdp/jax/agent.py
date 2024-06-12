@@ -114,7 +114,7 @@ class Agent(Module):
         use_inductive=False,
         onehot_obs=False,
         action_selection="deterministic",
-        sampling_mode="marginal",
+        sampling_mode="full",
         inference_algo="fpi",
         num_iter=16,
         learn_A=True,
