@@ -79,7 +79,7 @@ class Distribution:
         self.data[tuple(index_list)] = value
 
     def normalize(self):
-        norm_dist(self.data)
+        self.data = norm_dist(self.data)
 
 
 def compile_model(config):
