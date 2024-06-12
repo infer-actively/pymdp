@@ -298,7 +298,14 @@ class Agent(Module):
         return agent
 
     @vmap
-    def infer_states(self, observations, past_actions, empirical_prior, qs_hist, mask=None):
+    def infer_states(
+        self,
+        observations,
+        empirical_prior,
+        past_actions=None,
+        qs_hist=None,
+        mask=None
+    ):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
