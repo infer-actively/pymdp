@@ -1,6 +1,12 @@
+import os, sys
 import unittest
 
 import numpy as np
+
+# import the library directly from local source (rather than relying on the library being installed)
+# insert the dependency so it's prioritized over an installed variant
+sys.path.insert(0, os.path.abspath('../pymdp'))
+
 from pymdp import utils, maths, learning
 
 from copy import deepcopy

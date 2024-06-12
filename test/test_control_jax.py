@@ -6,18 +6,21 @@ __author__: Dimitrije Markovic, Conor Heins
 """
 
 import os
+import sys
 import unittest
-import pytest
 
 import numpy as np
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
 
+# import the library directly from local source (rather than relying on the library being installed)
+# insert the dependency so it's prioritized over an installed variant
+sys.path.insert(0, os.path.abspath('../pymdp'))
+
 import pymdp.jax.control as ctl_jax
 import pymdp.control as ctl_np
 
-from pymdp.jax.maths import factor_dot
 from pymdp import utils
 
 cfg = {"source_key": 0, "num_models": 4}

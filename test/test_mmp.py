@@ -8,10 +8,15 @@ __author__: Conor Heins, Alexander Tschantz
 """
 
 import os
+import sys
 import unittest
 
 import numpy as np
 from scipy.io import loadmat
+
+# import the library directly from local source (rather than relying on the library being installed)
+# insert the dependency so it's prioritized over an installed variant
+sys.path.insert(0, os.path.abspath('../pymdp'))
 
 from pymdp.utils import get_model_dimensions, convert_observation_array
 from pymdp.algos import run_mmp

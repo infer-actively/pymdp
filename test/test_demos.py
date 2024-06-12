@@ -1,11 +1,16 @@
 import unittest
 import numpy as np
+import os
+import sys
 import copy
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+# import the library directly from local source (rather than relying on the library being installed)
+# insert the dependency so it's prioritized over an installed variant
+sys.path.insert(0, os.path.abspath('../pymdp'))
+
 from pymdp.agent import Agent
-from pymdp.utils import plot_beliefs, plot_likelihood
 from pymdp import utils, maths, default_models
 from pymdp import control
 from pymdp.envs import TMazeEnv, TMazeEnvNullOutcome

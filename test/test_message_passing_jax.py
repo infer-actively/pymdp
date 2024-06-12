@@ -6,6 +6,7 @@ __author__: Dimitrije Markovic, Conor Heins
 """
 
 import os
+import sys
 import unittest
 from functools import partial
 
@@ -15,16 +16,17 @@ import jax.tree_util as jtu
 from jax import vmap, nn
 from jax import random as jr
 
+# import the library directly from local source (rather than relying on the library being installed)
+# insert the dependency so it's prioritized over an installed variant
+sys.path.insert(0, os.path.abspath('../pymdp'))
+
 from pymdp.jax.algos import run_vanilla_fpi as fpi_jax
 from pymdp.jax.algos import run_factorized_fpi as fpi_jax_factorized
-from pymdp.jax.algos import update_variational_filtering as ovf_jax
 from pymdp.algos import run_vanilla_fpi as fpi_numpy
-from pymdp.algos import run_mmp as mmp_numpy
 from pymdp.jax.algos import run_mmp as mmp_jax
-from pymdp.jax.algos import run_vmp as vmp_jax
-from pymdp import utils, maths
+from pymdp import utils
 
-from typing import Any, List, Dict
+from typing import List, Dict
 
 
 def make_model_configs(source_seed=0, num_models=4) -> Dict:

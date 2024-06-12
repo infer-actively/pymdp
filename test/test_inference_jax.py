@@ -6,14 +6,19 @@ __author__: Dimitrije Markovic, Conor Heins
 """
 
 import os
+import sys
 import unittest
 
 import numpy as np
 import jax.numpy as jnp
 
+# import the library directly from local source (rather than relying on the library being installed)
+# insert the dependency so it's prioritized over an installed variant
+sys.path.insert(0, os.path.abspath('../pymdp'))
+
 from pymdp.jax.algos import run_vanilla_fpi as fpi_jax
 from pymdp.algos import run_vanilla_fpi as fpi_numpy
-from pymdp import utils, maths
+from pymdp import utils
 
 class TestInferenceJax(unittest.TestCase):
 

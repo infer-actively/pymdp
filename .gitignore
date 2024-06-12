@@ -2,6 +2,7 @@
 __pycache__
 .DS_Store
 .ipynb_checkpoints
+.idea
 .rope*
 .vscode/
 .ipynb_checkpoints/

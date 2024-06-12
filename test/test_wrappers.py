@@ -1,6 +1,11 @@
 import os
+import sys
 import unittest
-from pathlib import Path
+
+# import the library directly from local source (rather than relying on the library being installed)
+# insert the dependency so it's prioritized over an installed variant
+sys.path.insert(0, os.path.abspath('../pymdp'))
+
 from pymdp.utils import Dimensions, get_model_dimensions_from_labels
 
 class TestWrappers(unittest.TestCase):
