@@ -145,8 +145,9 @@ class Agent(Module):
         self.batch_size = A[0].shape[0] if not apply_batch else 1
 
         # extract shapes from A and B
-        self.num_states = jtu.tree_map(lambda x: x.shape[1], B)
-        self.num_obs = jtu.tree_map(lambda x: x.shape[1], A)
+        batch_dim = lambda x: x.shape[0] if apply_batch else x.shape[1]
+        self.num_states = jtu.tree_map(batch_dim, B)
+        self.num_obs = jtu.tree_map(batch_dim, A)
         self.num_controls = [B[f].shape[-1] for f in range(self.num_factors)]
 
         # static parameters
