@@ -108,7 +108,6 @@ class Agent(Module):
         A_dependencies=None,
         B_dependencies=None,
         control_fac_idx=None,
-        batch_size=1,
         policy_len=1,
         policies=None,
         gamma=16.0,
@@ -125,6 +124,7 @@ class Agent(Module):
         sampling_mode="marginal",
         inference_algo="fpi",
         num_iter=16,
+        apply_batch=False,
         learn_A=True,
         learn_B=True,
         learn_C=False,
@@ -135,7 +135,6 @@ class Agent(Module):
         # extract high level variables
         self.num_modalities = len(A)
         self.num_factors = len(B)
-        self.batch_size = batch_size
 
         # extract dependencies for A and B matrices
         self.A_dependencies, self.B_dependencies = self._construct_dependencies(A_dependencies, B_dependencies, A, B)
@@ -143,6 +142,7 @@ class Agent(Module):
         # extract A and B tensors
         A = [jnp.array(a.data) if isinstance(a, Distribution) else a for a in A]
         B = [jnp.array(b.data) if isinstance(b, Distribution) else b for b in B]
+        self.batch_size = A[0].shape[0] if not apply_batch else 1
 
         # extract shapes from A and B
         self.num_states = jtu.tree_map(lambda x: x.shape[1], B)
@@ -187,29 +187,30 @@ class Agent(Module):
             self.policies = policies
 
         # setup pytree leaves A, B, C, D, E, pA, pB, H, I
-        A = jtu.tree_map(lambda x: jnp.broadcast_to(x, (batch_size,) + x.shape), A)
-        B = jtu.tree_map(lambda x: jnp.broadcast_to(x, (batch_size,) + x.shape), B)
+        if apply_batch:
+            A = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), A)
+            B = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), B)
 
-        if pA is not None:
-            pA = jtu.tree_map(lambda x: jnp.broadcast_to(x, (batch_size,) + x.shape), pA)
+        if pA is not None and apply_batch:
+            pA = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), pA)
 
-        if pB is not None:
-            pB = jtu.tree_map(lambda x: jnp.broadcast_to(x, (batch_size,) + x.shape), pB)
+        if pB is not None and apply_batch:
+            pB = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), pB)
 
-        if C is not None:
-            C = jtu.tree_map(lambda x: jnp.broadcast_to(x, (batch_size,) + x.shape), C)
+        if C is not None and apply_batch:
+            C = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), C)
         else:
-            C = [jnp.ones((batch_size, self.num_obs[m])) / self.num_obs[m] for m in range(self.num_modalities)]
+            C = [jnp.ones((self.batch_size, self.num_obs[m])) / self.num_obs[m] for m in range(self.num_modalities)]
 
-        if D is not None:
-            D = jtu.tree_map(lambda x: jnp.broadcast_to(x, (batch_size,) + x.shape), D)
+        if D is not None and apply_batch:
+            D = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), D)
         else:
-            D = [jnp.ones((batch_size, self.num_states[f])) / self.num_states[f] for f in range(self.num_factors)]
+            D = [jnp.ones((self.batch_size, self.num_states[f])) / self.num_states[f] for f in range(self.num_factors)]
 
-        if E is not None:
-            E = jnp.broadcast_to(E, (batch_size,) + E.shape)
+        if E is not None and apply_batch:
+            E = jnp.broadcast_to(E, (self.batch_size,) + E.shape)
         else:
-            E = jnp.ones((batch_size, len(self.policies))) / len(self.policies)
+            E = jnp.ones((self.batch_size, len(self.policies))) / len(self.policies)
 
         if self.use_inductive and self.H is not None:
             I = control.generate_I_matrix(H, B, self.inductive_threshold, self.inductive_depth)
