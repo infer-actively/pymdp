@@ -9,9 +9,9 @@ import jax.numpy as jnp
 
 def select_probs(positions, matrix, dependency_list, actions=None):
     args = tuple(p for i, p in enumerate(positions) if i in dependency_list)
-    args += () if actions is None else (actions,)
+    args = args + (actions,) if actions is not None else args
 
-    return matrix[..., *args]
+    return matrix[(...,) + args]
 
 def cat_sample(key, p):
     a = jnp.arange(p.shape[-1])
