@@ -11,10 +11,25 @@ def rollout(agent: Agent, env: PyMDPEnv, num_timesteps: int, rng_key: jr.PRNGKey
     """
     Rollout an agent in an environment for a number of timesteps.
 
-        agent: pymdp agent to generate actions
-        env: pymdp environment to interact with
-        num_timesteps: number of timesteps to rollout for
-        rng_key: random key to use for sampling actions
+    Parameters
+    ----------
+    agent: ``Agent``
+        Agent to interact with the environment
+    env: ``PyMDPEnv`
+        Environment to interact with
+    num_timesteps: ``int``
+        Number of timesteps to rollout for
+    rng_key: ``PRNGKey``
+        Random key to use for sampling actions
+
+    Returns
+    ----------
+    last: ``dict``
+        Carry dictionary from the last timestep
+    info: ``dict``
+        Dictionary containing information about the rollout, i.e. executed actions, observations, beliefs, etc.
+    env: ``PyMDPEnv``
+        Environment state after the rollout
     """
     # get the batch_size of the agent
     batch_size = agent.A[0].shape[0]
@@ -73,12 +88,13 @@ def rollout(agent: Agent, env: PyMDPEnv, num_timesteps: int, rng_key: jr.PRNGKey
     # initial belief
     qs_0 = jtu.tree_map(lambda x: jnp.expand_dims(x, -2), agent.D)
 
-    # initial action
-    # TODO better fill with zeros?
+    # infer initial action to get the right shape
     qpi_0, _ = agent.infer_policies(qs_0)
     keys = jr.split(rng_key, batch_size + 1)
     rng_key = keys[0]
     action_t = agent.sample_action(qpi_0, rng_key=keys[1:])
+    # but set it to zeros
+    action_t *= 0
 
     initial_carry = {
         "qs": qs_0,
