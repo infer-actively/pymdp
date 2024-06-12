@@ -145,6 +145,7 @@ class Agent(Module):
         self.num_modalities = len(A)
         self.num_factors = len(B)
         self.num_controls = num_controls
+        self.num_controls_multi = num_controls
         self.batch_size = batch_size
 
         # extract dependencies for A and B matrices
@@ -164,6 +165,10 @@ class Agent(Module):
         self.num_controls_multi = num_controls
         if B_action_dependencies is not None:
             B = self._flatten_B_action_dims(B, self.B_action_dependencies)
+            policies = control.construct_policies(
+                self.num_controls_multi, self.num_controls_multi, policy_len, control_fac_idx
+            )
+            policies = self._construct_flattend_policies(policies, self.B_action_dependencies)
 
         # extract shapes from A and B
         self.num_states = jtu.tree_map(lambda x: x.shape[1], B)
@@ -513,10 +518,24 @@ class Agent(Module):
                 B_flat.append(jnp.expand_dims(B_f, axis=-1))
                 continue
 
-            dims = [self.num_controls[d] for d in action_dependency]
+            dims = [self.num_controls_multi[d] for d in action_dependency]
             target_shape = list(B_f.shape)[:-len(action_dependency)] + [pymath.prod(dims)]
             B_flat.append(B_f.reshape(target_shape))
         return B_flat
+    
+    """TODO: make better maybe invertible mapping between action spaces"""
+    def _construct_flattend_policies(self, policies, B_action_dependencies):
+        policies_flat = []
+        for action_dependency in B_action_dependencies:
+            if action_dependency == []:
+                continue
+
+            dims = [self.num_controls_multi[d] for d in action_dependency]
+            policies_flat.append(
+                utils.get_combination_index(policies[..., action_dependency], dims)
+            )
+        policies_flat = jnp.stack(policies_flat, axis=-1)
+        return policies_flat
     
     def _get_default_params(self):
         method = self.inference_algo
