@@ -27,11 +27,22 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         python -m pip install flake8 pytest
+        python -m pip install coverage
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
     - name: Lint with flake8
       run: |
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-    - name: Test with pytest
-      run: |
-        pytest test
+    - name: Run tests with pytest, calculating coverage
+      run: coverage run --source=pymdp -m pytest test/
+    - name: Generate coverage HTML report
+      run: coverage html
+      # expect actions/upload-artifact@v4 to fail when run locally with `act`
+    - name: Upload coverage HTML report for pymdp as a build artifact
+      uses: actions/upload-artifact@v4
+      with:
+          name: pymdp-${{ matrix.python-version }}--coverage-report
+          path: htmlcov/
+          retention-days: 30
+    - name: Print coverage report to console
+      run: coverage report

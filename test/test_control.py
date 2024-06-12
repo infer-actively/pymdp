@@ -6,9 +6,14 @@ __author__: Conor Heins, Alexander Tschantz, Daphne Demekas, Brennan Klein
 """
 
 import os
+import sys
 import unittest
 
 import numpy as np
+
+# import the library directly from local source (rather than relying on the library being installed)
+# insert the dependency so it's prioritized over an installed variant
+sys.path.insert(0, os.path.abspath('../pymdp'))
 
 from pymdp import utils, maths
 from pymdp import control

@@ -2,6 +2,7 @@
 __pycache__
 .DS_Store
 .ipynb_checkpoints
+.idea
 .rope*
 .vscode/
 .ipynb_checkpoints/
@@ -9,3 +10,5 @@ __pycache__
 env/
 pymdp.egg-info
 inferactively_pymdp.egg-info
+htmlcov
+.coverage

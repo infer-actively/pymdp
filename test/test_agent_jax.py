@@ -6,17 +6,19 @@ __author__: Dimitrije Markovic, Conor Heins
 """
 
 import os
+import sys
 import unittest
 
-import numpy as np
 import jax.numpy as jnp
 from jax import vmap, nn, random
-import jax.tree_util as jtu
+
+# import the library directly from local source (rather than relying on the library being installed)
+# insert the dependency so it's prioritized over an installed variant
+sys.path.insert(0, os.path.abspath('../pymdp'))
 
 from pymdp.jax.maths import compute_log_likelihood_single_modality
 from pymdp.jax.utils import norm_dist
 from equinox import Module
-from typing import Any, List
 
 class TestAgentJax(unittest.TestCase):
 

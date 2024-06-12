@@ -6,11 +6,16 @@ __author__: Dimitrije Markovic, Conor Heins
 """
 
 import os
+import sys
 import unittest
 
 import numpy as np
 import jax.numpy as jnp
 import jax.tree_util as jtu
+
+# import the library directly from local source (rather than relying on the library being installed)
+# insert the dependency so it's prioritized over an installed variant
+sys.path.insert(0, os.path.abspath('../pymdp'))
 
 from pymdp.learning import update_obs_likelihood_dirichlet as update_pA_numpy
 from pymdp.learning import update_obs_likelihood_dirichlet_factorized as update_pA_numpy_factorized
