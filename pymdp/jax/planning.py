@@ -1,5 +1,10 @@
 import itertools
 import jax.numpy as jnp
+import jax.tree_util as jtu
+from jax import nn
+
+
+from pymdp.jax.control import compute_info_gain, compute_expected_utility
 
 
 class Tree:
@@ -21,7 +26,7 @@ class Tree:
         return [node for node in self.nodes if len(node["children"]) == 0]
 
 
-def tree_search(qs, planning_horizon):
+def tree_search(agent, qs, planning_horizon):
     root_node = {
         "qs": qs,
         "parent": None,
@@ -35,20 +40,13 @@ def tree_search(qs, planning_horizon):
 
         # TODO refactor so we can vectorize this
         for node in tree.leaves():
-            tree = expand_node(node, tree)
+            tree = expand_node(agent, node, tree)
 
         h += 1
 
 
-def imagine():
-    pass
-
-
-def infer_state(prior, observation):
-    return prior
-
-
 def expand_node(
+    agent,
     node,
     tree,
     policy_prune_threshold=1 / 16,
@@ -58,7 +56,15 @@ def expand_node(
     gamma=32,
 ):
 
-    policies, q_pi, G, EU, EIG, qs_pi, qo_pi = imagine(node["qs"], gamma=gamma)
+    qs = node["qs"]
+    policies = agent.policies
+    qs_pi = agent.update_empirical_prior(qs, policies)
+    qo_pi = jtu.tree_map(lambda a, q: a @ q, agent.A, qs_next)
+
+    info_gain = compute_info_gain(qs_pi, qo_pi, agent.A, agent.A_dependencies)
+    utility = compute_expected_utility(qo_pi, agent.C)
+    G = utility + info_gain
+    q_pi = nn.softmax(G * gamma)
 
     node["policies"] = policies
     node["q_pi"] = q_pi
@@ -79,21 +85,18 @@ def expand_node(
             break
 
     for idx in range(len(policies)):
-        if idx not in policies_to_consider:
-            observation_node = {
-                "policy": policies[idx],
-                "q_pi": q_pi[idx],
-                "G": G[idx],
-                "EU": EU[idx],
-                "EIG": EIG[idx],
-                "G": prune_penalty,
-                "parent": node,
-                "children": [],
-                "n": node["n"] + 1,
-            }
-            node["children"].append(observation_node)
-            tree.append(observation_node)
-        else:
+        policy_node = {
+            "policy": policies[idx],
+            "q_pi": q_pi[idx],
+            "G": G[idx],
+            "parent": node,
+            "children": [],
+            "n": node["n"] + 1,
+        }
+        node["children"].append(policy_node)
+        tree.append(policy_node)
+
+        if idx in policies_to_consider:
             # branch over possible observations
             qo_next = qo_pi[idx][0]
             for k in itertools.product(*[range(s.shape[0]) for s in qo_next]):
@@ -110,21 +113,16 @@ def expand_node(
                     qo_one_hot = jnp.zeros(qo_next[i].shape[0])
                     qo_one_hot = qo_one_hot.at[k[i]].set(1.0)
 
-                qs_next = infer_state(qs_pi[idx], qo_one_hot)
+                qs_next = agent.infer_states(qs_pi[idx], qo_one_hot)
 
                 observation_node = {
-                    "policy": policies[idx],
-                    "q_pi": q_pi[idx],
-                    "G": G[idx],
-                    "EU": EU[idx],
-                    "EIG": EIG[idx],
                     "observation": qo_one_hot,
                     "prob": prob,
                     "qs": qs_next,
                     "G": 1e-10,
-                    "parent": node,
+                    "parent": policy_node,
                     "children": [],
                     "n": node["n"] + 1,
                 }
-                node["children"].append(observation_node)
+                policy_node["children"].append(observation_node)
                 tree.append(observation_node)
