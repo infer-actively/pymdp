@@ -34,7 +34,6 @@ optax = "^0.1"
 matplotlib = "^3.9"
 networkx = "^3.3"
 
-
 [tool.black]
 line-length = 120
 
