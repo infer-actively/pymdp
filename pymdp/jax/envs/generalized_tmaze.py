@@ -424,7 +424,7 @@ def render(maze_info, env_state):
     plt.legend(
         handles=handles, loc="upper left", bbox_to_anchor=(1, 1), fancybox=True
     )
-    plt.axis("off")
+    #plt.axis("off")
     plt.tight_layout()
 
     # Capture the current figure as an image
