@@ -1,4 +1,5 @@
 import itertools
+import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from jax import nn
@@ -25,8 +26,27 @@ class Tree:
     def leaves(self):
         return [node for node in self.nodes if len(node["children"]) == 0]
 
+    def append(self, node):
+        self.nodes.append(node)
+
+
+def step(agent, qs, policies, gamma=32):
+
+    def _step(a, b, c, q, policy):
+        qs = compute_expected_state(q, b, policy, agent.B_dependencies)
+        qo = compute_expected_obs(qs, a, agent.A_dependencies)
+        u = compute_expected_utility(qo, c)
+        ig = compute_info_gain(qs, qo, a, agent.A_dependencies)
+        return qs, qo, u, ig
+
+    qs, qo, u, ig = vmap(lambda policy: vmap(_step)(agent.A, agent.B, agent.C, qs, policy))(policies)
+    G = u + ig
+    return qs, qo, G
+
 
 def tree_search(agent, qs, planning_horizon):
+    # cut out time dimension
+    qs = jtu.tree_map(lambda x: x[:, -1, ...], qs)
     root_node = {
         "qs": qs,
         "parent": None,
@@ -37,15 +57,41 @@ def tree_search(agent, qs, planning_horizon):
 
     h = 0
     while h < planning_horizon:
-
         # TODO refactor so we can vectorize this
         for node in tree.leaves():
-            tree = expand_node(agent, node, tree)
+            tree = expand_node_vanilla(agent, node, tree)
 
         h += 1
 
+    return tree
 
-def expand_node(
+
+def expand_node_vanilla(agent, node, tree):
+    qs = node["qs"]
+    policies = agent.policies
+
+    qs_pi, _, _, _, G = step(agent, qs, policies)
+    q_pi = nn.softmax(jnp.array(G), axis=0)
+
+    for idx in range(len(policies)):
+        policy_node = {
+            "policy": policies[idx],
+            "q_pi": q_pi[idx],
+            "qs": qs_pi[idx],
+            "G": G[idx],
+            "parent": node,
+            "children": [],
+            "n": node["n"] + 1,
+        }
+        node["children"].append(policy_node)
+        tree.append(policy_node)
+
+    # TODO update G of parents
+
+    return tree
+
+
+def expand_node_sophisticated(
     agent,
     node,
     tree,
@@ -58,6 +104,8 @@ def expand_node(
 
     qs = node["qs"]
     policies = agent.policies
+
+    print(policies)
     qs_pi = agent.update_empirical_prior(qs, policies)
     qo_pi = jtu.tree_map(lambda a, q: a @ q, agent.A, qs_next)
 
@@ -127,16 +175,6 @@ def expand_node(
                 policy_node["children"].append(observation_node)
                 tree.append(observation_node)
 
+        # TODO update Gs of parents
 
-def step(agent, qs, policies, gamma=32):
-
-    def _step(a, b, c, q, policy):
-        qs = compute_expected_state(q, b, policy, agent.B_dependencies)
-        qo = compute_expected_obs(qs, a, agent.A_dependencies)
-        u = compute_expected_utility(qo, c)
-        ig = compute_info_gain(qs, qo, a, agent.A_dependencies)
-        return qs, qo, u, ig
-
-    qs, qo, u, ig = vmap(lambda policy: vmap(_step)(agent.A, agent.B, agent.C, qs, policy))(policies)
-    G = nn.softmax(gamma * (u + ig), axis=0)
-    return qs, qo, G
+    return tree
