@@ -41,36 +41,76 @@ def step(agent, qs, policies, gamma=32):
 
     qs, qo, u, ig = vmap(lambda policy: vmap(_step)(agent.A, agent.B, agent.C, qs, policy))(policies)
     G = u + ig
-    return qs, qo, G
+    return qs, qo, nn.softmax(G * gamma, axis=0), G
 
 
-def tree_search(agent, qs, planning_horizon):
-    # cut out time dimension
-    qs = jtu.tree_map(lambda x: x[:, -1, ...], qs)
+def tree_search(agent, qs, horizon):
     root_node = {
-        "qs": qs,
+        "qs": jtu.tree_map(lambda x: x[:, -1, ...], qs),
         "parent": None,
         "children": [],
         "n": 0,
     }
     tree = Tree(root_node)
 
-    h = 0
-    while h < planning_horizon:
-        # TODO refactor so we can vectorize this
-        for node in tree.leaves():
-            tree = expand_node_vanilla(agent, node, tree)
-
-        h += 1
-
+    # TODO: scan here
+    for _ in range(horizon):
+        leaves = tree.leaves()
+        qs_leaves = stack_data([leaf["qs"] for leaf in leaves])
+        qs_pi, _, q_pi, G = vmap(lambda leaf: step(agent, leaf, agent.policies))(qs_leaves)
+        tree = expand_tree(tree, leaves, agent.policies, qs_pi, q_pi, G)
     return tree
+
+
+def expand_tree(tree, leaves, policies, qs_pi, q_pi, G):
+    # TODO: we will vmap this at some point
+    for l, leaf in enumerate(leaves):
+        for p, policy in enumerate(policies):
+            child = {
+                "policy": policy,
+                "q_pi": q_pi[l, p],
+                "qs": jtu.tree_map(lambda x: x[l, p, ...], qs_pi),
+                "G": G[l, p],
+                "parent": leaf,
+                "children": [],
+                "n": leaf["n"] + 1,
+            }
+            leaf["children"].append(child)
+            tree.append(child)
+    return tree
+
+
+def stack_data(data):
+    return [jnp.stack([d[i] for d in data]) for i in range(len(data[0]))]
+
+
+# def tree_search(agent, qs, planning_horizon):
+#     # cut out time dimension
+#     qs = jtu.tree_map(lambda x: x[:, -1, ...], qs)
+#     root_node = {
+#         "qs": qs,
+#         "parent": None,
+#         "children": [],
+#         "n": 0,
+#     }
+#     tree = Tree(root_node)
+
+#     h = 0
+#     while h < planning_horizon:
+#         # TODO refactor so we can vectorize this
+#         for node in tree.leaves():
+#             tree = expand_node_vanilla(agent, node, tree)
+
+#         h += 1
+
+#     return tree
 
 
 def expand_node_vanilla(agent, node, tree):
     qs = node["qs"]
     policies = agent.policies
 
-    qs_pi, _, G = step(agent, qs, policies)
+    qs_pi, _, _, G = step(agent, qs, policies)
     q_pi = nn.softmax(jnp.array(G), axis=0)
 
     for idx in range(len(policies)):
