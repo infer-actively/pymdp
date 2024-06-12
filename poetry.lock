@@ -2210,6 +2210,7 @@ numpy = "*"
 tests = ["Cython", "packaging", "pytest"]
 
 [[package]]
+<<<<<<< HEAD
 name = "networkx"
 version = "3.3"
 description = "Python package for creating and manipulating graphs and networks"
@@ -2228,6 +2229,8 @@ extra = ["lxml (>=4.6)", "pydot (>=2.0)", "pygraphviz (>=1.12)", "sympy (>=1.10)
 test = ["pytest (>=7.2)", "pytest-cov (>=4.0)"]
 
 [[package]]
+=======
+>>>>>>> f9f9bab (get a version that passes all tests)
 name = "notebook"
 version = "6.5.4"
 description = "A web-based notebook environment for interactive computing"
@@ -3856,4 +3859,8 @@ test = ["big-O", "importlib-resources", "jaraco.functools", "jaraco.itertools", 
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
+<<<<<<< HEAD
 content-hash = "e11c27bafde36c4c7992e0d8fed795bffd84bc0ce6b9bde87c8ab720914e40ba"
+=======
+content-hash = "1d4252501e2f94d66e6efff363c91149a47c19134dfc50fd77f39357780b420b"
+>>>>>>> f9f9bab (get a version that passes all tests)
