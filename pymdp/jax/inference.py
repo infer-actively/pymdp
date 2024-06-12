@@ -7,6 +7,8 @@ from .algos import run_factorized_fpi, run_mmp, run_vmp
 from jax import tree_util as jtu, lax
 from multimethod import multimethod
 from jax.experimental.sparse._base import JAXSparse
+from jax.experimental.sparse import sparsify
+from jaxtyping import Array
 
 def update_posterior_states(
         A, 
@@ -59,7 +61,7 @@ def update_posterior_states(
     return qs_hist
 
 @multimethod
-def joint_dist_factor(b: jnp.ndarray, filtered_qs, actions):
+def joint_dist_factor(b: Array, filtered_qs, actions):
     qs_last = filtered_qs[-1]
     qs_filter = filtered_qs[:-1]
 
@@ -115,7 +117,7 @@ def joint_dist_factor(b: JAXSparse, filtered_qs, actions):
         qs_joint = qs_backward_cond[t] * qs_smooth_past
         qs_smooth = qs_joint.sum(-1)
         
-        return qs_smooth, (qs_smooth, qs_joint)
+        return qs_smooth.todense(), (qs_smooth.todense(), qs_joint)
 
     # seq_qs will contain a sequence of smoothed marginals and joints
     _, seq_qs = lax.scan(
@@ -127,6 +129,7 @@ def joint_dist_factor(b: JAXSparse, filtered_qs, actions):
     )
 
     # we add the last filtered belief to smoothed beliefs
+
     qs_smooth_all = jnp.concatenate([seq_qs[0], jnp.expand_dims(qs_last, 0)], 0)
     return qs_smooth_all, seq_qs[1]
 
@@ -135,13 +138,13 @@ def smoothing_ovf(filtered_post, B, past_actions):
     assert len(filtered_post) == len(B)
     nf = len(B)  # number of factors
     joint = lambda b, qs, f: joint_dist_factor(b, qs, past_actions[..., f])
-    marginals_and_joints = jtu.tree_map(
-        joint, B, filtered_post, list(range(nf)))
+    # marginals_and_joints = jtu.tree_map(
+    #     joint, B, filtered_post, list(range(nf)))
 
-    # marginals_and_joints = []
-    # for b, qs, f in zip(B, filtered_post, list(range(nf))):
-    #     marginals_and_joints_f = joint(b, qs, f)
-    #     marginals_and_joints.append(marginals_and_joints_f)
+    marginals_and_joints = []
+    for b, qs, f in zip(B, filtered_post, list(range(nf))):
+        marginals_and_joints_f = joint(b, qs, f)
+        marginals_and_joints.append(marginals_and_joints_f)
 
     return marginals_and_joints
 
