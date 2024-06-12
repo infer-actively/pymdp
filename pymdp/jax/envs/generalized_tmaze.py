@@ -249,7 +249,7 @@ def generate_B(maze_info):
                 or ns_row >= rows
                 or ns_col < 0
                 or ns_col >= cols
-                or maze[ns_row, ns_col] == 1
+                or maze[ns_row, ns_col] == 2
             ):
                 P[s, a] = s
             else:
@@ -274,7 +274,7 @@ def generate_B(maze_info):
     for i, reward_transition in enumerate(reward_transitions):
         combined_transition[1 + i] = reward_transition
 
-    transition_dependencies = ([[0]] + [[i + 1] for i in range(num_cues)],)
+    transition_dependencies = [[0]] + [[i + 1] for i in range(num_cues)]
 
     return combined_transition, transition_dependencies
 
@@ -447,6 +447,7 @@ class GeneralizedTMazeEnv(PyMDPEnv):
     def __init__(self, env_info):
         A, A_dependencies = generate_A(env_info)
         B, B_dependencies = generate_B(env_info)
+        print(B_dependencies)
         D = generate_D(env_info)
         params = {
             "A": [jnp.expand_dims(jnp.array(x), 0) for x in A],
