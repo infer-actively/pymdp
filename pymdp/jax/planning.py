@@ -2,6 +2,7 @@ import itertools
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from jax import nn
+from jax import vmap
 
 from pymdp.jax.control import compute_info_gain, compute_expected_utility, compute_expected_state, compute_expected_obs
 
@@ -128,22 +129,14 @@ def expand_node(
 
 
 def step(agent, qs, policies, gamma=32):
-    qs_pis, qo_pis, utilities, info_gains, G = [], [], [], [], []
 
     def _step(a, b, c, q, policy):
-        qs_pi = compute_expected_state(q, b, policy, agent.B_dependencies)
-        qo_pi = compute_expected_obs(qs_pi, a, agent.A_dependencies)
-        utility = compute_expected_utility(qo_pi, c)
-        info_gain = compute_info_gain(qs_pi, qo_pi, a, agent.A_dependencies)
-        return qs_pi, qo_pi, utility, info_gain
+        qs = compute_expected_state(q, b, policy, agent.B_dependencies)
+        qo = compute_expected_obs(qs, a, agent.A_dependencies)
+        u = compute_expected_utility(qo, c)
+        ig = compute_info_gain(qs, qo, a, agent.A_dependencies)
+        return qs, qo, u, ig
 
-    for policy in policies:
-        qs_pi, qo_pi, utility, info_gain = jax.vmap(_step)(agent.A, agent.B, agent.C, qs, policy)
-        qs_pis.append(qs_pi)
-        qo_pis.append(qo_pi)
-        utilities.append(utility)
-        info_gains.append(info_gain)
-        G.append(-utility - info_gain)
-
-    G = nn.softmax(-gamma * jnp.array(G), axis=0)
-    return qs_pis, qo_pis, utilities, info_gains, G
+    qs, qo, u, ig = vmap(lambda policy: vmap(_step)(agent.A, agent.B, agent.C, qs, policy))(policies)
+    G = nn.softmax(gamma * (u + ig), axis=0)
+    return qs, qo, G
