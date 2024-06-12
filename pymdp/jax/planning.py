@@ -70,14 +70,14 @@ def expand_node_vanilla(agent, node, tree):
     qs = node["qs"]
     policies = agent.policies
 
-    qs_pi, _, _, _, G = step(agent, qs, policies)
+    qs_pi, _, G = step(agent, qs, policies)
     q_pi = nn.softmax(jnp.array(G), axis=0)
 
     for idx in range(len(policies)):
         policy_node = {
             "policy": policies[idx],
             "q_pi": q_pi[idx],
-            "qs": qs_pi[idx],
+            "qs": jtu.tree_map(lambda x: x[idx, ...], qs_pi),
             "G": G[idx],
             "parent": node,
             "children": [],
