@@ -939,4 +939,3 @@ class Agent(object):
         return default_params
 
     
-    
