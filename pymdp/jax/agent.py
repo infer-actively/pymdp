@@ -198,18 +198,21 @@ class Agent(Module):
         if pB is not None and apply_batch:
             pB = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), pB)
 
-        if C is not None and apply_batch:
-            C = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), C)
+        if C is not None:
+            if apply_batch:
+                C = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), C)
         else:
             C = [jnp.ones((self.batch_size, self.num_obs[m])) / self.num_obs[m] for m in range(self.num_modalities)]
 
-        if D is not None and apply_batch:
-            D = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), D)
+        if D is not None:
+            if apply_batch:
+                D = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), D)
         else:
             D = [jnp.ones((self.batch_size, self.num_states[f])) / self.num_states[f] for f in range(self.num_factors)]
 
-        if E is not None and apply_batch:
-            E = jnp.broadcast_to(E, (self.batch_size,) + E.shape)
+        if E is not None:
+            if apply_batch:
+                E = jnp.broadcast_to(E, (self.batch_size,) + E.shape)
         else:
             E = jnp.ones((self.batch_size, len(self.policies))) / len(self.policies)
 
