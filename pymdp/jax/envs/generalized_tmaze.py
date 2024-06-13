@@ -6,6 +6,7 @@ import io
 import PIL.Image
 
 import jax.numpy as jnp
+import jax.tree_util as jtu
 from matplotlib.lines import Line2D
 
 
@@ -261,6 +262,9 @@ def generate_B(maze_info):
             ns = P[s, a]
             B[ns, s, a] = 1
 
+    # add do nothing action 
+    B = np.concatenate([B, np.eye(num_states)[..., None]], -1)
+
     assert np.all(np.logical_or(B == 0, B == 1))
     assert np.allclose(B.sum(axis=0), 1)
 
@@ -313,7 +317,7 @@ def generate_D(maze_info):
     return D
 
 
-def render(maze_info, env_state):
+def render(maze_info, env_state, show_img=True):
     """
     Plots and returns the rendered environment.
     Parameters
@@ -341,6 +345,7 @@ def render(maze_info, env_state):
     mask = np.isin(maze, [2], invert=True)
     maze[mask] = 0
 
+    plt.figure()
     plt.imshow(maze, cmap="gray_r", origin="lower")
 
     cmap = plt.get_cmap("tab10")
@@ -367,14 +372,7 @@ def render(maze_info, env_state):
         s=200,
         alpha=0.5,
     )
-    plt.scatter(
-        [ri[1] for ri in reward_1_positions],
-        [ri[0] for ri in reward_1_positions],
-        marker="o",
-        color="red",
-        s=50,
-        label="Positive",
-    )
+
     plt.scatter(
         [ri[1] for ri in reward_2_positions],
         [ri[0] for ri in reward_2_positions],
@@ -382,9 +380,19 @@ def render(maze_info, env_state):
         s=200,
         alpha=0.5,
     )
+
     plt.scatter(
-        [ri[1] for ri in reward_2_positions],
-        [ri[0] for ri in reward_2_positions],
+        [ri[1] for ri in reward_1_positions[-1:]],
+        [ri[0] for ri in reward_1_positions[-1:]],
+        marker="o",
+        color="red",
+        s=50,
+        label="Positive",
+    )
+
+    plt.scatter(
+        [ri[1] for ri in reward_2_positions[-1:]],
+        [ri[0] for ri in reward_2_positions[-1:]],
         marker="o",
         color="blue",
         s=50,
@@ -404,10 +412,10 @@ def render(maze_info, env_state):
 
     handles, labels = plt.gca().get_legend_handles_labels()
     for i in range(num_cues):
-        if i == 0:
+        if i == num_cues - 1:
             label = "Reward set"
         else:
-            label = f"Distractor {i} set"
+            label = f"Distractor {i + 1} set"
         patch = Line2D(
             [0],
             [0],
@@ -433,7 +441,8 @@ def render(maze_info, env_state):
     buf.seek(0)
     image = PIL.Image.open(buf)
 
-    plt.show()
+    if show_img:
+        plt.show()
 
     return image
 
@@ -444,15 +453,15 @@ class GeneralizedTMazeEnv(PyMDPEnv):
     similar to the original T-maze.
     """
 
-    def __init__(self, env_info):
+    def __init__(self, env_info, batch_size=1):
         A, A_dependencies = generate_A(env_info)
         B, B_dependencies = generate_B(env_info)
-        print(B_dependencies)
         D = generate_D(env_info)
+        expand_to_batch = lambda x: jnp.broadcast_to(jnp.array(x), (batch_size,) + x.shape)
         params = {
-            "A": [jnp.expand_dims(jnp.array(x), 0) for x in A],
-            "B": [jnp.expand_dims(jnp.array(x), 0) for x in B],
-            "D": [jnp.expand_dims(jnp.array(x), 0) for x in D],
+            "A": jtu.tree_map(expand_to_batch, list(A)),
+            "B": jtu.tree_map(expand_to_batch, list(B)),
+            "D": jtu.tree_map(expand_to_batch, list(D)),
         }
         dependencies = {"A": A_dependencies, "B": B_dependencies}
 
