@@ -60,7 +60,7 @@ def rollout(agent: Agent, env: PyMDPEnv, num_timesteps: int, rng_key: jr.PRNGKey
         rng_key = keys[0]
         observation_t, env = env.step(rng_key=keys[1:], actions=action_t)
 
-        empirical_prior, qs = agent.update_empirical_prior(action_t, qs)
+        empirical_prior, qs = agent.infer_empirical_prior(action_t, qs)
 
         carry = {
             "action_t": action_t,
