@@ -49,10 +49,12 @@ def spm_dot_sparse(
 ):
     if dims is None:
         dims = (jnp.arange(0, len(x)) + X.ndim - len(x)).astype(int)
+    dims = jnp.array(dims).flatten()
 
     if keep_dims is not None:
         for d in keep_dims:
-            dims = jnp.delete(dims, d)
+            if d in dims:
+                dims = jnp.delete(dims, jnp.argwhere(dims == d))
 
     for d in range(len(x)):
         s = jnp.ones(jnp.ndim(X), dtype=int)
@@ -60,7 +62,7 @@ def spm_dot_sparse(
         X = X * x[d].reshape(tuple(s))
 
     sparse_sum = sparse.sparsify(jnp.sum)
-    Y = sparse_sum(X, axis=tuple(dims.astype(int)))
+    Y = sparse_sum(X, axis=tuple(dims))
     return Y
 
 
