@@ -128,25 +128,96 @@ def random_A_matrix(num_obs, num_states, A_factor_list=None):
         A[modality] = norm_dist(modality_dist)
     return A
 
-def random_B_matrix(num_states, num_controls, B_factor_list=None):
+def random_B_matrix(num_states, num_controls, B_factor_list=None, B_factor_control_list=None):
+    """
+    Generate random B object array
+
+    Parameters
+    ----------
+    num_states: ``list`` of ``int``
+        ``list`` of the dimensionalities of each hidden state factor
+    num_controls: ``list`` of ``int``, default ``None``
+        ``list`` of the dimensionalities of each control state factor. If ``None``, then is automatically computed as the dimensionality of each hidden state factor that is controllable
+    B_factor_list: ``list`` of ``list`` of ``int``, default ``None``
+        ``list`` of ``list`` of states that each state depends on. If ``None``, then the dependencies are set so that each state only depends on itself
+    B_factor_control_list: ``list`` of ``list`` of ``int``, default ``None``
+        ``list`` of ``list`` of actions that each state depends on. If ``None``, then the dependencies are set so that each state only depends on action of the same index
+
+    Returns
+    ----------
+    B: ``obj_array`` of ``numpy.ndarray``
+        A set of ``numpy.ndarray`` transition matrices stored in an ``obj_array``
+    """
     if type(num_states) is int:
         num_states = [num_states]
     if type(num_controls) is int:
         num_controls = [num_controls]
     num_factors = len(num_states)
-    assert len(num_controls) == len(num_states)
 
     if B_factor_list is None:
         B_factor_list = [[f] for f in range(num_factors)]
 
+    if B_factor_control_list is None:
+        assert len(num_controls) == len(num_states)
+        B_factor_control_list = [[f] for f in range(num_factors)]
+    else:
+        unique_controls = list(set(sum(B_factor_control_list, [])))        
+        assert unique_controls == list(range(len(num_controls)))
+
     B = obj_array(num_factors)
     for factor in range(num_factors):
         lagging_shape = [ns for i, ns in enumerate(num_states) if i in B_factor_list[factor]]
-        factor_shape = [num_states[factor]] + lagging_shape + [num_controls[factor]]
-        # factor_shape = (num_states[factor], num_states[factor], num_controls[factor])
+        control_shape = [na for i, na in enumerate(num_controls) if i in B_factor_control_list[factor]]
+        factor_shape = [num_states[factor]] + lagging_shape + control_shape
         factor_dist = np.random.rand(*factor_shape)
         B[factor] = norm_dist(factor_dist)
     return B
+
+def get_combination_index(x, dims):
+    """
+    Find the index of an array of categorical values in an array of categorical dimensions
+
+    Parameters
+    ----------
+    x: ``numpy.ndarray`` or ``list`` of ``int``
+        ``numpy.ndarray`` or ``list`` of ``int`` of categorical values to be converted into combination index
+    dims: ``list`` of ``int``
+        ``list`` of ``int`` of categorical dimensions used for conversion
+    
+    Returns
+    ----------
+    index: ``int``
+        ``int`` index of the combination
+    """
+    assert len(x) == len(dims)
+    index = 0
+    product = 1
+    for i in reversed(range(len(dims))):
+        index += x[i] * product
+        product *= dims[i]
+    return index
+
+def index_to_combination(index, dims):
+    """
+    Convert the combination index according to an array of categorical dimensions back to an array of categorical values
+
+    Parameters
+    ----------
+    index: ``int``
+        ``int`` index of the combination
+    dims: ``list`` of ``int``
+        ``list`` of ``int`` of categorical dimensions used for conversion
+    
+    Returns
+    ----------
+    x: ``list`` of ``int``
+        ```list`` of ``int`` of categorical values to be converted into combination index
+    """
+    x = []
+    for base in reversed(dims):
+        x.append(index % base)
+        index //= base
+    return list(reversed(x))
 
 def random_single_categorical(shape_list):
     """

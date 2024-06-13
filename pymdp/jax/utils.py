@@ -6,7 +6,9 @@
 __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
+import jax
 import jax.numpy as jnp
+import numpy as np
 
 from typing import (Any, Callable, List, NamedTuple, Optional, Sequence, Union, Tuple)
 
@@ -48,6 +50,56 @@ def list_array_scaled(shape_list: ShapeList, scale: float=1.0) -> Vector:
         arr.append( scale * jnp.ones(shape) )
     
     return arr
+
+def get_combination_index(x, dims):
+    """
+    Find the index of an array of categorical values in an array of categorical dimensions
+
+    Parameters
+    ----------
+    x: ``numpy.ndarray`` or ``jax.Array`` of shape `(batch_size, act_dims)`
+        ``numpy.ndarray`` or ``jax.Array`` of categorical values to be converted into combination index
+    dims: ``list`` of ``int``
+        ``list`` of ``int`` of categorical dimensions used for conversion
+    
+    Returns
+    ----------
+    index: ``np.ndarray`` or `jax.Array` of shape `(batch_size)`
+        ``np.ndarray`` or `jax.Array` index of the combination
+    """
+    assert isinstance(x, jax.Array) or isinstance(x, np.ndarray) 
+    assert x.shape[-1] == len(dims)
+
+    index = 0
+    product = 1
+    for i in reversed(range(len(dims))):
+        index += x[..., i] * product
+        product *= dims[i]
+    return index
+
+def index_to_combination(index, dims):
+    """
+    Convert the combination index according to an array of categorical dimensions back to an array of categorical values
+
+    Parameters
+    ----------
+    index: ``np.ndarray`` or `jax.Array` of shape `(batch_size)`
+        ``np.ndarray`` or `jax.Array` index of the combination
+    dims: ``list`` of ``int``
+        ``list`` of ``int`` of categorical dimensions used for conversion
+    
+    Returns
+    ----------
+    x: ``numpy.ndarray`` or ``jax.Array`` of shape `(batch_size, act_dims)`
+        ``numpy.ndarray`` or ``jax.Array`` of categorical values to be converted into combination index
+    """
+    x = []
+    for base in reversed(dims):
+        x.append(index % base)
+        index = index // base
+    
+    x = np.flip(np.stack(x, axis=-1), axis=-1)
+    return x
 
 # def onehot(value, num_values):
 #     arr = np.zeros(num_values)

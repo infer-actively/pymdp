@@ -33,6 +33,8 @@ arviz = "^0.13"
 optax = "^0.1"
 matplotlib = "^3.9"
 multimethod = "^1.11"
+networkx = "^3.3"
+
 
 [tool.black]
 line-length = 120
