@@ -77,7 +77,7 @@ class Agent(Module):
     inductive_depth: int = field(static=True)
     # matrix of all possible policies (each row is a policy of shape (num_controls[0], num_controls[1], ..., num_controls[num_control_factors-1])
     policies: Array = field(static=True)
-    policies_multi: Array = field(static=True)
+    # policies_multi: Array = field(static=True)
     # flag for whether to use expected utility ("reward" or "preference satisfaction") when computing expected free energy
     use_utility: bool = field(static=True)
     # flag for whether to use state information gain ("salience") when computing expected free energy
@@ -163,15 +163,13 @@ class Agent(Module):
         # flatten B action dims for multiple action dependencies
         self.action_maps = None
         self.num_controls_multi = num_controls
-        if B_action_dependencies is not None:
-            self.policies_multi = control.construct_policies(
+        if B_action_dependencies is not None: # note, this only works when B_action_dependencies is not the trivial case of [[0], [1], ...., [num_factors-1]]
+            policies_multi = control.construct_policies(
                 self.num_controls_multi, self.num_controls_multi, policy_len, control_fac_idx
             )
             B, self.action_maps = self._flatten_B_action_dims(B, self.B_action_dependencies)
-            policies = self._construct_flattend_policies(self.policies_multi, self.action_maps)
+            policies = self._construct_flattend_policies(policies_multi, self.action_maps)
             self.sampling_mode = "full"
-        else:
-            self.policies_multi = None
 
         # extract shapes from A and B
         batch_dim = lambda x: x.shape[0] if apply_batch else x.shape[1]
@@ -228,17 +226,18 @@ class Agent(Module):
             pB = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), pB)
 
         if C is None:
-            C = [jnp.ones(self.num_obs[m]) / self.num_obs[m] for m in range(self.num_modalities)]
+            C = [jnp.ones((self.batch_size, self.num_obs[m])) / self.num_obs[m] for m in range(self.num_modalities)]
+        elif apply_batch:
+            C = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), C)
 
         if D is None:
-            D = [jnp.ones(self.num_states[f]) / self.num_states[f] for f in range(self.num_factors)]
+            D = [jnp.ones((self.batch_size, self.num_states[f])) / self.num_states[f] for f in range(self.num_factors)]
+        elif apply_batch:
+            D = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), D)
 
         if E is None:
-            E = jnp.ones(len(self.policies)) / len(self.policies)
-
-        if apply_batch:
-            C = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), C)
-            D = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), D)
+            E = jnp.ones((self.batch_size, len(self.policies))) / len(self.policies)
+        elif apply_batch:
             E = jnp.broadcast_to(E, (self.batch_size,) + E.shape)
 
         if self.use_inductive and self.H is not None:
