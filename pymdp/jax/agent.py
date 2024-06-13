@@ -58,6 +58,9 @@ class Agent(Module):
     # static parameters not leaves of the PyTree
     A_dependencies: Optional[List] = field(static=True)
     B_dependencies: Optional[List] = field(static=True)
+    B_action_dependencies: Optional[List] = field(static=True)
+    # mapping from multi action dependencies to flat action dependencies for each B
+    action_maps: List[dict] = field(static=True)
     batch_size: int = field(static=True)
     num_iter: int = field(static=True)
     num_obs: List[int] = field(static=True)
@@ -65,6 +68,8 @@ class Agent(Module):
     num_states: List[int] = field(static=True)
     num_factors: int = field(static=True)
     num_controls: List[int] = field(static=True)
+    # Used to store original action dimensions in case there are multiple action dependencies per state
+    num_controls_multi: List[int] = field(static=True)
     control_fac_idx: Optional[List[int]] = field(static=True)
     # depth of planning during roll-outs (i.e. number of timesteps to look ahead when computing expected free energy of policies)
     policy_len: int = field(static=True)
@@ -72,6 +77,7 @@ class Agent(Module):
     inductive_depth: int = field(static=True)
     # matrix of all possible policies (each row is a policy of shape (num_controls[0], num_controls[1], ..., num_controls[num_control_factors-1])
     policies: Array = field(static=True)
+    policies_multi: Array = field(static=True)
     # flag for whether to use expected utility ("reward" or "preference satisfaction") when computing expected free energy
     use_utility: bool = field(static=True)
     # flag for whether to use state information gain ("salience") when computing expected free energy
@@ -107,6 +113,8 @@ class Agent(Module):
         I=None,
         A_dependencies=None,
         B_dependencies=None,
+        B_action_dependencies=None,
+        num_controls=None,
         control_fac_idx=None,
         policy_len=1,
         policies=None,
@@ -124,25 +132,46 @@ class Agent(Module):
         sampling_mode="marginal",
         inference_algo="fpi",
         num_iter=16,
-        apply_batch=False,
+        apply_batch=True,
         learn_A=True,
         learn_B=True,
         learn_C=False,
         learn_D=True,
         learn_E=False,
     ):
-
+        if B_action_dependencies is not None:
+            assert num_controls is not None, "Please specify num_controls for complex action dependencies"
+        
         # extract high level variables
         self.num_modalities = len(A)
         self.num_factors = len(B)
+        self.num_controls = num_controls
+        self.num_controls_multi = num_controls
 
         # extract dependencies for A and B matrices
-        self.A_dependencies, self.B_dependencies = self._construct_dependencies(A_dependencies, B_dependencies, A, B)
+        (
+            self.A_dependencies, 
+            self.B_dependencies, 
+            self.B_action_dependencies,
+        ) = self._construct_dependencies(
+            A_dependencies, B_dependencies, B_action_dependencies, A, B
+        )
 
         # extract A and B tensors
         A = [jnp.array(a.data) if isinstance(a, Distribution) else a for a in A]
         B = [jnp.array(b.data) if isinstance(b, Distribution) else b for b in B]
         self.batch_size = A[0].shape[0] if not apply_batch else 1
+
+        # flatten B action dims for multiple action dependencies
+        self.action_maps = None
+        self.num_controls_multi = num_controls
+        if B_action_dependencies is not None:
+            self.policies_multi = control.construct_policies(
+                self.num_controls_multi, self.num_controls_multi, policy_len, control_fac_idx
+            )
+            B, self.action_maps = self._flatten_B_action_dims(B, self.B_action_dependencies)
+            policies = self._construct_flattend_policies(self.policies_multi, self.action_maps)
+            self.sampling_mode = "full"
 
         # extract shapes from A and B
         batch_dim = lambda x: x.shape[0] if apply_batch else x.shape[1]
@@ -401,7 +430,7 @@ class Agent(Module):
             action = control.sample_policy(
                 q_pi, self.policies, self.num_controls, self.action_selection, self.alpha, rng_key=rng_key
             )
-
+        
         return action
 
     @vmap
@@ -432,7 +461,36 @@ class Agent(Module):
         # assert jnp.isclose(jnp.sum(marginals), 1.)  # this fails inside scan
         return marginals
 
-    def _construct_dependencies(self, A_dependencies, B_dependencies, A, B):
+    def decode_multi_actions(self, action):
+        """Decode flattened actions to multiple actions"""
+        if self.action_maps is None:
+            return action
+         
+        action_multi = jnp.zeros((self.batch_size, len(self.num_controls_multi))).astype(action.dtype)
+        for f, action_map in enumerate(self.action_maps):
+            if action_map["multi_dependency"] == []:
+                continue
+
+            action_multi_f = utils.index_to_combination(action[..., f], action_map["multi_dims"])
+            action_multi = action_multi.at[..., action_map["multi_dependency"]].set(action_multi_f)
+        return action_multi
+    
+    def encode_multi_actions(self, action_multi):
+        """Encode multiple actions to flattened actions"""
+        if self.action_maps is None:
+            return action_multi
+        
+        action = jnp.zeros((self.batch_size, len(self.num_controls))).astype(action_multi.dtype)
+        for f, action_map in enumerate(self.action_maps):
+            if action_map["multi_dependency"] == []:
+                action = action.at[..., f].set(jnp.zeros_like(action_multi[..., 0]))
+                continue
+            
+            action_f = utils.get_combination_index(action_multi[..., action_map["multi_dependency"]], action_map["multi_dims"])
+            action = action.at[..., f].set(action_f)
+        return action
+    
+    def _construct_dependencies(self, A_dependencies, B_dependencies, B_action_dependencies, A, B):
         if A_dependencies is not None:
             A_dependencies = A_dependencies
         elif isinstance(A[0], Distribution) and isinstance(B[0], Distribution):
@@ -446,8 +504,46 @@ class Agent(Module):
             _, B_dependencies = get_dependencies(A, B)
         else:
             B_dependencies = [[f] for f in range(self.num_factors)]
-        return A_dependencies, B_dependencies
+        
+        """TODO: check B action shape"""
+        if B_action_dependencies is not None:
+            B_action_dependencies = B_action_dependencies
+        else:
+            B_action_dependencies = [[f] for f in range(self.num_factors)]
+        return A_dependencies, B_dependencies, B_action_dependencies
 
+    def _flatten_B_action_dims(self, B, B_action_dependencies):
+        assert hasattr(B[0], "shape"), "Elements of B must be tensors and have attribute shape"
+        action_maps = [] # mapping from multi action dependencies to flat action dependencies for each B
+        B_flat = []
+        for i, (B_f, action_dependency) in enumerate(zip(B, B_action_dependencies)):
+            if action_dependency == []:
+                B_flat.append(jnp.expand_dims(B_f, axis=-1))
+                action_maps.append({"multi_dependency": [], "multi_dims": [], "flat_dependency": [i], "flat_dims": [1]})
+                continue
+
+            dims = [self.num_controls_multi[d] for d in action_dependency]
+            target_shape = list(B_f.shape)[:-len(action_dependency)] + [pymath.prod(dims)]
+            B_flat.append(B_f.reshape(target_shape))
+            action_maps.append({"multi_dependency": action_dependency, "multi_dims": dims, "flat_dependency": [i], "flat_dims": [pymath.prod(dims)]})
+        return B_flat, action_maps
+    
+    def _construct_flattend_policies(self, policies, action_maps):
+        policies_flat = []
+        for action_map in action_maps:            
+            if action_map["multi_dependency"] == []:
+                policies_flat.append(jnp.zeros_like(policies[..., 0]))
+                continue
+
+            policies_flat.append(
+                utils.get_combination_index(
+                    policies[..., action_map["multi_dependency"]], 
+                    action_map["multi_dims"],
+                )
+            )
+        policies_flat = jnp.stack(policies_flat, axis=-1)
+        return policies_flat
+    
     def _get_default_params(self):
         method = self.inference_algo
         default_params = None

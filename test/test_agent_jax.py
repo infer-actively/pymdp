@@ -13,6 +13,8 @@ import jax.numpy as jnp
 from jax import vmap, nn, random
 import jax.tree_util as jtu
 
+from pymdp import utils
+from pymdp.jax.agent import Agent
 from pymdp.jax.maths import compute_log_likelihood_single_modality
 from pymdp.jax.utils import norm_dist
 from equinox import Module
@@ -57,6 +59,47 @@ class TestAgentJax(unittest.TestCase):
         for id_to_check in range(N):
             validation_qs = nn.softmax(compute_log_likelihood_single_modality(all_obs[id_to_check], all_A[id_to_check]))
             self.assertTrue(jnp.allclose(validation_qs, all_qs[id_to_check]))
+
+    def test_agent_complex_action(self):
+        """
+        Test that an instance of the `Agent` class can be initialized and run with complex action dependency
+        """
+        np.random.seed(1)
+        num_obs = [5, 4, 4]
+        num_states = [2, 3, 1]
+        num_controls = [2, 3, 2]
+
+        A_factor_list = [[0], [0, 1], [0, 1, 2]]
+        B_factor_list = [[0], [0, 1], [1, 2]]
+        B_factor_control_list = [[], [0, 1], [0, 2]]
+        A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=B_factor_control_list)
+        
+        agent = Agent(
+            A, B, 
+            A_dependencies=A_factor_list, 
+            B_dependencies=B_factor_list, 
+            B_action_dependencies=B_factor_control_list,
+            num_controls=num_controls,
+            sampling_mode="full",
+        )
+
+        # dummy history
+        action = agent.policies[np.random.randint(0, len(agent.policies))]
+        observation = [np.random.randint(0, d, size=(1, 1)) for d in agent.num_obs]
+        qs_hist = jtu.tree_map(lambda x: jnp.expand_dims(x, 0), agent.D)
+
+        prior, _ = agent.infer_empirical_prior(action, qs_hist)
+        qs = agent.infer_states(observation, None, prior, None)
+
+        q_pi, G = agent.infer_policies(qs)
+        action = agent.sample_action(q_pi)
+        action_multi = agent.decode_multi_actions(action)
+        action_reconstruct = agent.encode_multi_actions(action_multi)
+        
+        self.assertTrue(action_multi.shape[-1] == len(agent.num_controls))
+        self.assertTrue(jnp.allclose(action, action_reconstruct))
+
 
 if __name__ == "__main__":
     unittest.main()       
