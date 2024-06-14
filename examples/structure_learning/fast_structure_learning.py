@@ -2,10 +2,12 @@ import cv2
 import numpy as onp
 from jax import numpy as jnp
 from jax import vmap
+from jax import nn
 from jaxtyping import Array
 from typing import Tuple, List    
 import itertools
 
+from math import prod
 
 def read_frames_from_mp4(file_path: str, num_frames: int = 32, size: tuple[int] = (128, 128)):
     """" read frames from an mp4 file """
@@ -41,7 +43,7 @@ def read_frames_from_mp4(file_path: str, num_frames: int = 32, size: tuple[int] 
     cap.release()
     return jnp.array(frames)
 
-def map_rbg_2_discrete(image_data: Array, tile_diameter=32, n_bins=9, max_n_modes=32, sv_thr=32, t_resampling=2):
+def map_rbg_2_discrete(image_data: Array, tile_diameter=32, n_bins=9, max_n_modes=32, sv_thr=(1./32.), t_resampling=2):
     """ Re-implementation of `spm_rgb2O.m` in Python
     Maps an RGB image format to discrete outcomes
 
@@ -82,26 +84,104 @@ def map_rbg_2_discrete(image_data: Array, tile_diameter=32, n_bins=9, max_n_mode
     # shape of the data excluding the time dimension
     shape_no_time = image_data.shape[1:]
 
-    L = spm_combinations(shape_no_time)
+    #L = spm_combinations(shape_no_time)
 
-    g, h, m = spm_tile(L, width=shape_no_time[1], height=shape_no_time[2], tile_diameter=tile_diameter)
-    
-    
+    # print(shape_no_time[0])
 
-def spm_combinations(shape):
+    patch_indices, patch_centroids, patch_weights = spm_tile(width=shape_no_time[1], height=shape_no_time[2], n_copies=shape_no_time[0], tile_diameter=tile_diameter)
+
+    return patch_svd(image_data, patch_indices, patch_centroids, patch_weights, sv_thr), patch_indices
+    
+def patch_svd(image_data: Array, patch_indices: List[Array], patch_centroids, patch_weights: List[Array], sv_thr: float = 1e-6, max_n_modes: int = 32, n_bins: int=9):
     """
-    Generate a matrix of all combinations of indices given a vector of dimensions.
-    
-    Parameters:
-    shape (list or array): A vector of dimensions.
-    
-    Returns:
-    jnp.ndarray: A matrix of all combinations of indices.
+    image_data: [time, channel, width, height]
+    patch_indices: [[indicies_for_patch] for num_patches]
+    patch_weights: [[indices_for_patch, num_patches] for num_patches]
     """
-    dim_ranges = [list(jnp.arange(i)) for i in shape] 
-    return list(itertools.product(*dim_ranges))
+
+    n_frames, channels_x_duplicates, width, height = image_data.shape
+    o_idx = 0
+    observations = []
+    locations_matrix = []
+    group_indices = [] 
+    sv_discrete_axis = []
+    V_per_patch = [None] * len(patch_indices)
+    for g_i, patch_g_indices in enumerate(patch_indices):
+
+        # single value decomposition for this 'pixel group''
+        Y = image_data.reshape(n_frames, channels_x_duplicates*width*height)[:,patch_g_indices] * patch_weights[g_i]
+        
+        # (n_frames x n_frames), (n_frames,), (n_frames x n_frames)
+        U, svals, V = jnp.linalg.svd(Y@Y.T, full_matrices=True)
+        
+        normalized_svals = svals * (len(svals)/svals.sum())
+        topK_svals = (normalized_svals > sv_thr) # equivalent of `j` in spm_svd.m
+        topK_s_vectors = U[:, topK_svals]
+
+        projections = Y.T @ topK_s_vectors  # do equivalent of spm_en on this one
+        projections_normed = projections / jnp.linalg.norm(projections, axis=0, keepdims=True)
+
+        svals = jnp.sqrt(svals[topK_svals])
+
+        num_modalities = min(len(svals),max_n_modes)
+
+        if num_modalities > 0:
+            V_per_patch[g_i] = projections_normed[:, :num_modalities]
+            weighted_topk_s_vectors = topK_s_vectors[:, :num_modalities] * svals[:num_modalities]
+
+        # generate (probability over discrete) outcomes
+        for m in range(num_modalities):
+            
+            # dicretise singular variates
+            d = jnp.max(jnp.abs(weighted_topk_s_vectors[:,m]))
+
+            # this determines the nunber of bins
+            projection_bins = jnp.linspace(-d, d, n_bins)
+
+            observations.append([])
+            for t in range(n_frames):
+                
+                # finds the index of of the projection at time t, for singular vector m, in the projection bins -- this will determine how it gets discretized
+                min_indices = jnp.argmin(jnp.absolute(weighted_topk_s_vectors[t,m] - projection_bins))
+
+                # observations are a one-hot vector reflecting the quantization of each singular variate into one of the projection bins
+                observations[o_idx].append(nn.one_hot(min_indices, n_bins))
+            
+            # record locations and group for this outcome
+            locations_matrix.append(patch_centroids[g_i,:])
+            group_indices.append(g_i)
+            sv_discrete_axis.append(projection_bins)
+            o_idx += 1
+    
+    locations_matrix = jnp.stack(locations_matrix)
+
+    return observations, locations_matrix, group_indices, sv_discrete_axis, V_per_patch
 
 
+def map_discrete_2_rgb(observations, locations_matrix, group_indices, sv_discrete_axis, V_per_patch, patch_indices, image_shape):
+    # observations list[list[array]] - list 0 is modalities list 1 is time arrays are onehot
+    # image = jnp.zeros(image_shape)
+
+
+    n_groups = len(patch_indices)
+
+    recons_image = jnp.zeros(prod(image_shape))
+    
+    for group_idx in range(n_groups):
+
+        modality_idx_in_patch = [modality_idx for modality_idx, g_i in enumerate(group_indices) if g_i == group_idx]
+        num_modalities_in_patch = len(modality_idx_in_patch)    
+        
+        matched_bin_values = []
+        for m in range(num_modalities_in_patch):
+            m_idx = modality_idx_in_patch[m]
+            matched_bin_values.append(sv_discrete_axis[m_idx].dot(observations[m_idx]))
+        
+        matched_bin_values = jnp.array(matched_bin_values)
+        if len(matched_bin_values) > 0:
+            recons_image = recons_image.at[patch_indices[group_idx]].set(recons_image[patch_indices[group_idx]] + V_per_patch[group_idx]*matched_bin_values)
+
+    return recons_image.reshape(image_shape)
 
 def spm_dir_norm(a):
     """
@@ -116,10 +196,10 @@ def spm_dir_norm(a):
     i = a0 > 0
     a = jnp.where(i, a / a0, a)
     a = a.at[:, ~i].set(1 / a.shape[0]) 
-    return a
+    return a    
 
 
-def spm_tile(L: List, width: int, height: int, tile_diameter: int=32):
+def spm_tile(width: int, height: int, n_copies: int, tile_diameter: int=32):
     """
     Grouping into a partition of non-overlapping outcome tiles
     This routine identifies overlapping groups of pixels, returning their
@@ -129,7 +209,12 @@ def spm_tile(L: List, width: int, height: int, tile_diameter: int=32):
     by a sensory epithelium.Effectively, this leverages the conditional
     independencies that inherit from local interactions; of the kind found in
     metric spaces that preclude action at a distance.
-
+    
+    Args:
+        L: list of indices
+        width: width of the image
+        height: height of the image
+        tile_diameter: diameter of the tiles
     Returns:
         G: outcome indices
         M: (mean) outcome location
@@ -147,20 +232,21 @@ def spm_tile(L: List, width: int, height: int, tile_diameter: int=32):
     x = jnp.linspace(tile_diameter / 2 - 1, width - tile_diameter/2, n_rows)
     y = jnp.linspace(tile_diameter / 2 - 1, height - tile_diameter/2, n_columns)
 
-    # TODO: make this faster
-    L_array = jnp.asarray(L)[:,1:] # don't care about the 0-th dimension of combinations
+    pixel_indices = n_copies * [jnp.array(jnp.meshgrid(jnp.arange(width), jnp.arange(height))).T.reshape(-1, 2)]
+    pixel_indices = jnp.concatenate(pixel_indices, axis=0)
 
     h = [[[] for _ in range(n_columns)] for _ in range(n_rows)]
     g = [[None for _ in range(n_columns)] for _ in range(n_rows)] 
-    for i in range(n_rows): 
-        for j in range(n_columns): 
-            distance_evals = vmap(lambda x: distance(x, jnp.array([x[i], y[j]])))(L_array)
+    for i in range(n_rows):
+        for j in range(n_columns):
+            pos = jnp.array([x[i], y[j]])
+            distance_evals = vmap(lambda x: distance(x, pos))(pixel_indices)
 
-            ij = jnp.argwhere(distance_evals < 2 * tile_diameter) 
+            ij = jnp.argwhere(distance_evals < 2 * tile_diameter).squeeze()
             h[i][j] = jnp.exp(-distance_evals / (2 * (tile_diameter / 2)**2))
             g[i][j] = ij
 
-    g_flat = flatten(g)
+    G = flatten(g)
     h_flat = flatten(h)
 
     num_groups = n_rows * n_columns
@@ -169,26 +255,15 @@ def spm_tile(L: List, width: int, height: int, tile_diameter: int=32):
     h_matrix = jnp.stack(h_flat) # [num_groups, n_pixels_per_group)
     h = spm_dir_norm(h_matrix) # normalize across groups
 
-
-    H_weights = [h[g,g_flat[g]] for g_i in range(num_groups)]
+    H_weights = [h[g_i, G[g_i]] for g_i in range(num_groups)]
 
     M = jnp.zeros((num_groups, 2))
-    for g in range(num_groups):
-        M.at[g, :].set(jnp.mean(L[g_flat[g]], axis=0))
+    for g_i in range(num_groups):
+
+        M.at[g_i, :].set(pixel_indices[G[g_i]].mean(0))
     
-    return g_flat, M, H_weights
+    return G, M, H_weights
 
-
-def simple_square_tile(x, patch_size):
-    # x : image in [C, H, W]
-    # patch_size = [h, w], i.e. [32,32]
-    channels = x.shape[0]
-    height = x.shape[1]
-    width = x.shape[2]
-    x = x.reshape(channels, height // patch_size[0], patch_size[0], width // patch_size[1], patch_size[1])
-    x = x.transpose(1, 3, 2, 4, 0)
-    x = x.reshape(-1, *x.shape[2:])
-    return x
 
 if __name__ == "__main__":
     
@@ -198,7 +273,24 @@ if __name__ == "__main__":
     frames = read_frames_from_mp4(path_to_file)
 
     # Map the RGB image to discrete outcomes
-    map_rbg_2_discrete(frames)
+    (observations, locations_matrix, group_indices, sv_discrete_axis, V_per_patch), patch_indices = map_rbg_2_discrete(frames)
+
+    # Map the discrete outcomes back to RGB    
+    observations = jnp.array(observations)
+    video = jnp.zeros(frames.shape)
+    for t in range(observations.shape[1]):
+        video[t, ...] = map_discrete_2_rgb(observations[:, t, :], locations_matrix, group_indices, sv_discrete_axis, V_per_patch, patch_indices, frames.shape[1:])
+
+
+    # write out the shapes of the observations
+    print(f'Number of observations: {len(observations)}')
+    print(f'Number of timesteps: {len(observations[0])}')
+    print(f'Dimensionality of observations: {observations[0][0].shape}')
+
+    print(f'Size of locations matrix: {locations_matrix.shape}')
+
+    print(f'Number of group indices should equal number of modalities: {len(group_indices)}')
+    print(f'Show the group indices: {group_indices}')
 
         
 
