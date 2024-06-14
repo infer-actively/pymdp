@@ -14,7 +14,8 @@ import copy
 
 def to_dense(x: JAXSparse):
     """
-    Create a dense array from a jax sparse array in case the _validate for normal densify fails
+    Workaround for the case when .todense() on jax sparse array fails due to validate estimating n_dense
+    to be smaller than 0
     """
     dense = jnp.zeros(x.shape)
     for val, idcs in zip(x.data.reshape(-1), x.indices.reshape(-1, len(x.shape))):
