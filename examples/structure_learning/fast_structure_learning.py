@@ -6,6 +6,9 @@ from jax import nn
 from jaxtyping import Array
 from typing import Tuple, List    
 import itertools
+import matplotlib.pyplot as plt
+import imageio
+
 
 from math import prod
 
@@ -179,8 +182,9 @@ def map_discrete_2_rgb(observations, locations_matrix, group_indices, sv_discret
         
         matched_bin_values = jnp.array(matched_bin_values)
         if len(matched_bin_values) > 0:
-            recons_image = recons_image.at[patch_indices[group_idx]].set(recons_image[patch_indices[group_idx]] + V_per_patch[group_idx]*matched_bin_values)
+            recons_image = recons_image.at[patch_indices[group_idx]].set(recons_image[patch_indices[group_idx]] + V_per_patch[group_idx].dot(matched_bin_values))
 
+    print("Reconstructed image shape: ", recons_image.shape)
     return recons_image.reshape(image_shape)
 
 def spm_dir_norm(a):
@@ -271,27 +275,36 @@ if __name__ == "__main__":
 
     # Read in the video file as tensor (num_frames, width, height, channels)
     frames = read_frames_from_mp4(path_to_file)
+    print(frames.shape)
 
     # Map the RGB image to discrete outcomes
     (observations, locations_matrix, group_indices, sv_discrete_axis, V_per_patch), patch_indices = map_rbg_2_discrete(frames)
+
+    ims = []
 
     # Map the discrete outcomes back to RGB    
     observations = jnp.array(observations)
     video = jnp.zeros(frames.shape)
     for t in range(observations.shape[1]):
-        video[t, ...] = map_discrete_2_rgb(observations[:, t, :], locations_matrix, group_indices, sv_discrete_axis, V_per_patch, patch_indices, frames.shape[1:])
+        img = map_discrete_2_rgb(observations[:, t, :], locations_matrix, group_indices, sv_discrete_axis, V_per_patch, patch_indices, [3, 128, 128])
+
+        # transform back to RGB
+        img = jnp.transpose(img, (1, 2, 0))
+        img /= 255
+        img = jnp.clip(img, 0, 1)
+        img = (255*img).astype(onp.uint8)
+
+        gt = frames[t]
+        ims.append(onp.hstack([img, gt]) )
+
+        # fig, ax = plt.subplots(1, 2)
+        # ax[0].imshow(img)
+        # ax[1].imshow(frames[t, ...])
+        # plt.show()
+        #video = video.at[t, ...].set(img)
+
+    imageio.mimsave('dove.gif', ims)
 
 
-    # write out the shapes of the observations
-    print(f'Number of observations: {len(observations)}')
-    print(f'Number of timesteps: {len(observations[0])}')
-    print(f'Dimensionality of observations: {observations[0][0].shape}')
-
-    print(f'Size of locations matrix: {locations_matrix.shape}')
-
-    print(f'Number of group indices should equal number of modalities: {len(group_indices)}')
-    print(f'Show the group indices: {group_indices}')
-
-        
 
     
