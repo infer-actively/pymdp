@@ -89,8 +89,6 @@ def map_rbg_2_discrete(image_data: Array, tile_diameter=32, n_bins=9, max_n_mode
 
     #L = spm_combinations(shape_no_time)
 
-    # print(shape_no_time[0])
-
     patch_indices, patch_centroids, patch_weights = spm_tile(width=shape_no_time[1], height=shape_no_time[2], n_copies=shape_no_time[0], tile_diameter=tile_diameter)
 
     return patch_svd(image_data, patch_indices, patch_centroids, patch_weights, sv_thr), patch_indices
@@ -184,7 +182,6 @@ def map_discrete_2_rgb(observations, locations_matrix, group_indices, sv_discret
         if len(matched_bin_values) > 0:
             recons_image = recons_image.at[patch_indices[group_idx]].set(recons_image[patch_indices[group_idx]] + V_per_patch[group_idx].dot(matched_bin_values))
 
-    print("Reconstructed image shape: ", recons_image.shape)
     return recons_image.reshape(image_shape)
 
 def spm_dir_norm(a):
@@ -263,8 +260,7 @@ def spm_tile(width: int, height: int, n_copies: int, tile_diameter: int=32):
 
     M = jnp.zeros((num_groups, 2))
     for g_i in range(num_groups):
-
-        M.at[g_i, :].set(pixel_indices[G[g_i]].mean(0))
+        M = M.at[g_i, :].set(pixel_indices[G[g_i],:].mean(0))
     
     return G, M, H_weights
 
@@ -275,7 +271,6 @@ if __name__ == "__main__":
 
     # Read in the video file as tensor (num_frames, width, height, channels)
     frames = read_frames_from_mp4(path_to_file)
-    print(frames.shape)
 
     # Map the RGB image to discrete outcomes
     (observations, locations_matrix, group_indices, sv_discrete_axis, V_per_patch), patch_indices = map_rbg_2_discrete(frames)
