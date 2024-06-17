@@ -5,7 +5,6 @@
 import jax.numpy as jnp
 from .algos import run_factorized_fpi, run_mmp, run_vmp
 from jax import tree_util as jtu, lax
-from multimethod import multimethod
 from jax.experimental.sparse._base import JAXSparse
 from jaxtyping import Array
 
@@ -59,8 +58,7 @@ def update_posterior_states(
     
     return qs_hist
 
-@multimethod
-def joint_dist_factor(b: Array, filtered_qs, actions):
+def joint_dist_factor_dense(b: Array, filtered_qs: list[Array], actions: Array):
     qs_last = filtered_qs[-1]
     qs_filter = filtered_qs[:-1]
 
@@ -97,8 +95,7 @@ def joint_dist_factor(b: Array, filtered_qs, actions):
     qs_smooth_all = jnp.concatenate([seq_qs[0], jnp.expand_dims(qs_last, 0)], 0)
     return qs_smooth_all, seq_qs[1]
 
-@multimethod
-def joint_dist_factor(b: JAXSparse, filtered_qs, actions):
+def joint_dist_factor_sparse(b: JAXSparse, filtered_qs: list[Array], actions: Array):
     qs_last = filtered_qs[-1]
     qs_filter = filtered_qs[:-1]
 
@@ -136,14 +133,12 @@ def joint_dist_factor(b: JAXSparse, filtered_qs, actions):
 def smoothing_ovf(filtered_post, B, past_actions):
     assert len(filtered_post) == len(B)
     nf = len(B)  # number of factors
-    joint = lambda b, qs, f: joint_dist_factor(b, qs, past_actions[..., f])
-    # marginals_and_joints = jtu.tree_map(
-    #     joint, B, filtered_post, list(range(nf)))
+
+    joint = lambda b, qs, f: joint_dist_factor_sparse(b, qs, past_actions[..., f]) if isinstance(b, JAXSparse) else joint_dist_factor_dense(b, qs, past_actions[..., f])
 
     marginals_and_joints = []
     for b, qs, f in zip(B, filtered_post, list(range(nf))):
-        marginals_and_joints_f = joint(b, qs, f)
-        marginals_and_joints.append(marginals_and_joints_f)
+        marginals_and_joints.append( joint(b, qs, f) )
 
     return marginals_and_joints
 
