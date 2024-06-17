@@ -120,7 +120,7 @@ def spm_wnorm(A):
     Returns Expectation of logarithm of Dirichlet parameters over a set of 
     Categorical distributions, stored in the columns of A.
     """
-    A = jnp.clip(A, a_min=MINVAL)
+    A = jnp.clip(A, min=MINVAL)
     norm = 1. / A.sum(axis=0)
     avg = 1. / A
     wA = norm - avg
@@ -131,7 +131,7 @@ def dirichlet_expected_value(dir_arr):
     Returns Expectation of Dirichlet parameters over a set of 
     Categorical distributions, stored in the columns of A.
     """
-    dir_arr = jnp.clip(dir_arr, a_min=MINVAL)
+    dir_arr = jnp.clip(dir_arr, min=MINVAL)
     expected_val = jnp.divide(dir_arr, dir_arr.sum(axis=0, keepdims=True))
     return expected_val
 
