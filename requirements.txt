@@ -29,3 +29,4 @@ equinox>=0.9
 numpyro>=0.1
 arviz>=0.13
 optax>=0.1
+multimethod>=1.11
