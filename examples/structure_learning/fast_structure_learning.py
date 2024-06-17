@@ -12,6 +12,13 @@ import imageio
 
 from math import prod
 
+def read_frames_from_npz(file_path: str, num_frames: int = 32, rollout: int = 0):
+    """ read frames from a npz file from atari expert trajectories """
+    # shape is [num_rollouts, num_frames, 1, height, width, channels]
+    res = onp.load(file_path)
+    frames = res['arr_0'][rollout, 0:num_frames, 0, ...]
+    return frames
+
 def read_frames_from_mp4(file_path: str, num_frames: int = 32, size: tuple[int] = (128, 128)):
     """" read frames from an mp4 file """
     cap = cv2.VideoCapture(file_path)
@@ -27,9 +34,6 @@ def read_frames_from_mp4(file_path: str, num_frames: int = 32, size: tuple[int] 
     y_start = max(0, y_center - height // 2)
 
     frame_indices = jnp.linspace(0, total_frames - 1, num_frames, dtype=int)
-
-    # @TODO: Why did Karl concatenate a sequence of sub-sampled frames here (line 56 in DEM_compression.m)
-    frame_indices = jnp.concatenate((frame_indices, frame_indices))
     frames = []
     
     for frame_idx in frame_indices:
@@ -67,27 +71,17 @@ def map_rbg_2_discrete(image_data: Array, tile_diameter=32, n_bins=9, max_n_mode
     # ensure number of bins is odd (for symmetry)
     n_bins = 2 * jnp.trunc(n_bins/2) + 1
 
-    # Permute for grouping
-    n_frames = image_data.shape[0]
-
+    n_frames, width, height, n_channels = image_data.shape
     T = int(t_resampling * jnp.trunc(n_frames/t_resampling)) # length of time partition
 
-    # tranposes be channel, time, width, height
-    image_data = jnp.transpose(image_data[:T,...], (3, 0, 1, 2)) # truncate the time series and transpose the axes to the right place
+    # transpose to [T x C x W x H]
+    image_data = jnp.transpose(image_data[:T,...], (0, 3, 1, 2)) # truncate the time series and transpose the axes to the right place
 
-    # Get the shape of the data
-    n_channels, _, width, height = image_data.shape
-
-    # channel, time, width, height
-    image_data = image_data.reshape((n_channels*t_resampling, -1, width, height))
-
-    # move to sub-sampled-time, channel * 2, width, height
-    image_data = jnp.transpose(image_data, (1, 0, 2, 3))
+    # concat each t_resampling frames
+    image_data = image_data.reshape((T//t_resampling, -1, width, height))
 
     # shape of the data excluding the time dimension
     shape_no_time = image_data.shape[1:]
-
-    #L = spm_combinations(shape_no_time)
 
     patch_indices, patch_centroids, patch_weights = spm_tile(width=shape_no_time[1], height=shape_no_time[2], n_copies=shape_no_time[0], tile_diameter=tile_diameter)
 
@@ -99,7 +93,6 @@ def patch_svd(image_data: Array, patch_indices: List[Array], patch_centroids, pa
     patch_indices: [[indicies_for_patch] for num_patches]
     patch_weights: [[indices_for_patch, num_patches] for num_patches]
     """
-
     n_frames, channels_x_duplicates, width, height = image_data.shape
     o_idx = 0
     observations = []
@@ -133,10 +126,10 @@ def patch_svd(image_data: Array, patch_indices: List[Array], patch_centroids, pa
         # generate (probability over discrete) outcomes
         for m in range(num_modalities):
             
-            # dicretise singular variates
+            # discretise singular variates
             d = jnp.max(jnp.abs(weighted_topk_s_vectors[:,m]))
 
-            # this determines the nunber of bins
+            # this determines the number of bins
             projection_bins = jnp.linspace(-d, d, n_bins)
 
             observations.append([])
@@ -159,17 +152,15 @@ def patch_svd(image_data: Array, patch_indices: List[Array], patch_centroids, pa
     return observations, locations_matrix, group_indices, sv_discrete_axis, V_per_patch
 
 
-def map_discrete_2_rgb(observations, locations_matrix, group_indices, sv_discrete_axis, V_per_patch, patch_indices, image_shape):
-    # observations list[list[array]] - list 0 is modalities list 1 is time arrays are onehot
-    # image = jnp.zeros(image_shape)
-
-
+def map_discrete_2_rgb(observations, locations_matrix, group_indices, sv_discrete_axis, V_per_patch, patch_indices, image_shape, t_resampling=2):
     n_groups = len(patch_indices)
 
-    recons_image = jnp.zeros(prod(image_shape))
+    # image_shape given as [W H C]
+    shape = [t_resampling, image_shape[-1], image_shape[-3], image_shape[-2]]
+
+    recons_image = jnp.zeros(prod(shape))
     
     for group_idx in range(n_groups):
-
         modality_idx_in_patch = [modality_idx for modality_idx, g_i in enumerate(group_indices) if g_i == group_idx]
         num_modalities_in_patch = len(modality_idx_in_patch)    
         
@@ -182,7 +173,8 @@ def map_discrete_2_rgb(observations, locations_matrix, group_indices, sv_discret
         if len(matched_bin_values) > 0:
             recons_image = recons_image.at[patch_indices[group_idx]].set(recons_image[patch_indices[group_idx]] + V_per_patch[group_idx].dot(matched_bin_values))
 
-    return recons_image.reshape(image_shape)
+    recons_image = recons_image.reshape(shape)
+    return recons_image
 
 def spm_dir_norm(a):
     """
@@ -192,7 +184,6 @@ def spm_dir_norm(a):
     Returns:
         A: normalised conditional probability matrix
     """
-    
     a0 = jnp.sum(a, axis=0)
     i = a0 > 0
     a = jnp.where(i, a / a0, a)
@@ -273,7 +264,7 @@ if __name__ == "__main__":
     frames = read_frames_from_mp4(path_to_file)
 
     # Map the RGB image to discrete outcomes
-    (observations, locations_matrix, group_indices, sv_discrete_axis, V_per_patch), patch_indices = map_rbg_2_discrete(frames)
+    (observations, locations_matrix, group_indices, sv_discrete_axis, V_per_patch), patch_indices = map_rbg_2_discrete(frames, tile_diameter=32, n_bins=16)
 
     ims = []
 
@@ -281,24 +272,21 @@ if __name__ == "__main__":
     observations = jnp.array(observations)
     video = jnp.zeros(frames.shape)
     for t in range(observations.shape[1]):
-        img = map_discrete_2_rgb(observations[:, t, :], locations_matrix, group_indices, sv_discrete_axis, V_per_patch, patch_indices, [3, 128, 128])
+        img = map_discrete_2_rgb(observations[:, t, :], locations_matrix, group_indices, sv_discrete_axis, V_per_patch, patch_indices, frames.shape[-3:])
 
-        # transform back to RGB
-        img = jnp.transpose(img, (1, 2, 0))
-        img /= 255
-        img = jnp.clip(img, 0, 1)
-        img = (255*img).astype(onp.uint8)
+        # this reconstructs 2 frames
+        for i in range(2):
+            im = img[i, ...]
+            # transform back to RGB
+            im = jnp.transpose(im, (1, 2, 0))
+            im /= 255
+            im = jnp.clip(im, 0, 1)
+            im = (255*im).astype(onp.uint8)
 
-        gt = frames[t]
-        ims.append(onp.hstack([img, gt]) )
+            gt = frames[t*2 + i]
+            ims.append(onp.hstack([im, gt]) )
 
-        # fig, ax = plt.subplots(1, 2)
-        # ax[0].imshow(img)
-        # ax[1].imshow(frames[t, ...])
-        # plt.show()
-        #video = video.at[t, ...].set(img)
-
-    imageio.mimsave('dove.gif', ims)
+    imageio.mimsave('reconstruction.gif', ims)
 
 
 
