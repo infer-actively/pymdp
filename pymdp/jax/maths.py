@@ -5,7 +5,7 @@ from typing import Optional, Tuple, List
 from jax import tree_util, nn, jit
 from opt_einsum import contract
 from multimethod import multimethod
-from jaxtyping import Array
+from jaxtyping import ArrayLike
 from jax.experimental import sparse
 from jax.experimental.sparse._base import JAXSparse
 
@@ -18,7 +18,7 @@ def log_stable(x):
 
 @multimethod
 @partial(jit, static_argnames=["keep_dims"])
-def factor_dot(M: Array, xs: List[Array], keep_dims: Optional[Tuple[int]] = None):
+def factor_dot(M: ArrayLike, xs: list[ArrayLike], keep_dims: Optional[tuple[int]] = None):
     """Dot product of a multidimensional array with `x`.
     Parameters
     ----------
