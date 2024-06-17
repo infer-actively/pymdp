@@ -298,6 +298,53 @@ class Agent(Module):
 
         return agent
     
+    
+    @vmap
+    def infer_parameters(self, beliefs_A, outcomes, actions, beliefs_B=None, lr_pA=1., lr_pB=1., **kwargs):
+        agent = self
+        beliefs_B = beliefs_A if beliefs_B is None else beliefs_B
+        if self.inference_algo == 'ovf':
+            smoothed_marginals_and_joints = inference.smoothing_ovf(beliefs_A, self.B, actions)
+            marginal_beliefs = smoothed_marginals_and_joints[0]
+            joint_beliefs = smoothed_marginals_and_joints[1]
+        else:
+            marginal_beliefs = beliefs_A
+            if self.learn_B:
+                nf = len(beliefs_B)
+                joint_fn = lambda f: [beliefs_B[f][1:]] + [beliefs_B[f_idx][:-1] for f_idx in self.B_dependencies[f]]
+                joint_beliefs = jtu.tree_map(joint_fn, list(range(nf)))
+
+        if self.learn_A:
+            qA, E_qA = learning.update_obs_likelihood_dirichlet(
+                self.pA,
+                outcomes,
+                marginal_beliefs,
+                A_dependencies=self.A_dependencies,
+                num_obs=self.num_obs,
+                onehot_obs=self.onehot_obs,
+                lr=lr_pA,
+            )
+            
+            agent = tree_at(lambda x: (x.A, x.pA), agent, (E_qA, qA))
+            
+        if self.learn_B:
+            assert beliefs_B[0].shape[0] == actions.shape[0] + 1
+            qB, E_qB = learning.update_state_transition_dirichlet(
+                self.pB,
+                joint_beliefs,
+                actions,
+                num_controls=self.num_controls,
+                lr=lr_pB
+            )
+            
+            # if you have updated your beliefs about transitions, you need to re-compute the I matrix used for inductive inferenece
+            if self.use_inductive and self.H is not None:
+                I_updated = control.generate_I_matrix(self.H, E_qB, self.inductive_threshold, self.inductive_depth)
+            else:
+                I_updated = self.I
+
+            agent = tree_at(lambda x: (x.B, x.pB, x.I), agent, (E_qB, qB, I_updated))
+    
     @vmap
     def infer_states(self, observations, past_actions, empirical_prior, qs_hist, mask=None):
         """
