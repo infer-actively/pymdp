@@ -36,7 +36,7 @@ def factor_dot(M: ArrayLike, xs: list[ArrayLike], keep_dims: Optional[tuple[int]
 
 
 @multimethod
-def factor_dot(M: JAXSparse, xs: List[Array], keep_dims: Optional[Tuple[int]] = None):
+def factor_dot(M: JAXSparse, xs: List[ArrayLike], keep_dims: Optional[Tuple[int]] = None):
     d = len(keep_dims) if keep_dims is not None else 0
     assert M.ndim == len(xs) + d
     keep_dims = () if keep_dims is None else keep_dims
@@ -45,7 +45,7 @@ def factor_dot(M: JAXSparse, xs: List[Array], keep_dims: Optional[Tuple[int]] = 
 
 
 def spm_dot_sparse(
-    X: JAXSparse, x: List[Array], dims: Optional[List[Tuple[int]]], keep_dims: Optional[List[Tuple[int]]]
+    X: JAXSparse, x: List[ArrayLike], dims: Optional[List[Tuple[int]]], keep_dims: Optional[List[Tuple[int]]]
 ):
     if dims is None:
         dims = (jnp.arange(0, len(x)) + X.ndim - len(x)).astype(int)
