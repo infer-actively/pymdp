@@ -6,7 +6,10 @@ import jax.numpy as jnp
 from .algos import run_factorized_fpi, run_mmp, run_vmp
 from jax import tree_util as jtu, lax
 from jax.experimental.sparse._base import JAXSparse
-from jaxtyping import Array
+from jax.experimental import sparse
+from jaxtyping import Array, ArrayLike
+
+eps = jnp.finfo('float').eps
 
 def update_posterior_states(
         A, 
@@ -58,68 +61,32 @@ def update_posterior_states(
     
     return qs_hist
 
-def joint_dist_factor_dense(b: Array, filtered_qs: list[Array], actions: Array):
+def joint_dist_factor(b: ArrayLike, filtered_qs: list[Array], actions: Array):
     qs_last = filtered_qs[-1]
     qs_filter = filtered_qs[:-1]
 
-    # conditional dist - timestep x s_{t+1} | s_{t}
-    time_b = jnp.moveaxis(b[..., actions], -1, 0)
-    # time_b = b[...,actions].transpose([b.ndim-1] + list(range(b.ndim-1)))
-
-    # joint dist - timestep x s_{t+1} x s_{t}
-    qs_joint = time_b * jnp.expand_dims(qs_filter, -1)
-
-    # cond dist - timestep x s_{t} | s_{t+1}
-    qs_backward_cond = jnp.moveaxis(
-        qs_joint / qs_joint.sum(-2, keepdims=True), -2, -1
-    )
-    # tranpose_idx = list(range(len(qs_joint.shape[:-2]))) + [qs_joint.ndim-1, qs_joint.ndim-2]
-    # qs_backward_cond = (qs_joint / qs_joint.sum(-2, keepdims=True).todense()).transpose(tranpose_idx)
-
-    def step_fn(qs_smooth_past, backward_b):
-        qs_joint = backward_b * qs_smooth_past
+    def step_fn(qs_smooth, xs):
+        qs_f, action = xs
+        time_b = b[..., action]
+        qs_j = time_b * qs_f
+        norm = qs_j.sum(-1, keepdims=True)
+        if isinstance(norm, JAXSparse):
+            norm = sparse.todense(norm)
+        norm = jnp.where(norm == 0, eps, norm)
+        qs_backward_cond = (qs_j / norm).T
+        qs_joint = qs_backward_cond * qs_smooth
         qs_smooth = qs_joint.sum(-1)
+        if isinstance(qs_smooth, JAXSparse):
+            qs_smooth = sparse.todense(qs_smooth)
         
+        # returns q(s_t), (q(s_t), q(s_t, s_t+1))
         return qs_smooth, (qs_smooth, qs_joint)
 
     # seq_qs will contain a sequence of smoothed marginals and joints
     _, seq_qs = lax.scan(
         step_fn,
         qs_last,
-        qs_backward_cond,
-        reverse=True,
-        unroll=2
-    )
-
-    # we add the last filtered belief to smoothed beliefs
-    qs_smooth_all = jnp.concatenate([seq_qs[0], jnp.expand_dims(qs_last, 0)], 0)
-    return qs_smooth_all, seq_qs[1]
-
-def joint_dist_factor_sparse(b: JAXSparse, filtered_qs: list[Array], actions: Array):
-    qs_last = filtered_qs[-1]
-    qs_filter = filtered_qs[:-1]
-
-    # conditional dist - timestep x s_{t+1} | s_{t}
-    time_b = b[...,actions].transpose([b.ndim-1] + list(range(b.ndim-1)))
-
-    # joint dist - timestep x s_{t+1} x s_{t}
-    qs_joint = time_b * jnp.expand_dims(qs_filter, -1)
-
-    # cond dist - timestep x s_{t} | s_{t+1}
-    tranpose_idx = list(range(len(qs_joint.shape[:-2]))) + [qs_joint.ndim-1, qs_joint.ndim-2]
-    qs_backward_cond = (qs_joint / qs_joint.sum(-2, keepdims=True).todense()).transpose(tranpose_idx)
-
-    def step_fn(qs_smooth_past, t):
-        qs_joint = qs_backward_cond[t] * qs_smooth_past
-        qs_smooth = qs_joint.sum(-1)
-        
-        return qs_smooth.todense(), (qs_smooth.todense(), qs_joint)
-
-    # seq_qs will contain a sequence of smoothed marginals and joints
-    _, seq_qs = lax.scan(
-        step_fn,
-        qs_last,
-        jnp.arange(qs_backward_cond.shape[0]),
+        (qs_filter, actions),
         reverse=True,
         unroll=2
     )
@@ -127,14 +94,17 @@ def joint_dist_factor_sparse(b: JAXSparse, filtered_qs: list[Array], actions: Ar
     # we add the last filtered belief to smoothed beliefs
 
     qs_smooth_all = jnp.concatenate([seq_qs[0], jnp.expand_dims(qs_last, 0)], 0)
-    return qs_smooth_all, seq_qs[1]
+    qs_joint_all = seq_qs[1]
+    if isinstance(qs_joint_all, JAXSparse):
+        qs_joint_all.shape = (len(actions),) + qs_joint_all.shape
+    return qs_smooth_all, qs_joint_all
 
 
 def smoothing_ovf(filtered_post, B, past_actions):
     assert len(filtered_post) == len(B)
     nf = len(B)  # number of factors
 
-    joint = lambda b, qs, f: joint_dist_factor_sparse(b, qs, past_actions[..., f]) if isinstance(b, JAXSparse) else joint_dist_factor_dense(b, qs, past_actions[..., f])
+    joint = lambda b, qs, f: joint_dist_factor(b, qs, past_actions[..., f])
 
     marginals_and_joints = []
     for b, qs, f in zip(B, filtered_post, list(range(nf))):
