@@ -328,7 +328,7 @@ def spm_unique(a):
     Args:
         a: array (n, x)
     Returns:
-        sorted indices of unique x'es
+        indices of unique x'es
     """
 
     
@@ -336,10 +336,10 @@ def spm_unique(a):
     # 0 to 0.5 -> 0, 0.5 to 1 -> 1, 1 -> 2
     o_discretized = jnp.fix(2 * a)
     
-    # Find unique rows
+    # Find unique rows -- this however needs to be changed to mimic the behavior of unique(o_discretized, 'stable')
     _, j = jnp.unique(o_discretized, return_inverse=True, axis=0)
     
-    return jnp.sort(j).squeeze(axis=1)
+    return j.squeeze(axis=1)
 
 def spm_structure_fast(observations, dt=2):
     """
@@ -384,10 +384,10 @@ def spm_structure_fast(observations, dt=2):
                 # Use first empty path
                 b = b.at[j[t + 1], j[t], u].set(1)
     
-    return a, b
+    return a, [b]
 
 
-def spm_MB_structure_learning(observations, locations_matrix, dt: int = 2, max_levels: int = 8):
+def spm_mb_structure_learning(observations, locations_matrix, dt: int = 2, max_levels: int = 8):
     """
 
     Args:
@@ -422,73 +422,84 @@ def spm_MB_structure_learning(observations, locations_matrix, dt: int = 2, max_l
         # Solve at the next timescale
         for t in range(len(T)):
             
-
-            sub_horizon = len(T[t])
-            for j in range(sub_horizon):
+            sub_horizon = T[t]
+            for j in range(len(sub_horizon)):
                 
-                current_obs = []
+                current_obs = observations[n].shape[0]*[None]
                 for g in range(len(G)):
                     for m_g in range(len(G[g])):
-                        # get a new observation from the n-th hierarchical level, the G[g] different modality indices for this patch, the T[t][j]-th timestep.
+                        # get a new observation from the n-th hierarchical level, the G[g] different modality indices for this group, the j-th timestep within `sub_horizon`.
                         # the [None,...] is to add a trivial batch dimension
-                        obs_n_g_t = observations[n][G[g][m_g],T[t][j],:][None,...]
-                        current_obs.append(obs_n_g_t)
+                        obs_n_g_t = observations[n][G[g][m_g],sub_horizon[j],:][None,None,...]
+                        current_obs[G[g][m_g]] = jnp.copy(obs_n_g_t)
 
                 # if we're beyond the first timestep, append observations_list to a growing list of historical observations
                 if j > 0:
-                    observations_list = jtu.tree_map(
-                    lambda prev_o, new_o: jnp.concatenate([prev_o, jnp.expand_dims(new_o, 1)], 1), previous_obs, current_obs
+                    current_obs = jtu.tree_map(
+                    lambda prev_o, new_o: jnp.concatenate([prev_o, new_o], 1), previous_obs, current_obs
                     )
 
                 if j == 0:
-                    qs, _ = pdp.infer_states(observations_list, past_actions=None, empirical_prior=pdp.D)
+                    qs = pdp.infer_states(current_obs, past_actions=None, empirical_prior=pdp.D, qs_hist=None)
                 else:
-                    qs, _ = pdp.infer_states(observations_list, past_actions=None, empirical_prior=empirical_prior)
+                    qs = pdp.infer_states(current_obs, past_actions=None, empirical_prior=empirical_prior, qs_hist=qs)
 
                 # fix to only one path for now?
                 # how do we get the actual path? infer? plan?
-                action = jnp.zeros((1))
-                empirical_prior, _ = pdp.infer_empirical_prior(action, qs)
+                action = jnp.zeros(len(G),dtype=int)[None,...]
+                empirical_prior, qs_hist = pdp.infer_empirical_prior(action, qs)
                 
-                previous_obs = jtu.tree_map(lambda x: jnp.copy(x), observations_list) # set the current observation (and history) equal to the previous set of observations
+                previous_obs = jtu.tree_map(lambda x: jnp.copy(x), current_obs) # set the current observation (and history) equal to the previous set of observations
+                
+                # print(f'Shape of state posterior over factor 0 at time {sub_horizon[j]}: {qs[0].shape}')
+                print(f'Maximum probability state about factor 0 at time {sub_horizon[j]}: {jnp.argmax(qs[0][0,-1,:])}')
 
-               
+
+                ### Decisions to be made next -- how to deal with the 'even-odd' states and paths storage that happens below
+                ### OPTIONS:
+                # 1. OBJECT ARRAY: reshape observations into a numpy array of dtype 'object' of shape (num_modalities, timesteps) where
+                # each 'sub-arrray' (observations[m, t]) is a variably-shaped vector
+                # 2. Tim's idea: concatenate the state and the action into one big vector, that way O[n] is still of 
+                # shape (num_modalities, timesteps, state_dim * path_dim)
+                # 3. Equalize their lengths by padding with zeros. So if states has 16 dims and paths has 1 dim, then you just
+                # make paths have 16 dims as well (pad with zeros). Then you'll still have (num_modalities, timesteps, 16) for O[n]
+                            
             
-            pdp   = MDP{n};
-            pdp.T = numel(T{t}); 
-            for j = 1:pdp.T
-                pdp.O(:,j) = O{n}(:,T{t}(j));
-            end
-            pdp   = spm_MDP_VB_XXX(pdp);
+        #     pdp   = MDP{n};
+        #     pdp.T = numel(T{t}); 
+        #     for j = 1:pdp.T
+        #         pdp.O(:,j) = O{n}(:,T{t}(j));
+        #     end
+        #     pdp   = spm_MDP_VB_XXX(pdp);
 
-            % initial states and paths
-            %------------------------------------------------------------------
-            ig    = 1;
-            L     = zeros(1,size(L,2));
-            for g = 1:numel(G)
+        #     % initial states and paths
+        #     %------------------------------------------------------------------
+        #     ig    = 1;
+        #     L     = zeros(1,size(L,2));
+        #     for g = 1:numel(G)
 
-                % states, paths and average location for this goup
-                %--------------------------------------------------------------
-                qs = pdp.X{g}(:,1);
-                qu = pdp.P{g}(:,end);
-                ml = mean(MDP{n}.LG(G{g},:));
+        #         % states, paths and average location for this goup
+        #         %--------------------------------------------------------------
+        #         qs = pdp.X{g}(:,1);
+        #         qu = pdp.P{g}(:,end);
+        #         ml = mean(MDP{n}.LG(G{g},:));
 
-                % states (odd)
-                %--------------------------------------------------------------
-                MDP{n}.id.D{g} = ig;
-                O{n + 1}{ig,t} = qs;
-                L(ig,:)        = ml;
-                ig = ig + 1;
+        #         % states (odd)
+        #         %--------------------------------------------------------------
+        #         MDP{n}.id.D{g} = ig;
+        #         O{n + 1}{ig,t} = qs;
+        #         L(ig,:)        = ml;
+        #         ig = ig + 1;
 
-                % paths (even)
-                %--------------------------------------------------------------
-                MDP{n}.id.E{g} = ig;
-                O{n + 1}{ig,t} = qu;
-                L(ig,:)        = ml;
-                ig = ig + 1;
+        #         % paths (even)
+        #         %--------------------------------------------------------------
+        #         MDP{n}.id.E{g} = ig;
+        #         O{n + 1}{ig,t} = qu;
+        #         L(ig,:)        = ml;
+        #         ig = ig + 1;
 
-            end
-        end
+        #     end
+        # end
 
         
 
@@ -513,7 +524,7 @@ if __name__ == "__main__":
     observations = jnp.asarray(observations)
     
     # Run structure learning on the observations
-    A, B = spm_MB_structure_learning(observations, locations_matrix, max_levels=1)
+    A, B = spm_mb_structure_learning(observations, locations_matrix, max_levels=1)
     # for A_m in A[0]:
     #     print(A_m[0].shape)
     #     print(A_m)
