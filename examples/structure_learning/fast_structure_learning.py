@@ -3,11 +3,14 @@ import numpy as onp
 from jax import numpy as jnp
 from jax import vmap
 from jax import nn
+from jax import tree_util as jtu
 from jaxtyping import Array
 from typing import Tuple, List    
 import itertools
 import matplotlib.pyplot as plt
 import imageio
+
+from pymdp.jax.agent import Agent
 
 
 from math import prod
@@ -336,7 +339,7 @@ def spm_unique(a):
     # Find unique rows
     _, j = jnp.unique(o_discretized, return_inverse=True, axis=0)
     
-    return jnp.sort(j)
+    return jnp.sort(j).squeeze(axis=1)
 
 def spm_structure_fast(observations, dt=2):
     """
@@ -356,7 +359,7 @@ def spm_structure_fast(observations, dt=2):
     a = num_modalities*[None]
 
     for m in range(num_modalities):
-        a[m] = jnp.zeros(num_obs, Ns)
+        a[m] = jnp.zeros((num_obs, Ns))
         for s in range(Ns):
             a[m] = a[m].at[:,s].set(observations[m,j == s].mean(axis=0)) # observations[m,j == s] will have shape (num_timesteps_that_match, num_bins)
 
@@ -366,44 +369,22 @@ def spm_structure_fast(observations, dt=2):
         b = [jnp.eye(Ns)]
         return a, b
     
+    # Assign unique transitions between states to paths
     b = jnp.zeros((Ns, Ns, 1))
 
-    for t in range(j.shape[0]):
+    for t in range(len(j)-1):
         if not jnp.any(b[j[t+1], j[t], :]):
+            # does this state have any transitions under any paths
             u = jnp.where(~jnp.any(b[:, j[t], :], axis=0))[0]
             if len(u) == 0:
                 # Add new path if no empty paths found
                 b = jnp.concatenate((b, jnp.zeros((Ns, Ns, 1))), axis=2)
-                b[j[t + 1], j[t], -1] = 1
+                b = b.at[j[t + 1], j[t], -1].set(1)
             else:
                 # Use first empty path
-                b[j[t + 1], j[t], u] = 1
+                b = b.at[j[t + 1], j[t], u].set(1)
     
     return a, b
-
-    # % Transition tensors
-    # %--------------------------------------------------------------------------
-    # b     = zeros(Ns,Ns);
-    # for t = 1:(numel(j) - 1)
-
-    #     % find empty paths
-    #     %----------------------------------------------------------------------
-    #     if ~any(b(j(t + 1),j(t),:),'all')
-    #         u  = find(~any(b(:,j(t),:),1),1,'first');
-    #         if isempty(u)
-    #             b(j(t + 1),j(t),end + 1) = 1;
-    #         else
-    #             b(j(t + 1),j(t),u) = 1;
-    #         end
-    #     end
-    # end
-
-    # % Vectorise cell array of likelihood tensors and place in structure
-    # %--------------------------------------------------------------------------
-    # mdp.a    = a;
-    # mdp.b{1} = b;
-
-    # return
 
 
 def spm_MB_structure_learning(observations, locations_matrix, dt: int = 2, max_levels: int = 8):
@@ -414,21 +395,104 @@ def spm_MB_structure_learning(observations, locations_matrix, dt: int = 2, max_l
         locations_matrix (array): (num_modalities, 2) 
     """
 
-    A, B = [], []
+    A, B, RG, LG, = [], [], [], []
     observations = [observations]
     for n in range(max_levels):
-
         G = spm_space(locations_matrix)
         T = spm_time(observations[n].shape[1], dt)
 
-        Ag, Bg = [], []
-        for g in G:
-            a, b = spm_structure_fast(observations[n][g], dt)
-            Ag.append(a)
-            Bg.append(b)
+        A, B = [], []
+        A_dependencies = []
+        for g in range(len(G)):
+            a, b = spm_structure_fast(observations[n][G[g]], dt)
+            A += a
+            B += b
+
+            # dependencies
+            A_deps_for_patch_g = [g] * len(G[g])
+            A_dependencies += A_deps_for_patch_g
+  
+        A_dependencies = [[a_dep] for a_dep in A_dependencies]
         
-        A.append(Ag)
-        B.append(Bg)
+        RG.append(G)
+        LG.append(locations_matrix)
+
+        pdp = Agent(A=A, B=B, A_dependencies=A_dependencies, apply_batch=True, onehot_obs=True)
+
+        # Solve at the next timescale
+        for t in range(len(T)):
+            
+
+            sub_horizon = len(T[t])
+            for j in range(sub_horizon):
+                
+                current_obs = []
+                for g in range(len(G)):
+                    for m_g in range(len(G[g])):
+                        # get a new observation from the n-th hierarchical level, the G[g] different modality indices for this patch, the T[t][j]-th timestep.
+                        # the [None,...] is to add a trivial batch dimension
+                        obs_n_g_t = observations[n][G[g][m_g],T[t][j],:][None,...]
+                        current_obs.append(obs_n_g_t)
+
+                # if we're beyond the first timestep, append observations_list to a growing list of historical observations
+                if j > 0:
+                    observations_list = jtu.tree_map(
+                    lambda prev_o, new_o: jnp.concatenate([prev_o, jnp.expand_dims(new_o, 1)], 1), previous_obs, current_obs
+                    )
+
+                if j == 0:
+                    qs, _ = pdp.infer_states(observations_list, past_actions=None, empirical_prior=pdp.D)
+                else:
+                    qs, _ = pdp.infer_states(observations_list, past_actions=None, empirical_prior=empirical_prior)
+
+                # fix to only one path for now?
+                # how do we get the actual path? infer? plan?
+                action = jnp.zeros((1))
+                empirical_prior, _ = pdp.infer_empirical_prior(action, qs)
+                
+                previous_obs = jtu.tree_map(lambda x: jnp.copy(x), observations_list) # set the current observation (and history) equal to the previous set of observations
+
+               
+            
+            pdp   = MDP{n};
+            pdp.T = numel(T{t}); 
+            for j = 1:pdp.T
+                pdp.O(:,j) = O{n}(:,T{t}(j));
+            end
+            pdp   = spm_MDP_VB_XXX(pdp);
+
+            % initial states and paths
+            %------------------------------------------------------------------
+            ig    = 1;
+            L     = zeros(1,size(L,2));
+            for g = 1:numel(G)
+
+                % states, paths and average location for this goup
+                %--------------------------------------------------------------
+                qs = pdp.X{g}(:,1);
+                qu = pdp.P{g}(:,end);
+                ml = mean(MDP{n}.LG(G{g},:));
+
+                % states (odd)
+                %--------------------------------------------------------------
+                MDP{n}.id.D{g} = ig;
+                O{n + 1}{ig,t} = qs;
+                L(ig,:)        = ml;
+                ig = ig + 1;
+
+                % paths (even)
+                %--------------------------------------------------------------
+                MDP{n}.id.E{g} = ig;
+                O{n + 1}{ig,t} = qu;
+                L(ig,:)        = ml;
+                ig = ig + 1;
+
+            end
+        end
+
+        
+
+    return A, B
 
 if __name__ == "__main__":
     
@@ -449,7 +513,13 @@ if __name__ == "__main__":
     observations = jnp.asarray(observations)
     
     # Run structure learning on the observations
-    A, B = spm_MB_structure_learning(observations, locations_matrix)
+    A, B = spm_MB_structure_learning(observations, locations_matrix, max_levels=1)
+    # for A_m in A[0]:
+    #     print(A_m[0].shape)
+    #     print(A_m)
+    # for B_m in B[0]:
+    #     print(B_m[0].shape)
+    #     print(B_m)
 
     # G = spm_space(locations_matrix)
     # print(G)
