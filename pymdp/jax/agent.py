@@ -357,7 +357,11 @@ class Agent(Module):
 
         qs_last = jtu.tree_map( lambda x: x[-1], qs)
         # this computation of the predictive prior is correct only for fully factorised Bs.
-        pred = control.compute_expected_state(qs_last, self.B, action, B_dependencies=self.B_dependencies)
+        if self.inference_algo in ['mmp', 'vmp']:
+            # in the case of the 'mmp' or 'vmp' we have to use D as prior parameter for infer states
+            pred = self.D
+        else:
+            pred = control.compute_expected_state(qs_last, self.B, action, B_dependencies=self.B_dependencies)
         
         return (pred, qs)
 
