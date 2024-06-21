@@ -34,6 +34,7 @@ def read_frames_from_mp4(file_path: str, num_frames: int = 32, size: tuple[int] 
     y_start = max(0, y_center - height // 2)
 
     frame_indices = jnp.linspace(0, total_frames - 1, num_frames, dtype=int)
+    frame_indices = jnp.concatenate((frame_indices, frame_indices), axis=0)
     frames = []
     
     for frame_idx in frame_indices:
@@ -80,7 +81,7 @@ def map_rbg_2_discrete(image_data: Array, tile_diameter=32, n_bins=9, max_n_mode
     # concat each t_resampling frames
     image_data = image_data.reshape((T//t_resampling, -1, width, height))
 
-    # shape of the data excluding the time dimension
+    # shape of the data excluding the time dimension ((t_resampling * C) x W x H)
     shape_no_time = image_data.shape[1:]
 
     patch_indices, patch_centroids, patch_weights = spm_tile(width=shape_no_time[1], height=shape_no_time[2], n_copies=shape_no_time[0], tile_diameter=tile_diameter)
@@ -212,7 +213,7 @@ def spm_tile(width: int, height: int, n_copies: int, tile_diameter: int=32):
         M: (mean) outcome location
         H: outcome weights 
     """
-    def distance(x, y): 
+    def distance(x, y):
         return jnp.sqrt(((x - y) ** 2).sum())
 
     def flatten(l):
@@ -255,6 +256,179 @@ def spm_tile(width: int, height: int, n_copies: int, tile_diameter: int=32):
     
     return G, M, H_weights
 
+def spm_space(L: Array):
+    """ 
+    This function takes a set of modalities and their
+    spatial coordinates and decimates over space into a compressed 
+    set of modalities, and assigns the previous modalities
+    to the new set of modsalities. 
+
+    Args:
+        L (Array): num_modalities x 2
+    Returns:
+        G (List[Array[int]]): 
+            outcome indices mapping new modalities indices to
+            previous modality indices
+    """
+
+    # this is the second case (skipping if isvector(L))
+    # locations
+    Nl = L.shape[0]
+    unique_locs = jnp.unique(L, axis=0)
+    Ng = unique_locs.shape[0]
+    Ng = jnp.ceil(jnp.sqrt(Ng/4))
+    if Ng == 1:
+        G = list(range(Nl))
+        return G
+
+    # decimate locations
+    x = jnp.linspace(jnp.min(L[:,0]), jnp.max(L[:,0]), int(Ng))
+    y = jnp.linspace(jnp.min(L[:,1]), jnp.max(L[:,1]), int(Ng))
+    R = jnp.fliplr(jnp.array(jnp.meshgrid(x, y)).T.reshape(-1, 2))
+    
+    # nearest (reduced) location
+    closest_loc = lambda loc: jnp.argmin(jnp.linalg.norm(R - loc, axis=1))
+    g = vmap(closest_loc)(L)
+
+    # grouping partition
+    G = []
+
+    # these two lines do the equivalent of u = unique(g, 'stable') in MATLAB
+    _, unique_idx = jnp.unique(g, return_index=True)
+    u = g[jnp.sort(unique_idx)]
+    for i in range(len(u)):
+        G.append(jnp.argwhere(g == u[i]).squeeze())
+
+    return G
+
+def spm_time(T, d):
+    """
+    Grouping into a partition of non-overlapping sequences
+    Args:
+    T (int): total number of the timesteps
+    d (int): number timesteps per partition
+
+    Returns:
+    list: A list of partitions with non-overlapping sequences
+    """
+    t = []
+    for i in range(T // d):
+        t.append(jnp.arange(d) + (i * d))
+    return t
+
+def spm_unique(a):
+    """
+    Fast approximation by simply identifying unique locations in a
+    multinomial statistical manifold, after discretising to probabilities of
+    zero, half and one (using Matlab’s unique and fix operators).
+    
+    Args:
+        a: array (n, x)
+    Returns:
+        sorted indices of unique x'es
+    """
+
+    
+    # Discretize to probabilities of zero, half, and one
+    # 0 to 0.5 -> 0, 0.5 to 1 -> 1, 1 -> 2
+    o_discretized = jnp.fix(2 * a)
+    
+    # Find unique rows
+    _, j = jnp.unique(o_discretized, return_inverse=True, axis=0)
+    
+    return jnp.sort(j)
+
+def spm_structure_fast(observations, dt=2):
+    """
+    Args:
+        observations (array): (num_modalities, num_steps, num_obs)
+        dt (int)
+    """
+
+    # Find unique outputs per timestep
+    num_modalities, num_steps, num_obs = observations.shape
+    o = jnp.moveaxis(observations,1,0).reshape(num_steps, -1)
+    j = spm_unique(o)
+
+    # Likelihood tensors
+    Ns = len(jnp.unique(j))  # number of latent causes
+
+    a = num_modalities*[None]
+
+    for m in range(num_modalities):
+        a[m] = jnp.zeros(num_obs, Ns)
+        for s in range(Ns):
+            a[m] = a[m].at[:,s].set(observations[m,j == s].mean(axis=0)) # observations[m,j == s] will have shape (num_timesteps_that_match, num_bins)
+
+    # Transition tensors
+    if dt < 2:
+        # no dynamics
+        b = [jnp.eye(Ns)]
+        return a, b
+    
+    b = jnp.zeros((Ns, Ns, 1))
+
+    for t in range(j.shape[0]):
+        if not jnp.any(b[j[t+1], j[t], :]):
+            u = jnp.where(~jnp.any(b[:, j[t], :], axis=0))[0]
+            if len(u) == 0:
+                # Add new path if no empty paths found
+                b = jnp.concatenate((b, jnp.zeros((Ns, Ns, 1))), axis=2)
+                b[j[t + 1], j[t], -1] = 1
+            else:
+                # Use first empty path
+                b[j[t + 1], j[t], u] = 1
+    
+    return a, b
+
+    # % Transition tensors
+    # %--------------------------------------------------------------------------
+    # b     = zeros(Ns,Ns);
+    # for t = 1:(numel(j) - 1)
+
+    #     % find empty paths
+    #     %----------------------------------------------------------------------
+    #     if ~any(b(j(t + 1),j(t),:),'all')
+    #         u  = find(~any(b(:,j(t),:),1),1,'first');
+    #         if isempty(u)
+    #             b(j(t + 1),j(t),end + 1) = 1;
+    #         else
+    #             b(j(t + 1),j(t),u) = 1;
+    #         end
+    #     end
+    # end
+
+    # % Vectorise cell array of likelihood tensors and place in structure
+    # %--------------------------------------------------------------------------
+    # mdp.a    = a;
+    # mdp.b{1} = b;
+
+    # return
+
+
+def spm_MB_structure_learning(observations, locations_matrix, dt: int = 2, max_levels: int = 8):
+    """
+
+    Args:
+        observations (array): (num_modalities, time, num_obs)
+        locations_matrix (array): (num_modalities, 2) 
+    """
+
+    A, B = [], []
+    observations = [observations]
+    for n in range(max_levels):
+
+        G = spm_space(locations_matrix)
+        T = spm_time(observations[n].shape[1], dt)
+
+        Ag, Bg = [], []
+        for g in G:
+            a, b = spm_structure_fast(observations[n][g], dt)
+            Ag.append(a)
+            Bg.append(b)
+        
+        A.append(Ag)
+        B.append(Bg)
 
 if __name__ == "__main__":
     
@@ -264,29 +438,44 @@ if __name__ == "__main__":
     frames = read_frames_from_mp4(path_to_file)
 
     # Map the RGB image to discrete outcomes
+    # Observations are list[list[array]] -> num modalities, time-steps, num_discrete_bins
+    # Location matrix is num_modalities x 2 (width, height)
+    # Group indices is num_modalities
+    # sv_discrete_axis num_modalities x num_discrete_bins
+    # V_per_patch num_patches, num_pixels_per_patch x 11?
     (observations, locations_matrix, group_indices, sv_discrete_axis, V_per_patch), patch_indices = map_rbg_2_discrete(frames, tile_diameter=32, n_bins=16)
 
-    ims = []
+    # convert list of list of observation one-hots into an array of size (num_modalities, timesteps, num_obs)
+    observations = jnp.asarray(observations)
+    
+    # Run structure learning on the observations
+    A, B = spm_MB_structure_learning(observations, locations_matrix)
 
-    # Map the discrete outcomes back to RGB    
-    observations = jnp.array(observations)
-    video = jnp.zeros(frames.shape)
-    for t in range(observations.shape[1]):
-        img = map_discrete_2_rgb(observations[:, t, :], locations_matrix, group_indices, sv_discrete_axis, V_per_patch, patch_indices, frames.shape[-3:])
+    # G = spm_space(locations_matrix)
+    # print(G)
 
-        # this reconstructs 2 frames
-        for i in range(2):
-            im = img[i, ...]
-            # transform back to RGB
-            im = jnp.transpose(im, (1, 2, 0))
-            im /= 255
-            im = jnp.clip(im, 0, 1)
-            im = (255*im).astype(onp.uint8)
+    
+    # ims = []
 
-            gt = frames[t*2 + i]
-            ims.append(onp.hstack([im, gt]) )
+    # # Map the discrete outcomes back to RGB    
+    # observations = jnp.array(observations)
+    # video = jnp.zeros(frames.shape)
+    # for t in range(observations.shape[1]):
+    #     img = map_discrete_2_rgb(observations[:, t, :], locations_matrix, group_indices, sv_discrete_axis, V_per_patch, patch_indices, frames.shape[-3:])
 
-    imageio.mimsave('reconstruction.gif', ims)
+    #     # this reconstructs 2 frames
+    #     for i in range(2):
+    #         im = img[i, ...]
+    #         # transform back to RGB
+    #         im = jnp.transpose(im, (1, 2, 0))
+    #         im /= 255
+    #         im = jnp.clip(im, 0, 1)
+    #         im = (255*im).astype(onp.uint8)
+
+    #         gt = frames[t*2 + i]
+    #         ims.append(onp.hstack([im, gt]) )
+
+    # imageio.mimsave('reconstruction.gif', ims)
 
 
 
