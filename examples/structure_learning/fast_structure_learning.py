@@ -394,7 +394,7 @@ def spm_mb_structure_learning(observations, locations_matrix, dt: int = 2, max_l
         locations_matrix (array): (num_modalities, 2) 
     """
 
-    agents, RG, LG, = [], [], [], []
+    agents, RG, LG, = [], [], []
     observations = [observations]
     for n in range(max_levels):
         G = spm_space(locations_matrix)
@@ -528,7 +528,7 @@ if __name__ == "__main__":
     observations = jnp.asarray(observations)
     
     # Run structure learning on the observations
-    A, B = spm_mb_structure_learning(observations, locations_matrix, max_levels=1)
+    agents, RG, LB = spm_mb_structure_learning(observations, locations_matrix, max_levels=1)
     # for A_m in A[0]:
     #     print(A_m[0].shape)
     #     print(A_m)
