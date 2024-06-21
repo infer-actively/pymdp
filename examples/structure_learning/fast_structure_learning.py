@@ -281,8 +281,8 @@ def spm_space(L: Array):
     Ng = unique_locs.shape[0]
     Ng = jnp.ceil(jnp.sqrt(Ng/4))
     if Ng == 1:
-        G = list(range(Nl))
-        return G
+        G = jnp.arange(Nl)
+        return [G]
 
     # decimate locations
     x = jnp.linspace(jnp.min(L[:,0]), jnp.max(L[:,0]), int(Ng))
@@ -419,9 +419,13 @@ def spm_mb_structure_learning(observations, locations_matrix, dt: int = 2, max_l
         pdp = Agent(A=A, B=B, A_dependencies=A_dependencies, apply_batch=True, onehot_obs=True)
         agents.append(pdp)
 
+        # observation dim size for next level
+        ndim = max(max(pdp.num_states),max(pdp.num_controls))
+        # we have to gather initial state and path as observations for the next level
+        observations.append(jnp.zeros((len(G) * 2, len(T), ndim)))
+
         # Solve at the next timescale
         for t in range(len(T)):
-            
             sub_horizon = T[t]
             for j in range(len(sub_horizon)):
                 
@@ -455,16 +459,34 @@ def spm_mb_structure_learning(observations, locations_matrix, dt: int = 2, max_l
                 print(f'Maximum probability state about factor 0 at time {sub_horizon[j]}: {jnp.argmax(qs[0][0,-1,:])}')
 
 
-                ### Decisions to be made next -- how to deal with the 'even-odd' states and paths storage that happens below
-                ### OPTIONS:
-                # 1. OBJECT ARRAY: reshape observations into a numpy array of dtype 'object' of shape (num_modalities, timesteps) where
-                # each 'sub-arrray' (observations[m, t]) is a variably-shaped vector
-                # 2. Tim's idea: concatenate the state and the action into one big vector, that way O[n] is still of 
-                # shape (num_modalities, timesteps, state_dim * path_dim)
-                # 3. Equalize their lengths by padding with zeros. So if states has 16 dims and paths has 1 dim, then you just
-                # make paths have 16 dims as well (pad with zeros). Then you'll still have (num_modalities, timesteps, 16) for O[n]
-                            
-            
+            ### Decisions to be made next -- how to deal with the 'even-odd' states and paths storage that happens below
+            ### OPTIONS:
+            # 1. OBJECT ARRAY: reshape observations into a numpy array of dtype 'object' of shape (num_modalities, timesteps) where
+            # each 'sub-arrray' (observations[m, t]) is a variably-shaped vector
+            # 2. Tim's idea: concatenate the state and the action into one big vector, that way O[n] is still of 
+            # shape (num_modalities, timesteps, state_dim * path_dim)
+            # 3. Equalize their lengths by padding with zeros. So if states has 16 dims and paths has 1 dim, then you just
+            # make paths have 16 dims as well (pad with zeros). Then you'll still have (num_modalities, timesteps, 16) for O[n]
+            #
+            # for now, we'll go with option 3
+
+            for g in range(len(G)):
+                # initial state
+                observations[n + 1] = observations[n+1].at[2 * g, t].set(qs_hist[g][0,0,:])
+                # path
+                observations[n + 1] = observations[n+1].at[2 * g + 1, t , action[g]].set(1.0)
+
+        # coarse grain locations
+        coarse_locations = []
+        for g in range(len(G)):
+            # append twice (for initial state and path)
+            coarse_locations.append(jnp.mean(locations_matrix[G[g]], axis=0))
+            coarse_locations.append(jnp.mean(locations_matrix[G[g]], axis=0))
+        locations_matrix = jnp.stack(coarse_locations)    
+
+        if len(G) == 1:
+            break
+
         #     pdp   = MDP{n};
         #     pdp.T = numel(T{t}); 
         #     for j = 1:pdp.T
@@ -501,8 +523,6 @@ def spm_mb_structure_learning(observations, locations_matrix, dt: int = 2, max_l
         #     end
         # end
 
-        
-
     return agents, RG, LG
 
 if __name__ == "__main__":
@@ -519,16 +539,19 @@ if __name__ == "__main__":
     # sv_discrete_axis num_modalities x num_discrete_bins
     # V_per_patch num_patches, num_pixels_per_patch x 11?
     (observations, locations_matrix, group_indices, sv_discrete_axis, V_per_patch), patch_indices = map_rbg_2_discrete(frames, tile_diameter=32, n_bins=16)
-
-    # plt.imshow(frames[0])
-    # plt.scatter(locations_matrix[:,0], locations_matrix[:,1], c='r')
-    # plt.show()
-
+    
     # convert list of list of observation one-hots into an array of size (num_modalities, timesteps, num_obs)
     observations = jnp.asarray(observations)
     
     # Run structure learning on the observations
-    agents, RG, LB = spm_mb_structure_learning(observations, locations_matrix, max_levels=1)
+    agents, RG, LB = spm_mb_structure_learning(observations, locations_matrix, max_levels=8)
+
+    plt.imshow(frames[0])
+    for locations_matrix in LB:
+        plt.scatter(locations_matrix[:,0], locations_matrix[:,1], c='r')
+    plt.show()
+
+
     # for A_m in A[0]:
     #     print(A_m[0].shape)
     #     print(A_m)
