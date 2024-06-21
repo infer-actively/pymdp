@@ -33,8 +33,8 @@ def read_frames_from_mp4(file_path: str, num_frames: int = 32, size: tuple[int] 
 
     x_center = video_width // 2
     y_center = video_height // 2
-    x_start = max(0, x_center - width // 2)
-    y_start = max(0, y_center - height // 2)
+    x_start = max(0, x_center - width)
+    y_start = max(0, y_center - height)
 
     frame_indices = jnp.linspace(0, total_frames - 1, num_frames, dtype=int)
     frame_indices = jnp.concatenate((frame_indices, frame_indices), axis=0)
@@ -47,7 +47,7 @@ def read_frames_from_mp4(file_path: str, num_frames: int = 32, size: tuple[int] 
         if not ret:
             break
 
-        cropped_frame = frame[y_start:y_start+height, x_start:x_start+width]
+        cropped_frame = frame[y_start:y_start+2*height, x_start:x_start+2*width]
         resized_frame = cv2.resize(cropped_frame, size)
         frames.append(resized_frame)
     
@@ -331,7 +331,6 @@ def spm_unique(a):
         indices of unique x'es
     """
 
-    
     # Discretize to probabilities of zero, half, and one
     # 0 to 0.5 -> 0, 0.5 to 1 -> 1, 1 -> 2
     o_discretized = jnp.fix(2 * a)
@@ -395,7 +394,7 @@ def spm_mb_structure_learning(observations, locations_matrix, dt: int = 2, max_l
         locations_matrix (array): (num_modalities, 2) 
     """
 
-    A, B, RG, LG, = [], [], [], []
+    agents, RG, LG, = [], [], [], []
     observations = [observations]
     for n in range(max_levels):
         G = spm_space(locations_matrix)
@@ -418,6 +417,7 @@ def spm_mb_structure_learning(observations, locations_matrix, dt: int = 2, max_l
         LG.append(locations_matrix)
 
         pdp = Agent(A=A, B=B, A_dependencies=A_dependencies, apply_batch=True, onehot_obs=True)
+        agents.append(pdp)
 
         # Solve at the next timescale
         for t in range(len(T)):
@@ -503,7 +503,7 @@ def spm_mb_structure_learning(observations, locations_matrix, dt: int = 2, max_l
 
         
 
-    return A, B
+    return agents, RG, LG
 
 if __name__ == "__main__":
     
@@ -519,6 +519,10 @@ if __name__ == "__main__":
     # sv_discrete_axis num_modalities x num_discrete_bins
     # V_per_patch num_patches, num_pixels_per_patch x 11?
     (observations, locations_matrix, group_indices, sv_discrete_axis, V_per_patch), patch_indices = map_rbg_2_discrete(frames, tile_diameter=32, n_bins=16)
+
+    # plt.imshow(frames[0])
+    # plt.scatter(locations_matrix[:,0], locations_matrix[:,1], c='r')
+    # plt.show()
 
     # convert list of list of observation one-hots into an array of size (num_modalities, timesteps, num_obs)
     observations = jnp.asarray(observations)
