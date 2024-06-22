@@ -20,24 +20,18 @@ from pymdp import utils, maths
 from pymdp.learning import update_state_likelihood_dirichlet as update_pB_numpy
 from pymdp.learning import update_state_likelihood_dirichlet_interactions as update_pB_interactions_numpy
 
-
-# Temporary to make the mapping
-from pymdp.jax.learning import update_state_likelihood_dirichlet as update_pB_jax_old
-
-from pymdp.jax.learning_dimi import update_obs_likelihood_dirichlet as update_pA_jax
-from pymdp.jax.learning_dimi import update_state_transition_dirichlet as update_pB_jax
+from pymdp.jax.learning import update_obs_likelihood_dirichlet as update_pA_jax
+from pymdp.jax.learning import update_state_transition_dirichlet as update_pB_jax
 
 
 class TestLearningJax(unittest.TestCase):
 
     def test_update_observation_likelihood_fullyconnected(self):
         """
-        Testing JAX-ified version of updating Dirichlet posterior over observation likelihood parameters (qA is
-        posterior, pA is prior, and A is expectation of likelihood wrt to current posterior over A, i.e.
-        $A = E_{Q(A)}[P(o|s,A)]$.
+        Testing JAX-ified version of updating Dirichlet posterior over observation likelihood parameters (qA is posterior, pA is prior, and A is expectation
+        of likelihood wrt to current posterior over A, i.e. $A = E_{Q(A)}[P(o|s,A)]$.
 
-        This is the so-called 'fully-connected' version where all hidden state factors drive each modality
-        (i.e. A_dependencies is a list of lists of hidden state factors)
+        This is the so-called 'fully-connected' version where all hidden state factors drive each modality (i.e. A_dependencies is a list of lists of hidden state factors)
         """
 
         num_obs_list = [[5], [10, 3, 2], [2, 4, 4, 2], [10]]
@@ -69,19 +63,19 @@ class TestLearningJax(unittest.TestCase):
             obs_jax = jtu.tree_map(lambda x: jnp.array(x)[None], list(obs_np))
             qs_jax = jtu.tree_map(lambda x: jnp.array(x)[None], list(qs_np))
 
-            qA_jax_test = update_pA_jax(pA_jax, obs_jax, qs_jax, A_dependencies, lr=l_rate)
+            qA_jax_test, E_qA_jax_test = update_pA_jax(
+                pA_jax, obs_jax, qs_jax, A_dependencies=A_dependencies, onehot_obs=True, num_obs=num_obs, lr=l_rate
+            )
 
             for modality, obs_dim in enumerate(num_obs):
                 self.assertTrue(np.allclose(qA_jax_test[modality], qA_np_test[modality]))
 
     def test_update_observation_likelihood_factorized(self):
         """
-        Testing JAX-ified version of updating Dirichlet posterior over observation likelihood parameters (qA is
-        posterior, pA is prior, and A is expectation of likelihood wrt to current posterior over A, i.e.
-        $A = E_{Q(A)}[P(o|s,A)]$.
+        Testing JAX-ified version of updating Dirichlet posterior over observation likelihood parameters (qA is posterior, pA is prior, and A is expectation
+        of likelihood wrt to current posterior over A, i.e. $A = E_{Q(A)}[P(o|s,A)]$.
 
-        This is the factorized version where only some hidden state factors drive each modality (i.e. A_dependencies is
-        a list of lists of hidden state factors)
+        This is the factorized version where only some hidden state factors drive each modality (i.e. A_dependencies is a list of lists of hidden state factors)
         """
 
         num_obs_list = [[5], [10, 3, 2], [2, 4, 4, 2], [10]]
@@ -113,7 +107,9 @@ class TestLearningJax(unittest.TestCase):
             obs_jax = jtu.tree_map(lambda x: jnp.array(x)[None], list(obs_np))
             qs_jax = jtu.tree_map(lambda x: jnp.array(x)[None], list(qs_np))
 
-            qA_jax_test = update_pA_jax(pA_jax, obs_jax, qs_jax, A_dependencies, lr=l_rate)
+            qA_jax_test, E_qA_jax_test = update_pA_jax(
+                pA_jax, obs_jax, qs_jax, A_dependencies=A_dependencies, onehot_obs=True, num_obs=num_obs, lr=l_rate
+            )
 
             for modality, obs_dim in enumerate(num_obs):
                 self.assertTrue(np.allclose(qA_jax_test[modality], qA_np_test[modality]))
@@ -141,21 +137,17 @@ class TestLearningJax(unittest.TestCase):
         pB_updated_numpy = update_pB_numpy(pB, B, action, qs, qs_prev, lr=l_rate, factors="all")
 
         pB_jax = [jnp.array(b) for b in pB]
-        B_deps = [[0]]
 
-        # Add the batch dim
         action_jax = jnp.array([action])
 
         belief_jax = []
         for f in range(len(num_states)):
-            # Extract factor + add batch dim
+            # Extract factor
             q_f = jnp.array([qs[..., f].tolist()])
             q_prev_f = jnp.array([qs_prev[..., f].tolist()])
             belief_jax.append([q_f, q_prev_f])
 
-        pB_updated_jax, _ = update_pB_jax(
-            pB_jax, belief_jax, action_jax, num_controls=num_controls, B_dependencies=B_deps, lr=l_rate
-        )
+        pB_updated_jax, _ = update_pB_jax(pB_jax, belief_jax, action_jax, num_controls=num_controls, lr=l_rate)
 
         for pB_np, pB_jax in zip(pB_updated_numpy, pB_updated_jax):
             self.assertTrue(pB_np.shape == pB_jax.shape)
@@ -183,22 +175,18 @@ class TestLearningJax(unittest.TestCase):
 
         pB_updated_numpy = update_pB_numpy(pB, B, action, qs, qs_prev, lr=l_rate, factors="all")
 
-        # Add the batch dim
         action_jax = jnp.array([action])
 
         belief_jax = []
         for f in range(len(num_states)):
-            # Extract factor + add batch dim
+            # Extract factor
             q_f = jnp.array([qs[..., f].tolist()])
             q_prev_f = jnp.array([qs_prev[..., f].tolist()])
             belief_jax.append([q_f, q_prev_f])
 
         pB_jax = [jnp.array(b) for b in pB]
 
-        B_deps = [[i] for i, _ in enumerate(B)]
-        pB_updated_jax, _ = update_pB_jax(
-            pB_jax, belief_jax, action_jax, num_controls=num_controls, B_dependencies=B_deps, lr=l_rate
-        )
+        pB_updated_jax, _ = update_pB_jax(pB_jax, belief_jax, action_jax, num_controls=num_controls, lr=l_rate)
 
         for pB_np, pB_jax in zip(pB_updated_numpy, pB_updated_jax):
             self.assertTrue(pB_np.shape == pB_jax.shape)
@@ -224,23 +212,18 @@ class TestLearningJax(unittest.TestCase):
 
         pB_updated_numpy = update_pB_numpy(pB, B, action, qs, qs_prev, lr=l_rate, factors="all")
 
-        # Add the batch dim
         action_jax = jnp.array([action])
 
         belief_jax = []
         for f in range(len(num_states)):
-            # Extract factor + add batch dim
+            # Extract factor
             q_f = jnp.array([qs[..., f].tolist()])
             q_prev_f = jnp.array([qs_prev[..., f].tolist()])
             belief_jax.append([q_f, q_prev_f])
 
-        # Also add the time and batch dimension
-        # action = jnp.expand_dims(jnp.array(action), 0)
         pB_jax = [jnp.array(b) for b in pB]
 
-        pB_updated_jax, _ = update_pB_jax(
-            pB_jax, belief_jax, action_jax, num_controls=num_controls, B_dependencies=None, lr=l_rate
-        )
+        pB_updated_jax, _ = update_pB_jax(pB_jax, belief_jax, action_jax, num_controls=num_controls, lr=l_rate)
 
         for pB_np, pB_jax in zip(pB_updated_numpy, pB_updated_jax):
             self.assertTrue(pB_np.shape == pB_jax.shape)
@@ -265,22 +248,18 @@ class TestLearningJax(unittest.TestCase):
 
         pB_updated_numpy = update_pB_numpy(pB, B, action, qs, qs_prev, lr=l_rate, factors="all")
 
-        # Add the batch dim
         action_jax = jnp.array([action])
 
         belief_jax = []
         for f in range(len(num_states)):
-            # Extract factor + add batch dim
+            # Extract factor
             q_f = jnp.array([qs[..., f].tolist()])
             q_prev_f = jnp.array([qs_prev[..., f].tolist()])
             belief_jax.append([q_f, q_prev_f])
 
         pB_jax = [jnp.array(b) for b in pB]
 
-        B_deps = [[i] for i, _ in enumerate(B)]
-        pB_updated_jax, _ = update_pB_jax(
-            pB_jax, belief_jax, action_jax, num_controls=num_controls, B_dependencies=B_deps, lr=l_rate
-        )
+        pB_updated_jax, _ = update_pB_jax(pB_jax, belief_jax, action_jax, num_controls=num_controls, lr=l_rate)
 
         for pB_np, pB_jax in zip(pB_updated_numpy, pB_updated_jax):
             self.assertTrue(pB_np.shape == pB_jax.shape)
@@ -311,14 +290,13 @@ class TestLearningJax(unittest.TestCase):
 
         belief_jax = []
         for f in range(len(num_states)):
-            # Extract factor + add batch dim
+            # Extract factor
             q_f = jnp.array([qs[..., f].tolist()])
             q_prev_f = jnp.array([qs_prev[..., f].tolist()])
             belief_jax.append([q_f, q_prev_f])
 
         pB_jax = [jnp.array(b) for b in pB]
 
-        # Add the batch dim
         action_jax = jnp.array([action])
 
         # Selective update of factors is not implemented within the method, and could be performed like this:
@@ -328,12 +306,7 @@ class TestLearningJax(unittest.TestCase):
         num_controls_update = [num_controls[f] for f in factors_to_update]
 
         pB_updated_jax_factors, _ = update_pB_jax(
-            pB_jax_update,
-            belief_jax_update,
-            action_jax_update,
-            num_controls=num_controls_update,
-            B_dependencies=None,
-            lr=l_rate,
+            pB_jax_update, belief_jax_update, action_jax_update, num_controls=num_controls_update, lr=l_rate
         )
 
         pB_updated_jax = []
@@ -373,21 +346,18 @@ class TestLearningJax(unittest.TestCase):
             pB, B, action, qs, qs_prev, B_factor_list, lr=l_rate, factors="all"
         )
 
-        # Add the batch dim
         action_jax = jnp.array([action])
 
         belief_jax = []
         for f in range(len(num_states)):
-            # Extract factor + add batch dim
+            # Extract factor
             q_f = jnp.array([qs[..., f].tolist()])
-            q_prev_f = jnp.array([qs_prev[..., f].tolist()])
-            belief_jax.append([q_f, q_prev_f])
+            q_prev_f = [jnp.array([qs_prev[..., fi].tolist()]) for fi in B_factor_list[f]]
+            belief_jax.append([q_f, *q_prev_f])
 
         pB_jax = [jnp.array(b) for b in pB]
 
-        pB_updated_jax, _ = update_pB_jax(
-            pB_jax, belief_jax, action_jax, B_dependencies=B_factor_list, lr=l_rate, num_controls=num_controls
-        )
+        pB_updated_jax, _ = update_pB_jax(pB_jax, belief_jax, action_jax, lr=l_rate, num_controls=num_controls)
 
         for pB_np, pB_jax in zip(pB_updated_numpy, pB_updated_jax):
             self.assertTrue(pB_np.shape == pB_jax.shape)
@@ -395,10 +365,4 @@ class TestLearningJax(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    TestLearningJax().test_update_state_likelihood_single_factor_no_actions()
-    TestLearningJax().test_update_state_likelihood_single_factor_with_actions()
-    TestLearningJax().test_update_state_likelihood_multi_factor_all_factors_no_actions()
-    TestLearningJax().test_update_state_likelihood_multi_factor_all_factors_with_actions()
-    TestLearningJax().test_update_state_likelihood_multi_factor_some_factors_no_action()
-    TestLearningJax().test_update_state_likelihood_with_interactions()
-    # unittest.main()
+    unittest.main()

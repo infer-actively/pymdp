@@ -67,18 +67,40 @@ def update_state_transition_dirichlet_f(pB_f, actions_f, joint_qs_f, lr=1.0):
     return qB_f, dirichlet_expected_value(qB_f)
 
 
-def update_state_transition_dirichlet(pB, joint_beliefs, actions, *, num_controls, lr, B_dependencies=None):
+def update_state_transition_dirichlet(pB, joint_beliefs, actions, *, num_controls, lr):
+    """
+    Updates the Dirichlet distribution over the state transition matrix.
 
+    Parameters
+    ----------
+    pB:
+        Prior Dirichlet parameters over transition model. Same shape as B: (state modality, *state dependencies, action)
+    joint_beliefs:
+        A list of beliefs over state for each index of the transition matrix, i.e. joint_beliefs[i] points to the belief
+        over the state modality of pB[i]. This implicitly covers the dependencies covered using B_factors_list.
+        Each element should also contain the time dimension.
+    actions:
+        An array of actions of shape (time, len(num_controls))
+    num_controls:
+        List containing the amount of actions for each state modality.
+    lr:
+        learning rate: scale of the Dirichlet pseudo-count update
+
+    Returns
+    ----------
+    qB
+        The posterior over the Dirichlet parameters over the transition model
+    E_qB
+        The expected value of the transition model B
+    """
     nf = len(pB)
-    if B_dependencies is None:
-        B_dependencies = list(range(nf))
 
     actions_onehot_fn = lambda f, dim: nn.one_hot(actions[..., f], dim, axis=-1)
 
     update_B_f_fn = lambda pB_f, joint_qs_f, f, na: update_state_transition_dirichlet_f(
         pB_f, actions_onehot_fn(f, na), joint_qs_f, lr=lr
     )
-    result = tree_map(update_B_f_fn, pB, joint_beliefs, B_dependencies, num_controls)
+    result = tree_map(update_B_f_fn, pB, joint_beliefs, list(range(nf)), num_controls)
 
     qB = []
     E_qB = []
