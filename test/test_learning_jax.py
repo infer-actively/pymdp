@@ -354,8 +354,6 @@ class TestLearningJax(unittest.TestCase):
 
         action_jax = jnp.array([action])
 
-        # Selective update of factors is not implemented within the method, and could be performed like this:
-
         pB_updated_jax_factors, _ = update_pB_jax(
             pB_jax, belief_jax, action_jax, num_controls=num_controls, lr=l_rate, factors_to_update=factors_to_update
         )
