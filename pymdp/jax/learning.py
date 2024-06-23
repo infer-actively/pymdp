@@ -4,7 +4,7 @@
 
 from .maths import multidimensional_outer, dirichlet_expected_value
 from jax.tree_util import tree_map
-from jax import vmap, nn
+from jax import vmap, nn, lax
 
 
 def update_obs_likelihood_dirichlet_m(pA_m, obs_m, qs, dependencies_m, lr=1.0):
@@ -96,15 +96,19 @@ def update_state_transition_dirichlet(pB, joint_beliefs, actions, *, num_control
         The expected value of the transition model B
     """
     nf = len(pB)
+
     if factors_to_update is None:
         factors_to_update = list(range(nf))
 
     actions_onehot_fn = lambda f, dim: nn.one_hot(actions[..., f], dim, axis=-1)
 
-    update_B_f_fn = lambda f: update_state_transition_dirichlet_f(
-        pB[f], actions_onehot_fn(f, num_controls[f]), joint_beliefs[f], lr=lr
+    update_B_f_fn = lambda pB_f, joint_qs_f, f, na: (
+        update_state_transition_dirichlet_f(pB_f, actions_onehot_fn(f, na), joint_qs_f, lr=lr)
+        if f in factors_to_update
+        else (pB_f, dirichlet_expected_value(pB_f))
     )
-    result = tree_map(update_B_f_fn, factors_to_update)
+
+    result = tree_map(update_B_f_fn, pB, joint_beliefs, list(range(nf)), num_controls)
 
     qB = []
     E_qB = []

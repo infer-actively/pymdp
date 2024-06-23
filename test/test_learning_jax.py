@@ -355,23 +355,12 @@ class TestLearningJax(unittest.TestCase):
         action_jax = jnp.array([action])
 
         # Selective update of factors is not implemented within the method, and could be performed like this:
-        pB_jax_update = [pB_jax[f] for f in factors_to_update]
-        belief_jax_update = [belief_jax[f] for f in factors_to_update]
-        action_jax_update = jnp.concatenate([action_jax[..., f : f + 1] for f in factors_to_update], axis=-1)
-        num_controls_update = [num_controls[f] for f in factors_to_update]
 
         pB_updated_jax_factors, _ = update_pB_jax(
             pB_jax, belief_jax, action_jax, num_controls=num_controls, lr=l_rate, factors_to_update=factors_to_update
         )
 
-        pB_updated_jax = []
-        for f, _ in enumerate(num_states):
-            if f in factors_to_update:
-                pB_updated_jax.append(pB_updated_jax_factors[factors_to_update.index(f)])
-            else:
-                pB_updated_jax.append(pB_jax[f])
-
-        for pB_np, pB_jax in zip(pB_updated_numpy, pB_updated_jax):
+        for pB_np, pB_jax in zip(pB_updated_numpy, pB_updated_jax_factors):
             self.assertTrue(pB_np.shape == pB_jax.shape)
             self.assertTrue(np.allclose(pB_np, pB_jax))
 
