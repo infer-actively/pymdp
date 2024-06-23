@@ -86,7 +86,7 @@ def update_state_transition_dirichlet(pB, joint_beliefs, actions, *, num_control
     lr:
         learning rate: scale of the Dirichlet pseudo-count update
     factors_to_update:
-        A list of the modalities for which to perform the update
+        A list of the modalities for which to perform the update. Default updates all factors
 
     Returns
     ----------
