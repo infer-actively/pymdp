@@ -9,6 +9,8 @@ import os
 import unittest
 from functools import partial
 
+import copy
+
 import numpy as np
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -77,7 +79,10 @@ def make_model_configs(source_seed=0, num_models=4) -> Dict:
 
 
 def make_A_full(
-    A_reduced: List[np.ndarray], A_dependencies: List[List[int]], num_obs: List[int], num_states: List[int]
+    A_reduced: List[np.ndarray],
+    A_dependencies: List[List[int]],
+    num_obs: List[int],
+    num_states: List[int],
 ) -> np.ndarray:
     """
     Given a reduced A matrix, `A_reduced`, and a list of dependencies between hidden state factors and observation modalities, `A_dependencies`,
@@ -107,8 +112,14 @@ class TestJaxSparseOperations(unittest.TestCase):
     def test_sparse_smoothing(self):
         cfg = {"source_seed": 1, "num_models": 4}
         gm_params = make_model_configs(**cfg)
-        num_states_list, num_obs_list = gm_params["ns_list"], gm_params["no_list"]
-        num_controls_list, B_deps_list = gm_params["nc_list"], gm_params["B_deps_list"]
+        num_states_list, num_obs_list = (
+            gm_params["ns_list"],
+            gm_params["no_list"],
+        )
+        num_controls_list, B_deps_list = (
+            gm_params["nc_list"],
+            gm_params["B_deps_list"],
+        )
 
         num_states_list = num_states_list
 
@@ -121,7 +132,10 @@ class TestJaxSparseOperations(unittest.TestCase):
             B = utils.random_B_matrix(num_states, num_controls)
             B = [jnp.array(x.astype(np.float32)) for x in B]
             # Map all values below the mean to 0 to create a B tensor with zeros
-            B = jtu.tree_map(lambda x: jnp.array(utils.norm_dist(jnp.clip((x - x.mean()), 0, 1))), B)
+            B = jtu.tree_map(
+                lambda x: jnp.array(utils.norm_dist(jnp.clip((x - x.mean()), 0, 1))),
+                B,
+            )
 
             # Create a sparse array B
             sparse_B = jtu.tree_map(lambda b: sparse.BCOO.fromdense(b), B)
@@ -156,9 +170,11 @@ class TestJaxSparseOperations(unittest.TestCase):
 
                 # for example, something like this
                 for f, (dense_out, sparse_out) in enumerate(zip(smoothed_beliefs_dense, smoothed_beliefs_sparse)):
-
                     qs_smooth_dense, qs_joint_dense = dense_out
                     qs_smooth_sparse, qs_joint_sparse = sparse_out
+
+                    # Densify
+                    qs_joint_sparse = jnp.array([i.todense() for i in qs_joint_sparse])
 
                     self.assertTrue(np.allclose(qs_smooth_dense, qs_smooth_sparse))
                     self.assertTrue(np.allclose(qs_joint_dense, qs_joint_sparse))

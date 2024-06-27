@@ -4,13 +4,44 @@
 
 import jax.numpy as jnp
 from .algos import run_factorized_fpi, run_mmp, run_vmp
-from .utils import Leaf
+
+# from .utils import Leaf
 from jax import tree_util as jtu, lax
 from multimethod import multimethod
 from jax.experimental.sparse._base import JAXSparse
-from jax.experimental.sparse import sparsify
+from jax.experimental.sparse import sparsify, BCOO
 from jaxtyping import Array
 import copy
+
+
+def scan(f, init, xs, length=None, reverse=False):
+    """
+    A custom scan that stacks the accumulated results as a list instead of a
+    jnp array, which can be helpful when dealing with sparse arrays.
+    # TODO: properly use Sparse Arrays in scan
+    """
+    if xs is None:
+        xs = [None] * length
+    if reverse:
+        xs = xs[::-1]
+
+    carry = init
+
+    ys = []
+    for x in xs:
+        carry, y = f(carry, x)
+        ys.append(y)
+
+    # Basically manual selection of what constitutes a leaf node
+    accumulated = [[] for _ in range(len(ys[0]))]
+    for y in ys:
+        for i, yi in enumerate(y):
+            accumulated[i].append(yi)
+
+    if reversed:
+        accumulated = [a[::-1] for a in accumulated]
+
+    return carry, accumulated
 
 
 def update_posterior_states(
@@ -29,9 +60,7 @@ def update_posterior_states(
     if method == "fpi" or method == "ovf":
         # format obs to select only last observation
         curr_obs = jtu.tree_map(lambda x: x[-1], obs)
-        qs = run_factorized_fpi(
-            A, curr_obs, prior, A_dependencies, num_iter=num_iter
-        )
+        qs = run_factorized_fpi(A, curr_obs, prior, A_dependencies, num_iter=num_iter)
     else:
         # format B matrices using action sequences here
         # TODO: past_actions can be None
@@ -103,9 +132,7 @@ def joint_dist_factor(b: Array, filtered_qs, actions):
     qs_joint = time_b * jnp.expand_dims(qs_filter, -1)
 
     # cond dist - timestep x s_{t} | s_{t+1}
-    qs_backward_cond = jnp.moveaxis(
-        qs_joint / qs_joint.sum(-2, keepdims=True), -2, -1
-    )
+    qs_backward_cond = jnp.moveaxis(qs_joint / qs_joint.sum(-2, keepdims=True), -2, -1)
     # tranpose_idx = list(range(len(qs_joint.shape[:-2]))) + [qs_joint.ndim-1, qs_joint.ndim-2]
     # qs_backward_cond = (qs_joint / qs_joint.sum(-2, keepdims=True).todense()).transpose(tranpose_idx)
 
@@ -116,35 +143,11 @@ def joint_dist_factor(b: Array, filtered_qs, actions):
         return qs_smooth, (qs_smooth, qs_joint)
 
     # seq_qs will contain a sequence of smoothed marginals and joints
-    _, seq_qs = lax.scan(
-        step_fn, qs_last, qs_backward_cond, reverse=True, unroll=2
-    )
+    _, seq_qs = lax.scan(step_fn, qs_last, qs_backward_cond, reverse=True, unroll=2)
 
     # we add the last filtered belief to smoothed beliefs
-    qs_smooth_all = jnp.concatenate(
-        [seq_qs[0], jnp.expand_dims(qs_last, 0)], 0
-    )
+    qs_smooth_all = jnp.concatenate([jnp.array(seq_qs[0]), jnp.expand_dims(qs_last, 0)], 0)
     return qs_smooth_all, seq_qs[1]
-
-
-def scan(f, init, xs, length=None, reverse=False):
-    if xs is None:
-        xs = [None] * length
-    if reverse:
-        xs = xs[::-1]
-
-    carry = init
-    ys = []
-    for x in xs:
-        carry, y = f(carry, x)
-        ys.append(y)
-
-    lists = [[] for _ in range(len(ys[0]))]
-    for y in ys:
-        for i, yi in enumerate(y):
-            lists[i].append(yi)
-
-    return carry, lists
 
 
 @multimethod
@@ -163,26 +166,25 @@ def joint_dist_factor(b: JAXSparse, filtered_qs, actions):
         qs_joint.ndim - 1,
         qs_joint.ndim - 2,
     ]
-    qs_backward_cond = (
-        qs_joint / qs_joint.sum(-2, keepdims=True).todense()
-    ).transpose(tranpose_idx)
+    qs_backward_cond = (qs_joint / qs_joint.sum(-2, keepdims=True).todense()).transpose(tranpose_idx)
 
     def step_fn(qs_smooth_past, t):
         qs_joint = qs_backward_cond[t] * qs_smooth_past
-        qs_smooth = qs_joint.sum(-1)
+        qs_smooth = qs_joint.sum(-1).todense()
 
-        return qs_smooth.todense(), (qs_smooth.todense(), Leaf(qs_joint))
+        out = (qs_smooth, qs_joint)
+        return qs_smooth, out
 
     # seq_qs will contain a sequence of smoothed marginals and joints
-    # _, seq_qs = lax.scan(step_fn, qs_last, jnp.arange(qs_backward_cond.shape[0]), reverse=True, unroll=2)
     _, seq_qs = scan(
-        step_fn, qs_last, jnp.arange(qs_backward_cond.shape[0]), reverse=True
+        step_fn,
+        qs_last,
+        jnp.arange(qs_backward_cond.shape[0]),
+        reverse=True,
     )
 
     # we add the last filtered belief to smoothed beliefs
-    qs_smooth_all = jnp.concatenate(
-        [jnp.array(seq_qs[0]), jnp.expand_dims(qs_last, 0)], 0
-    )
+    qs_smooth_all = jnp.concatenate([jnp.array(seq_qs[0]), jnp.expand_dims(qs_last, 0)], 0)
     return qs_smooth_all, seq_qs[1]
 
 

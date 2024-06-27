@@ -30,24 +30,6 @@ Shape = Sequence[int]
 ShapeList = list[Shape]
 
 
-class Leaf:
-    """A Leaf class to wrap a value as a leaf node"""
-
-    def __init__(self, value):
-        self.value = value
-
-
-def leaf_flatten(leaf):
-    return [], leaf.value
-
-
-def leaf_unflatten(aux_data, children):
-    return Leaf(aux_data)
-
-
-jtu.register_pytree_node(Leaf, leaf_flatten, leaf_unflatten)
-
-
 def norm_dist(dist: Tensor) -> Tensor:
     """Normalizes a Categorical probability distribution"""
     return dist / dist.sum(0)
