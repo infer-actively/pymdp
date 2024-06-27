@@ -155,9 +155,14 @@ class Agent(Module):
             self.B_action_dependencies,
         ) = self._construct_dependencies(A_dependencies, B_dependencies, B_action_dependencies, A, B)
 
-        # extract A and B tensors
+        # extract A, B, C and D tensors from optional Distributions
         A = [jnp.array(a.data) if isinstance(a, Distribution) else a for a in A]
         B = [jnp.array(b.data) if isinstance(b, Distribution) else b for b in B]
+        if C is not None:
+            C = [jnp.array(c.data) if isinstance(c, Distribution) else c for c in C]
+        if D is not None:
+            D = [jnp.array(d.data) if isinstance(d, Distribution) else d for d in D]
+
         self.batch_size = A[0].shape[0] if not apply_batch else 1
 
         # flatten B action dims for multiple action dependencies

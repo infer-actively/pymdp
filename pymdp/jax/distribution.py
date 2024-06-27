@@ -4,7 +4,7 @@ from pymdp.utils import norm_dist
 
 class Distribution:
 
-    def __init__(self, event: dict, batch: dict, data: np.ndarray = None):
+    def __init__(self, event: dict, batch: dict = {}, data: np.ndarray = None):
         self.event = event
         self.batch = batch
 
