@@ -9,6 +9,29 @@ import pymdp
 from pymdp.jax.control import compute_info_gain, compute_expected_utility, compute_expected_state, compute_expected_obs
 
 
+def si_policy_search(max_depth, 
+                     policy_prune_threshold=1 / 16,
+                     policy_prune_topk=-1,
+                     observation_prune_threshold=1 / 16,
+                     entropy_prune_threshold=0.5,
+                     prune_penalty=512):
+
+    def search_fn(agent, qs, rng_key):
+        tree = tree_search(
+            agent,
+            qs,
+            max_depth,
+            policy_prune_threshold=policy_prune_threshold,
+            policy_prune_topk=policy_prune_topk,
+            observation_prune_threshold=observation_prune_threshold,
+            entropy_prune_threshold=entropy_prune_threshold,
+            prune_penalty=prune_penalty,
+        )
+        return tree.root()["q_pi"], tree
+    
+    return search_fn
+
+
 class Tree:
     def __init__(self, root):
         self.nodes = [root]

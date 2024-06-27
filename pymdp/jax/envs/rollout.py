@@ -7,7 +7,7 @@ from pymdp.jax.agent import Agent
 from pymdp.jax.envs.env import PyMDPEnv
 
 
-def rollout(agent: Agent, env: PyMDPEnv, num_timesteps: int, rng_key: jr.PRNGKey):
+def rollout(agent: Agent, env: PyMDPEnv, num_timesteps: int, rng_key: jr.PRNGKey, policy_search = None):
     """
     Rollout an agent in an environment for a number of timesteps.
 
@@ -21,6 +21,10 @@ def rollout(agent: Agent, env: PyMDPEnv, num_timesteps: int, rng_key: jr.PRNGKey
         Number of timesteps to rollout for
     rng_key: ``PRNGKey``
         Random key to use for sampling actions
+    policy_search: ``callable``
+        Function to use for policy search (optional)
+        Calls policy_search(agent, beliefs, rng_key) and expects q_pi, info back.
+        If none, agent.infer_policies will be used.
 
     Returns
     ----------
@@ -32,7 +36,13 @@ def rollout(agent: Agent, env: PyMDPEnv, num_timesteps: int, rng_key: jr.PRNGKey
         Environment state after the rollout
     """
     # get the batch_size of the agent
-    batch_size = agent.A[0].shape[0]
+    batch_size = agent.batch_size
+
+    if policy_search is None:
+        def default_policy_search(agent, qs, rng_key):
+            qpi, _ = agent.infer_policies(qs)
+            return qpi, None
+        policy_search = default_policy_search
 
     def step_fn(carry, x):
         action_t = carry["action_t"]
@@ -50,7 +60,9 @@ def rollout(agent: Agent, env: PyMDPEnv, num_timesteps: int, rng_key: jr.PRNGKey
             empirical_prior=empirical_prior,
             qs_hist=None,
         )
-        qpi, nefe = agent.infer_policies(qs)
+      
+        rng_key, key = jr.split(rng_key)
+        qpi, _ = policy_search(agent, qs, key)
 
         keys = jr.split(rng_key, batch_size + 1)
         rng_key = keys[0]
