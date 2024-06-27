@@ -4,6 +4,22 @@ import jax.numpy as jnp
 from .env import PyMDPEnv
 
 
+def generate_connected_clusters(cluster_size=2, connections=2):
+    edges = []
+    connecting_node = 0
+    while connecting_node < connections * cluster_size:
+        edges += [(connecting_node, a) for a in range(connecting_node + 1, connecting_node + cluster_size + 1)]
+        connecting_node = len(edges)
+    graph = nx.Graph()
+    graph.add_edges_from(edges)
+    return graph, {
+        "locations": [
+            (f"hallway {i}" if len(list(graph.neighbors(loc))) > 1 else f"room {i}")
+            for i, loc in enumerate(graph.nodes)
+        ]
+    }
+
+
 class GraphEnv(PyMDPEnv):
     """
     A simple environment where an agent can move around a graph and search an object.
