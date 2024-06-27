@@ -77,7 +77,6 @@ class Agent(Module):
     inductive_depth: int = field(static=True)
     # matrix of all possible policies (each row is a policy of shape (num_controls[0], num_controls[1], ..., num_controls[num_control_factors-1])
     policies: Array = field(static=True)
-    # policies_multi: Array = field(static=True)
     # flag for whether to use expected utility ("reward" or "preference satisfaction") when computing expected free energy
     use_utility: bool = field(static=True)
     # flag for whether to use state information gain ("salience") when computing expected free energy
@@ -140,7 +139,9 @@ class Agent(Module):
         learn_E=False,
     ):
         if B_action_dependencies is not None:
-            assert num_controls is not None, "Please specify num_controls for complex action dependencies"
+            assert (
+                num_controls is not None
+            ), "Please specify num_controls for complex action dependencies"
 
         # extract high level variables
         self.num_modalities = len(A)
@@ -153,11 +154,17 @@ class Agent(Module):
             self.A_dependencies,
             self.B_dependencies,
             self.B_action_dependencies,
-        ) = self._construct_dependencies(A_dependencies, B_dependencies, B_action_dependencies, A, B)
+        ) = self._construct_dependencies(
+            A_dependencies, B_dependencies, B_action_dependencies, A, B
+        )
 
         # extract A and B tensors
-        A = [jnp.array(a.data) if isinstance(a, Distribution) else a for a in A]
-        B = [jnp.array(b.data) if isinstance(b, Distribution) else b for b in B]
+        A = [
+            jnp.array(a.data) if isinstance(a, Distribution) else a for a in A
+        ]
+        B = [
+            jnp.array(b.data) if isinstance(b, Distribution) else b for b in B
+        ]
         self.batch_size = A[0].shape[0] if not apply_batch else 1
 
         # flatten B action dims for multiple action dependencies
@@ -167,10 +174,17 @@ class Agent(Module):
             B_action_dependencies is not None
         ):  # note, this only works when B_action_dependencies is not the trivial case of [[0], [1], ...., [num_factors-1]]
             policies_multi = control.construct_policies(
-                self.num_controls_multi, self.num_controls_multi, policy_len, control_fac_idx
+                self.num_controls_multi,
+                self.num_controls_multi,
+                policy_len,
+                control_fac_idx,
             )
-            B, self.action_maps = self._flatten_B_action_dims(B, self.B_action_dependencies)
-            policies = self._construct_flattend_policies(policies_multi, self.action_maps)
+            B, self.action_maps = self._flatten_B_action_dims(
+                B, self.B_action_dependencies
+            )
+            policies = self._construct_flattend_policies(
+                policies_multi, self.action_maps
+            )
             self.sampling_mode = "full"
 
         # extract shapes from A and B
@@ -202,7 +216,9 @@ class Agent(Module):
 
         # construct control factor indices
         if control_fac_idx == None:
-            self.control_fac_idx = [f for f in range(self.num_factors) if self.num_controls[f] > 1]
+            self.control_fac_idx = [
+                f for f in range(self.num_factors) if self.num_controls[f] > 1
+            ]
         else:
             msg = "Check control_fac_idx - must be consistent with `num_states` and `num_factors`..."
             assert max(control_fac_idx) <= (self.num_factors - 1), msg
@@ -211,43 +227,71 @@ class Agent(Module):
         # construct policies
         if policies is None:
             self.policies = control.construct_policies(
-                self.num_states, self.num_controls, self.policy_len, self.control_fac_idx
+                self.num_states,
+                self.num_controls,
+                self.policy_len,
+                self.control_fac_idx,
             )
         else:
             self.policies = policies
 
         # setup pytree leaves A, B, C, D, E, pA, pB, H, I
         if apply_batch:
-            A = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), A)
-            B = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), B)
+            A = jtu.tree_map(
+                lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), A
+            )
+            B = jtu.tree_map(
+                lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), B
+            )
 
         if pA is not None and apply_batch:
-            pA = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), pA)
+            pA = jtu.tree_map(
+                lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), pA
+            )
 
         if pB is not None and apply_batch:
-            pB = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), pB)
+            pB = jtu.tree_map(
+                lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), pB
+            )
 
         if C is None:
-            C = [jnp.ones((self.batch_size, self.num_obs[m])) / self.num_obs[m] for m in range(self.num_modalities)]
+            C = [
+                jnp.ones((self.batch_size, self.num_obs[m])) / self.num_obs[m]
+                for m in range(self.num_modalities)
+            ]
         elif apply_batch:
-            C = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), C)
+            C = jtu.tree_map(
+                lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), C
+            )
 
         if D is None:
-            D = [jnp.ones((self.batch_size, self.num_states[f])) / self.num_states[f] for f in range(self.num_factors)]
+            D = [
+                jnp.ones((self.batch_size, self.num_states[f]))
+                / self.num_states[f]
+                for f in range(self.num_factors)
+            ]
         elif apply_batch:
-            D = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), D)
+            D = jtu.tree_map(
+                lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), D
+            )
 
         if E is None:
-            E = jnp.ones((self.batch_size, len(self.policies))) / len(self.policies)
+            E = jnp.ones((self.batch_size, len(self.policies))) / len(
+                self.policies
+            )
         elif apply_batch:
             E = jnp.broadcast_to(E, (self.batch_size,) + E.shape)
 
         if self.use_inductive and self.H is not None:
-            I = control.generate_I_matrix(H, B, self.inductive_threshold, self.inductive_depth)
+            I = control.generate_I_matrix(
+                H, B, self.inductive_threshold, self.inductive_depth
+            )
         elif self.use_inductive and I is not None:
             I = I
         else:
-            I = jtu.tree_map(lambda x: jnp.expand_dims(jnp.zeros_like(x), 1), D)
+            I = jtu.tree_map(
+                lambda x: jnp.expand_dims(jnp.zeros_like(x), 1), D
+            )
 
         self.A = A
         self.B = B
@@ -261,15 +305,21 @@ class Agent(Module):
 
         self.gamma = jnp.broadcast_to(gamma, (self.batch_size,))
         self.alpha = jnp.broadcast_to(alpha, (self.batch_size,))
-        self.inductive_threshold = jnp.broadcast_to(inductive_threshold, (self.batch_size,))
-        self.inductive_epsilon = jnp.broadcast_to(inductive_epsilon, (self.batch_size,))
+        self.inductive_threshold = jnp.broadcast_to(
+            inductive_threshold, (self.batch_size,)
+        )
+        self.inductive_epsilon = jnp.broadcast_to(
+            inductive_epsilon, (self.batch_size,)
+        )
         self.onehot_obs = onehot_obs
 
         # validate model
         self._validate()
 
     @vmap
-    def infer_states(self, observations, past_actions, empirical_prior, qs_hist, mask=None):
+    def infer_states(
+        self, observations, past_actions, empirical_prior, qs_hist, mask=None
+    ):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
@@ -294,15 +344,23 @@ class Agent(Module):
 
         # TODO: infer this from shapes
         if not self.onehot_obs:
-            o_vec = [nn.one_hot(o, self.num_obs[m]) for m, o in enumerate(observations)]
+            o_vec = [
+                nn.one_hot(o, self.num_obs[m])
+                for m, o in enumerate(observations)
+            ]
         else:
             o_vec = observations
 
         A = self.A
         if mask is not None:
             for i, m in enumerate(mask):
-                o_vec[i] = m * o_vec[i] + (1 - m) * jnp.ones_like(o_vec[i]) / self.num_obs[i]
-                A[i] = m * A[i] + (1 - m) * jnp.ones_like(A[i]) / self.num_obs[i]
+                o_vec[i] = (
+                    m * o_vec[i]
+                    + (1 - m) * jnp.ones_like(o_vec[i]) / self.num_obs[i]
+                )
+                A[i] = (
+                    m * A[i] + (1 - m) * jnp.ones_like(A[i]) / self.num_obs[i]
+                )
 
         output = inference.update_posterior_states(
             A,
@@ -361,32 +419,70 @@ class Agent(Module):
         return q_pi, G
 
     @vmap
-    def infer_parameters(self, beliefs_A, outcomes, actions, beliefs_B=None, lr_pA=1.0, lr_pB=1.0, **kwargs):
+    def infer_parameters(
+        self,
+        beliefs_A,
+        outcomes,
+        actions,
+        beliefs_B=None,
+        lr_pA=1.0,
+        lr_pB=1.0,
+        **kwargs,
+    ):
         agent = self
+        beliefs_B = beliefs_A if beliefs_B is None else beliefs_B
+        if self.inference_algo == "ovf":
+            smoothed_marginals_and_joints = inference.smoothing_ovf(
+                beliefs_A, self.B, actions
+            )
+            marginal_beliefs = smoothed_marginals_and_joints[0]
+            joint_beliefs = smoothed_marginals_and_joints[1]
+        else:
+            marginal_beliefs = beliefs_A
+            if self.learn_B:
+                nf = len(beliefs_B)
+                joint_fn = lambda f: [beliefs_B[f][1:]] + [
+                    beliefs_B[f_idx][:-1] for f_idx in self.B_dependencies[f]
+                ]
+                joint_beliefs = jtu.tree_map(joint_fn, list(range(nf)))
+
         if self.learn_A:
-            o_vec_seq = jtu.tree_map(lambda o, dim: nn.one_hot(o, dim), outcomes, self.num_obs)
-            qA = learning.update_obs_likelihood_dirichlet(self.pA, o_vec_seq, beliefs_A, self.A_dependencies, lr=lr_pA)
-            E_qA = jtu.tree_map(lambda x: maths.dirichlet_expected_value(x), qA)
+            qA, E_qA = learning.update_obs_likelihood_dirichlet(
+                self.pA,
+                outcomes,
+                marginal_beliefs,
+                A_dependencies=self.A_dependencies,
+                num_obs=self.num_obs,
+                onehot_obs=self.onehot_obs,
+                lr=lr_pA,
+            )
+
             agent = tree_at(lambda x: (x.A, x.pA), agent, (E_qA, qA))
 
         if self.learn_B:
-            beliefs_B = beliefs_A if beliefs_B is None else beliefs_B
-            # as many elements as there are control factors, where each element is a jnp.ndarray of shape (n_timesteps, )
-            actions_seq = [actions[..., i] for i in range(actions.shape[-1])]
-            assert beliefs_B[0].shape[0] == actions_seq[0].shape[0] + 1
-            actions_onehot = jtu.tree_map(lambda a, dim: nn.one_hot(a, dim, axis=-1), actions_seq, self.num_controls)
-            qB = learning.update_state_likelihood_dirichlet(
-                self.pB, beliefs_B, actions_onehot, self.B_dependencies, lr=lr_pB
+            assert beliefs_B[0].shape[0] == actions.shape[0] + 1
+            qB, E_qB = learning.update_state_transition_dirichlet(
+                self.pB,
+                joint_beliefs,
+                actions,
+                num_controls=self.num_controls,
+                lr=lr_pB,
             )
-            E_qB = jtu.tree_map(lambda x: maths.dirichlet_expected_value(x), qB)
 
             # if you have updated your beliefs about transitions, you need to re-compute the I matrix used for inductive inferenece
             if self.use_inductive and self.H is not None:
-                I_updated = control.generate_I_matrix(self.H, E_qB, self.inductive_threshold, self.inductive_depth)
+                I_updated = control.generate_I_matrix(
+                    self.H,
+                    E_qB,
+                    self.inductive_threshold,
+                    self.inductive_depth,
+                )
             else:
                 I_updated = self.I
 
-            agent = tree_at(lambda x: (x.B, x.pB, x.I), agent, (E_qB, qB, I_updated))
+            agent = tree_at(
+                lambda x: (x.B, x.pB, x.I), agent, (E_qB, qB, I_updated)
+            )
 
         # if self.learn_C:
         #     self.qC = learning.update_C(self.C, *args, **kwargs)
@@ -405,7 +501,9 @@ class Agent(Module):
         # return empirical_prior, and the history of posterior beliefs (filtering distributions) held about hidden states at times 1, 2 ... t
         qs_last = jtu.tree_map(lambda x: x[-1], qs)
         # this computation of the predictive prior is correct only for fully factorised Bs.
-        pred = control.compute_expected_state(qs_last, self.B, action, B_dependencies=self.B_dependencies)
+        pred = control.compute_expected_state(
+            qs_last, self.B, action, B_dependencies=self.B_dependencies
+        )
         return (pred, qs)
 
     @vmap
@@ -422,15 +520,27 @@ class Agent(Module):
         """
 
         if (rng_key is None) and (self.action_selection == "stochastic"):
-            raise ValueError("Please provide a random number generator key to sample actions stochastically")
+            raise ValueError(
+                "Please provide a random number generator key to sample actions stochastically"
+            )
 
         if self.sampling_mode == "marginal":
             action = control.sample_action(
-                q_pi, self.policies, self.num_controls, self.action_selection, self.alpha, rng_key=rng_key
+                q_pi,
+                self.policies,
+                self.num_controls,
+                self.action_selection,
+                self.alpha,
+                rng_key=rng_key,
             )
         elif self.sampling_mode == "full":
             action = control.sample_policy(
-                q_pi, self.policies, self.num_controls, self.action_selection, self.alpha, rng_key=rng_key
+                q_pi,
+                self.policies,
+                self.num_controls,
+                self.action_selection,
+                self.alpha,
+                rng_key=rng_key,
             )
 
         return action
@@ -452,12 +562,18 @@ class Agent(Module):
         """
 
         if self.sampling_mode == "marginal":
-            marginals = control.get_marginals(q_pi, self.policies, self.num_controls)
+            marginals = control.get_marginals(
+                q_pi, self.policies, self.num_controls
+            )
             outer = lambda a, b: jnp.outer(a, b).reshape(-1)
             marginals = jtu.tree_reduce(outer, marginals)
 
         elif self.sampling_mode == "full":
-            locs = jnp.all(self.policies[:, 0] == jnp.expand_dims(self.unique_multiactions, -2), -1)
+            locs = jnp.all(
+                self.policies[:, 0]
+                == jnp.expand_dims(self.unique_multiactions, -2),
+                -1,
+            )
             marginals = jnp.where(locs, q_pi, 0.0).sum(-1)
 
         # assert jnp.isclose(jnp.sum(marginals), 1.)  # this fails inside scan
@@ -468,13 +584,19 @@ class Agent(Module):
         if self.action_maps is None:
             return action
 
-        action_multi = jnp.zeros((self.batch_size, len(self.num_controls_multi))).astype(action.dtype)
+        action_multi = jnp.zeros(
+            (self.batch_size, len(self.num_controls_multi))
+        ).astype(action.dtype)
         for f, action_map in enumerate(self.action_maps):
             if action_map["multi_dependency"] == []:
                 continue
 
-            action_multi_f = utils.index_to_combination(action[..., f], action_map["multi_dims"])
-            action_multi = action_multi.at[..., action_map["multi_dependency"]].set(action_multi_f)
+            action_multi_f = utils.index_to_combination(
+                action[..., f], action_map["multi_dims"]
+            )
+            action_multi = action_multi.at[
+                ..., action_map["multi_dependency"]
+            ].set(action_multi_f)
         return action_multi
 
     def encode_multi_actions(self, action_multi):
@@ -482,25 +604,35 @@ class Agent(Module):
         if self.action_maps is None:
             return action_multi
 
-        action = jnp.zeros((self.batch_size, len(self.num_controls))).astype(action_multi.dtype)
+        action = jnp.zeros((self.batch_size, len(self.num_controls))).astype(
+            action_multi.dtype
+        )
         for f, action_map in enumerate(self.action_maps):
             if action_map["multi_dependency"] == []:
-                action = action.at[..., f].set(jnp.zeros_like(action_multi[..., 0]))
+                action = action.at[..., f].set(
+                    jnp.zeros_like(action_multi[..., 0])
+                )
                 continue
 
             action_f = utils.get_combination_index(
-                action_multi[..., action_map["multi_dependency"]], action_map["multi_dims"]
+                action_multi[..., action_map["multi_dependency"]],
+                action_map["multi_dims"],
             )
             action = action.at[..., f].set(action_f)
         return action
 
-    def _construct_dependencies(self, A_dependencies, B_dependencies, B_action_dependencies, A, B):
+    def _construct_dependencies(
+        self, A_dependencies, B_dependencies, B_action_dependencies, A, B
+    ):
         if A_dependencies is not None:
             A_dependencies = A_dependencies
         elif isinstance(A[0], Distribution) and isinstance(B[0], Distribution):
             A_dependencies, _ = get_dependencies(A, B)
         else:
-            A_dependencies = [list(range(self.num_factors)) for _ in range(self.num_modalities)]
+            A_dependencies = [
+                list(range(self.num_factors))
+                for _ in range(self.num_modalities)
+            ]
 
         if B_dependencies is not None:
             B_dependencies = B_dependencies
@@ -517,19 +649,32 @@ class Agent(Module):
         return A_dependencies, B_dependencies, B_action_dependencies
 
     def _flatten_B_action_dims(self, B, B_action_dependencies):
-        assert hasattr(B[0], "shape"), "Elements of B must be tensors and have attribute shape"
-        action_maps = []  # mapping from multi action dependencies to flat action dependencies for each B
+        assert hasattr(
+            B[0], "shape"
+        ), "Elements of B must be tensors and have attribute shape"
+        action_maps = (
+            []
+        )  # mapping from multi action dependencies to flat action dependencies for each B
         B_flat = []
-        for i, (B_f, action_dependency) in enumerate(zip(B, B_action_dependencies)):
+        for i, (B_f, action_dependency) in enumerate(
+            zip(B, B_action_dependencies)
+        ):
             if action_dependency == []:
                 B_flat.append(jnp.expand_dims(B_f, axis=-1))
                 action_maps.append(
-                    {"multi_dependency": [], "multi_dims": [], "flat_dependency": [i], "flat_dims": [1]}
+                    {
+                        "multi_dependency": [],
+                        "multi_dims": [],
+                        "flat_dependency": [i],
+                        "flat_dims": [1],
+                    }
                 )
                 continue
 
             dims = [self.num_controls_multi[d] for d in action_dependency]
-            target_shape = list(B_f.shape)[: -len(action_dependency)] + [pymath.prod(dims)]
+            target_shape = list(B_f.shape)[: -len(action_dependency)] + [
+                pymath.prod(dims)
+            ]
             B_flat.append(B_f.reshape(target_shape))
             action_maps.append(
                 {
@@ -577,7 +722,9 @@ class Agent(Module):
 
     def _validate(self):
         for m in range(self.num_modalities):
-            factor_dims = tuple([self.num_states[f] for f in self.A_dependencies[m]])
+            factor_dims = tuple(
+                [self.num_states[f] for f in self.A_dependencies[m]]
+            )
             assert (
                 self.A[m].shape[2:] == factor_dims
             ), f"Please input an `A_dependencies` whose {m}-th indices correspond to the hidden state factors that line up with lagging dimensions of A[{m}]..."
@@ -590,7 +737,9 @@ class Agent(Module):
             ), f"Check modality {m} of `A_dependencies` - must be consistent with `num_states` and `num_factors`..."
 
         for f in range(self.num_factors):
-            factor_dims = tuple([self.num_states[f] for f in self.B_dependencies[f]])
+            factor_dims = tuple(
+                [self.num_states[f] for f in self.B_dependencies[f]]
+            )
             assert (
                 self.B[f].shape[2:-1] == factor_dims
             ), f"Please input a `B_dependencies` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of B[{f}]..."
@@ -610,4 +759,6 @@ class Agent(Module):
     @property
     def unique_multiactions(self):
         size = pymath.prod(self.num_controls)
-        return jnp.unique(self.policies[:, 0], axis=0, size=size, fill_value=-1)
+        return jnp.unique(
+            self.policies[:, 0], axis=0, size=size, fill_value=-1
+        )
