@@ -8,48 +8,83 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 import numpy as np
 
-from typing import (Any, Callable, List, NamedTuple, Optional, Sequence, Union, Tuple)
+from typing import (
+    Any,
+    Callable,
+    List,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Union,
+    Tuple,
+)
 
-Tensor = Any # maybe jnp.ndarray, but typing seems not to be well defined for jax
+Tensor = (
+    Any  # maybe jnp.ndarray, but typing seems not to be well defined for jax
+)
 Vector = List[Tensor]
 Shape = Sequence[int]
 ShapeList = list[Shape]
 
+
+class Leaf:
+    """A Leaf class to wrap a value as a leaf node"""
+
+    def __init__(self, value):
+        self.value = value
+
+
+def leaf_flatten(leaf):
+    return [], leaf.value
+
+
+def leaf_unflatten(aux_data, children):
+    return Leaf(aux_data)
+
+
+jtu.register_pytree_node(Leaf, leaf_flatten, leaf_unflatten)
+
+
 def norm_dist(dist: Tensor) -> Tensor:
-    """ Normalizes a Categorical probability distribution"""
-    return dist/dist.sum(0)
+    """Normalizes a Categorical probability distribution"""
+    return dist / dist.sum(0)
+
 
 def list_array_uniform(shape_list: ShapeList) -> Vector:
-    """ 
+    """
     Creates a list of jax arrays representing uniform Categorical
     distributions with shapes given by shape_list[i]. The shapes (elements of shape_list)
     can either be tuples or lists.
     """
     arr = []
     for shape in shape_list:
-        arr.append( norm_dist(jnp.ones(shape)) )
+        arr.append(norm_dist(jnp.ones(shape)))
     return arr
 
+
 def list_array_zeros(shape_list: ShapeList) -> Vector:
-    """ 
+    """
     Creates a list of 1-D jax arrays filled with zeros, with shapes given by shape_list[i]
     """
     arr = []
     for shape in shape_list:
-        arr.append( jnp.zeros(shape) )
+        arr.append(jnp.zeros(shape))
     return arr
 
-def list_array_scaled(shape_list: ShapeList, scale: float=1.0) -> Vector:
-    """ 
+
+def list_array_scaled(shape_list: ShapeList, scale: float = 1.0) -> Vector:
+    """
     Creates a list of 1-D jax arrays filled with scale, with shapes given by shape_list[i]
     """
     arr = []
     for shape in shape_list:
-        arr.append( scale * jnp.ones(shape) )
-    
+        arr.append(scale * jnp.ones(shape))
+
     return arr
+
 
 def get_combination_index(x, dims):
     """
@@ -61,13 +96,13 @@ def get_combination_index(x, dims):
         ``numpy.ndarray`` or ``jax.Array`` of categorical values to be converted into combination index
     dims: ``list`` of ``int``
         ``list`` of ``int`` of categorical dimensions used for conversion
-    
+
     Returns
     ----------
     index: ``np.ndarray`` or `jax.Array` of shape `(batch_size)`
         ``np.ndarray`` or `jax.Array` index of the combination
     """
-    assert isinstance(x, jax.Array) or isinstance(x, np.ndarray) 
+    assert isinstance(x, jax.Array) or isinstance(x, np.ndarray)
     assert x.shape[-1] == len(dims)
 
     index = 0
@@ -76,6 +111,7 @@ def get_combination_index(x, dims):
         index += x[..., i] * product
         product *= dims[i]
     return index
+
 
 def index_to_combination(index, dims):
     """
@@ -87,7 +123,7 @@ def index_to_combination(index, dims):
         ``np.ndarray`` or `jax.Array` index of the combination
     dims: ``list`` of ``int``
         ``list`` of ``int`` of categorical dimensions used for conversion
-    
+
     Returns
     ----------
     x: ``numpy.ndarray`` or ``jax.Array`` of shape `(batch_size, act_dims)`
@@ -97,9 +133,10 @@ def index_to_combination(index, dims):
     for base in reversed(dims):
         x.append(index % base)
         index = index // base
-    
+
     x = np.flip(np.stack(x, axis=-1), axis=-1)
     return x
+
 
 # def onehot(value, num_values):
 #     arr = np.zeros(num_values)
@@ -137,22 +174,22 @@ def index_to_combination(index, dims):
 
 # def random_single_categorical(shape_list):
 #     """
-#     Creates a random 1-D categorical distribution (or set of 1-D categoricals, e.g. multiple marginals of different factors) and returns them in an object array 
+#     Creates a random 1-D categorical distribution (or set of 1-D categoricals, e.g. multiple marginals of different factors) and returns them in an object array
 #     """
-    
+
 #     num_sub_arrays = len(shape_list)
 
 #     out = obj_array(num_sub_arrays)
 
 #     for arr_idx, shape_i  in enumerate(shape_list):
 #         out[arr_idx] = norm_dist(np.random.rand(shape_i))
-    
+
 #     return out
 
 # def construct_controllable_B(num_states, num_controls):
 #     """
-#     Generates a fully controllable transition likelihood array, where each 
-#     action (control state) corresponds to a move to the n-th state from any 
+#     Generates a fully controllable transition likelihood array, where each
+#     action (control state) corresponds to a move to the n-th state from any
 #     other state, for each control factor
 #     """
 
@@ -169,7 +206,7 @@ def index_to_combination(index, dims):
 # def dirichlet_like(template_categorical, scale = 1.0):
 #     """
 #     Helper function to construct a Dirichlet distribution based on an existing Categorical distribution
-#     """ 
+#     """
 
 #     if not is_obj_array(template_categorical):
 #         warnings.warn(
@@ -181,7 +218,7 @@ def index_to_combination(index, dims):
 #     n_sub_arrays = len(template_categorical)
 
 #     dirichlet_out = obj_array(n_sub_arrays)
-    
+
 #     for i, arr in enumerate(template_categorical):
 #         dirichlet_out[i] = scale * arr
 
@@ -199,7 +236,7 @@ def index_to_combination(index, dims):
 #         num_modalities = len(num_obs)
 #     else:
 #         num_obs, num_modalities = None, None
-    
+
 #     if B is not None:
 #         num_states = [b.shape[0] for b in B] if is_obj_array(B) else [B.shape[0]]
 #         num_factors = len(num_states)
@@ -209,7 +246,7 @@ def index_to_combination(index, dims):
 #             num_factors = len(num_states)
 #         else:
 #             num_states, num_factors = None, None
-    
+
 #     return num_obs, num_states, num_modalities, num_factors
 
 # def get_model_dimensions_from_labels(model_labels):
@@ -233,14 +270,12 @@ def index_to_combination(index, dims):
 #         return num_obs, num_modalities, num_states, num_factors
 
 
-
-
 # def norm_dist_obj_arr(obj_arr):
 
 #     normed_obj_array = obj_array(len(obj_arr))
 #     for i, arr in enumerate(obj_arr):
 #         normed_obj_array[i] = norm_dist(arr)
-    
+
 #     return normed_obj_array
 
 # def is_normalized(dist):
@@ -258,7 +293,7 @@ def index_to_combination(index, dims):
 #     else:
 #         column_sums = dist.sum(axis=0)
 #         out = np.allclose(column_sums, np.ones_like(column_sums))
-    
+
 #     return out
 
 # def is_obj_array(arr):
@@ -279,7 +314,7 @@ def index_to_combination(index, dims):
 
 # def process_observation_seq(obs_seq, n_modalities, n_observations):
 #     """
-#     Helper function for formatting observations    
+#     Helper function for formatting observations
 
 #         Observations can either be `int` (converted to one-hot)
 #         or `tuple` (obs for each modality), or `list` (obs for each modality)
@@ -293,9 +328,9 @@ def index_to_combination(index, dims):
 
 # def process_observation(obs, num_modalities, num_observations):
 #     """
-#     Helper function for formatting observations    
+#     Helper function for formatting observations
 #     USAGE NOTES:
-#     - If `obs` is a 1D numpy array, it must be a one-hot vector, where one entry (the entry of the observation) is 1.0 
+#     - If `obs` is a 1D numpy array, it must be a one-hot vector, where one entry (the entry of the observation) is 1.0
 #     and all other entries are 0. This therefore assumes it's a single modality observation. If these conditions are met, then
 #     this function will return `obs` unchanged. Otherwise, it'll throw an error.
 #     - If `obs` is an int, it assumes this is a single modality observation, whose observation index is given by the value of `obs`. This function will convert
@@ -325,28 +360,28 @@ def index_to_combination(index, dims):
 # def convert_observation_array(obs, num_obs):
 #     """
 #     Converts from SPM-style observation array to infer-actively one-hot object arrays.
-    
+
 #     Parameters
 #     ----------
 #     - 'obs' [numpy 2-D nd.array]:
-#         SPM-style observation arrays are of shape (num_modalities, T), where each row 
-#         contains observation indices for a different modality, and columns indicate 
-#         different timepoints. Entries store the indices of the discrete observations 
-#         within each modality. 
+#         SPM-style observation arrays are of shape (num_modalities, T), where each row
+#         contains observation indices for a different modality, and columns indicate
+#         different timepoints. Entries store the indices of the discrete observations
+#         within each modality.
 
 #     - 'num_obs' [list]:
-#         List of the dimensionalities of the observation modalities. `num_modalities` 
-#         is calculated as `len(num_obs)` in the function to determine whether we're 
-#         dealing with a single- or multi-modality 
+#         List of the dimensionalities of the observation modalities. `num_modalities`
+#         is calculated as `len(num_obs)` in the function to determine whether we're
+#         dealing with a single- or multi-modality
 #         case.
 
 #     Returns
 #     ----------
-#     - `obs_t`[list]: 
-#         A list with length equal to T, where each entry of the list is either a) an object 
-#         array (in the case of multiple modalities) where each sub-array is a one-hot vector 
+#     - `obs_t`[list]:
+#         A list with length equal to T, where each entry of the list is either a) an object
+#         array (in the case of multiple modalities) where each sub-array is a one-hot vector
 #         with the observation for the correspond modality, or b) a 1D numpy array (in the case
-#         of one modality) that is a single one-hot vector encoding the observation for the 
+#         of one modality) that is a single one-hot vector encoding the observation for the
 #         single modality.
 #     """
 
@@ -378,13 +413,13 @@ def index_to_combination(index, dims):
 # def reduce_a_matrix(A):
 #     """
 #     Utility function for throwing away dimensions (lagging dimensions, hidden state factors)
-#     of a particular A matrix that are independent of the observation. 
+#     of a particular A matrix that are independent of the observation.
 #     Parameters:
 #     ==========
 #     - `A` [np.ndarray]:
 #         The A matrix or likelihood array that encodes probabilistic relationship
 #         of the generative model between hidden state factors (lagging dimensions, columns, slices, etc...)
-#         and observations (leading dimension, rows). 
+#         and observations (leading dimension, rows).
 #     Returns:
 #     =========
 #     - `A_reduced` [np.ndarray]:
@@ -412,10 +447,10 @@ def index_to_combination(index, dims):
 #                 original_factor_idx.append(factor_i)
 #             else:
 #                 level_counter += 1
-        
+
 #         if break_flag is False:
 #             excluded_factor_idx.append(factor_i+1)
-    
+
 #     A_reduced = A.mean(axis=tuple(excluded_factor_idx)).squeeze()
 
 #     return A_reduced, original_factor_idx
@@ -429,7 +464,7 @@ def index_to_combination(index, dims):
 #     - `A_reduced` [np.ndarray]:
 #         The reduced A matrix or likelihood array that encodes probabilistic relationship
 #         of the generative model between hidden state factors (lagging dimensions, columns, slices, etc...)
-#         and observations (leading dimension, rows). 
+#         and observations (leading dimension, rows).
 #     - `original_factor_idx` [list]:
 #         List of hidden state indices in terms of the full hidden state factor list, that comprise
 #         the lagging dimensions of `A_reduced`
@@ -441,15 +476,15 @@ def index_to_combination(index, dims):
 #     - `A` [np.ndarray]:
 #         The full A matrix, containing all the lagging dimensions that correspond to hidden state factors, including
 #         those that are statistically independent of observations
-    
-#     @ NOTE: This is the "inverse" of the reduce_a_matrix function, 
+
+#     @ NOTE: This is the "inverse" of the reduce_a_matrix function,
 #     i.e. `reduce_a_matrix(construct_full_a(A_reduced, original_factor_idx, num_states)) == A_reduced, original_factor_idx`
 #     """
 
 #     o_dim = A_reduced.shape[0] # dimensionality of the support of the likelihood distribution (i.e. the number of observation levels)
 #     full_dimensionality = [o_dim] + num_states # full dimensionality of the output (`A`)
 #     fill_indices = [0] +  [f+1 for f in original_factor_idx] # these are the indices of the dimensions we need to fill for this modality
-#     fill_dimensions = np.delete(full_dimensionality, fill_indices) 
+#     fill_dimensions = np.delete(full_dimensionality, fill_indices)
 
 #     original_factor_dims = [num_states[f] for f in original_factor_idx] # dimensionalities of the relevant factors
 #     prefilled_slices = [slice(0, o_dim)] + [slice(0, ns) for ns in original_factor_dims] # these are the slices that are filled out by the provided `A_reduced`
@@ -458,9 +493,9 @@ def index_to_combination(index, dims):
 
 #     for item in itertools.product(*[list(range(d)) for d in fill_dimensions]):
 #         slice_ = list(item)
-#         A_indices = insert_multiple(slice_, fill_indices, prefilled_slices) #here we insert the correct values for the fill indices for this slice                    
+#         A_indices = insert_multiple(slice_, fill_indices, prefilled_slices) #here we insert the correct values for the fill indices for this slice
 #         A[tuple(A_indices)] = A_reduced
-    
+
 #     return A
 
 # def create_A_matrix_stub(model_labels):
@@ -512,7 +547,7 @@ def index_to_combination(index, dims):
 #         cell_values = np.zeros((num_rows, num_state_action_combos))
 
 #         next_state_list = state_labels[factor]
-        
+
 #         B_matrix_f = pd.DataFrame(cell_values, index = next_state_list, columns=prev_state_action_combos)
 
 #         B_matrices[factor] = B_matrix_f
@@ -537,7 +572,7 @@ def index_to_combination(index, dims):
 
 #     level_counts = {}
 #     for sheet_name, raw_table in all_sheets.items():
-    
+
 #         level_counts[sheet_name] = {
 #             "index": raw_table.iloc[0, :].dropna().index[0]+1,
 #             "header": raw_table.iloc[0, :].dropna().index[0]+2,
@@ -552,13 +587,13 @@ def index_to_combination(index, dims):
 #             header=list(range(level_counts_sheet["header"]))
 #             ).astype(np.float64)
 #         stub_dict[sheet_name] = sheet_f
-        
+
 #     return stub_dict
 
 # def convert_A_stub_to_ndarray(A_stub, model_labels):
 #     """
 #     This function converts a multi-index pandas dataframe `A_stub` into an object array of different
-#     A matrices, one per observation modality. 
+#     A matrices, one per observation modality.
 #     """
 
 #     num_obs, num_modalities, num_states, num_factors = get_model_dimensions_from_labels(model_labels)
@@ -582,7 +617,7 @@ def index_to_combination(index, dims):
 #     B = obj_array(num_factors)
 
 #     for f, factor_name in enumerate(B_stubs.keys()):
-        
+
 #         B[f] = B_stubs[factor_name].to_numpy().reshape(num_states[f], num_states[f], num_controls[f])
 #         assert (B[f].sum(axis=0) == 1.0).all(), 'B matrix not normalized! Check your initialization....\n'
 
@@ -592,7 +627,7 @@ def index_to_combination(index, dims):
 
 #     """
 #     This function constructs array-ified (not nested) versions
-#     of the posterior belief arrays, that are separated 
+#     of the posterior belief arrays, that are separated
 #     by policy, timepoint, and hidden state factor
 #     """
 
@@ -614,14 +649,14 @@ def index_to_combination(index, dims):
 #         for policy_i in range(num_policies):
 #             for timestep in range(num_timesteps):
 #                 belief_array[policy_i, :, timestep] = qx[policy_i][timestep][0]
-    
+
 #     return belief_array
 
 # def build_xn_vn_array(xn):
 
 #     """
 #     This function constructs array-ified (not nested) versions
-#     of the posterior xn (beliefs) or vn (prediction error) arrays, that are separated 
+#     of the posterior xn (beliefs) or vn (prediction error) arrays, that are separated
 #     by iteration, hidden state factor, timepoint, and policy
 #     """
 
@@ -643,6 +678,6 @@ def index_to_combination(index, dims):
 #         xn_array = np.zeros( (num_itr, num_states, infer_len, num_policies) )
 #         for policy_i in range(num_policies):
 #             for itr in range(num_itr):
-#                 xn_array[itr,:,:,policy_i] = xn[policy_i][itr][0] 
-    
+#                 xn_array[itr,:,:,policy_i] = xn[policy_i][itr][0]
+
 #     return xn_array
