@@ -36,6 +36,8 @@ multimethod = "^1.11"
 networkx = "^3.3"
 opencv-python = "^4.10.0.82"
 imageio = "^2.34.1"
+mctx = "^0.0.5"
+mediapy = "^1.2.2"
 
 
 [tool.black]
