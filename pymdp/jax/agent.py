@@ -432,7 +432,6 @@ class Agent(Module):
             )
             marginals = jnp.where(locs, q_pi, 0.).sum(-1)
 
-        # assert jnp.isclose(jnp.sum(marginals), 1.)  # this fails inside scan           
         return marginals
 
     @vmap
