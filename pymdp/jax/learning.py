@@ -4,6 +4,7 @@
 
 from .maths import multidimensional_outer, dirichlet_expected_value
 from jax.tree_util import tree_map
+from jaxtyping import Array
 from jax import vmap, nn
 
 def update_obs_likelihood_dirichlet_m(pA_m, obs_m, qs, dependencies_m, lr=1.0):
@@ -58,6 +59,7 @@ def update_state_transition_dirichlet_f(pB_f, actions_f, joint_qs_f, lr=1.0):
     # \otimes is a multidimensional outer product, not just a outer product of two vectors
     # \kappa is an optional learning rate
 
+    joint_qs_f = [joint_qs_f] if isinstance(joint_qs_f, Array) else joint_qs_f
     dfdb = vmap(multidimensional_outer)(joint_qs_f + [actions_f]).sum(axis=0)
     qB_f = pB_f + lr * dfdb
 

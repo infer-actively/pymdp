@@ -73,9 +73,9 @@ def joint_dist_factor(b: ArrayLike, filtered_qs: list[Array], actions: Array):
         if isinstance(norm, JAXSparse):
             norm = sparse.todense(norm)
         norm = jnp.where(norm == 0, eps, norm)
-        qs_backward_cond = (qs_j / norm).T
-        qs_joint = qs_backward_cond * qs_smooth
-        qs_smooth = qs_joint.sum(-1)
+        qs_backward_cond = qs_j / norm
+        qs_joint = qs_backward_cond * jnp.expand_dims(qs_smooth, -1)
+        qs_smooth = qs_joint.sum(-2)
         if isinstance(qs_smooth, JAXSparse):
             qs_smooth = sparse.todense(qs_smooth)
         
@@ -106,9 +106,11 @@ def smoothing_ovf(filtered_post, B, past_actions):
 
     joint = lambda b, qs, f: joint_dist_factor(b, qs, past_actions[..., f])
 
-    marginals_and_joints = []
+    marginals_and_joints = ([], [])
     for b, qs, f in zip(B, filtered_post, list(range(nf))):
-        marginals_and_joints.append( joint(b, qs, f) )
+        marginals, joints = joint(b, qs, f)
+        marginals_and_joints[0].append(marginals)
+        marginals_and_joints[1].append(joints)
 
     return marginals_and_joints
 
