@@ -62,9 +62,6 @@ class PyMDPEnv(Module):
 
             keys = list(jr.split(key_state, len(state_probs)))
             new_states = jtu.tree_map(cat_sample, keys, state_probs)
-
-            states.append(new_states)
-
         else:
             new_states = states[-1]
 
@@ -76,4 +73,4 @@ class PyMDPEnv(Module):
         keys = list(jr.split(key_obs, len(obs_probs)))
         new_obs = jtu.tree_map(cat_sample, keys, obs_probs)
 
-        return new_obs, tree_at(lambda x: (x.states), self, states)
+        return new_obs, tree_at(lambda x: (x.states), self, [new_states])
