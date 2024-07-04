@@ -115,7 +115,7 @@ class Agent(Module):
         use_inductive=False,
         onehot_obs=False,
         action_selection="deterministic",
-        sampling_mode="marginal",
+        sampling_mode="full",
         inference_algo="fpi",
         num_iter=16,
         learn_A=True,
@@ -255,47 +255,56 @@ class Agent(Module):
         size = pymath.prod(self.num_controls)
         return jnp.unique(self.policies[:, 0], axis=0, size=size, fill_value=-1)
 
-    @vmap
     def infer_parameters(self, beliefs_A, outcomes, actions, beliefs_B=None, lr_pA=1., lr_pB=1., **kwargs):
         agent = self
         beliefs_B = beliefs_A if beliefs_B is None else beliefs_B
         if self.inference_algo == 'ovf':
-            smoothed_marginals_and_joints = inference.smoothing_ovf(beliefs_A, self.B, actions)
+            smoothed_marginals_and_joints = vmap(inference.smoothing_ovf)(beliefs_A, self.B, actions)
             marginal_beliefs = smoothed_marginals_and_joints[0]
             joint_beliefs = smoothed_marginals_and_joints[1]
         else:
             marginal_beliefs = beliefs_A
             if self.learn_B:
                 nf = len(beliefs_B)
-                joint_fn = lambda f: [beliefs_B[f][1:]] + [beliefs_B[f_idx][:-1] for f_idx in self.B_dependencies[f]]
+                joint_fn = lambda f: [beliefs_B[f][:, 1:]] + [beliefs_B[f_idx][:, :-1] for f_idx in self.B_dependencies[f]]
                 joint_beliefs = jtu.tree_map(joint_fn, list(range(nf)))
 
         if self.learn_A:
-            qA, E_qA = learning.update_obs_likelihood_dirichlet(
-                self.pA,
-                outcomes,
-                marginal_beliefs,
+            update_A = partial(
+                learning.update_obs_likelihood_dirichlet,
                 A_dependencies=self.A_dependencies,
                 num_obs=self.num_obs,
                 onehot_obs=self.onehot_obs,
-                lr=lr_pA,
+            )
+            
+            lr = jnp.broadcast_to(lr_pA, (self.batch_size,))
+            qA, E_qA = vmap(update_A)(
+                self.pA,
+                outcomes,
+                marginal_beliefs,
+                lr=lr,
             )
             
             agent = tree_at(lambda x: (x.A, x.pA), agent, (E_qA, qA))
             
         if self.learn_B:
-            assert beliefs_B[0].shape[0] == actions.shape[0] + 1
-            qB, E_qB = learning.update_state_transition_dirichlet(
+            assert beliefs_B[0].shape[1] == actions.shape[1] + 1
+            update_B = partial(
+                learning.update_state_transition_dirichlet,
+                num_controls=self.num_controls
+            )
+
+            lr = jnp.broadcast_to(lr_pB, (self.batch_size,))
+            qB, E_qB = vmap(update_B)(
                 self.pB,
                 joint_beliefs,
                 actions,
-                num_controls=self.num_controls,
-                lr=lr_pB
+                lr=lr
             )
             
             # if you have updated your beliefs about transitions, you need to re-compute the I matrix used for inductive inferenece
             if self.use_inductive and self.H is not None:
-                I_updated = control.generate_I_matrix(self.H, E_qB, self.inductive_threshold, self.inductive_depth)
+                I_updated = vmap(control.generate_I_matrix)(self.H, E_qB, self.inductive_threshold, self.inductive_depth)
             else:
                 I_updated = self.I
 
@@ -303,7 +312,6 @@ class Agent(Module):
 
         return agent
     
-    @vmap
     def infer_states(self, observations, empirical_prior, *, past_actions=None, qs_hist=None, mask=None):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
@@ -336,33 +344,37 @@ class Agent(Module):
             for i, m in enumerate(mask):
                 o_vec[i] = m * o_vec[i] + (1 - m) * jnp.ones_like(o_vec[i]) / self.num_obs[i]
                 A[i] = m * A[i] + (1 - m) * jnp.ones_like(A[i]) / self.num_obs[i]
-        
-        output = inference.update_posterior_states(
-            A,
-            self.B,
-            o_vec,
-            past_actions,
-            prior=empirical_prior,
-            qs_hist=qs_hist,
+
+        infer_states = partial(
+            inference.update_posterior_states,
             A_dependencies=self.A_dependencies,
             B_dependencies=self.B_dependencies,
             num_iter=self.num_iter,
             method=self.inference_algo
         )
+        
+        output = vmap(infer_states)(
+            A,
+            self.B,
+            o_vec,
+            past_actions,
+            prior=empirical_prior,
+            qs_hist=qs_hist
+        )
 
         return output
 
-    @partial(vmap, in_axes=(0, 0, 0))
     def update_empirical_prior(self, action, qs):
         # return empirical_prior, and the history of posterior beliefs (filtering distributions) held about hidden states at times 1, 2 ... t
 
-        qs_last = jtu.tree_map( lambda x: x[-1], qs)
+        qs_last = jtu.tree_map( lambda x: x[:, -1], qs)
         # this computation of the predictive prior is correct only for fully factorised Bs.
         if self.inference_algo in ['mmp', 'vmp']:
             # in the case of the 'mmp' or 'vmp' we have to use D as prior parameter for infer states
             pred = self.D
         else:
-            pred = control.compute_expected_state(qs_last, self.B, action, B_dependencies=self.B_dependencies)
+            propagate_beliefs = partial(control.compute_expected_state, B_dependencies=self.B_dependencies)
+            pred = vmap(propagate_beliefs)(qs_last, self.B, action)
         
         return (pred, qs)
 
