@@ -64,11 +64,13 @@ class TestLearningJax(unittest.TestCase):
             qA_np_test = update_pA_numpy(pA_np, A_np, obs_np, qs_np, lr=l_rate)
 
             pA_jax = jtu.tree_map(lambda x: jnp.array(x), list(pA_np))
+            A_jax = jtu.tree_map(lambda x: jnp.array(x), list(A_np))
             obs_jax = jtu.tree_map(lambda x: jnp.array(x)[None], list(obs_np))
             qs_jax = jtu.tree_map(lambda x: jnp.array(x)[None], list(qs_np))
 
             qA_jax_test, E_qA_jax_test = update_pA_jax(
                 pA_jax,
+                A_jax,
                 obs_jax,
                 qs_jax,
                 A_dependencies=A_dependencies,
@@ -126,11 +128,13 @@ class TestLearningJax(unittest.TestCase):
             qA_np_test = update_pA_numpy_factorized(pA_np, A_np, obs_np, qs_np, A_dependencies, lr=l_rate)
 
             pA_jax = jtu.tree_map(lambda x: jnp.array(x), list(pA_np))
+            A_jax = jtu.tree_map(lambda x: jnp.array(x), list(A_np))
             obs_jax = jtu.tree_map(lambda x: jnp.array(x)[None], list(obs_np))
             qs_jax = jtu.tree_map(lambda x: jnp.array(x)[None], list(qs_np))
 
             qA_jax_test, E_qA_jax_test = update_pA_jax(
                 pA_jax,
+                A_jax,
                 obs_jax,
                 qs_jax,
                 A_dependencies=A_dependencies,
