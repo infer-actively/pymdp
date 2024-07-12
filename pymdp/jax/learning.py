@@ -26,10 +26,11 @@ def update_obs_likelihood_dirichlet_m(pA_m, obs_m, qs, dependencies_m, lr=1.0):
     dfda = vmap(multidimensional_outer)([obs_m] + relevant_factors).sum(axis=0)
 
     new_pA_m = pA_m + lr * dfda
+    A_m = dirichlet_expected_value(new_pA_m)
 
-    return new_pA_m, dirichlet_expected_value(new_pA_m)
+    return new_pA_m, A_m
     
-def update_obs_likelihood_dirichlet(pA, obs, qs, *, A_dependencies, onehot_obs, num_obs, lr):
+def update_obs_likelihood_dirichlet(pA, A, obs, qs, *, A_dependencies, onehot_obs, num_obs, lr):
     """ JAX version of ``pymdp.learning.update_obs_likelihood_dirichlet`` """
 
     obs_m = lambda o, dim: nn.one_hot(o, dim) if not onehot_obs else o
@@ -39,9 +40,13 @@ def update_obs_likelihood_dirichlet(pA, obs, qs, *, A_dependencies, onehot_obs, 
     result = tree_map(update_A_fn, pA, obs, num_obs, A_dependencies)
     qA = []
     E_qA = []
-    for r in result:
-        qA.append(r[0])
-        E_qA.append(r[1])
+    for i, r in enumerate(result):
+        if r is None:
+            qA.append(r)
+            E_qA.append(A[i])
+        else:
+            qA.append(r[0])
+            E_qA.append(r[1])
 
     return qA, E_qA
 

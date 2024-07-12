@@ -104,8 +104,8 @@ class Agent(Module):
         policy_len=1,
         control_fac_idx=None,
         policies=None,
-        gamma=16.0,
-        alpha=16.0,
+        gamma=1.0,
+        alpha=1.0,
         inductive_depth=1,
         inductive_threshold=0.1,
         inductive_epsilon=1e-3,
@@ -156,7 +156,7 @@ class Agent(Module):
             factor_dims = tuple([self.num_states[f] for f in self.A_dependencies[m]])
             assert self.A[m].shape[2:] == factor_dims, f"Please input an `A_dependencies` whose {m}-th indices correspond to the hidden state factors that line up with lagging dimensions of A[{m}]..." 
             if self.pA != None:
-                assert self.pA[m].shape[2:] == factor_dims, f"Please input an `A_dependencies` whose {m}-th indices correspond to the hidden state factors that line up with lagging dimensions of pA[{m}]..." 
+                assert self.pA[m].shape[2:] == factor_dims if self.pA[m] is not None else True, f"Please input an `A_dependencies` whose {m}-th indices correspond to the hidden state factors that line up with lagging dimensions of pA[{m}]..." 
             assert max(self.A_dependencies[m]) <= (self.num_factors - 1), f"Check modality {m} of `A_dependencies` - must be consistent with `num_states` and `num_factors`..."
            
         # Ensure consistency of B_dependencies with num_states and num_factors
@@ -280,6 +280,7 @@ class Agent(Module):
             lr = jnp.broadcast_to(lr_pA, (self.batch_size,))
             qA, E_qA = vmap(update_A)(
                 self.pA,
+                self.A,
                 outcomes,
                 marginal_beliefs,
                 lr=lr,
