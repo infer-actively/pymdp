@@ -2,10 +2,20 @@ import jax.numpy as jnp
 
 from functools import partial
 from typing import Optional, Tuple, List
-from jax import tree_util, nn, jit
+from jax import tree_util, nn, jit, vmap, lax
+from jax.scipy.special import xlogy
 from opt_einsum import contract
 
 MINVAL = jnp.finfo(float).eps
+
+def stable_xlogx(x):
+    return xlogy(x, jnp.clip(x, MINVAL))
+
+def stable_entropy(x):
+    return - stable_xlogx(x).sum()
+
+def stable_cross_entropy(x, y):
+    return - xlogy(x, y).sum()
 
 def log_stable(x):
     return jnp.log(jnp.clip(x, min=MINVAL))
@@ -51,15 +61,19 @@ def factor_dot_flex(M, xs, dims: List[Tuple[int]], keep_dims: Optional[Tuple[int
     args += [keep_dims]
     return contract(*args, backend='jax')
 
-def compute_log_likelihood_single_modality(o_m, A_m, distr_obs=True):
-    """ Compute observation likelihood for a single modality (observation and likelihood)"""
+def get_likelihood_single_modality(o_m, A_m, distr_obs=True):
+    """Return observation likelihood for a single observation modality m"""
     if distr_obs:
         expanded_obs = jnp.expand_dims(o_m, tuple(range(1, A_m.ndim)))
         likelihood = (expanded_obs * A_m).sum(axis=0)
     else:
         likelihood = A_m[o_m]
-    
-    return log_stable(likelihood)
+
+    return likelihood
+
+def compute_log_likelihood_single_modality(o_m, A_m, distr_obs=True):
+    """Compute observation log-likelihood for a single modality"""
+    return log_stable(get_likelihood_single_modality(o_m, A_m, distr_obs=distr_obs))
 
 def compute_log_likelihood(obs, A, distr_obs=True):
     """ Compute likelihood over hidden states across observations from different modalities """
@@ -77,7 +91,7 @@ def compute_log_likelihood_per_modality(obs, A, distr_obs=True):
 def compute_accuracy(qs, obs, A):
     """ Compute the accuracy portion of the variational free energy (expected log likelihood under the variational posterior) """
 
-    ll = compute_log_likelihood(obs, A)
+    log_likelihood = compute_log_likelihood(obs, A)
 
     x = qs[0]
     for q in qs[1:]:
@@ -98,8 +112,8 @@ def compute_free_energy(qs, prior, obs, A):
 
     vfe = 0.0 # initialize variational free energy
     for q, p in zip(qs, prior):
-        negH_qs = q.dot(log_stable(q))
-        xH_qp = -q.dot(log_stable(p))
+        negH_qs = - stable_entropy(q)
+        xH_qp = stable_cross_entropy(q, p)
         vfe += (negH_qs + xH_qp)
     
     vfe -= compute_accuracy(qs, obs, A)
