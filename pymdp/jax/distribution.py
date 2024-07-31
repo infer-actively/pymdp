@@ -97,6 +97,50 @@ class Distribution:
         return f"Distribution({self.event}, {self.batch})\n {self.data}"
 
 
+class DistributionIndexer(dict):
+    """
+    Helper class to allow for indexing of distributions by their event keys.
+    Acts as a list otherwise ...
+    """
+
+    def __init__(self, distributions: list[Distribution]):
+        super().__init__()
+        self.distributions = distributions
+        for d in distributions:
+            for key in d.event:
+                self[key] = d
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self.distributions[key]
+        else:
+            return super().__getitem__(key)
+
+    def __iter__(self):
+        return iter(self.distributions)
+
+
+class Model(dict):
+
+    def __init__(
+        self,
+        likelihoods: list[Distribution],
+        transitions: list[Distribution],
+        preferences: list[Distribution],
+        priors: list[Distribution],
+    ):
+        super().__init__()
+        super().__setitem__("A", likelihoods)
+        super().__setitem__("B", transitions)
+        super().__setitem__("C", preferences)
+        super().__setitem__("D", priors)
+
+    def __getattr__(self, key):
+        if key in ["A", "B", "C", "D"]:
+            return DistributionIndexer(self[key])
+        raise AttributeError("Model only supports attributes A,B,C and D")
+
+
 def compile_model(config):
     """Compile a model from a config.
 
@@ -188,6 +232,13 @@ def compile_model(config):
             batch_descr[dep] = labels[dep]
         arr = np.zeros(arr_shape)
         transitions.append(Distribution(event_descr, batch_descr, arr))
+
+    priors = []
+    for event, description in transition_events.items():
+        arr_shape = [len(description)]
+        arr = np.ones(arr_shape) / len(description)
+        priors.append(Distribution(event_descr, data=arr))
+
     likelihoods = []
     for event, description in likelihood_events.items():
         arr_shape = [len(description)]
@@ -198,7 +249,14 @@ def compile_model(config):
             batch_descr[dep] = labels[dep]
         arr = np.zeros(arr_shape)
         likelihoods.append(Distribution(event_descr, batch_descr, arr))
-    return likelihoods, transitions
+
+    preferences = []
+    for event, description in likelihood_events.items():
+        arr_shape = [len(description)]
+        arr = np.zeros(arr_shape)
+        preferences.append(Distribution(event_descr, data=arr))
+
+    return Model(likelihoods, transitions, preferences, priors)
 
 
 def get_dependencies(likelihoods, transitions):
@@ -224,9 +282,9 @@ if __name__ == "__main__":
 
     data = np.zeros((len(locations), len(locations), len(controls)))
     transition = Distribution(
-        data,
         {"location": locations},
         {"location": locations, "control": controls},
+        data,
     )
 
     assert transition["A", "B", "up"] == 0.0
@@ -287,19 +345,21 @@ if __name__ == "__main__":
             },
         },
     }
-    like, trans = compile_model(model_example)
+    model = compile_model(model_example)
+    like = model.A
+    trans = model.B
     assert len(trans) == 2
     assert len(like) == 2
     assert trans[0].data.shape == (3, 3, 2, 2, 2)
     assert trans[1].data.shape == (2, 2, 2)
     assert like[0].data.shape == (10, 3)
     assert like[1].data.shape == (2, 2)
-    assert like[0][:, "II"] is not None
-    assert like[1][1, :] is not None
+    assert like["observation_1"][:, "II"] is not None
+    assert like["observation_2"][1, :] is not None
     A_deps, B_deps = get_dependencies(like, trans)
     print(A_deps, B_deps)
 
-    model = {
+    model_description = {
         "observations": {
             "o1": {"elements": ["A", "B", "C", "D"], "depends_on": ["s1"]},
         },
@@ -313,4 +373,4 @@ if __name__ == "__main__":
         },
     }
 
-    As, Bs = compile_model(model)
+    model = compile_model(model_description)
