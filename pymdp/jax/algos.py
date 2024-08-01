@@ -2,8 +2,7 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 
 from jax import jit, vmap, grad, lax, nn
-# from jax.config import config
-# config.update("jax_enable_x64", True)
+from jax.scipy.special import xlogy
 
 from .maths import compute_log_likelihood, compute_log_likelihood_per_modality, log_stable, MINVAL, factor_dot, factor_dot_flex
 from typing import Any, List
@@ -14,6 +13,14 @@ def add(x, y):
 def marginal_log_likelihood(qs, log_likelihood, i):
     xs = [q for j, q in enumerate(qs) if j != i]
     return factor_dot(log_likelihood, xs, keep_dims=(i,))
+
+def __marginal_log_likelihood(qs, likelihood, i):
+    x = 1.
+    for j, q in enumerate(qs):
+        if j != i:
+            x = jnp.expand_dims(q * x, -1)
+            
+    return xlogy(x, likelihood).sum()
 
 def all_marginal_log_likelihood(qs, log_likelihoods, all_factor_lists):
     qL_marginals = jtu.tree_map(lambda ll_m, factor_list_m: mll_factors(qs, ll_m, factor_list_m), log_likelihoods, all_factor_lists)
