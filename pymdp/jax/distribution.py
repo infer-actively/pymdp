@@ -254,6 +254,7 @@ def compile_model(config):
     for event, description in likelihood_events.items():
         arr_shape = [len(description)]
         arr = np.zeros(arr_shape)
+        event_descr = {event: description}
         preferences.append(Distribution(event_descr, data=arr))
 
     return Model(likelihoods, transitions, preferences, priors)
