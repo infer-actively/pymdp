@@ -6,15 +6,24 @@ from jax import nn
 from jax import vmap
 
 import pymdp
-from pymdp.jax.control import compute_info_gain, compute_expected_utility, compute_expected_state, compute_expected_obs
+from pymdp.jax.control import (
+    compute_info_gain,
+    compute_expected_utility,
+    compute_expected_state,
+    compute_expected_obs,
+    calc_inductive_value_t,
+)
 
 
-def si_policy_search(max_depth, 
-                     policy_prune_threshold=1 / 16,
-                     policy_prune_topk=-1,
-                     observation_prune_threshold=1 / 16,
-                     entropy_prune_threshold=0.5,
-                     prune_penalty=512):
+def si_policy_search(
+    max_depth,
+    policy_prune_threshold=1 / 16,
+    policy_prune_topk=-1,
+    observation_prune_threshold=1 / 16,
+    entropy_prune_threshold=0.5,
+    prune_penalty=512,
+    gamma=1,
+):
 
     def search_fn(agent, qs, rng_key):
         tree = tree_search(
@@ -26,9 +35,10 @@ def si_policy_search(max_depth,
             observation_prune_threshold=observation_prune_threshold,
             entropy_prune_threshold=entropy_prune_threshold,
             prune_penalty=prune_penalty,
+            gamma=gamma,
         )
         return tree.root()["q_pi"], tree
-    
+
     return search_fn
 
 
@@ -52,7 +62,7 @@ class Tree:
         self.nodes.append(node)
 
 
-def step(agent, qs, policies, gamma=32):
+def step(agent, qs, policies):
     def _step(a, b, c, q, policy):
         qs = compute_expected_state(q, b, policy, agent.B_dependencies)
         qo = compute_expected_obs(qs, a, agent.A_dependencies)
@@ -62,7 +72,7 @@ def step(agent, qs, policies, gamma=32):
 
     qs, qo, u, ig = vmap(lambda policy: vmap(_step)(agent.A, agent.B, agent.C, qs, policy))(policies)
     G = u + ig
-    return qs, qo, nn.softmax(G * gamma, axis=0), G
+    return qs, qo, G
 
 
 def tree_search(
@@ -74,6 +84,8 @@ def tree_search(
     observation_prune_threshold=1 / 16,
     entropy_prune_threshold=0.5,
     prune_penalty=512,
+    gamma=1,
+    step_fn=step,
 ):
     root_node = {
         "qs": jtu.tree_map(lambda x: x[:, -1, ...], qs),
@@ -85,10 +97,10 @@ def tree_search(
     tree = Tree(root_node)
 
     for _ in range(horizon):
-
         leaves = tree.leaves()
         qs_leaves = stack_leaves([leaf["qs"] for leaf in leaves])
-        qs_pi, qo_pi, q_pi, G = vmap(lambda leaf: step(agent, leaf, agent.policies))(qs_leaves)
+        qs_pi, qo_pi, G = vmap(lambda leaf: step_fn(agent, leaf, agent.policies))(qs_leaves)
+        q_pi = nn.softmax(G * gamma, axis=1)
 
         for l, node in enumerate(leaves):
             tree = expand_node(
@@ -103,6 +115,7 @@ def tree_search(
                 policy_prune_topk,
                 observation_prune_threshold,
                 prune_penalty,
+                gamma,
             )
 
         if policy_entropy(tree.root()) < entropy_prune_threshold:
@@ -123,7 +136,7 @@ def expand_node(
     policy_prune_topk=-1,
     observation_prune_threshold=1 / 16,
     prune_penalty=512,
-    gamma=32,
+    gamma=1,
 ):
     policies = agent.policies
 
@@ -220,7 +233,7 @@ def expand_node(
     return tree
 
 
-def tree_backward(node, prune_penalty=512, gamma=32):
+def tree_backward(node, prune_penalty=512, gamma=1):
     while node["parent"] is not None:
         parent = node["parent"]["parent"]
         G_children = jnp.zeros(len(node["children"]))
@@ -255,47 +268,3 @@ def policy_entropy(node):
 
 def stack_leaves(data):
     return [jnp.stack([d[i] for d in data]) for i in range(len(data[0]))]
-
-
-def expand_node_vanilla(agent, node, tree, gamma=32):
-    qs = node["qs"]
-    policies = agent.policies
-
-    qs_pi, qo_pi, G, u, ig = step(agent, qs, policies)
-    q_pi = nn.softmax(G * gamma, axis=0)
-
-    node["policies"] = policies
-    node["q_pi"] = q_pi[:, 0]
-    node["G"] = jnp.array([jnp.dot(q_pi[:, 0], G[:, 0])])
-
-    for idx in range(policies.shape[0]):
-        policy_node = {
-            "policy": policies[idx, 0],
-            "prob": q_pi[idx, 0],
-            "qs": jtu.tree_map(lambda x: x[idx, ...], qs_pi),
-            "qo": jtu.tree_map(lambda x: x[idx, ...], qo_pi),
-            "G_t": G[idx],
-            "G": G[idx],
-            "parent": node,
-            "children": [],
-            "n": node["n"] + 1,
-        }
-
-        node["children"].append(policy_node)
-        tree.append(policy_node)
-
-    # update G of parents
-    while node["parent"] is not None:
-        parent = node["parent"]
-        G_children = jnp.array([child["G"][0] for child in parent["children"]])
-        q_pi = nn.softmax(G_children * gamma)
-
-        G = jnp.dot(q_pi, G_children) + parent["G_t"]
-        parent["G"] = G
-        parent["q_pi"] = q_pi
-
-        for idx, c in enumerate(parent["children"]):
-            c["prob"] = q_pi[idx]
-        node = parent
-
-    return tree
