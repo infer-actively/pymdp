@@ -8,8 +8,14 @@ class Distribution:
         self.event = event
         self.batch = batch
 
-        self.event_indices = {key: {v: i for i, v in enumerate(values)} for key, values in event.items()}
-        self.batch_indices = {key: {v: i for i, v in enumerate(values)} for key, values in batch.items()}
+        self.event_indices = {
+            key: {v: i for i, v in enumerate(values)}
+            for key, values in event.items()
+        }
+        self.batch_indices = {
+            key: {v: i for i, v in enumerate(values)}
+            for key, values in batch.items()
+        }
 
         if data is not None:
             self.data = data
@@ -42,7 +48,9 @@ class Distribution:
         for key in full_indices:
             if key in keys:
                 if isinstance(keys[key], list):
-                    slices.append([self._get_index(v, indices[key]) for v in keys[key]])
+                    slices.append(
+                        [self._get_index(v, indices[key]) for v in keys[key]]
+                    )
                 else:
                     slices.append(self._get_index(keys[key], indices[key]))
             else:
@@ -69,17 +77,74 @@ class Distribution:
     def __getitem__(self, indices):
         if not isinstance(indices, tuple):
             indices = (indices,)
-        index_list = [self._get_index_from_axis(i, idx) for i, idx in enumerate(indices)]
+        index_list = [
+            self._get_index_from_axis(i, idx) for i, idx in enumerate(indices)
+        ]
         return self.data[tuple(index_list)]
 
     def __setitem__(self, indices, value):
         if not isinstance(indices, tuple):
             indices = (indices,)
-        index_list = [self._get_index_from_axis(i, idx) for i, idx in enumerate(indices)]
+        index_list = [
+            self._get_index_from_axis(i, idx) for i, idx in enumerate(indices)
+        ]
         self.data[tuple(index_list)] = value
 
     def normalize(self):
         self.data = norm_dist(self.data)
+
+    def __repr__(self):
+        return f"Distribution({self.event}, {self.batch})\n {self.data}"
+
+
+class DistributionIndexer(dict):
+    """
+    Helper class to allow for indexing of distributions by their event keys.
+    Acts as a list otherwise ...
+    """
+
+    def __init__(self, distributions: list[Distribution]):
+        super().__init__()
+        self.distributions = distributions
+        for d in distributions:
+            for key in d.event:
+                self[key] = d
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self.distributions[key]
+        else:
+            if key not in self.keys():
+                raise KeyError(
+                    f"Key {key} not found in " + str([k for k in self.keys()])
+                )
+            return super().__getitem__(key)
+
+    def __iter__(self):
+        return iter(self.distributions)
+
+
+class Model(dict):
+
+    def __init__(
+        self,
+        likelihoods: list[Distribution],
+        transitions: list[Distribution],
+        preferred_outcomes: list[Distribution],
+        priors: list[Distribution],
+        preferred_states: list[Distribution],
+    ):
+        super().__init__()
+        super().__setitem__("A", likelihoods)
+        super().__setitem__("B", transitions)
+        super().__setitem__("C", preferred_outcomes)
+        super().__setitem__("D", priors)
+        super().__setitem__("H", preferred_states)
+
+    def __getattr__(self, key):
+        if key in ["A", "B", "C", "D", "H"]:
+            return DistributionIndexer(self[key])
+        raise AttributeError("Model only supports attributes A,B,C and D")
 
 
 def compile_model(config):
@@ -147,11 +212,15 @@ def compile_model(config):
                         labels[k] = list(range(v[keyword]))
                     case "depends_on":
                         if mod == "states":
-                            state_dependencies[k] = [name for name in v[keyword]]
+                            state_dependencies[k] = [
+                                name for name in v[keyword]
+                            ]
                             if k in v[keyword]:
                                 transition_events[k] = labels[k]
                         else:
-                            likelihood_dependencies[k] = [name for name in v[keyword]]
+                            likelihood_dependencies[k] = [
+                                name for name in v[keyword]
+                            ]
                             likelihood_events[k] = labels[k]
                     case "controlled_by":
                         control_dependencies[k] = [name for name in v[keyword]]
@@ -169,6 +238,14 @@ def compile_model(config):
             batch_descr[dep] = labels[dep]
         arr = np.zeros(arr_shape)
         transitions.append(Distribution(event_descr, batch_descr, arr))
+
+    priors = []
+    for event, description in transition_events.items():
+        arr_shape = [len(description)]
+        arr = np.ones(arr_shape) / len(description)
+        event_descr = {event: description}
+        priors.append(Distribution(event_descr, data=arr))
+
     likelihoods = []
     for event, description in likelihood_events.items():
         arr_shape = [len(description)]
@@ -179,7 +256,24 @@ def compile_model(config):
             batch_descr[dep] = labels[dep]
         arr = np.zeros(arr_shape)
         likelihoods.append(Distribution(event_descr, batch_descr, arr))
-    return likelihoods, transitions
+
+    preferred_outcomes = []
+    for event, description in likelihood_events.items():
+        arr_shape = [len(description)]
+        arr = np.zeros(arr_shape)
+        event_descr = {event: description}
+        preferred_outcomes.append(Distribution(event_descr, data=arr))
+
+    preferred_states = []
+    for event, description in transition_events.items():
+        arr_shape = [len(description)]
+        arr = np.ones(arr_shape) / len(description)
+        event_descr = {event: description}
+        preferred_states.append(Distribution(event_descr, data=arr))
+
+    return Model(
+        likelihoods, transitions, preferred_outcomes, priors, preferred_states
+    )
 
 
 def get_dependencies(likelihoods, transitions):
@@ -187,12 +281,16 @@ def get_dependencies(likelihoods, transitions):
     transition_dependencies = dict()
     states = [list(trans.event.keys())[0] for trans in transitions]
     for like in likelihoods:
-        likelihood_dependencies[list(like.event.keys())[0]] = [states.index(name) for name in like.batch.keys()]
+        likelihood_dependencies[list(like.event.keys())[0]] = [
+            states.index(name) for name in like.batch.keys()
+        ]
     for trans in transitions:
         transition_dependencies[list(trans.event.keys())[0]] = [
             states.index(name) for name in trans.batch.keys() if name in states
         ]
-    return list(likelihood_dependencies.values()), list(transition_dependencies.values())
+    return list(likelihood_dependencies.values()), list(
+        transition_dependencies.values()
+    )
 
 
 if __name__ == "__main__":
@@ -201,9 +299,9 @@ if __name__ == "__main__":
 
     data = np.zeros((len(locations), len(locations), len(controls)))
     transition = Distribution(
-        data,
         {"location": locations},
         {"location": locations, "control": controls},
+        data,
     )
 
     assert transition["A", "B", "up"] == 0.0
@@ -220,13 +318,22 @@ if __name__ == "__main__":
     assert np.all(transition[:, "B", "up"] == 1.0)
 
     assert transition.get({"location": "A"}, {"location": "B"}).shape == (2,)
-    assert transition.get({"location": "A", "control": "up"}, {"location": "B"}) == 0.0
+    assert (
+        transition.get({"location": "A", "control": "up"}, {"location": "B"})
+        == 0.0
+    )
     assert transition.get({"control": "up"}).shape == (4, 4)
 
     transition.set({"location": "A", "control": "up"}, {"location": "B"}, 0.5)
-    assert transition.get({"location": "A", "control": "up"}, {"location": "B"}) == 0.5
+    assert (
+        transition.get({"location": "A", "control": "up"}, {"location": "B"})
+        == 0.5
+    )
     transition.set({"location": 0, "control": "up"}, {"location": "B"}, 0.7)
-    assert transition.get({"location": "A", "control": "up"}, {"location": "B"}) == 0.7
+    assert (
+        transition.get({"location": "A", "control": "up"}, {"location": "B"})
+        == 0.7
+    )
     transition.set({"location": "A"}, {"location": "B"}, np.ones(2))
     assert np.all(transition.get({"location": "A"}, {"location": "B"}) == 1.0)
 
@@ -255,19 +362,21 @@ if __name__ == "__main__":
             },
         },
     }
-    like, trans = compile_model(model_example)
+    model = compile_model(model_example)
+    like = model.A
+    trans = model.B
     assert len(trans) == 2
     assert len(like) == 2
     assert trans[0].data.shape == (3, 3, 2, 2, 2)
     assert trans[1].data.shape == (2, 2, 2)
     assert like[0].data.shape == (10, 3)
     assert like[1].data.shape == (2, 2)
-    assert like[0][:, "II"] is not None
-    assert like[1][1, :] is not None
+    assert like["observation_1"][:, "II"] is not None
+    assert like["observation_2"][1, :] is not None
     A_deps, B_deps = get_dependencies(like, trans)
     print(A_deps, B_deps)
 
-    model = {
+    model_description = {
         "observations": {
             "o1": {"elements": ["A", "B", "C", "D"], "depends_on": ["s1"]},
         },
@@ -281,4 +390,4 @@ if __name__ == "__main__":
         },
     }
 
-    As, Bs = compile_model(model)
+    model = compile_model(model_description)
