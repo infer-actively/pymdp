@@ -114,6 +114,10 @@ class DistributionIndexer(dict):
         if isinstance(key, int):
             return self.distributions[key]
         else:
+            if key not in self.keys():
+                raise KeyError(
+                    f"Key {key} not found in " + str([k for k in self.keys()])
+                )
             return super().__getitem__(key)
 
     def __iter__(self):
@@ -126,17 +130,19 @@ class Model(dict):
         self,
         likelihoods: list[Distribution],
         transitions: list[Distribution],
-        preferences: list[Distribution],
+        preferred_outcomes: list[Distribution],
         priors: list[Distribution],
+        preferred_states: list[Distribution],
     ):
         super().__init__()
         super().__setitem__("A", likelihoods)
         super().__setitem__("B", transitions)
-        super().__setitem__("C", preferences)
+        super().__setitem__("C", preferred_outcomes)
         super().__setitem__("D", priors)
+        super().__setitem__("H", preferred_states)
 
     def __getattr__(self, key):
-        if key in ["A", "B", "C", "D"]:
+        if key in ["A", "B", "C", "D", "H"]:
             return DistributionIndexer(self[key])
         raise AttributeError("Model only supports attributes A,B,C and D")
 
@@ -237,6 +243,7 @@ def compile_model(config):
     for event, description in transition_events.items():
         arr_shape = [len(description)]
         arr = np.ones(arr_shape) / len(description)
+        event_descr = {event: description}
         priors.append(Distribution(event_descr, data=arr))
 
     likelihoods = []
@@ -250,14 +257,23 @@ def compile_model(config):
         arr = np.zeros(arr_shape)
         likelihoods.append(Distribution(event_descr, batch_descr, arr))
 
-    preferences = []
+    preferred_outcomes = []
     for event, description in likelihood_events.items():
         arr_shape = [len(description)]
         arr = np.zeros(arr_shape)
         event_descr = {event: description}
-        preferences.append(Distribution(event_descr, data=arr))
+        preferred_outcomes.append(Distribution(event_descr, data=arr))
 
-    return Model(likelihoods, transitions, preferences, priors)
+    preferred_states = []
+    for event, description in transition_events.items():
+        arr_shape = [len(description)]
+        arr = np.ones(arr_shape) / len(description)
+        event_descr = {event: description}
+        preferred_states.append(Distribution(event_descr, data=arr))
+
+    return Model(
+        likelihoods, transitions, preferred_outcomes, priors, preferred_states
+    )
 
 
 def get_dependencies(likelihoods, transitions):
