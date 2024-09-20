@@ -520,6 +520,8 @@ class Agent(Module):
             sample_policy = partial(control.sample_policy, self.policies, action_selection=self.action_selection)
             action = vmap(sample_policy)(q_pi, alpha=self.alpha, rng_key=rng_key)
 
+        return action
+
     def encode_multi_actions(self, action_multi):
         """Encode multiple actions to flattened actions"""
         if self.action_maps is None:
