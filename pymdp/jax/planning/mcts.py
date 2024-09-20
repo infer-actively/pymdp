@@ -81,7 +81,7 @@ def make_aif_recurrent_fn():
             discount *= get_prob_single_modality(o_m, qo_m, agent.onehot_obs)
             obs.append(jnp.expand_dims(o_m, 1))
 
-        qs_next_posterior = agent.infer_states(obs, None, qs_next_pi, None)
+        qs_next_posterior = agent.infer_states(obs, qs_next_pi)
         # remove time dimension
         # TODO: update infer_states to not expand along time dimension when needed
         qs_next_posterior = jtu.tree_map(lambda x: x.squeeze(1), qs_next_posterior)

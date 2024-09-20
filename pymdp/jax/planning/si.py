@@ -214,7 +214,7 @@ def expand_node(
 
     stacked_observations = stack_leaves(observations)
     stacked_qs_priors = stack_leaves(qs_priors)
-    qs_next = vmap(agent.infer_states)(stacked_observations, None, stacked_qs_priors, None)
+    qs_next = vmap(agent.infer_states)(stacked_observations, stacked_qs_priors)
 
     for idx, observation in enumerate(observations):
         observation_node = {
