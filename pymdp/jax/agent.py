@@ -162,7 +162,7 @@ class Agent(Module):
         if D is not None:
             D = [jnp.array(d.data) if isinstance(d, Distribution) else d for d in D]
         if E is not None:
-            E = [jnp.array(e.data) if isinstance(e, Distribution) else e for e in E]
+            E = jnp.array(E.data) if isinstance(E, Distribution) else E
         if H is not None:
             H = [jnp.array(h.data) if isinstance(h, Distribution) else h for h in H]
 
