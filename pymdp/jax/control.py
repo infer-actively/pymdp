@@ -215,7 +215,7 @@ def compute_info_gain(qs, qo, A, A_dependencies):
         
     return jtu.tree_reduce(lambda x,y: x+y, info_gains_per_modality)
 
-def compute_expected_utility(t, qo, C):
+def compute_expected_utility(qo, C, t=0):
     
     util = 0.
     for o_m, C_m in zip(qo, C):
@@ -300,10 +300,10 @@ def compute_G_policy(qs_init, A, B, C, pA, pB, A_dependencies, B_dependencies, p
 
         info_gain = compute_info_gain(qs_next, qo, A, A_dependencies) if use_states_info_gain else 0.
 
-        utility = compute_expected_utility(qo, C) if use_utility else 0.
+        utility = compute_expected_utility(qo, C, t) if use_utility else 0.
 
-        param_info_gain = calc_pA_info_gain(pA, qo, qs_next) if use_param_info_gain else 0.
-        param_info_gain += calc_pB_info_gain(pB, qs_next, qs, policy_i[t]) if use_param_info_gain else 0.
+        param_info_gain = calc_pA_info_gain(pA, qo, qs_next, A_dependencies) if use_param_info_gain else 0.
+        param_info_gain += calc_pB_info_gain(pB, qs_next, qs, B_dependencies, policy_i[t]) if use_param_info_gain else 0.
 
         neg_G += info_gain + utility + param_info_gain
 
@@ -331,7 +331,7 @@ def compute_G_policy_inductive(qs_init, A, B, C, pA, pB, A_dependencies, B_depen
 
         info_gain = compute_info_gain(qs_next, qo, A, A_dependencies) if use_states_info_gain else 0.
 
-        utility = compute_expected_utility(t, qo, C) if use_utility else 0.
+        utility = compute_expected_utility(qo, C, t) if use_utility else 0.
 
         inductive_value = calc_inductive_value_t(qs_init, qs_next, I, epsilon=inductive_epsilon) if use_inductive else 0.
 
