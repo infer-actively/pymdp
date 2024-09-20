@@ -117,8 +117,8 @@ class Agent(Module):
         control_fac_idx=None,
         policy_len=1,
         policies=None,
-        gamma=16.0,
-        alpha=16.0,
+        gamma=1.0,
+        alpha=1.0,
         inductive_depth=1,
         inductive_threshold=0.1,
         inductive_epsilon=1e-3,
@@ -128,7 +128,7 @@ class Agent(Module):
         use_inductive=False,
         onehot_obs=False,
         action_selection="deterministic",
-        sampling_mode="marginal",
+        sampling_mode="full",
         inference_algo="fpi",
         num_iter=16,
         apply_batch=True,
@@ -185,9 +185,9 @@ class Agent(Module):
             self.sampling_mode = "full"
 
         # extract shapes from A and B
-        batch_dim = lambda x: x.shape[0] if apply_batch else x.shape[1]
-        self.num_states = jtu.tree_map(batch_dim, B)
-        self.num_obs = jtu.tree_map(batch_dim, A)
+        batch_dim_fn = lambda x: x.shape[0] if apply_batch else x.shape[1]
+        self.num_states = jtu.tree_map(batch_dim_fn, B)
+        self.num_obs = jtu.tree_map(batch_dim_fn, A)
         self.num_controls = [B[f].shape[-1] for f in range(self.num_factors)]
 
         # static parameters
@@ -295,8 +295,70 @@ class Agent(Module):
         # validate model
         self._validate()
 
-    @vmap
-    def infer_states(self, observations, past_actions, empirical_prior, qs_hist, mask=None):
+    @property
+    def unique_multiactions(self):
+        size = pymath.prod(self.num_controls)
+        return jnp.unique(self.policies[:, 0], axis=0, size=size, fill_value=-1)
+
+    def infer_parameters(self, beliefs_A, outcomes, actions, beliefs_B=None, lr_pA=1., lr_pB=1., **kwargs):
+        agent = self
+        beliefs_B = beliefs_A if beliefs_B is None else beliefs_B
+        if self.inference_algo == 'ovf':
+            smoothed_marginals_and_joints = vmap(inference.smoothing_ovf)(beliefs_A, self.B, actions)
+            marginal_beliefs = smoothed_marginals_and_joints[0]
+            joint_beliefs = smoothed_marginals_and_joints[1]
+        else:
+            marginal_beliefs = beliefs_A
+            if self.learn_B:
+                nf = len(beliefs_B)
+                joint_fn = lambda f: [beliefs_B[f][:, 1:]] + [beliefs_B[f_idx][:, :-1] for f_idx in self.B_dependencies[f]]
+                joint_beliefs = jtu.tree_map(joint_fn, list(range(nf)))
+
+        if self.learn_A:
+            update_A = partial(
+                learning.update_obs_likelihood_dirichlet,
+                A_dependencies=self.A_dependencies,
+                num_obs=self.num_obs,
+                onehot_obs=self.onehot_obs,
+            )
+            
+            lr = jnp.broadcast_to(lr_pA, (self.batch_size,))
+            qA, E_qA = vmap(update_A)(
+                self.pA,
+                self.A,
+                outcomes,
+                marginal_beliefs,
+                lr=lr,
+            )
+            
+            agent = tree_at(lambda x: (x.A, x.pA), agent, (E_qA, qA))
+            
+        if self.learn_B:
+            assert beliefs_B[0].shape[1] == actions.shape[1] + 1
+            update_B = partial(
+                learning.update_state_transition_dirichlet,
+                num_controls=self.num_controls
+            )
+
+            lr = jnp.broadcast_to(lr_pB, (self.batch_size,))
+            qB, E_qB = vmap(update_B)(
+                self.pB,
+                joint_beliefs,
+                actions,
+                lr=lr
+            )
+            
+            # if you have updated your beliefs about transitions, you need to re-compute the I matrix used for inductive inferenece
+            if self.use_inductive and self.H is not None:
+                I_updated = vmap(control.generate_I_matrix)(self.H, E_qB, self.inductive_threshold, self.inductive_depth)
+            else:
+                I_updated = self.I
+
+            agent = tree_at(lambda x: (x.B, x.pB, x.I), agent, (E_qB, qB, I_updated))
+
+        return agent
+    
+    def infer_states(self, observations, empirical_prior, *, past_actions=None, qs_hist=None, mask=None):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
@@ -331,22 +393,39 @@ class Agent(Module):
                 o_vec[i] = m * o_vec[i] + (1 - m) * jnp.ones_like(o_vec[i]) / self.num_obs[i]
                 A[i] = m * A[i] + (1 - m) * jnp.ones_like(A[i]) / self.num_obs[i]
 
-        output = inference.update_posterior_states(
-            A,
-            self.B,
-            o_vec,
-            past_actions,
-            prior=empirical_prior,
-            qs_hist=qs_hist,
+        infer_states = partial(
+            inference.update_posterior_states,
             A_dependencies=self.A_dependencies,
             B_dependencies=self.B_dependencies,
             num_iter=self.num_iter,
             method=self.inference_algo,
         )
+        
+        output = vmap(infer_states)(
+            A,
+            self.B,
+            o_vec,
+            past_actions,
+            prior=empirical_prior,
+            qs_hist=qs_hist
+        )
 
         return output
 
-    @vmap
+    def update_empirical_prior(self, action, qs):
+        # return empirical_prior, and the history of posterior beliefs (filtering distributions) held about hidden states at times 1, 2 ... t
+
+        # this computation of the predictive prior is correct only for fully factorised Bs.
+        if self.inference_algo in ['mmp', 'vmp']:
+            # in the case of the 'mmp' or 'vmp' we have to use D as prior parameter for infer states
+            pred = self.D
+        else:
+            qs_last = jtu.tree_map( lambda x: x[:, -1], qs)
+            propagate_beliefs = partial(control.compute_expected_state, B_dependencies=self.B_dependencies)
+            pred = vmap(propagate_beliefs)(qs_last, self.B, action)
+        
+        return (pred, qs)
+
     def infer_policies(self, qs: List):
         """
         Perform policy inference by optimizing a posterior (categorical) distribution over policies.
@@ -362,147 +441,33 @@ class Agent(Module):
             Negative expected free energies of each policy, i.e. a vector containing one negative expected free energy per policy.
         """
 
-        latest_belief = jtu.tree_map(lambda x: x[-1], qs)  # only get the posterior belief held at the current timepoint
-        q_pi, G = control.update_posterior_policies_inductive(
+        latest_belief = jtu.tree_map(lambda x: x[:, -1], qs) # only get the posterior belief held at the current timepoint
+        infer_policies = partial(
+            control.update_posterior_policies_inductive,
             self.policies,
-            latest_belief,
+            A_dependencies=self.A_dependencies,
+            B_dependencies=self.B_dependencies,
+            use_utility=self.use_utility,
+            use_states_info_gain=self.use_states_info_gain,
+            use_param_info_gain=self.use_param_info_gain,
+            use_inductive=self.use_inductive
+        )
+
+        q_pi, G = vmap(infer_policies)(
+            latest_belief, 
             self.A,
             self.B,
             self.C,
             self.E,
             self.pA,
             self.pB,
-            A_dependencies=self.A_dependencies,
-            B_dependencies=self.B_dependencies,
-            I=self.I,
+            I = self.I,
             gamma=self.gamma,
-            inductive_epsilon=self.inductive_epsilon,
-            use_utility=self.use_utility,
-            use_states_info_gain=self.use_states_info_gain,
-            use_param_info_gain=self.use_param_info_gain,
-            use_inductive=self.use_inductive,
+            inductive_epsilon=self.inductive_epsilon
         )
 
         return q_pi, G
-
-    @vmap
-    def infer_parameters(
-        self,
-        beliefs_A,
-        outcomes,
-        actions,
-        beliefs_B=None,
-        lr_pA=1.0,
-        lr_pB=1.0,
-        **kwargs,
-    ):
-        agent = self
-        beliefs_B = beliefs_A if beliefs_B is None else beliefs_B
-        if self.inference_algo == "ovf":
-            smoothed_marginals_and_joints = inference.smoothing_ovf(beliefs_A, self.B, actions)
-            marginal_beliefs = smoothed_marginals_and_joints[0]
-            joint_beliefs = smoothed_marginals_and_joints[1]
-        else:
-            marginal_beliefs = beliefs_A
-            if self.learn_B:
-                nf = len(beliefs_B)
-                joint_fn = lambda f: [beliefs_B[f][1:]] + [beliefs_B[f_idx][:-1] for f_idx in self.B_dependencies[f]]
-                joint_beliefs = jtu.tree_map(joint_fn, list(range(nf)))
-
-        if self.learn_A:
-            qA, E_qA = learning.update_obs_likelihood_dirichlet(
-                self.pA,
-                outcomes,
-                marginal_beliefs,
-                A_dependencies=self.A_dependencies,
-                num_obs=self.num_obs,
-                onehot_obs=self.onehot_obs,
-                lr=lr_pA,
-            )
-
-            agent = tree_at(lambda x: (x.A, x.pA), agent, (E_qA, qA))
-
-        if self.learn_B:
-            assert beliefs_B[0].shape[0] == actions.shape[0] + 1
-            qB, E_qB = learning.update_state_transition_dirichlet(
-                self.pB,
-                joint_beliefs,
-                actions,
-                num_controls=self.num_controls,
-                lr=lr_pB,
-            )
-
-            # if you have updated your beliefs about transitions, you need to re-compute the I matrix used for inductive inferenece
-            if self.use_inductive and self.H is not None:
-                I_updated = control.generate_I_matrix(
-                    self.H,
-                    E_qB,
-                    self.inductive_threshold,
-                    self.inductive_depth,
-                )
-            else:
-                I_updated = self.I
-
-            agent = tree_at(lambda x: (x.B, x.pB, x.I), agent, (E_qB, qB, I_updated))
-
-        # if self.learn_C:
-        #     self.qC = learning.update_C(self.C, *args, **kwargs)
-        #     self.C = jtu.tree_map(lambda x: maths.dirichlet_expected_value(x), self.qC)
-        # if self.learn_D:
-        #     self.qD = learning.update_D(self.D, *args, **kwargs)
-        #     self.D = jtu.tree_map(lambda x: maths.dirichlet_expected_value(x), self.qD)
-        # if self.learn_E:
-        #     self.qE = learning.update_E(self.E, *args, **kwargs)
-        #     self.E = maths.dirichlet_expected_value(self.qE)
-
-        return agent
-
-    @partial(vmap, in_axes=(0, 0, 0))
-    def infer_empirical_prior(self, action, qs):
-        # return empirical_prior, and the history of posterior beliefs (filtering distributions) held about hidden states at times 1, 2 ... t
-        qs_last = jtu.tree_map(lambda x: x[-1], qs)
-        # this computation of the predictive prior is correct only for fully factorised Bs.
-        pred = control.compute_expected_state(qs_last, self.B, action, B_dependencies=self.B_dependencies)
-        return (pred, qs)
-
-    @vmap
-    def sample_action(self, q_pi: Array, rng_key=None):
-        """
-        Sample or select a discrete action from the posterior over control states.
-
-        Returns
-        ----------
-        action: 1D ``jax.numpy.ndarray``
-            Vector containing the indices of the actions for each control factor
-        action_probs: 2D ``jax.numpy.ndarray``
-            Array of action probabilities
-        """
-
-        if (rng_key is None) and (self.action_selection == "stochastic"):
-            raise ValueError("Please provide a random number generator key to sample actions stochastically")
-
-        if self.sampling_mode == "marginal":
-            action = control.sample_action(
-                q_pi,
-                self.policies,
-                self.num_controls,
-                self.action_selection,
-                self.alpha,
-                rng_key=rng_key,
-            )
-        elif self.sampling_mode == "full":
-            action = control.sample_policy(
-                q_pi,
-                self.policies,
-                self.num_controls,
-                self.action_selection,
-                self.alpha,
-                rng_key=rng_key,
-            )
-
-        return action
-
-    @vmap
+    
     def multiaction_probabilities(self, q_pi: Array):
         """
         Compute probabilities of unique multi-actions from the posterior over policies.
@@ -519,7 +484,8 @@ class Agent(Module):
         """
 
         if self.sampling_mode == "marginal":
-            marginals = control.get_marginals(q_pi, self.policies, self.num_controls)
+            get_marginals = partial(control.get_marginals, policies=self.policies, num_controls=self.num_controls)
+            marginals = get_marginals(q_pi)
             outer = lambda a, b: jnp.outer(a, b).reshape(-1)
             marginals = jtu.tree_reduce(outer, marginals)
 
@@ -528,24 +494,31 @@ class Agent(Module):
                 self.policies[:, 0] == jnp.expand_dims(self.unique_multiactions, -2),
                 -1,
             )
-            marginals = jnp.where(locs, q_pi, 0.0).sum(-1)
+            get_marginals = lambda x: jnp.where(locs, x, 0.).sum(-1)
+            marginals = vmap(get_marginals)(q_pi)
 
-        # assert jnp.isclose(jnp.sum(marginals), 1.)  # this fails inside scan
         return marginals
 
-    def decode_multi_actions(self, action):
-        """Decode flattened actions to multiple actions"""
-        if self.action_maps is None:
-            return action
+    def sample_action(self, q_pi: Array, rng_key=None):
+        """
+        Sample or select a discrete action from the posterior over control states.
+        
+        Returns
+        ----------
+        action: 1D ``jax.numpy.ndarray``
+            Vector containing the indices of the actions for each control factor
+        action_probs: 2D ``jax.numpy.ndarray``
+            Array of action probabilities
+        """
+        if (rng_key is None) and (self.action_selection == "stochastic"):
+            raise ValueError("Please provide a random number generator key to sample actions stochastically")
 
-        action_multi = jnp.zeros((self.batch_size, len(self.num_controls_multi))).astype(action.dtype)
-        for f, action_map in enumerate(self.action_maps):
-            if action_map["multi_dependency"] == []:
-                continue
-
-            action_multi_f = utils.index_to_combination(action[..., f], action_map["multi_dims"])
-            action_multi = action_multi.at[..., action_map["multi_dependency"]].set(action_multi_f)
-        return action_multi
+        if self.sampling_mode == "marginal":
+            sample_action = partial(control.sample_action, self.policies, self.num_controls, action_selection=self.action_selection)
+            action = vmap(sample_action)(q_pi, alpha=self.alpha, rng_key=rng_key)
+        elif self.sampling_mode == "full":
+            sample_policy = partial(control.sample_policy, self.policies, action_selection=self.action_selection)
+            action = vmap(sample_policy)(q_pi, alpha=self.alpha, rng_key=rng_key)
 
     def encode_multi_actions(self, action_multi):
         """Encode multiple actions to flattened actions"""
@@ -682,8 +655,3 @@ class Agent(Module):
             assert (
                 self.num_controls[factor_idx] > 1
             ), "Control factor (and B matrix) dimensions are not consistent with user-given control_fac_idx"
-
-    @property
-    def unique_multiactions(self):
-        size = pymath.prod(self.num_controls)
-        return jnp.unique(self.policies[:, 0], axis=0, size=size, fill_value=-1)

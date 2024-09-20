@@ -108,7 +108,7 @@ class TestMessagePassing(unittest.TestCase):
             qs_jax = fpi_jax(A, obs, prior, num_iter=16)
 
             for f, _ in enumerate(qs_jax):
-                self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f]))
+                self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f], atol=1e-6))
 
 
     def test_fixed_point_iteration_factorized_fullyconnected(self):

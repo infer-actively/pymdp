@@ -46,7 +46,7 @@ def get_marginals(q_pi, policies, num_controls):
     
     return action_marginals
 
-def sample_action(q_pi, policies, num_controls, action_selection="deterministic", alpha=16.0, rng_key=None):
+def sample_action(policies, num_controls, q_pi, action_selection="deterministic", alpha=16.0, rng_key=None):
     """
     Samples an action from posterior marginals, one action per control factor.
 
@@ -85,7 +85,7 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
 
     return jnp.array(selected_policy)
 
-def sample_policy(q_pi, policies, num_controls, action_selection="deterministic", alpha = 16.0, rng_key=None):
+def sample_policy(policies, q_pi, action_selection="deterministic", alpha = 16.0, rng_key=None):
 
     if action_selection == "deterministic":
         policy_idx = jnp.argmax(q_pi)
@@ -204,10 +204,8 @@ def compute_info_gain(qs, qo, A, A_dependencies):
     """
 
     def compute_info_gain_for_modality(qo_m, A_m, m):
-        H_qo = - xlogy(qo_m, qo_m).sum()
-        # H_qo = - (qo_m * log_stable(qo_m)).sum()
-        H_A_m = - xlogy(A_m, A_m).sum(0)
-        # H_A_m = - (A_m * log_stable(A_m)).sum(0)
+        H_qo = stable_entropy(qo_m)
+        H_A_m = - stable_xlogx(A_m).sum(0)
         deps = A_dependencies[m]
         relevant_factors = [qs[idx] for idx in deps]
         qs_H_A_m = factor_dot(H_A_m, relevant_factors)
@@ -217,23 +215,14 @@ def compute_info_gain(qs, qo, A, A_dependencies):
         
     return jtu.tree_reduce(lambda x,y: x+y, info_gains_per_modality)
 
-# qs_H_A = 0 # expected entropy of the likelihood, under Q(s)
-# H_qo = 0 # marginal entropy of Q(o)
-# for a, o, deps in zip(A, qo, A_dependencies):
-#     relevant_factors = jtu.tree_map(lambda idx: qs[idx], deps)
-#     qs_joint_relevant = relevant_factors[0]
-#     for q in relevant_factors[1:]:
-#         qs_joint_relevant = jnp.expand_dims(qs_joint_relevant, -1) * q
-#     H_A_m = -(a * log_stable(a)).sum(0)
-#     qs_H_A += (H_A_m * qs_joint_relevant).sum()
-
-#     H_qo -= (o * log_stable(o)).sum()
-
-def compute_expected_utility(qo, C):
+def compute_expected_utility(t, qo, C):
     
     util = 0.
     for o_m, C_m in zip(qo, C):
-        util += (o_m * C_m).sum()
+        if C_m.ndim > 1:
+            util += (o_m * C_m[t]).sum()
+        else:
+            util += (o_m * C_m).sum()
     
     return util
 
@@ -258,13 +247,17 @@ def calc_pA_info_gain(pA, qo, qs, A_dependencies):
         Surprise (about Dirichlet parameters) expected for the pair of posterior predictive distributions ``qo`` and ``qs``
     """
 
-    wA = lambda pa: spm_wnorm(pa) * (pa > 0.)
-    fd = lambda x, i: factor_dot(x, [s for f, s in enumerate(qs) if f in A_dependencies[i]], keep_dims=(0,))[..., None]
+    def infogain_per_modality(pa_m, qo_m, m):
+        wa_m = spm_wnorm(pa_m) * (pa_m > 0.)
+        fd = factor_dot(wa_m, [s for f, s in enumerate(qs) if f in A_dependencies[m]], keep_dims=(0,))[..., None]
+        return qo_m.dot(fd)
+
     pA_infogain_per_modality = jtu.tree_map(
-        lambda pa, qo, m: qo.dot(fd( wA(pa), m)), pA, qo, list(range(len(qo)))
+        infogain_per_modality, pA, qo, list(range(len(qo)))
     )
-    infogain_pA = jtu.tree_reduce(lambda x, y: x + y, pA_infogain_per_modality)[0]
-    return infogain_pA
+    
+    infogain_pA = jtu.tree_reduce(lambda x, y: x + y, pA_infogain_per_modality)
+    return infogain_pA.squeeze(-1)
 
 def calc_pB_info_gain(pB, qs_t, qs_t_minus_1, B_dependencies, u_t_minus_1):
     """
@@ -338,12 +331,15 @@ def compute_G_policy_inductive(qs_init, A, B, C, pA, pB, A_dependencies, B_depen
 
         info_gain = compute_info_gain(qs_next, qo, A, A_dependencies) if use_states_info_gain else 0.
 
-        utility = compute_expected_utility(qo, C) if use_utility else 0.
+        utility = compute_expected_utility(t, qo, C) if use_utility else 0.
 
         inductive_value = calc_inductive_value_t(qs_init, qs_next, I, epsilon=inductive_epsilon) if use_inductive else 0.
 
-        param_info_gain = calc_pA_info_gain(pA, qo, qs_next, A_dependencies) if use_param_info_gain else 0.
-        param_info_gain += calc_pB_info_gain(pB, qs_next, qs, B_dependencies, policy_i[t]) if use_param_info_gain else 0.
+        param_info_gain = 0.
+        if pA is not None:
+            param_info_gain += calc_pA_info_gain(pA, qo, qs_next, A_dependencies) if use_param_info_gain else 0.
+        if pB is not None:
+            param_info_gain += calc_pB_info_gain(pB, qs_next, qs, B_dependencies, policy_i[t]) if use_param_info_gain else 0.
 
         neg_G += info_gain + utility - param_info_gain + inductive_value
 

@@ -5,7 +5,6 @@
 __author__: Dimitrije Markovic, Conor Heins
 """
 
-import os
 import unittest
 
 import numpy as np
@@ -15,7 +14,8 @@ from jax import nn
 
 from pymdp.learning import update_obs_likelihood_dirichlet as update_pA_numpy
 from pymdp.learning import update_obs_likelihood_dirichlet_factorized as update_pA_numpy_factorized
-from pymdp import utils, maths
+from pymdp.jax.learning import update_obs_likelihood_dirichlet as update_pA_jax
+from pymdp import utils
 
 from pymdp.learning import update_state_likelihood_dirichlet as update_pB_numpy
 from pymdp.learning import update_state_likelihood_dirichlet_interactions as update_pB_interactions_numpy
@@ -60,11 +60,19 @@ class TestLearningJax(unittest.TestCase):
             qA_np_test = update_pA_numpy(pA_np, A_np, obs_np, qs_np, lr=l_rate)
 
             pA_jax = jtu.tree_map(lambda x: jnp.array(x), list(pA_np))
+            A_jax = jtu.tree_map(lambda x: jnp.array(x), list(A_np))
             obs_jax = jtu.tree_map(lambda x: jnp.array(x)[None], list(obs_np))
             qs_jax = jtu.tree_map(lambda x: jnp.array(x)[None], list(qs_np))
 
             qA_jax_test, E_qA_jax_test = update_pA_jax(
-                pA_jax, obs_jax, qs_jax, A_dependencies=A_dependencies, onehot_obs=True, num_obs=num_obs, lr=l_rate
+                pA_jax,
+                A_jax,
+                obs_jax,
+                qs_jax,
+                A_dependencies=A_dependencies,
+                onehot_obs=True,
+                num_obs=num_obs,
+                lr=l_rate
             )
 
             for modality, obs_dim in enumerate(num_obs):
@@ -104,11 +112,19 @@ class TestLearningJax(unittest.TestCase):
             qA_np_test = update_pA_numpy_factorized(pA_np, A_np, obs_np, qs_np, A_dependencies, lr=l_rate)
 
             pA_jax = jtu.tree_map(lambda x: jnp.array(x), list(pA_np))
+            A_jax = jtu.tree_map(lambda x: jnp.array(x), list(A_np))
             obs_jax = jtu.tree_map(lambda x: jnp.array(x)[None], list(obs_np))
             qs_jax = jtu.tree_map(lambda x: jnp.array(x)[None], list(qs_np))
 
             qA_jax_test, E_qA_jax_test = update_pA_jax(
-                pA_jax, obs_jax, qs_jax, A_dependencies=A_dependencies, onehot_obs=True, num_obs=num_obs, lr=l_rate
+                pA_jax,
+                A_jax,
+                obs_jax,
+                qs_jax,
+                A_dependencies=A_dependencies,
+                onehot_obs=True,
+                num_obs=num_obs,
+                lr=l_rate
             )
 
             for modality, obs_dim in enumerate(num_obs):
