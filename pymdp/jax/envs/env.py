@@ -59,15 +59,15 @@ class PyMDPEnv(Module):
             state_probs = jtu.tree_map(_select_probs, self.params["B"], self.dependencies["B"], actions)
 
             keys = list(jr.split(key_state, len(state_probs)))
-            new_states = jtu.tree_map(cat_sample, keys, state_probs)
+            new_state = jtu.tree_map(cat_sample, keys, state_probs)
         else:
-            new_states = state
+            new_state = state
 
-        _select_probs = partial(select_probs, new_states)
+        _select_probs = partial(select_probs, new_state)
         obs_probs = jtu.tree_map(_select_probs, self.params["A"], self.dependencies["A"])
 
         keys = list(jr.split(key_obs, len(obs_probs)))
         new_obs = jtu.tree_map(cat_sample, keys, obs_probs)
         new_obs = jtu.tree_map(lambda x: jnp.expand_dims(x, -1), new_obs)
 
-        return new_obs, tree_at(lambda x: (x.states), self, [new_states])
+        return new_obs, tree_at(lambda x: (x.state), self, new_state)

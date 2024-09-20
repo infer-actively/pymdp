@@ -7,7 +7,7 @@ from pymdp.jax.agent import Agent
 from pymdp.jax.envs.env import PyMDPEnv
 
 
-def rollout(agent: Agent, env: PyMDPEnv, num_timesteps: int, rng_key: jr.PRNGKey, policy_search = None):
+def rollout(agent: Agent, env: PyMDPEnv, num_timesteps: int, rng_key: jr.PRNGKey, policy_search=None):
     """
     Rollout an agent in an environment for a number of timesteps.
 
@@ -39,9 +39,11 @@ def rollout(agent: Agent, env: PyMDPEnv, num_timesteps: int, rng_key: jr.PRNGKey
     batch_size = agent.batch_size
 
     if policy_search is None:
+
         def default_policy_search(agent, qs, rng_key):
             qpi, _ = agent.infer_policies(qs)
             return qpi, None
+
         policy_search = default_policy_search
 
     def step_fn(carry, x):
@@ -56,11 +58,9 @@ def rollout(agent: Agent, env: PyMDPEnv, num_timesteps: int, rng_key: jr.PRNGKey
         # so we don't need past actions or qs_hist
         qs = agent.infer_states(
             observations=observation_t,
-            past_actions=None,
             empirical_prior=empirical_prior,
-            qs_hist=None,
         )
-      
+
         rng_key, key = jr.split(rng_key)
         qpi, _ = policy_search(agent, qs, key)
 
@@ -72,7 +72,7 @@ def rollout(agent: Agent, env: PyMDPEnv, num_timesteps: int, rng_key: jr.PRNGKey
         rng_key = keys[0]
         observation_t, env = env.step(rng_key=keys[1:], actions=action_t)
 
-        empirical_prior, qs = agent.infer_empirical_prior(action_t, qs)
+        empirical_prior, qs = agent.update_empirical_prior(action_t, qs)
 
         carry = {
             "action_t": action_t,
