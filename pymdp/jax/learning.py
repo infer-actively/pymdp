@@ -8,7 +8,7 @@ from jaxtyping import Array
 from jax import vmap, nn
 
 def update_obs_likelihood_dirichlet_m(pA_m, obs_m, qs, dependencies_m, lr=1.0):
-    """ JAX version of ``pymdp.learning.update_obs_likelihood_dirichlet_m`` """
+    """JAX version of ``pymdp.learning.update_obs_likelihood_dirichlet_m``"""
     # pA_m - parameters of the dirichlet from the prior
     # pA_m.shape = (no_m x num_states[k] x num_states[j] x ... x num_states[n]) where (k, j, n) are indices of the hidden state factors that are parents of modality m
 
