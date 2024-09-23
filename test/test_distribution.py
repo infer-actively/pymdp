@@ -99,13 +99,13 @@ class TestDists(unittest.TestCase):
                 },
             },
         }
-        like, trans = distribution.compile_model(model_example)
-        self.assertEqual(len(trans), 2)
-        self.assertEqual(len(like), 2)
-        self.assertEqual(trans[0].data.shape, (3, 3, 2, 2, 2))
-        self.assertEqual(trans[1].data.shape, (2, 2, 2))
-        self.assertEqual(like[0].data.shape, (10, 3))
-        self.assertEqual(like[1].data.shape, (2, 3))
+        model = distribution.compile_model(model_example)
+        self.assertEqual(len(model.B), 2)
+        self.assertEqual(len(model.A), 2)
+        self.assertEqual(model.B[0].data.shape, (3, 3, 2, 2, 2))
+        self.assertEqual(model.B[1].data.shape, (2, 2, 2))
+        self.assertEqual(model.A[0].data.shape, (10, 3))
+        self.assertEqual(model.A[1].data.shape, (2, 3))
         self.assertIsNotNone
-        self.assertIsNotNone(like[0][:, "II"])
-        self.assertIsNotNone(like[1][1, :])
+        self.assertIsNotNone(model.A[0][:, "II"])
+        self.assertIsNotNone(model.A[1][1, :])
