@@ -35,7 +35,7 @@ dependencies = [
 [project.optional-dependencies]
 gpu = [
     'jax[cuda12]>=0.3.4',
-    'jaxlib[12]>=0.3.4',
+    'jaxlib[cuda12]>=0.3.4',
 ]
 
 [project.urls]
