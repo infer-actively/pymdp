@@ -89,8 +89,8 @@ class TestAgentJax(unittest.TestCase):
         observation = [np.random.randint(0, d, size=(1, 1)) for d in agent.num_obs]
         qs_hist = jtu.tree_map(lambda x: jnp.expand_dims(x, 0), agent.D)
 
-        prior, _ = agent.infer_empirical_prior(action, qs_hist)
-        qs = agent.infer_states(observation, None, prior, None)
+        prior, _ = agent.update_empirical_prior(action, qs_hist)
+        qs = agent.infer_states(observation, prior)
 
         q_pi, G = agent.infer_policies(qs)
         action = agent.sample_action(q_pi)
