@@ -7,8 +7,8 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 """
 
-from pymdp.envs import Env
-from pymdp import utils, maths
+from pymdp.legacy.envs import Env
+from pymdp.legacy import utils, maths
 import numpy as np
 
 LOCATION_FACTOR_ID = 0

@@ -10,8 +10,8 @@ import unittest
 
 import numpy as np
 
-from pymdp import utils, maths
-from pymdp import control
+from pymdp.legacy import utils, maths
+from pymdp.legacy import control
 
 class TestControl(unittest.TestCase):
 

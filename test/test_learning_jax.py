@@ -12,16 +12,16 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 from jax import nn
 
-from pymdp.learning import update_obs_likelihood_dirichlet as update_pA_numpy
-from pymdp.learning import update_obs_likelihood_dirichlet_factorized as update_pA_numpy_factorized
-from pymdp.jax.learning import update_obs_likelihood_dirichlet as update_pA_jax
-from pymdp import utils
+from pymdp.legacy.learning import update_obs_likelihood_dirichlet as update_pA_numpy
+from pymdp.legacy.learning import update_obs_likelihood_dirichlet_factorized as update_pA_numpy_factorized
+from pymdp.learning import update_obs_likelihood_dirichlet as update_pA_jax
+from pymdp.legacy import utils
 
-from pymdp.learning import update_state_likelihood_dirichlet as update_pB_numpy
-from pymdp.learning import update_state_likelihood_dirichlet_interactions as update_pB_interactions_numpy
+from pymdp.legacy.learning import update_state_likelihood_dirichlet as update_pB_numpy
+from pymdp.legacy.learning import update_state_likelihood_dirichlet_interactions as update_pB_interactions_numpy
 
-from pymdp.jax.learning import update_obs_likelihood_dirichlet as update_pA_jax
-from pymdp.jax.learning import update_state_transition_dirichlet as update_pB_jax
+from pymdp.learning import update_obs_likelihood_dirichlet as update_pA_jax
+from pymdp.learning import update_state_transition_dirichlet as update_pB_jax
 
 
 class TestLearningJax(unittest.TestCase):

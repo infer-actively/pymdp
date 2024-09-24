@@ -19,6 +19,6 @@ same general usage as above.
 
     pymdp.envs.GridWorldEnv
     pymdp.envs.DGridWorldEnv
-    pymdp.envs.VisualForagingEnv
+    pymdp.envs.SceneConstruction
     pymdp.envs.TMazeEnv
     pymdp.envs.TMazeEnvNullOutcome

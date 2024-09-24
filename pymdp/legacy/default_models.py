@@ -1,6 +1,6 @@
 
 import numpy as np
-from pymdp import utils, maths
+from pymdp.legacy import utils, maths
 
 def generate_epistemic_MAB_model():
     '''

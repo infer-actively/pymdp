@@ -4,9 +4,9 @@ import unittest
 import numpy as np
 from scipy.io import loadmat
 
-from pymdp.agent import Agent
-from pymdp.utils import to_obj_array, build_xn_vn_array, get_model_dimensions, convert_observation_array
-from pymdp.maths import dirichlet_log_evidence
+from pymdp.legacy.agent import Agent
+from pymdp.legacy.utils import to_obj_array, build_xn_vn_array, get_model_dimensions, convert_observation_array
+from pymdp.legacy.maths import dirichlet_log_evidence
 
 DATA_PATH = "test/matlab_crossval/output/"
 

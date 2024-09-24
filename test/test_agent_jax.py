@@ -13,10 +13,10 @@ import jax.numpy as jnp
 from jax import vmap, nn, random
 import jax.tree_util as jtu
 
-from pymdp import utils
-from pymdp.jax.agent import Agent
-from pymdp.jax.maths import compute_log_likelihood_single_modality
-from pymdp.jax.utils import norm_dist
+from pymdp.legacy import utils
+from pymdp.agent import Agent
+from pymdp.maths import compute_log_likelihood_single_modality
+from pymdp.utils import norm_dist
 from equinox import Module
 from typing import Any, List
 

@@ -1,20 +1,26 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-""" Agent Class
+""" Agent Class implementation in Jax
 
-__author__: Conor Heins, Alexander Tschantz, Daphne Demekas, Brennan Klein
+__author__: Conor Heins, Dimitrije Markovic, Alexander Tschantz, Daphne Demekas, Brennan Klein
 
 """
 
-import warnings
-import numpy as np
-from pymdp import inference, control, learning
-from pymdp import utils, maths
-import copy
+import math as pymath
+import jax.numpy as jnp
+import jax.tree_util as jtu
+from jax import nn, vmap, random
+from pymdp import inference, control, learning, utils, maths
+from pymdp.distribution import Distribution, get_dependencies
+from equinox import Module, field, tree_at
 
-class Agent(object):
-    """ 
+from typing import List, Optional, Union
+from jaxtyping import Array
+from functools import partial
+
+class Agent(Module):
+    """
     The Agent class, the highest-level API that wraps together processes for action, perception, and learning under active inference.
 
     The basic usage is as follows:
@@ -22,7 +28,7 @@ class Agent(object):
     >>> my_agent = Agent(A = A, B = C, <more_params>)
     >>> observation = env.step(initial_action)
     >>> qs = my_agent.infer_states(observation)
-    >>> q_pi, G = my_agent.infer_policies()
+    >>> q_pi, G = my_agent.infer_policies(qs)
     >>> next_action = my_agent.sample_action()
     >>> next_observation = env.step(next_action)
 
@@ -30,589 +36,401 @@ class Agent(object):
     observations and takes actions as inputs, would entail a dynamic agent-environment interaction.
     """
 
+    A: List[Array]
+    B: List[Array]
+    C: List[Array]
+    D: List[Array]
+    E: Array
+    pA: List[Array]
+    pB: List[Array]
+    gamma: Array
+    alpha: Array
+
+    # threshold for inductive inference (the threshold for pruning transitions that are below a certain probability)
+    inductive_threshold: Array
+    # epsilon for inductive inference (trade-off/weight for how much inductive value contributes to EFE of policies)
+    inductive_epsilon: Array
+    # H vectors (one per hidden state factor) used for inductive inference -- these encode goal states or constraints
+    H: List[Array]
+    # I matrices (one per hidden state factor) used for inductive inference -- these encode the 'reachability' matrices of goal states encoded in `self.H`
+    I: List[Array]
+    # static parameters not leaves of the PyTree
+    A_dependencies: Optional[List] = field(static=True)
+    B_dependencies: Optional[List] = field(static=True)
+    B_action_dependencies: Optional[List] = field(static=True)
+    # mapping from multi action dependencies to flat action dependencies for each B
+    action_maps: List[dict] = field(static=True)
+    batch_size: int = field(static=True)
+    num_iter: int = field(static=True)
+    num_obs: List[int] = field(static=True)
+    num_modalities: int = field(static=True)
+    num_states: List[int] = field(static=True)
+    num_factors: int = field(static=True)
+    num_controls: List[int] = field(static=True)
+    # Used to store original action dimensions in case there are multiple action dependencies per state
+    num_controls_multi: List[int] = field(static=True)
+    control_fac_idx: Optional[List[int]] = field(static=True)
+    # depth of planning during roll-outs (i.e. number of timesteps to look ahead when computing expected free energy of policies)
+    policy_len: int = field(static=True)
+    # depth of inductive inference (i.e. number of future timesteps to use when computing inductive `I` matrix)
+    inductive_depth: int = field(static=True)
+    # matrix of all possible policies (each row is a policy of shape (num_controls[0], num_controls[1], ..., num_controls[num_control_factors-1])
+    policies: Array = field(static=True)
+    # flag for whether to use expected utility ("reward" or "preference satisfaction") when computing expected free energy
+    use_utility: bool = field(static=True)
+    # flag for whether to use state information gain ("salience") when computing expected free energy
+    use_states_info_gain: bool = field(static=True)
+    # flag for whether to use parameter information gain ("novelty") when computing expected free energy
+    use_param_info_gain: bool = field(static=True)
+    # flag for whether to use inductive inference ("intentional inference") when computing expected free energy
+    use_inductive: bool = field(static=True)
+    onehot_obs: bool = field(static=True)
+    # determinstic or stochastic action selection
+    action_selection: str = field(static=True)
+    # whether to sample from full posterior over policies ("full") or from marginal posterior over actions ("marginal")
+    sampling_mode: str = field(static=True)
+    # fpi, vmp, mmp, ovf
+    inference_algo: str = field(static=True)
+
+    learn_A: bool = field(static=True)
+    learn_B: bool = field(static=True)
+    learn_C: bool = field(static=True)
+    learn_D: bool = field(static=True)
+    learn_E: bool = field(static=True)
+
     def __init__(
         self,
-        A,
-        B,
-        C=None,
-        D=None,
-        E=None,
-        H=None,
+        A: Union[List[Array], List[Distribution]],
+        B: Union[List[Array], List[Distribution]],
+        C: Optional[List[Array]] = None,
+        D: Optional[List[Array]] = None,
+        E: Optional[Array] = None,
         pA=None,
         pB=None,
-        pD=None,
+        H=None,
+        I=None,
+        A_dependencies=None,
+        B_dependencies=None,
+        B_action_dependencies=None,
         num_controls=None,
-        policy_len=1,
-        inference_horizon=1,
         control_fac_idx=None,
+        policy_len=1,
         policies=None,
-        gamma=16.0,
-        alpha=16.0,
+        gamma=1.0,
+        alpha=1.0,
+        inductive_depth=1,
+        inductive_threshold=0.1,
+        inductive_epsilon=1e-3,
         use_utility=True,
         use_states_info_gain=True,
         use_param_info_gain=False,
+        use_inductive=False,
+        onehot_obs=False,
         action_selection="deterministic",
-        sampling_mode = "marginal", # whether to sample from full posterior over policies ("full") or from marginal posterior over actions ("marginal")
-        inference_algo="VANILLA",
-        inference_params=None,
-        modalities_to_learn="all",
-        lr_pA=1.0,
-        factors_to_learn="all",
-        lr_pB=1.0,
-        lr_pD=1.0,
-        use_BMA=True,
-        policy_sep_prior=False,
-        save_belief_hist=False,
-        A_factor_list=None,
-        B_factor_list=None,
-        sophisticated=False,
-        si_horizon=3,
-        si_policy_prune_threshold=1/16,
-        si_state_prune_threshold=1/16,
-        si_prune_penalty=512,
-        ii_depth=10,
-        ii_threshold=1/16,
+        sampling_mode="full",
+        inference_algo="fpi",
+        num_iter=16,
+        apply_batch=True,
+        learn_A=True,
+        learn_B=True,
+        learn_C=False,
+        learn_D=True,
+        learn_E=False,
     ):
+        if B_action_dependencies is not None:
+            assert num_controls is not None, "Please specify num_controls for complex action dependencies"
 
-        ### Constant parameters ###
+        # extract high level variables
+        self.num_modalities = len(A)
+        self.num_factors = len(B)
+        self.num_controls = num_controls
+        self.num_controls_multi = num_controls
+
+        # extract dependencies for A and B matrices
+        (
+            self.A_dependencies,
+            self.B_dependencies,
+            self.B_action_dependencies,
+        ) = self._construct_dependencies(A_dependencies, B_dependencies, B_action_dependencies, A, B)
+
+        # extract A, B, C and D tensors from optional Distributions
+        A = [jnp.array(a.data) if isinstance(a, Distribution) else a for a in A]
+        B = [jnp.array(b.data) if isinstance(b, Distribution) else b for b in B]
+        if C is not None:
+            C = [jnp.array(c.data) if isinstance(c, Distribution) else c for c in C]
+        if D is not None:
+            D = [jnp.array(d.data) if isinstance(d, Distribution) else d for d in D]
+        if E is not None:
+            E = jnp.array(E.data) if isinstance(E, Distribution) else E
+        if H is not None:
+            H = [jnp.array(h.data) if isinstance(h, Distribution) else h for h in H]
+
+        self.batch_size = A[0].shape[0] if not apply_batch else 1
+
+        # flatten B action dims for multiple action dependencies
+        self.action_maps = None
+        self.num_controls_multi = num_controls
+        if (
+            B_action_dependencies is not None
+        ):  # note, this only works when B_action_dependencies is not the trivial case of [[0], [1], ...., [num_factors-1]]
+            policies_multi = control.construct_policies(
+                self.num_controls_multi,
+                self.num_controls_multi,
+                policy_len,
+                control_fac_idx,
+            )
+            B, self.action_maps = self._flatten_B_action_dims(B, self.B_action_dependencies)
+            policies = self._construct_flattend_policies(policies_multi, self.action_maps)
+            self.sampling_mode = "full"
+
+        # extract shapes from A and B
+        batch_dim_fn = lambda x: x.shape[0] if apply_batch else x.shape[1]
+        self.num_states = jtu.tree_map(batch_dim_fn, B)
+        self.num_obs = jtu.tree_map(batch_dim_fn, A)
+        self.num_controls = [B[f].shape[-1] for f in range(self.num_factors)]
+
+        # static parameters
+        self.num_iter = num_iter
+        self.inference_algo = inference_algo
+        self.inductive_depth = inductive_depth
 
         # policy parameters
         self.policy_len = policy_len
-        self.gamma = gamma
-        self.alpha = alpha
         self.action_selection = action_selection
         self.sampling_mode = sampling_mode
         self.use_utility = use_utility
         self.use_states_info_gain = use_states_info_gain
         self.use_param_info_gain = use_param_info_gain
+        self.use_inductive = use_inductive
 
         # learning parameters
-        self.modalities_to_learn = modalities_to_learn
-        self.lr_pA = lr_pA
-        self.factors_to_learn = factors_to_learn
-        self.lr_pB = lr_pB
-        self.lr_pD = lr_pD
+        self.learn_A = learn_A
+        self.learn_B = learn_B
+        self.learn_C = learn_C
+        self.learn_D = learn_D
+        self.learn_E = learn_E
 
-        # sophisticated inference parameters
-        self.sophisticated = sophisticated
-        if self.sophisticated:
-            assert self.policy_len == 1, "Sophisticated inference only works with policy_len = 1"
-        self.si_horizon = si_horizon
-        self.si_policy_prune_threshold = si_policy_prune_threshold
-        self.si_state_prune_threshold = si_state_prune_threshold
-        self.si_prune_penalty = si_prune_penalty
-
-        # Initialise observation model (A matrices)
-        if not isinstance(A, np.ndarray):
-            raise TypeError(
-                'A matrix must be a numpy array'
-            )
-
-        self.A = utils.to_obj_array(A)
-
-        assert utils.is_normalized(self.A), "A matrix is not normalized (i.e. A[m].sum(axis = 0) must all equal 1.0 for all modalities)"
-
-        # Determine number of observation modalities and their respective dimensions
-        self.num_obs = [self.A[m].shape[0] for m in range(len(self.A))]
-        self.num_modalities = len(self.num_obs)
-
-        # Assigning prior parameters on observation model (pA matrices)
-        self.pA = pA
-
-        # Initialise transition model (B matrices)
-        if not isinstance(B, np.ndarray):
-            raise TypeError(
-                'B matrix must be a numpy array'
-            )
-
-        self.B = utils.to_obj_array(B)
-
-        assert utils.is_normalized(self.B), "B matrix is not normalized (i.e. B[f].sum(axis = 0) must all equal 1.0 for all factors)"
-
-        # Determine number of hidden state factors and their dimensionalities
-        self.num_states = [self.B[f].shape[0] for f in range(len(self.B))]
-        self.num_factors = len(self.num_states)
-
-        # Assigning prior parameters on transition model (pB matrices) 
-        self.pB = pB
-
-        # If no `num_controls` are given, then this is inferred from the shapes of the input B matrices
-        if num_controls == None:
-            self.num_controls = [self.B[f].shape[-1] for f in range(self.num_factors)]
-        else:
-            inferred_num_controls = [self.B[f].shape[-1] for f in range(self.num_factors)]
-            assert num_controls == inferred_num_controls, "num_controls must be consistent with the shapes of the input B matrices"
-            self.num_controls = num_controls
-
-        # checking that `A_factor_list` and `B_factor_list` are consistent with `num_factors`, `num_states`, and lagging dimensions of `A` and `B` tensors
-        self.factorized = False
-        if A_factor_list == None:
-            self.A_factor_list = self.num_modalities * [list(range(self.num_factors))] # defaults to having all modalities depend on all factors
-            for m in range(self.num_modalities):
-                factor_dims = tuple([self.num_states[f] for f in self.A_factor_list[m]])
-                assert self.A[m].shape[1:] == factor_dims, f"Please input an `A_factor_list` whose {m}-th indices pick out the hidden state factors that line up with lagging dimensions of A{m}..." 
-                if self.pA is not None:
-                    assert self.pA[m].shape[1:] == factor_dims, f"Please input an `A_factor_list` whose {m}-th indices pick out the hidden state factors that line up with lagging dimensions of pA{m}..." 
-        else:
-            self.factorized = True
-            for m in range(self.num_modalities):
-                assert max(A_factor_list[m]) <= (self.num_factors - 1), f"Check modality {m} of A_factor_list - must be consistent with `num_states` and `num_factors`..."
-                factor_dims = tuple([self.num_states[f] for f in A_factor_list[m]])
-                assert self.A[m].shape[1:] == factor_dims, f"Check modality {m} of A_factor_list. It must coincide with lagging dimensions of A{m}..." 
-                if self.pA is not None:
-                    assert self.pA[m].shape[1:] == factor_dims, f"Check modality {m} of A_factor_list. It must coincide with lagging dimensions of pA{m}..."
-            self.A_factor_list = A_factor_list
-
-        # generate a list of the modalities that depend on each factor 
-        A_modality_list = []
-        for f in range(self.num_factors):
-            A_modality_list.append( [m for m in range(self.num_modalities) if f in self.A_factor_list[m]] )
-
-        # Store thee `A_factor_list` and the `A_modality_list` in a Markov blanket dictionary
-        self.mb_dict = {
-                        'A_factor_list': self.A_factor_list,
-                        'A_modality_list': A_modality_list
-                        }
-
-        if B_factor_list == None:
-            self.B_factor_list = [[f] for f in range(self.num_factors)] # defaults to having all factors depend only on themselves
-            for f in range(self.num_factors):
-                factor_dims = tuple([self.num_states[f] for f in self.B_factor_list[f]])
-                assert self.B[f].shape[1:-1] == factor_dims, f"Please input a `B_factor_list` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of B{f}..." 
-                if self.pB is not None:
-                    assert self.pB[f].shape[1:-1] == factor_dims, f"Please input a `B_factor_list` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of pB{f}..." 
-        else:
-            self.factorized = True
-            for f in range(self.num_factors):
-                assert max(B_factor_list[f]) <= (self.num_factors - 1), f"Check factor {f} of B_factor_list - must be consistent with `num_states` and `num_factors`..."
-                factor_dims = tuple([self.num_states[f] for f in B_factor_list[f]])
-                assert self.B[f].shape[1:-1] == factor_dims, f"Check factor {f} of B_factor_list. It must coincide with all-but-final lagging dimensions of B{f}..." 
-                if self.pB is not None:
-                    assert self.pB[f].shape[1:-1] == factor_dims, f"Check factor {f} of B_factor_list. It must coincide with all-but-final lagging dimensions of pB{f}..."
-            self.B_factor_list = B_factor_list
-
-        # Users have the option to make only certain factors controllable.
-        # default behaviour is to make all hidden state factors controllable, i.e. `self.num_factors == len(self.num_controls)`
+        # construct control factor indices
         if control_fac_idx == None:
             self.control_fac_idx = [f for f in range(self.num_factors) if self.num_controls[f] > 1]
         else:
-
-            assert max(control_fac_idx) <= (self.num_factors - 1), "Check control_fac_idx - must be consistent with `num_states` and `num_factors`..."
+            msg = "Check control_fac_idx - must be consistent with `num_states` and `num_factors`..."
+            assert max(control_fac_idx) <= (self.num_factors - 1), msg
             self.control_fac_idx = control_fac_idx
 
-            for factor_idx in self.control_fac_idx:
-                assert self.num_controls[factor_idx] > 1, "Control factor (and B matrix) dimensions are not consistent with user-given control_fac_idx"
-
-        # Again, the use can specify a set of possible policies, or
-        # all possible combinations of actions and timesteps will be considered
+        # construct policies
         if policies is None:
-            policies = self._construct_policies()
-        self.policies = policies
+            self.policies = control.construct_policies(
+                self.num_states,
+                self.num_controls,
+                self.policy_len,
+                self.control_fac_idx,
+            )
+        else:
+            self.policies = policies
 
-        assert all([len(self.num_controls) == policy.shape[1] for policy in self.policies]), "Number of control states is not consistent with policy dimensionalities"
-        
-        all_policies = np.vstack(self.policies)
+        # setup pytree leaves A, B, C, D, E, pA, pB, H, I
+        if apply_batch:
+            A = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), A)
+            B = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), B)
 
-        assert all([n_c >= max_action for (n_c, max_action) in zip(self.num_controls, list(np.max(all_policies, axis =0)+1))]), "Maximum number of actions is not consistent with `num_controls`"
+        if pA is not None and apply_batch:
+            pA = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), pA)
 
-        # Construct prior preferences (uniform if not specified)
+        if pB is not None and apply_batch:
+            pB = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), pB)
 
-        if C is not None:
-            if not isinstance(C, np.ndarray):
-                raise TypeError(
-                    'C vector must be a numpy array'
+        if C is None:
+            C = [jnp.ones((self.batch_size, self.num_obs[m])) / self.num_obs[m] for m in range(self.num_modalities)]
+        elif apply_batch:
+            C = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), C)
+
+        if D is None:
+            D = [jnp.ones((self.batch_size, self.num_states[f])) / self.num_states[f] for f in range(self.num_factors)]
+        elif apply_batch:
+            D = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), D)
+
+        if E is None:
+            E = jnp.ones((self.batch_size, len(self.policies))) / len(self.policies)
+        elif apply_batch:
+            E = jnp.broadcast_to(E, (self.batch_size,) + E.shape)
+
+        if H is not None and apply_batch:
+            H = jtu.tree_map(
+                lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape),
+                H,
+            )
+
+        self.A = A
+        self.B = B
+        self.C = C
+        self.D = D
+        self.E = E
+        self.H = H
+        self.I = I
+        self.pA = pA
+        self.pB = pB
+
+        self.gamma = jnp.broadcast_to(gamma, (self.batch_size,))
+        self.alpha = jnp.broadcast_to(alpha, (self.batch_size,))
+
+        self.inductive_threshold = jnp.broadcast_to(inductive_threshold, (self.batch_size,))
+        self.inductive_epsilon = jnp.broadcast_to(inductive_epsilon, (self.batch_size,))
+
+        if self.use_inductive and H is not None:
+            I = vmap(
+                partial(
+                    control.generate_I_matrix,
+                    depth=self.inductive_depth,
                 )
-            self.C = utils.to_obj_array(C)
-
-            assert len(self.C) == self.num_modalities, f"Check C vector: number of sub-arrays must be equal to number of observation modalities: {self.num_modalities}"
-
-            for modality, c_m in enumerate(self.C):
-                assert c_m.shape[0] == self.num_obs[modality], f"Check C vector: number of rows of C vector for modality {modality} should be equal to {self.num_obs[modality]}"
+            )(H, B, self.inductive_threshold)
+        elif self.use_inductive and I is not None:
+            I = I
         else:
-            self.C = self._construct_C_prior()
+            I = jtu.tree_map(lambda x: jnp.expand_dims(jnp.zeros_like(x), 1), D)
 
-        # Construct prior over hidden states (uniform if not specified)
-    
-        if D is not None:
-            if not isinstance(D, np.ndarray):
-                raise TypeError(
-                    'D vector must be a numpy array'
-                )
-            self.D = utils.to_obj_array(D)
+        self.onehot_obs = onehot_obs
 
-            assert len(self.D) == self.num_factors, f"Check D vector: number of sub-arrays must be equal to number of hidden state factors: {self.num_factors}"
+        # validate model
+        self._validate()
 
-            for f, d_f in enumerate(self.D):
-                assert d_f.shape[0] == self.num_states[f], f"Check D vector: number of entries of D vector for factor {f} should be equal to {self.num_states[f]}"
+    @property
+    def unique_multiactions(self):
+        size = pymath.prod(self.num_controls)
+        return jnp.unique(self.policies[:, 0], axis=0, size=size, fill_value=-1)
+
+    def infer_parameters(self, beliefs_A, outcomes, actions, beliefs_B=None, lr_pA=1., lr_pB=1., **kwargs):
+        agent = self
+        beliefs_B = beliefs_A if beliefs_B is None else beliefs_B
+        if self.inference_algo == 'ovf':
+            smoothed_marginals_and_joints = vmap(inference.smoothing_ovf)(beliefs_A, self.B, actions)
+            marginal_beliefs = smoothed_marginals_and_joints[0]
+            joint_beliefs = smoothed_marginals_and_joints[1]
         else:
-            if pD is not None:
-                self.D = utils.norm_dist_obj_arr(pD)
-            else:
-                self.D = self._construct_D_prior()
+            marginal_beliefs = beliefs_A
+            if self.learn_B:
+                nf = len(beliefs_B)
+                joint_fn = lambda f: [beliefs_B[f][:, 1:]] + [beliefs_B[f_idx][:, :-1] for f_idx in self.B_dependencies[f]]
+                joint_beliefs = jtu.tree_map(joint_fn, list(range(nf)))
 
-        assert utils.is_normalized(self.D), "D vector is not normalized (i.e. D[f].sum() must all equal 1.0 for all factors)"
-
-        # Assigning prior parameters on initial hidden states (pD vectors)
-        self.pD = pD
-
-        # Construct prior over policies (uniform if not specified) 
-        if E is not None:
-            if not isinstance(E, np.ndarray):
-                raise TypeError(
-                    'E vector must be a numpy array'
-                )
-            self.E = E
-
-            assert len(self.E) == len(self.policies), f"Check E vector: length of E must be equal to number of policies: {len(self.policies)}"
-
-        else:
-            self.E = self._construct_E_prior()
-        
-        # Construct I for backwards induction (if H specified)
-        if H is not None:
-            self.H = H
-            self.I = control.backwards_induction(H, B, B_factor_list, threshold=ii_threshold, depth=ii_depth)
-        else:
-            self.H = None
-            self.I = None
-
-        self.edge_handling_params = {}
-        self.edge_handling_params['use_BMA'] = use_BMA # creates a 'D-like' moving prior
-        self.edge_handling_params['policy_sep_prior'] = policy_sep_prior # carries forward last timesteps posterior, in a policy-conditioned way
-
-        # use_BMA and policy_sep_prior can both be False, but both cannot be simultaneously be True. If one of them is True, the other must be False
-        if policy_sep_prior:
-            if use_BMA:
-                warnings.warn(
-                    "Inconsistent choice of `policy_sep_prior` and `use_BMA`.\
-                    You have set `policy_sep_prior` to True, so we are setting `use_BMA` to False"
-                )
-                self.edge_handling_params['use_BMA'] = False
-        
-        if inference_algo == None:
-            self.inference_algo = "VANILLA"
-            self.inference_params = self._get_default_params()
-            if inference_horizon > 1:
-                warnings.warn(
-                    "If `inference_algo` is VANILLA, then inference_horizon must be 1\n. \
-                    Setting inference_horizon to default value of 1...\n"
-                    )
-                self.inference_horizon = 1
-            else:
-                self.inference_horizon = 1
-        else:
-            self.inference_algo = inference_algo
-            self.inference_params = self._get_default_params()
-            self.inference_horizon = inference_horizon
-
-        if save_belief_hist:
-            self.qs_hist = []
-            self.q_pi_hist = []
-        
-        self.prev_obs = []
-        self.reset()
-        
-        self.action = None
-        self.prev_actions = None
-
-    def _construct_C_prior(self):
-        
-        C = utils.obj_array_zeros(self.num_obs)
-
-        return C
-
-    def _construct_D_prior(self):
-
-        D = utils.obj_array_uniform(self.num_states)
-
-        return D
-
-    def _construct_policies(self):
-        
-        policies =  control.construct_policies(
-            self.num_states, self.num_controls, self.policy_len, self.control_fac_idx
-        )
-
-        return policies
-
-    def _construct_num_controls(self):
-        num_controls = control.get_num_controls_from_policies(
-            self.policies
-        )
-        
-        return num_controls
-    
-    def _construct_E_prior(self):
-        E = np.ones(len(self.policies)) / len(self.policies)
-        return E
-
-    def reset(self, init_qs=None):
-        """
-        Resets the posterior beliefs about hidden states of the agent to a uniform distribution, and resets time to first timestep of the simulation's temporal horizon.
-        Returns the posterior beliefs about hidden states.
-
-        Returns
-        ---------
-        qs: ``numpy.ndarray`` of dtype object
-           Initialized posterior over hidden states. Depending on the inference algorithm chosen and other parameters (such as the parameters stored within ``edge_handling_paramss),
-           the resulting ``qs`` variable will have additional sub-structure to reflect whether beliefs are additionally conditioned on timepoint and policy.
-            For example, in case the ``self.inference_algo == 'MMP' `, the indexing structure of ``qs`` is policy->timepoint-->factor, so that 
-            ``qs[p_idx][t_idx][f_idx]`` refers to beliefs about marginal factor ``f_idx`` expected under policy ``p_idx`` 
-            at timepoint ``t_idx``. In this case, the returned ``qs`` will only have entries filled out for the first timestep, i.e. for ``q[p_idx][0]``, for all 
-            policy-indices ``p_idx``. Subsequent entries ``q[:][1, 2, ...]`` will be initialized to empty ``numpy.ndarray`` objects.
-        """
-
-        self.curr_timestep = 0
-
-        if init_qs is None:
-            if self.inference_algo == 'VANILLA':
-                self.qs = utils.obj_array_uniform(self.num_states)
-            else: # in the case you're doing MMP (i.e. you have an inference_horizon > 1), we have to account for policy- and timestep-conditioned posterior beliefs
-                self.qs = utils.obj_array(len(self.policies))
-                for p_i, _ in enumerate(self.policies):
-                    self.qs[p_i] = utils.obj_array(self.inference_horizon + self.policy_len + 1) # + 1 to include belief about current timestep
-                    self.qs[p_i][0] = utils.obj_array_uniform(self.num_states)
-                
-                first_belief = utils.obj_array(len(self.policies))
-                for p_i, _ in enumerate(self.policies):
-                    first_belief[p_i] = copy.deepcopy(self.D) 
-                
-                if self.edge_handling_params['policy_sep_prior']:
-                    self.set_latest_beliefs(last_belief = first_belief)
-                else:
-                    self.set_latest_beliefs(last_belief = self.D)
+        if self.learn_A:
+            update_A = partial(
+                learning.update_obs_likelihood_dirichlet,
+                A_dependencies=self.A_dependencies,
+                num_obs=self.num_obs,
+                onehot_obs=self.onehot_obs,
+            )
             
-        else:
-            self.qs = init_qs
-        
-        if self.pA is not None:
-            self.A = utils.norm_dist_obj_arr(self.pA)
-        
-        if self.pB is not None:
-            self.B = utils.norm_dist_obj_arr(self.pB)
+            lr = jnp.broadcast_to(lr_pA, (self.batch_size,))
+            qA, E_qA = vmap(update_A)(
+                self.pA,
+                self.A,
+                outcomes,
+                marginal_beliefs,
+                lr=lr,
+            )
+            
+            agent = tree_at(lambda x: (x.A, x.pA), agent, (E_qA, qA))
+            
+        if self.learn_B:
+            assert beliefs_B[0].shape[1] == actions.shape[1] + 1
+            update_B = partial(
+                learning.update_state_transition_dirichlet,
+                num_controls=self.num_controls
+            )
 
-        return self.qs
-
-    def step_time(self):
-        """
-        Advances time by one step. This involves updating the ``self.prev_actions``, and in the case of a moving
-        inference horizon, this also shifts the history of post-dictive beliefs forward in time (using ``self.set_latest_beliefs()``),
-        so that the penultimate belief before the beginning of the horizon is correctly indexed.
-
-        Returns
-        ---------
-        curr_timestep: ``int``
-            The index in absolute simulation time of the current timestep.
-        """
-
-        if self.prev_actions is None:
-            self.prev_actions = [self.action]
-        else:
-            self.prev_actions.append(self.action)
-
-        self.curr_timestep += 1
-
-        if self.inference_algo == "MMP" and (self.curr_timestep - self.inference_horizon) >= 0:
-            self.set_latest_beliefs()
-        
-        return self.curr_timestep
-    
-    def set_latest_beliefs(self,last_belief=None):
-        """
-        Both sets and returns the penultimate belief before the first timestep of the backwards inference horizon. 
-        In the case that the inference horizon includes the first timestep of the simulation, then the ``latest_belief`` is
-        simply the first belief of the whole simulation, or the prior (``self.D``). The particular structure of the ``latest_belief``
-        depends on the value of ``self.edge_handling_params['use_BMA']``.
-
-        Returns
-        ---------
-        latest_belief: ``numpy.ndarray`` of dtype object
-            Penultimate posterior beliefs over hidden states at the timestep just before the first timestep of the inference horizon. 
-            Depending on the value of ``self.edge_handling_params['use_BMA']``, the shape of this output array will differ.
-            If ``self.edge_handling_params['use_BMA'] == True``, then ``latest_belief`` will be a Bayesian model average 
-            of beliefs about hidden states, where the average is taken with respect to posterior beliefs about policies.
-            Otherwise, `latest_belief`` will be the full, policy-conditioned belief about hidden states, and will have indexing structure
-            policies->factors, such that ``latest_belief[p_idx][f_idx]`` refers to the penultimate belief about marginal factor ``f_idx``
-            under policy ``p_idx``.
-        """
-
-        if last_belief is None:
-            last_belief = utils.obj_array(len(self.policies))
-            for p_i, _ in enumerate(self.policies):
-                last_belief[p_i] = copy.deepcopy(self.qs[p_i][0])
-
-        begin_horizon_step = self.curr_timestep - self.inference_horizon
-        if self.edge_handling_params['use_BMA'] and (begin_horizon_step >= 0):
-            if hasattr(self, "q_pi_hist"):
-                self.latest_belief = inference.average_states_over_policies(last_belief, self.q_pi_hist[begin_horizon_step]) # average the earliest marginals together using contemporaneous posterior over policies (`self.q_pi_hist[0]`)
+            lr = jnp.broadcast_to(lr_pB, (self.batch_size,))
+            qB, E_qB = vmap(update_B)(
+                self.pB,
+                joint_beliefs,
+                actions,
+                lr=lr
+            )
+            
+            # if you have updated your beliefs about transitions, you need to re-compute the I matrix used for inductive inferenece
+            if self.use_inductive and self.H is not None:
+                I_updated = vmap(control.generate_I_matrix)(self.H, E_qB, self.inductive_threshold, self.inductive_depth)
             else:
-                self.latest_belief = inference.average_states_over_policies(last_belief, self.q_pi) # average the earliest marginals together using posterior over policies (`self.q_pi`)
-        else:
-            self.latest_belief = last_belief
+                I_updated = self.I
 
-        return self.latest_belief
+            agent = tree_at(lambda x: (x.B, x.pB, x.I), agent, (E_qB, qB, I_updated))
+
+        return agent
     
-    def get_future_qs(self):
-        """
-        Returns the last ``self.policy_len`` timesteps of each policy-conditioned belief
-        over hidden states. This is a step of pre-processing that needs to be done before computing
-        the expected free energy of policies. We do this to avoid computing the expected free energy of 
-        policies using beliefs about hidden states in the past (so-called "post-dictive" beliefs).
-
-        Returns
-        ---------
-        future_qs_seq: ``numpy.ndarray`` of dtype object
-            Posterior beliefs over hidden states under a policy, in the future. This is a nested ``numpy.ndarray`` object array, with one
-            sub-array ``future_qs_seq[p_idx]`` for each policy. The indexing structure is policy->timepoint-->factor, so that 
-            ``future_qs_seq[p_idx][t_idx][f_idx]`` refers to beliefs about marginal factor ``f_idx`` expected under policy ``p_idx`` 
-            at future timepoint ``t_idx``, relative to the current timestep.
-        """
-        
-        future_qs_seq = utils.obj_array(len(self.qs))
-        for p_idx in range(len(self.qs)):
-            future_qs_seq[p_idx] = self.qs[p_idx][-(self.policy_len+1):] # this grabs only the last `policy_len`+1 beliefs about hidden states, under each policy
-
-        return future_qs_seq
-
-
-    def infer_states(self, observation, distr_obs=False):
+    def infer_states(self, observations, empirical_prior, *, past_actions=None, qs_hist=None, mask=None):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
         Parameters
         ----------
-        observation: ``list`` or ``tuple`` of ints
-            The observation input. Each entry ``observation[m]`` stores the index of the discrete
-            observation for modality ``m``.
-        distr_obs: ``bool``
-            Whether the observation is a distribution over possible observations, rather than a single observation.
-
+        observations: ``list`` or ``tuple`` of ints
+            The observation input. Each entry ``observation[m]`` stores one-hot vectors representing the observations for modality ``m``.
+        past_actions: ``list`` or ``tuple`` of ints
+            The action input. Each entry ``past_actions[f]`` stores indices (or one-hots?) representing the actions for control factor ``f``.
+        empirical_prior: ``list`` or ``tuple`` of ``jax.numpy.ndarray`` of dtype object
+            Empirical prior beliefs over hidden states. Depending on the inference algorithm chosen, the resulting ``empirical_prior`` variable may be a matrix (or list of matrices)
+            of additional dimensions to encode extra conditioning variables like timepoint and policy.
         Returns
         ---------
         qs: ``numpy.ndarray`` of dtype object
             Posterior beliefs over hidden states. Depending on the inference algorithm chosen, the resulting ``qs`` variable will have additional sub-structure to reflect whether
             beliefs are additionally conditioned on timepoint and policy.
-            For example, in case the ``self.inference_algo == 'MMP' `` indexing structure is policy->timepoint-->factor, so that 
-            ``qs[p_idx][t_idx][f_idx]`` refers to beliefs about marginal factor ``f_idx`` expected under policy ``p_idx`` 
+            For example, in case the ``self.inference_algo == 'MMP' `` indexing structure is policy->timepoint-->factor, so that
+            ``qs[p_idx][t_idx][f_idx]`` refers to beliefs about marginal factor ``f_idx`` expected under policy ``p_idx``
             at timepoint ``t_idx``.
         """
 
-        observation = tuple(observation) if not distr_obs else observation
-
-        if not hasattr(self, "qs"):
-            self.reset()
-
-        if self.inference_algo == "VANILLA":
-            if self.action is not None:
-                empirical_prior = control.get_expected_states_interactions(
-                    self.qs, self.B, self.B_factor_list, self.action.reshape(1, -1) 
-                )[0]
-            else:
-                empirical_prior = self.D
-            qs = inference.update_posterior_states_factorized(
-                self.A,
-                observation,
-                self.num_obs,
-                self.num_states,
-                self.mb_dict,
-                empirical_prior,
-                **self.inference_params
-            )
-        elif self.inference_algo == "MMP":
-
-            self.prev_obs.append(observation)
-            if len(self.prev_obs) > self.inference_horizon:
-                latest_obs = self.prev_obs[-self.inference_horizon:]
-                latest_actions = self.prev_actions[-(self.inference_horizon-1):]
-            else:
-                latest_obs = self.prev_obs
-                latest_actions = self.prev_actions
-
-            qs, F = inference.update_posterior_states_full_factorized(
-                self.A,
-                self.mb_dict,
-                self.B,
-                self.B_factor_list,
-                latest_obs,
-                self.policies, 
-                latest_actions, 
-                prior = self.latest_belief, 
-                policy_sep_prior = self.edge_handling_params['policy_sep_prior'],
-                **self.inference_params
-            )
-
-            self.F = F # variational free energy of each policy  
-
-        if hasattr(self, "qs_hist"):
-            self.qs_hist.append(qs)
-        self.qs = qs
-
-        return qs
-
-    def _infer_states_test(self, observation, distr_obs=False):
-        """
-        Test version of ``infer_states()`` that additionally returns intermediate variables of MMP, such as
-        the prediction errors and intermediate beliefs from the optimization. Used for benchmarking against SPM outputs.
-        """
-        observation = tuple(observation) if not distr_obs else observation
-
-        if not hasattr(self, "qs"):
-            self.reset()
-
-        if self.inference_algo == "VANILLA":
-            if self.action is not None:
-                empirical_prior = control.get_expected_states(
-                    self.qs, self.B, self.action.reshape(1, -1) 
-                )[0]
-            else:
-                empirical_prior = self.D
-            qs = inference.update_posterior_states(
-                self.A,
-                observation,
-                empirical_prior,
-                **self.inference_params
-            )
-        elif self.inference_algo == "MMP":
-
-            self.prev_obs.append(observation)
-            if len(self.prev_obs) > self.inference_horizon:
-                latest_obs = self.prev_obs[-self.inference_horizon:]
-                latest_actions = self.prev_actions[-(self.inference_horizon-1):]
-            else:
-                latest_obs = self.prev_obs
-                latest_actions = self.prev_actions
-
-            qs, F, xn, vn = inference._update_posterior_states_full_test(
-                self.A,
-                self.B, 
-                latest_obs,
-                self.policies, 
-                latest_actions, 
-                prior = self.latest_belief, 
-                policy_sep_prior = self.edge_handling_params['policy_sep_prior'],
-                **self.inference_params
-            )
-
-            self.F = F # variational free energy of each policy  
-
-        if hasattr(self, "qs_hist"):
-            self.qs_hist.append(qs)
-
-        self.qs = qs
-
-        if self.inference_algo == "MMP":
-            return qs, xn, vn
+        # TODO: infer this from shapes
+        if not self.onehot_obs:
+            o_vec = [nn.one_hot(o, self.num_obs[m]) for m, o in enumerate(observations)]
         else:
-            return qs
-    
-    def infer_policies(self):
+            o_vec = observations
+
+        A = self.A
+        if mask is not None:
+            for i, m in enumerate(mask):
+                o_vec[i] = m * o_vec[i] + (1 - m) * jnp.ones_like(o_vec[i]) / self.num_obs[i]
+                A[i] = m * A[i] + (1 - m) * jnp.ones_like(A[i]) / self.num_obs[i]
+
+        infer_states = partial(
+            inference.update_posterior_states,
+            A_dependencies=self.A_dependencies,
+            B_dependencies=self.B_dependencies,
+            num_iter=self.num_iter,
+            method=self.inference_algo,
+        )
+        
+        output = vmap(infer_states)(
+            A,
+            self.B,
+            o_vec,
+            past_actions,
+            prior=empirical_prior,
+            qs_hist=qs_hist
+        )
+
+        return output
+
+    def update_empirical_prior(self, action, qs):
+        # return empirical_prior, and the history of posterior beliefs (filtering distributions) held about hidden states at times 1, 2 ... t
+
+        # this computation of the predictive prior is correct only for fully factorised Bs.
+        if self.inference_algo in ['mmp', 'vmp']:
+            # in the case of the 'mmp' or 'vmp' we have to use D as prior parameter for infer states
+            pred = self.D
+        else:
+            qs_last = jtu.tree_map( lambda x: x[:, -1], qs)
+            propagate_beliefs = partial(control.compute_expected_state, B_dependencies=self.B_dependencies)
+            pred = vmap(propagate_beliefs)(qs_last, self.B, action)
+        
+        return (pred, qs)
+
+    def infer_policies(self, qs: List):
         """
         Perform policy inference by optimizing a posterior (categorical) distribution over policies.
         This distribution is computed as the softmax of ``G * gamma + lnE`` where ``G`` is the negative expected
         free energy of policies, ``gamma`` is a policy precision and ``lnE`` is the (log) prior probability of policies.
         This function returns the posterior over policies as well as the negative expected free energy of each policy.
-        In this version of the function, the expected free energy of policies is computed using known factorized structure 
-        in the model, which speeds up computation (particular the state information gain calculations).
 
         Returns
         ----------
@@ -622,311 +440,194 @@ class Agent(object):
             Negative expected free energies of each policy, i.e. a vector containing one negative expected free energy per policy.
         """
 
-        if self.inference_algo == "VANILLA":
-            if self.sophisticated:
-                q_pi, G = control.sophisticated_inference_search(
-                    self.qs, 
-                    self.policies, 
-                    self.A, 
-                    self.B, 
-                    self.C, 
-                    self.A_factor_list, 
-                    self.B_factor_list, 
-                    self.I,
-                    self.si_horizon,
-                    self.si_policy_prune_threshold, 
-                    self.si_state_prune_threshold, 
-                    self.si_prune_penalty,
-                    1.0,
-                    self.inference_params,
-                    n=0
-                )
-            else:
-                q_pi, G = control.update_posterior_policies_factorized(
-                    self.qs,
-                    self.A,
-                    self.B,
-                    self.C,
-                    self.A_factor_list,
-                    self.B_factor_list,
-                    self.policies,
-                    self.use_utility,
-                    self.use_states_info_gain,
-                    self.use_param_info_gain,
-                    self.pA,
-                    self.pB,
-                    E = self.E,
-                    I = self.I,
-                    gamma = self.gamma
-                )
-        elif self.inference_algo == "MMP":
+        latest_belief = jtu.tree_map(lambda x: x[:, -1], qs) # only get the posterior belief held at the current timepoint
+        infer_policies = partial(
+            control.update_posterior_policies_inductive,
+            self.policies,
+            A_dependencies=self.A_dependencies,
+            B_dependencies=self.B_dependencies,
+            use_utility=self.use_utility,
+            use_states_info_gain=self.use_states_info_gain,
+            use_param_info_gain=self.use_param_info_gain,
+            use_inductive=self.use_inductive
+        )
 
-            future_qs_seq = self.get_future_qs()
+        q_pi, G = vmap(infer_policies)(
+            latest_belief, 
+            self.A,
+            self.B,
+            self.C,
+            self.E,
+            self.pA,
+            self.pB,
+            I = self.I,
+            gamma=self.gamma,
+            inductive_epsilon=self.inductive_epsilon
+        )
 
-            q_pi, G = control.update_posterior_policies_full_factorized(
-                future_qs_seq,
-                self.A,
-                self.B,
-                self.C,
-                self.A_factor_list,
-                self.B_factor_list,
-                self.policies,
-                self.use_utility,
-                self.use_states_info_gain,
-                self.use_param_info_gain,
-                self.latest_belief,
-                self.pA,
-                self.pB,
-                F=self.F,
-                E=self.E,
-                I=self.I,
-                gamma=self.gamma
-            )
-
-        if hasattr(self, "q_pi_hist"):
-            self.q_pi_hist.append(q_pi)
-            if len(self.q_pi_hist) > self.inference_horizon:
-                self.q_pi_hist = self.q_pi_hist[-(self.inference_horizon-1):]
-
-        self.q_pi = q_pi
-        self.G = G
         return q_pi, G
-
-    def sample_action(self):
+    
+    def multiaction_probabilities(self, q_pi: Array):
         """
-        Sample or select a discrete action from the posterior over control states.
-        This function both sets or cachés the action as an internal variable with the agent and returns it.
-        This function also updates time variable (and thus manages consequences of updating the moving reference frame of beliefs)
-        using ``self.step_time()``.
+        Compute probabilities of unique multi-actions from the posterior over policies.
 
-        
+        Parameters
+        ----------
+        q_pi: 1D ``numpy.ndarray``
+        Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
+
         Returns
         ----------
-        action: 1D ``numpy.ndarray``
-            Vector containing the indices of the actions for each control factor
+        multi-action: 1D ``jax.numpy.ndarray``
+            Vector containing probabilities of possible multi-actions for different factors
         """
 
         if self.sampling_mode == "marginal":
-            action = control.sample_action(
-                self.q_pi, self.policies, self.num_controls, action_selection = self.action_selection, alpha = self.alpha
-            )
+            get_marginals = partial(control.get_marginals, policies=self.policies, num_controls=self.num_controls)
+            marginals = get_marginals(q_pi)
+            outer = lambda a, b: jnp.outer(a, b).reshape(-1)
+            marginals = jtu.tree_reduce(outer, marginals)
+
         elif self.sampling_mode == "full":
-            action = control.sample_policy(self.q_pi, self.policies, self.num_controls,
-                                           action_selection=self.action_selection, alpha=self.alpha)
+            locs = jnp.all(
+                self.policies[:, 0] == jnp.expand_dims(self.unique_multiactions, -2),
+                -1,
+            )
+            get_marginals = lambda x: jnp.where(locs, x, 0.).sum(-1)
+            marginals = vmap(get_marginals)(q_pi)
 
-        self.action = action
+        return marginals
 
-        self.step_time()
+    def sample_action(self, q_pi: Array, rng_key=None):
+        """
+        Sample or select a discrete action from the posterior over control states.
+        
+        Returns
+        ----------
+        action: 1D ``jax.numpy.ndarray``
+            Vector containing the indices of the actions for each control factor
+        action_probs: 2D ``jax.numpy.ndarray``
+            Array of action probabilities
+        """
+        if (rng_key is None) and (self.action_selection == "stochastic"):
+            raise ValueError("Please provide a random number generator key to sample actions stochastically")
+
+        if self.sampling_mode == "marginal":
+            sample_action = partial(control.sample_action, self.policies, self.num_controls, action_selection=self.action_selection)
+            action = vmap(sample_action)(q_pi, alpha=self.alpha, rng_key=rng_key)
+        elif self.sampling_mode == "full":
+            sample_policy = partial(control.sample_policy, self.policies, action_selection=self.action_selection)
+            action = vmap(sample_policy)(q_pi, alpha=self.alpha, rng_key=rng_key)
 
         return action
     
-    def _sample_action_test(self):
-        """
-        Sample or select a discrete action from the posterior over control states.
-        This function both sets or cachés the action as an internal variable with the agent and returns it.
-        This function also updates time variable (and thus manages consequences of updating the moving reference frame of beliefs)
-        using ``self.step_time()``.
-        
-        Returns
-        ----------
-        action: 1D ``numpy.ndarray``
-            Vector containing the indices of the actions for each control factor
-        """
+    def decode_multi_actions(self, action):
+        """Decode flattened actions to multiple actions"""
+        if self.action_maps is None:
+            return action
 
-        if self.sampling_mode == "marginal":
-            action, p_dist = control._sample_action_test(self.q_pi, self.policies, self.num_controls,
-                                                         action_selection=self.action_selection, alpha=self.alpha)
-        elif self.sampling_mode == "full":
-            action, p_dist = control._sample_policy_test(self.q_pi, self.policies, self.num_controls,
-                                                         action_selection=self.action_selection, alpha=self.alpha)
+        action_multi = jnp.zeros((self.batch_size, len(self.num_controls_multi))).astype(action.dtype)
+        for f, action_map in enumerate(self.action_maps):
+            if action_map["multi_dependency"] == []:
+                continue
 
-        self.action = action
+            action_multi_f = utils.index_to_combination(action[..., f], action_map["multi_dims"])
+            action_multi = action_multi.at[..., action_map["multi_dependency"]].set(action_multi_f)
+        return action_multi
 
-        self.step_time()
+    def encode_multi_actions(self, action_multi):
+        """Encode multiple actions to flattened actions"""
+        if self.action_maps is None:
+            return action_multi
 
-        return action, p_dist
+        action = jnp.zeros((self.batch_size, len(self.num_controls))).astype(action_multi.dtype)
+        for f, action_map in enumerate(self.action_maps):
+            if action_map["multi_dependency"] == []:
+                action = action.at[..., f].set(jnp.zeros_like(action_multi[..., 0]))
+                continue
 
-    def update_A(self, obs):
-        """
-        Update approximate posterior beliefs about Dirichlet parameters that parameterise the observation likelihood or ``A`` array.
+            action_f = utils.get_combination_index(
+                action_multi[..., action_map["multi_dependency"]],
+                action_map["multi_dims"],
+            )
+            action = action.at[..., f].set(action_f)
+        return action
 
-        Parameters
-        ----------
-        observation: ``list`` or ``tuple`` of ints
-            The observation input. Each entry ``observation[m]`` stores the index of the discrete
-            observation for modality ``m``.
+    def _construct_dependencies(self, A_dependencies, B_dependencies, B_action_dependencies, A, B):
+        if A_dependencies is not None:
+            A_dependencies = A_dependencies
+        elif isinstance(A[0], Distribution) and isinstance(B[0], Distribution):
+            A_dependencies, _ = get_dependencies(A, B)
+        else:
+            A_dependencies = [list(range(self.num_factors)) for _ in range(self.num_modalities)]
 
-        Returns
-        -----------
-        qA: ``numpy.ndarray`` of dtype object
-            Posterior Dirichlet parameters over observation model (same shape as ``A``), after having updated it with observations.
-        """
+        if B_dependencies is not None:
+            B_dependencies = B_dependencies
+        elif isinstance(A[0], Distribution) and isinstance(B[0], Distribution):
+            _, B_dependencies = get_dependencies(A, B)
+        else:
+            B_dependencies = [[f] for f in range(self.num_factors)]
 
-        qA = learning.update_obs_likelihood_dirichlet_factorized(
-            self.pA, 
-            self.A, 
-            obs, 
-            self.qs, 
-            self.A_factor_list,
-            self.lr_pA, 
-            self.modalities_to_learn
-        )
+        """TODO: check B action shape"""
+        if B_action_dependencies is not None:
+            B_action_dependencies = B_action_dependencies
+        else:
+            B_action_dependencies = [[f] for f in range(self.num_factors)]
+        return A_dependencies, B_dependencies, B_action_dependencies
 
-        self.pA = qA # set new prior to posterior
-        self.A = utils.norm_dist_obj_arr(qA) # take expected value of posterior Dirichlet parameters to calculate posterior over A array
+    def _flatten_B_action_dims(self, B, B_action_dependencies):
+        assert hasattr(B[0], "shape"), "Elements of B must be tensors and have attribute shape"
+        action_maps = []  # mapping from multi action dependencies to flat action dependencies for each B
+        B_flat = []
+        for i, (B_f, action_dependency) in enumerate(zip(B, B_action_dependencies)):
+            if action_dependency == []:
+                B_flat.append(jnp.expand_dims(B_f, axis=-1))
+                action_maps.append(
+                    {
+                        "multi_dependency": [],
+                        "multi_dims": [],
+                        "flat_dependency": [i],
+                        "flat_dims": [1],
+                    }
+                )
+                continue
 
-        return qA
+            dims = [self.num_controls_multi[d] for d in action_dependency]
+            target_shape = list(B_f.shape)[: -len(action_dependency)] + [pymath.prod(dims)]
+            B_flat.append(B_f.reshape(target_shape))
+            action_maps.append(
+                {
+                    "multi_dependency": action_dependency,
+                    "multi_dims": dims,
+                    "flat_dependency": [i],
+                    "flat_dims": [pymath.prod(dims)],
+                }
+            )
+        return B_flat, action_maps
 
-    def _update_A_old(self, obs):
-        """
-        Update approximate posterior beliefs about Dirichlet parameters that parameterise the observation likelihood or ``A`` array.
+    def _construct_flattend_policies(self, policies, action_maps):
+        policies_flat = []
+        for action_map in action_maps:
+            if action_map["multi_dependency"] == []:
+                policies_flat.append(jnp.zeros_like(policies[..., 0]))
+                continue
 
-        Parameters
-        ----------
-        observation: ``list`` or ``tuple`` of ints
-            The observation input. Each entry ``observation[m]`` stores the index of the discrete
-            observation for modality ``m``.
-
-        Returns
-        -----------
-        qA: ``numpy.ndarray`` of dtype object
-            Posterior Dirichlet parameters over observation model (same shape as ``A``), after having updated it with observations.
-        """
-
-        qA = learning.update_obs_likelihood_dirichlet(
-            self.pA, 
-            self.A, 
-            obs, 
-            self.qs, 
-            self.lr_pA, 
-            self.modalities_to_learn
-        )
-
-        self.pA = qA # set new prior to posterior
-        self.A = utils.norm_dist_obj_arr(qA) # take expected value of posterior Dirichlet parameters to calculate posterior over A array
-
-        return qA
-
-    def update_B(self, qs_prev):
-        """
-        Update posterior beliefs about Dirichlet parameters that parameterise the transition likelihood 
-        
-        Parameters
-        -----------
-        qs_prev: 1D ``numpy.ndarray`` or ``numpy.ndarray`` of dtype object
-            Marginal posterior beliefs over hidden states at previous timepoint.
-    
-        Returns
-        -----------
-        qB: ``numpy.ndarray`` of dtype object
-            Posterior Dirichlet parameters over transition model (same shape as ``B``), after having updated it with state beliefs and actions.
-        """
-
-        qB = learning.update_state_likelihood_dirichlet_interactions(
-            self.pB,
-            self.B,
-            self.action,
-            self.qs,
-            qs_prev,
-            self.B_factor_list,
-            self.lr_pB,
-            self.factors_to_learn
-        )
-
-        self.pB = qB # set new prior to posterior
-        self.B = utils.norm_dist_obj_arr(qB)  # take expected value of posterior Dirichlet parameters to calculate posterior over B array
-
-        return qB
-    
-    def _update_B_old(self, qs_prev):
-        """
-        Update posterior beliefs about Dirichlet parameters that parameterise the transition likelihood 
-        
-        Parameters
-        -----------
-        qs_prev: 1D ``numpy.ndarray`` or ``numpy.ndarray`` of dtype object
-            Marginal posterior beliefs over hidden states at previous timepoint.
-    
-        Returns
-        -----------
-        qB: ``numpy.ndarray`` of dtype object
-            Posterior Dirichlet parameters over transition model (same shape as ``B``), after having updated it with state beliefs and actions.
-        """
-
-        qB = learning.update_state_likelihood_dirichlet(
-            self.pB,
-            self.B,
-            self.action,
-            self.qs,
-            qs_prev,
-            self.lr_pB,
-            self.factors_to_learn
-        )
-
-        self.pB = qB # set new prior to posterior
-        self.B = utils.norm_dist_obj_arr(qB)  # take expected value of posterior Dirichlet parameters to calculate posterior over B array
-
-        return qB
-    
-    def update_D(self, qs_t0 = None):
-        """
-        Update Dirichlet parameters of the initial hidden state distribution 
-        (prior beliefs about hidden states at the beginning of the inference window).
-
-        Parameters
-        -----------
-        qs_t0: 1D ``numpy.ndarray``, ``numpy.ndarray`` of dtype object, or ``None``
-            Marginal posterior beliefs over hidden states at current timepoint. If ``None``, the 
-            value of ``qs_t0`` is set to ``self.qs_hist[0]`` (i.e. the initial hidden state beliefs at the first timepoint).
-            If ``self.inference_algo == "MMP"``, then ``qs_t0`` is set to be the Bayesian model average of beliefs about hidden states
-            at the first timestep of the backwards inference horizon, where the average is taken with respect to posterior beliefs about policies.
-      
-        Returns
-        -----------
-        qD: ``numpy.ndarray`` of dtype object
-            Posterior Dirichlet parameters over initial hidden state prior (same shape as ``qs_t0``), after having updated it with state beliefs.
-        """
-        
-        if self.inference_algo == "VANILLA":
-            
-            if qs_t0 is None:
-                
-                try:
-                    qs_t0 = self.qs_hist[0]
-                except ValueError:
-                    print("qs_t0 must either be passed as argument to `update_D` or `save_belief_hist` must be set to True!")             
-
-        elif self.inference_algo == "MMP":
-            
-            if self.edge_handling_params['use_BMA']:
-                qs_t0 = self.latest_belief
-            elif self.edge_handling_params['policy_sep_prior']:
-              
-                qs_pi_t0 = self.latest_belief
-
-                # get beliefs about policies at the time at the beginning of the inference horizon
-                if hasattr(self, "q_pi_hist"):
-                    begin_horizon_step = max(0, self.curr_timestep - self.inference_horizon)
-                    q_pi_t0 = np.copy(self.q_pi_hist[begin_horizon_step])
-                else:
-                    q_pi_t0 = np.copy(self.q_pi)
-            
-                qs_t0 = inference.average_states_over_policies(qs_pi_t0,q_pi_t0) # beliefs about hidden states at the first timestep of the inference horizon
-        
-        qD = learning.update_state_prior_dirichlet(self.pD, qs_t0, self.lr_pD, factors = self.factors_to_learn)
-        
-        self.pD = qD # set new prior to posterior
-        self.D = utils.norm_dist_obj_arr(qD) # take expected value of posterior Dirichlet parameters to calculate posterior over D array
-
-        return qD
+            policies_flat.append(
+                utils.get_combination_index(
+                    policies[..., action_map["multi_dependency"]],
+                    action_map["multi_dims"],
+                )
+            )
+        policies_flat = jnp.stack(policies_flat, axis=-1)
+        return policies_flat
 
     def _get_default_params(self):
         method = self.inference_algo
         default_params = None
         if method == "VANILLA":
-            default_params = {"num_iter": 10, "dF": 1.0, "dF_tol": 0.001, "compute_vfe": True}
+            default_params = {"num_iter": 8, "dF": 1.0, "dF_tol": 0.001}
         elif method == "MMP":
-            default_params = {"num_iter": 10, "grad_descent": True, "tau": 0.25}
+            raise NotImplementedError("MMP is not implemented")
         elif method == "VMP":
             raise NotImplementedError("VMP is not implemented")
         elif method == "BP":
@@ -938,4 +639,34 @@ class Agent(object):
 
         return default_params
 
-    
+    def _validate(self):
+        for m in range(self.num_modalities):
+            factor_dims = tuple([self.num_states[f] for f in self.A_dependencies[m]])
+            assert (
+                self.A[m].shape[2:] == factor_dims
+            ), f"Please input an `A_dependencies` whose {m}-th indices correspond to the hidden state factors that line up with lagging dimensions of A[{m}]..."
+            if self.pA != None:
+                assert (
+                    self.pA[m].shape[2:] == factor_dims
+                ), f"Please input an `A_dependencies` whose {m}-th indices correspond to the hidden state factors that line up with lagging dimensions of pA[{m}]..."
+            assert max(self.A_dependencies[m]) <= (
+                self.num_factors - 1
+            ), f"Check modality {m} of `A_dependencies` - must be consistent with `num_states` and `num_factors`..."
+
+        for f in range(self.num_factors):
+            factor_dims = tuple([self.num_states[f] for f in self.B_dependencies[f]])
+            assert (
+                self.B[f].shape[2:-1] == factor_dims
+            ), f"Please input a `B_dependencies` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of B[{f}]..."
+            if self.pB != None:
+                assert (
+                    self.pB[f].shape[2:-1] == factor_dims
+                ), f"Please input a `B_dependencies` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of pB[{f}]..."
+            assert max(self.B_dependencies[f]) <= (
+                self.num_factors - 1
+            ), f"Check factor {f} of `B_dependencies` - must be consistent with `num_states` and `num_factors`..."
+
+        for factor_idx in self.control_fac_idx:
+            assert (
+                self.num_controls[factor_idx] > 1
+            ), "Control factor (and B matrix) dimensions are not consistent with user-given control_fac_idx"

@@ -1,8 +1,6 @@
 import unittest
-from pymdp.jax import distribution
+from pymdp import distribution
 import numpy as np
-
-
 class TestDists(unittest.TestCase):
 
     def test_distribution_slice(self):

@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-from pymdp.envs import Env
+from pymdp.legacy.envs import Env
 
 
 class GridWorldEnv(Env):

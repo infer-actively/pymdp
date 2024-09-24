@@ -1,87 +1,73 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
+from typing import Optional, List, Dict
+from jaxtyping import Array, PRNGKeyArray
+from functools import partial
 
-""" Environment Base Class
-
-__author__: Conor Heins, Alexander Tschantz, Brennan Klein
-
-"""
+from equinox import Module, field, tree_at
+from jax import vmap, random as jr, tree_util as jtu
+import jax.numpy as jnp
 
 
-class Env(object):
-    """ 
-    The Env base class, loosely-inspired by the analogous ``env`` class of the OpenAIGym framework. 
+def select_probs(positions, matrix, dependency_list, actions=None):
+    args = tuple(p for i, p in enumerate(positions) if i in dependency_list)
+    args += () if actions is None else (actions,)
 
-    A typical workflow is as follows:
+    return matrix[..., *args]
 
-    >>> my_env = MyCustomEnv(<some_params>)
-    >>> initial_observation = my_env.reset(initial_state)
-    >>> my_agent.infer_states(initial_observation)
-    >>> my_agent.infer_policies()
-    >>> next_action = my_agent.sample_action()
-    >>> next_observation = my_env.step(next_action)
 
-    This would be the first step of an active inference process, where a sub-class of ``Env``, ``MyCustomEnv`` is initialized, 
-    an initial observation is produced, and these observations are fed into an instance of ``Agent`` in order to produce an action,
-    that can then be fed back into the the ``Env`` instance.
+def cat_sample(key, p):
+    a = jnp.arange(p.shape[-1])
+    if p.ndim > 1:
+        choice = lambda key, p: jr.choice(key, a, p=p)
+        keys = jr.split(key, len(p))
+        return vmap(choice)(keys, p)
 
-    """
+    return jr.choice(key, a, p=p)
 
-    def reset(self, state=None):
-        """
-        Resets the initial state of the environment. Depending on case, it may be common to return an initial observation as well.
-        """
-        raise NotImplementedError
 
-    def step(self, action):
-        """
-        Steps the environment forward using an action.
+class PyMDPEnv(Module):
+    params: Dict
+    state: List[Array]
+    dependencies: Dict = field(static=True)
 
-        Parameters
-        ----------
-        action
-            The action, the type/format of which depends on the implementation.
+    def __init__(self, params: Dict, dependencies: Dict, init_state: List[Array] = None):
+        self.params = params
+        self.dependencies = dependencies
 
-        Returns
-        ---------
-        observation
-            Sensory observations for an agent, the type/format of which depends on the implementation of ``step`` and the observation space of the agent.
-        """
-        raise NotImplementedError
+        if init_state is None:
+            init_state = jtu.tree_map(lambda x: jnp.argmax(x, -1), self.params["D"])
 
-    def render(self):
-        """
-        Rendering function, that typically creates a visual representation of the state of the environment at the current timestep.
-        """
-        pass
+        self.state = init_state
 
-    def sample_action(self):
-        pass
+    def reset(self, key: Optional[PRNGKeyArray] = None):
+        if key is None:
+            state = self.state
+        else:
+            probs = self.params["D"]
+            keys = list(jr.split(key, len(probs)))
+            state = jtu.tree_map(cat_sample, keys, probs)
 
-    def get_likelihood_dist(self):
-        raise ValueError(
-            "<{}> does not provide a model specification".format(type(self).__name__)
-        )
+        return tree_at(lambda x: x.state, self, state)
 
-    def get_transition_dist(self):
-        raise ValueError(
-            "<{}> does not provide a model specification".format(type(self).__name__)
-        )
+    @vmap
+    def step(self, rng_key: PRNGKeyArray, actions: Optional[Array] = None):
+        # return a list of random observations and states
+        key_state, key_obs = jr.split(rng_key)
+        state = self.state
+        if actions is not None:
+            actions = list(actions)
+            _select_probs = partial(select_probs, state)
+            state_probs = jtu.tree_map(_select_probs, self.params["B"], self.dependencies["B"], actions)
 
-    def get_uniform_posterior(self):
-        raise ValueError(
-            "<{}> does not provide a model specification".format(type(self).__name__)
-        )
+            keys = list(jr.split(key_state, len(state_probs)))
+            new_state = jtu.tree_map(cat_sample, keys, state_probs)
+        else:
+            new_state = state
 
-    def get_rand_likelihood_dist(self):
-        raise ValueError(
-            "<{}> does not provide a model specification".format(type(self).__name__)
-        )
+        _select_probs = partial(select_probs, new_state)
+        obs_probs = jtu.tree_map(_select_probs, self.params["A"], self.dependencies["A"])
 
-    def get_rand_transition_dist(self):
-        raise ValueError(
-            "<{}> does not provide a model specification".format(type(self).__name__)
-        )
+        keys = list(jr.split(key_obs, len(obs_probs)))
+        new_obs = jtu.tree_map(cat_sample, keys, obs_probs)
+        new_obs = jtu.tree_map(lambda x: jnp.expand_dims(x, -1), new_obs)
 
-    def __str__(self):
-        return "<{} instance>".format(type(self).__name__)
+        return new_obs, tree_at(lambda x: (x.state), self, new_state)

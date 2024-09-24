@@ -11,9 +11,9 @@ import unittest
 import numpy as np
 import jax.numpy as jnp
 
-from pymdp.jax.algos import run_vanilla_fpi as fpi_jax
-from pymdp.algos import run_vanilla_fpi as fpi_numpy
-from pymdp import utils, maths
+from pymdp.algos import run_vanilla_fpi as fpi_jax
+from pymdp.legacy.algos import run_vanilla_fpi as fpi_numpy
+from pymdp.legacy import utils, maths
 
 class TestInferenceJax(unittest.TestCase):
 

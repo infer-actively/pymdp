@@ -13,10 +13,10 @@ import unittest
 import numpy as np
 from copy import deepcopy
 
-from pymdp.agent import Agent
-from pymdp import utils, maths
-from pymdp import inference, control, learning
-from pymdp.default_models import generate_grid_world_transitions
+from pymdp.legacy.agent import Agent
+from pymdp.legacy import utils, maths
+from pymdp.legacy import inference, control, learning
+from pymdp.legacy.default_models import generate_grid_world_transitions
 
 class TestAgent(unittest.TestCase):
     

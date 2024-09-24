@@ -17,14 +17,13 @@ import jax.tree_util as jtu
 from jax import vmap, nn
 from jax import random as jr
 
-from pymdp.jax.inference import smoothing_ovf
-from pymdp import utils, maths
-from pymdp.control import construct_policies
+from pymdp.inference import smoothing_ovf
+from pymdp.legacy import utils, maths
+from pymdp.legacy.control import construct_policies
 
 from jax.experimental import sparse
 
 from typing import Any, List, Dict
-
 
 def make_model_configs(source_seed=0, num_models=4) -> Dict:
     """

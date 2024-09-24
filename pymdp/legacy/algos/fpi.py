@@ -3,8 +3,8 @@
 # pylint: disable=no-member
 
 import numpy as np
-from pymdp.maths import spm_dot, dot_likelihood, get_joint_likelihood, softmax, calc_free_energy, spm_log_single, spm_log_obj_array
-from pymdp.utils import to_obj_array, obj_array, obj_array_uniform
+from pymdp.legacy.maths import spm_dot, dot_likelihood, get_joint_likelihood, softmax, calc_free_energy, spm_log_single, spm_log_obj_array
+from pymdp.legacy.utils import to_obj_array, obj_array, obj_array_uniform
 from itertools import chain
 from copy import deepcopy
 

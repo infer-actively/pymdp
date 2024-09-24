@@ -11,8 +11,8 @@ import unittest
 import itertools
 import numpy as np
 
-from pymdp import utils
-from pymdp.jax import utils as jax_utils
+from pymdp.legacy import utils
+from pymdp import utils as jax_utils
 
 class TestUtils(unittest.TestCase):
     def test_obj_array_from_list(self):
