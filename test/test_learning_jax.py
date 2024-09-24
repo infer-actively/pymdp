@@ -287,7 +287,6 @@ class TestLearningJax(unittest.TestCase):
         qB is the posterior, pB is the prior and B is the expectation of the likelihood wrt the
         current posterior over B, i.e. $B = E_Q(B)[P(s_t | s_{t-1}, u_{t-1}, B)]$
         """
-        np.random.seed(0)
 
         num_states = [3, 4, 2]
         num_controls = [3, 5, 5]
@@ -342,7 +341,6 @@ class TestLearningJax(unittest.TestCase):
         qB is the posterior, pB is the prior and B is the expectation of the likelihood wrt the
         current posterior over B, i.e. $B = E_Q(B)[P(s_t | s_{t-1}, u_{t-1}, B)]$
         """
-        np.random.seed(0)
 
         num_states = [3, 4, 2]
         num_controls = [3, 5, 5]
