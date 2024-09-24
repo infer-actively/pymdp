@@ -70,22 +70,28 @@ def update_state_transition_dirichlet_f(pB_f, actions_f, joint_qs_f, lr=1.0):
 
     return qB_f, dirichlet_expected_value(qB_f)
 
-def update_state_transition_dirichlet(pB, joint_beliefs, actions, *, num_controls, lr):
-
+def update_state_transition_dirichlet(pB, joint_beliefs, actions, *, num_controls, lr, factors_to_update='all'):
+    """"
+    Update posterior Diriichlet parameters of the state transition likelihood model (B) given the joint beliefs over hidden states and actions.
+    """
     nf = len(pB)
     actions_onehot_fn = lambda f, dim: nn.one_hot(actions[..., f], dim, axis=-1)
     update_B_f_fn = lambda pB_f, joint_qs_f, f, na: update_state_transition_dirichlet_f(
         pB_f, actions_onehot_fn(f, na), joint_qs_f, lr=lr
     )    
+
+    if factors_to_update == 'all':
+        factors_to_update = list(range(nf))
+    
     result = tree_map(
-        update_B_f_fn, pB, joint_beliefs, list(range(nf)), num_controls
+        update_B_f_fn, pB, joint_beliefs, factors_to_update, num_controls
     )
 
-    qB = []
-    E_qB = []
-    for r in result:
-        qB.append(r[0])
-        E_qB.append(r[1])
+    qB = [pb_f for pb_f in pB]
+    E_qB = [dirichlet_expected_value(qb_f) for qb_f in qB]
+    for (f,r) in zip(factors_to_update, result):
+        qB[f] = r[0]
+        E_qB[f] = r[1]
 
     return qB, E_qB
     
