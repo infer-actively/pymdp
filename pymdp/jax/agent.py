@@ -521,6 +521,20 @@ class Agent(Module):
             action = vmap(sample_policy)(q_pi, alpha=self.alpha, rng_key=rng_key)
 
         return action
+    
+    def decode_multi_actions(self, action):
+        """Decode flattened actions to multiple actions"""
+        if self.action_maps is None:
+            return action
+
+        action_multi = jnp.zeros((self.batch_size, len(self.num_controls_multi))).astype(action.dtype)
+        for f, action_map in enumerate(self.action_maps):
+            if action_map["multi_dependency"] == []:
+                continue
+
+            action_multi_f = utils.index_to_combination(action[..., f], action_map["multi_dims"])
+            action_multi = action_multi.at[..., action_map["multi_dependency"]].set(action_multi_f)
+        return action_multi
 
     def encode_multi_actions(self, action_multi):
         """Encode multiple actions to flattened actions"""
