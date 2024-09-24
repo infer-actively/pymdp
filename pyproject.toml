@@ -8,6 +8,9 @@ version = "1.0.0"
 description = "A Python package for solving Markov Decision Processes with Active Inference"
 authors = [
     { name = "Conor Heins", email="conor.heins@gmail.com"},
+    { name = "Alexander Tschantz", email="tschantz.alec@gmail.com"},
+    { name = "Tim Verbelen", email="verbelen.tim@gmail.com"},
+    { name = "Dimitrije Markovic", email="dimitrije.markovic@tu-dresden.de"}
 ]
 readme = "README.md"
 license = {file = "LICENSE"}
