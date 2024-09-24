@@ -42,5 +42,15 @@ gpu = [
 Documentation = "https://pymdp-rtd.readthedocs.io/en/stable/"
 Repository = "https://github.com/infer-actively/pymdp"
 
+[tool.setuptools]
+packages = [
+    'pymdp',
+    'pymdp.envs',
+    'pymdp.algos',
+    'pymdp.jax',
+    'pymdp.jax.envs',
+    'pymdp.jax.planning',
+]
+
 [tool.black]
 line-length = 120
