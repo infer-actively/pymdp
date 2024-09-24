@@ -46,6 +46,9 @@ class Agent(Module):
     gamma: Array
     alpha: Array
 
+    # matrix of all possible policies (each row is a policy of shape (num_controls[0], num_controls[1], ..., num_controls[num_control_factors-1])
+    policies: Array
+
     # threshold for inductive inference (the threshold for pruning transitions that are below a certain probability)
     inductive_threshold: Array
     # epsilon for inductive inference (trade-off/weight for how much inductive value contributes to EFE of policies)
@@ -74,8 +77,6 @@ class Agent(Module):
     policy_len: int = field(static=True)
     # depth of inductive inference (i.e. number of future timesteps to use when computing inductive `I` matrix)
     inductive_depth: int = field(static=True)
-    # matrix of all possible policies (each row is a policy of shape (num_controls[0], num_controls[1], ..., num_controls[num_control_factors-1])
-    policies: Array = field(static=True)
     # flag for whether to use expected utility ("reward" or "preference satisfaction") when computing expected free energy
     use_utility: bool = field(static=True)
     # flag for whether to use state information gain ("salience") when computing expected free energy
