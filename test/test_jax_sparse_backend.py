@@ -164,20 +164,24 @@ class TestJaxSparseOperations(unittest.TestCase):
 
             for i in range(n_batch):
                 smoothed_beliefs_dense = smoothing_ovf(take_i(beliefs, i), B, action_hist[i])
+                dense_marginals, dense_joints = smoothed_beliefs_dense
 
                 # sparse jax version
                 smoothed_beliefs_sparse = smoothing_ovf(take_i(beliefs, i), sparse_B, action_hist[i])
+                sparse_marginals, sparse_joints = smoothed_beliefs_sparse
 
-                # for example, something like this
-                for f, (dense_out, sparse_out) in enumerate(zip(smoothed_beliefs_dense, smoothed_beliefs_sparse)):
-                    qs_smooth_dense, qs_joint_dense = dense_out
-                    qs_smooth_sparse, qs_joint_sparse = sparse_out
+                # test equality of marginal distributions from dense and sparse versions of smoothing
+                for f, (dense_out, sparse_out) in enumerate(zip(dense_marginals, sparse_marginals)):
+                    
+                    self.assertTrue(np.allclose(dense_out, sparse_out))
+
+                # test equality of joint distributions from dense and sparse versions of smoothing
+                for f, (dense_out, sparse_out) in enumerate(zip(dense_joints, sparse_joints)):
 
                     # Densify
-                    qs_joint_sparse = jnp.array([i.todense() for i in qs_joint_sparse])
+                    qs_joint_sparse = jnp.array([i.todense() for i in sparse_out])
 
-                    self.assertTrue(np.allclose(qs_smooth_dense, qs_smooth_sparse))
-                    self.assertTrue(np.allclose(qs_joint_dense, qs_joint_sparse))
+                    self.assertTrue(np.allclose(dense_out, qs_joint_sparse))
 
 
 if __name__ == "__main__":
