@@ -19,6 +19,7 @@ def cat_sample(key, p):
     if p.ndim > 1:
         choice = lambda key, p: jr.choice(key, a, p=p)
         keys = jr.split(key, len(p))
+        print(keys.shape)
         return vmap(choice)(keys, p)
 
     return jr.choice(key, a, p=p)
@@ -42,7 +43,7 @@ class Env(Module):
 
     @vmap
     def reset(self, key: Optional[PRNGKeyArray], state: Optional[List[Array]] = None):
-        if state is None:
+        if state is not None:
             state = self.state
         else:
             probs = self.params["D"]
