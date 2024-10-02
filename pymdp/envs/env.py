@@ -24,7 +24,7 @@ def cat_sample(key, p):
     return jr.choice(key, a, p=p)
 
 
-class PyMDPEnv(Module):
+class Env(Module):
     params: Dict
     state: List[Array]
     dependencies: Dict = field(static=True)
@@ -46,7 +46,19 @@ class PyMDPEnv(Module):
             keys = list(jr.split(key, len(probs)))
             state = jtu.tree_map(cat_sample, keys, probs)
 
-        return tree_at(lambda x: x.state, self, state)
+        return tree_at(lambda x: x.state, self, state) # TODO: change this to return an observation
+
+    def render(self, mode="human"):
+        """
+
+        Returns
+        ----
+        if mode == "human":
+            returns None, renders the environment using MPL inside the function
+        elif mode == "rgb_array":
+            A (H, W, 3) uint8 jax.numpy array, with values between 0 and 255
+        """
+        pass
 
     @vmap
     def step(self, rng_key: PRNGKeyArray, actions: Optional[Array] = None):

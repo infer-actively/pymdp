@@ -4,10 +4,10 @@ import jax.tree_util as jtu
 import jax.lax
 
 from pymdp.jax.agent import Agent
-from pymdp.jax.envs.env import PyMDPEnv
+from pymdp.jax.envs.env import Env
 
 
-def rollout(agent: Agent, env: PyMDPEnv, num_timesteps: int, rng_key: jr.PRNGKey, policy_search=None):
+def rollout(agent: Agent, env: Env, num_timesteps: int, rng_key: jr.PRNGKey, policy_search=None):
     """
     Rollout an agent in an environment for a number of timesteps.
 
@@ -15,7 +15,7 @@ def rollout(agent: Agent, env: PyMDPEnv, num_timesteps: int, rng_key: jr.PRNGKey
     ----------
     agent: ``Agent``
         Agent to interact with the environment
-    env: ``PyMDPEnv`
+    env: ``Env`
         Environment to interact with
     num_timesteps: ``int``
         Number of timesteps to rollout for
@@ -32,7 +32,7 @@ def rollout(agent: Agent, env: PyMDPEnv, num_timesteps: int, rng_key: jr.PRNGKey
         Carry dictionary from the last timestep
     info: ``dict``
         Dictionary containing information about the rollout, i.e. executed actions, observations, beliefs, etc.
-    env: ``PyMDPEnv``
+    env: ``Env``
         Environment state after the rollout
     """
     # get the batch_size of the agent
