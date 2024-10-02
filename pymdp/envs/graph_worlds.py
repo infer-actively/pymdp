@@ -1,7 +1,7 @@
 import networkx as nx
 import jax.numpy as jnp
 
-from .env import PyMDPEnv
+from .env import Env
 
 
 def generate_connected_clusters(cluster_size=2, connections=2):
@@ -20,7 +20,7 @@ def generate_connected_clusters(cluster_size=2, connections=2):
     }
 
 
-class GraphEnv(PyMDPEnv):
+class GraphEnv(Env):
     """
     A simple environment where an agent can move around a graph and search an object.
     The agent observes its own location, as well as whether the object is at its location.
