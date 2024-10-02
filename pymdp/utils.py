@@ -11,6 +11,9 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import numpy as np
 
+import io
+import matplotlib.pyplot as plt
+
 from typing import (
     Any,
     Callable,
@@ -22,9 +25,7 @@ from typing import (
     Tuple,
 )
 
-Tensor = (
-    Any  # maybe jnp.ndarray, but typing seems not to be well defined for jax
-)
+Tensor = Any  # maybe jnp.ndarray, but typing seems not to be well defined for jax
 Vector = List[Tensor]
 Shape = Sequence[int]
 ShapeList = list[Shape]
@@ -118,3 +119,17 @@ def index_to_combination(index, dims):
 
     x = np.flip(np.stack(x, axis=-1), axis=-1)
     return x
+
+
+def fig2img(fig):
+    """
+    Utility function that converts a matplotlib figure to a numpy array
+    """
+    with io.BytesIO() as buff:
+        fig.savefig(buff, facecolor="white", format="raw")
+        buff.seek(0)
+        data = np.frombuffer(buff.getvalue(), dtype=np.uint8)
+    w, h = fig.canvas.get_width_height()
+    im = data.reshape((int(h), int(w), -1))
+    plt.close(fig)
+    return im[:, :, :3]

@@ -27,6 +27,7 @@ def cat_sample(key, p):
 class Env(Module):
     params: Dict
     state: List[Array]
+    current_obs: List[Array]
     dependencies: Dict = field(static=True)
 
     def __init__(self, params: Dict, dependencies: Dict, init_state: List[Array] = None):
@@ -37,16 +38,23 @@ class Env(Module):
             init_state = jtu.tree_map(lambda x: jnp.argmax(x, -1), self.params["D"])
 
         self.state = init_state
+        self.current_obs = jtu.tree_map(lambda x: jnp.zeros([x.shape[0], x.shape[1]]), self.params["A"])
 
-    def reset(self, key: Optional[PRNGKeyArray] = None):
-        if key is None:
+    @vmap
+    def reset(self, key: Optional[PRNGKeyArray], state: Optional[List[Array]] = None):
+        if state is None:
             state = self.state
         else:
             probs = self.params["D"]
-            keys = list(jr.split(key, len(probs)))
-            state = jtu.tree_map(cat_sample, keys, probs)
+            keys = list(jr.split(key, len(probs) + 1))
+            key = keys[0]
+            state = jtu.tree_map(cat_sample, keys[1:], probs)
 
-        return tree_at(lambda x: x.state, self, state) # TODO: change this to return an observation
+        new_obs = self._sample_obs(key, state)
+
+        env = tree_at(lambda x: x.state, self, state)
+        env = tree_at(lambda x: x.current_obs, env, new_obs)
+        return new_obs, env
 
     def render(self, mode="human"):
         """
@@ -75,11 +83,17 @@ class Env(Module):
         else:
             new_state = state
 
-        _select_probs = partial(select_probs, new_state)
+        new_obs = self._sample_obs(key_obs, new_state)
+
+        env = tree_at(lambda x: (x.state), self, new_state)
+        env = tree_at(lambda x: x.current_obs, env, new_obs)
+        return new_obs, env
+
+    def _sample_obs(self, key, state):
+        _select_probs = partial(select_probs, state)
         obs_probs = jtu.tree_map(_select_probs, self.params["A"], self.dependencies["A"])
 
-        keys = list(jr.split(key_obs, len(obs_probs)))
+        keys = list(jr.split(key, len(obs_probs)))
         new_obs = jtu.tree_map(cat_sample, keys, obs_probs)
         new_obs = jtu.tree_map(lambda x: jnp.expand_dims(x, -1), new_obs)
-
-        return new_obs, tree_at(lambda x: (x.state), self, new_state)
+        return new_obs
