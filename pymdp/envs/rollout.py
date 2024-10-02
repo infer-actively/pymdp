@@ -3,8 +3,8 @@ import jax.random as jr
 import jax.tree_util as jtu
 import jax.lax
 
-from pymdp.jax.agent import Agent
-from pymdp.jax.envs.env import Env
+from pymdp.agent import Agent
+from pymdp.envs.env import Env
 
 
 def rollout(agent: Agent, env: Env, num_timesteps: int, rng_key: jr.PRNGKey, policy_search=None):
