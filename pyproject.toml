@@ -49,6 +49,7 @@ Repository = "https://github.com/infer-actively/pymdp"
 packages = [
     'pymdp',
     'pymdp.envs',
+    'pymdp.envs.assets',
     'pymdp.planning',
     'pymdp.legacy',
     'pymdp.legacy.algos',
