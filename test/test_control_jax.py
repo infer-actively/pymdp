@@ -14,11 +14,10 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
 
-import pymdp.jax.control as ctl_jax
-import pymdp.control as ctl_np
+import pymdp.control as ctl_jax
+import pymdp.legacy.control as ctl_np
 
-from pymdp.jax.maths import factor_dot
-from pymdp import utils
+from pymdp.legacy import utils
 
 cfg = {"source_key": 0, "num_models": 4}
 

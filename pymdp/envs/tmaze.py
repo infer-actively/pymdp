@@ -1,346 +1,305 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
+import os
+import math
+import jax.numpy as jnp
 
-""" T Maze Environment (Factorized)
+import io
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+import scipy.ndimage as ndimage
+from pymdp.utils import fig2img
 
-__author__: Conor Heins, Alexander Tschantz, Brennan Klein
+from equinox import field
 
-"""
+from .env import Env
 
-from pymdp.envs import Env
-from pymdp import utils, maths
-import numpy as np
-
-LOCATION_FACTOR_ID = 0
-TRIAL_FACTOR_ID = 1
-
-LOCATION_MODALITY_ID = 0
-REWARD_MODALITY_ID = 1
-CUE_MODALITY_ID = 2
-
-REWARD_IDX = 1
-LOSS_IDX = 2
-
-
-class TMazeEnv(Env):
-    """ Implementation of the 3-arm T-Maze environment """
-    def __init__(self, reward_probs=None):
-
-        if reward_probs is None:
-            a = 0.98
-            b = 1.0 - a
-            self.reward_probs = [a, b]
-        else:
-            if sum(reward_probs) != 1:
-                raise ValueError("Reward probabilities must sum to 1!")
-            elif len(reward_probs) != 2:
-                raise ValueError("Only two reward conditions currently supported...")
-            else:
-                self.reward_probs = reward_probs
-
-        self.num_states = [4, 2]
-        self.num_locations = self.num_states[LOCATION_FACTOR_ID]
-        self.num_controls = [self.num_locations, 1]
-        self.num_reward_conditions = self.num_states[TRIAL_FACTOR_ID]
-        self.num_cues = self.num_reward_conditions
-        self.num_obs = [self.num_locations, self.num_reward_conditions + 1, self.num_cues]
-        self.num_factors = len(self.num_states)
-        self.num_modalities = len(self.num_obs)
-
-        self._transition_dist = self._construct_transition_dist()
-        self._likelihood_dist = self._construct_likelihood_dist()
-
-        self._reward_condition = None
-        self._state = None
-    
-    def reset(self, state=None):
-        if state is None:
-            loc_state = utils.onehot(0, self.num_locations)
-            
-            self._reward_condition = np.random.randint(self.num_reward_conditions) # randomly select a reward condition
-            reward_condition = utils.onehot(self._reward_condition, self.num_reward_conditions)
-
-            full_state = utils.obj_array(self.num_factors)
-            full_state[LOCATION_FACTOR_ID] = loc_state
-            full_state[TRIAL_FACTOR_ID] = reward_condition
-            self._state = full_state
-        else:
-            self._state = state
-        return self._get_observation()
-
-    def step(self, actions):
-        prob_states = utils.obj_array(self.num_factors)
-        for factor, state in enumerate(self._state):
-            prob_states[factor] = self._transition_dist[factor][:, :, int(actions[factor])].dot(state)
-        state = [utils.sample(ps_i) for ps_i in prob_states]
-        self._state = self._construct_state(state)
-        return self._get_observation()
-
-    def render(self):
-        pass
-
-    def sample_action(self):
-        return [np.random.randint(self.num_controls[i]) for i in range(self.num_factors)]
-
-    def get_likelihood_dist(self):
-        return self._likelihood_dist
-
-    def get_transition_dist(self):
-        return self._transition_dist
+# load assets
+assets_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "assets")
+mouse_img = plt.imread(os.path.join(assets_dir, "mouse.png"))
+right_mouse_img = jnp.clip(ndimage.rotate(mouse_img, 90, reshape=True), 0.0, 1.0)
+left_mouse_img = jnp.clip(ndimage.rotate(mouse_img, -90, reshape=True), 0.0, 1.0)
+up_mouse_img = jnp.clip(ndimage.rotate(mouse_img, 180, reshape=True), 0.0, 1.0)
+cheese_img = plt.imread(os.path.join(assets_dir, "cheese.png"))
+shock_img = plt.imread(os.path.join(assets_dir, "shock.png"))
 
 
-    def get_rand_likelihood_dist(self):
-        pass
+class TMaze(Env):
+    """
+    Implementation of the 3-arm T-Maze environment.
+    """
 
-    def get_rand_transition_dist(self):
-        pass
+    reward_probability: float = field(static=True)
 
-    def _get_observation(self):
+    def __init__(self, batch_size=1, reward_probability=0.98, reward_condition=None):
+        self.reward_probability = reward_probability
 
-        prob_obs = [maths.spm_dot(A_m, self._state) for A_m in self._likelihood_dist]
+        A, A_dependencies = self.generate_A()
+        A = [jnp.broadcast_to(a, (batch_size,) + a.shape) for a in A]
+        B, B_dependencies = self.generate_B()
+        B = [jnp.broadcast_to(b, (batch_size,) + b.shape) for b in B]
+        D = self.generate_D(reward_condition)
+        D = [jnp.broadcast_to(d, (batch_size,) + d.shape) for d in D]
 
-        obs = [utils.sample(po_i) for po_i in prob_obs]
-        return obs
+        params = {
+            "A": A,
+            "B": B,
+            "D": D,
+        }
 
-    def _construct_transition_dist(self):
-        B_locs = np.eye(self.num_locations)
-        B_locs = B_locs.reshape(self.num_locations, self.num_locations, 1)
-        B_locs = np.tile(B_locs, (1, 1, self.num_locations))
-        B_locs = B_locs.transpose(1, 2, 0)
+        dependencies = {
+            "A": A_dependencies,
+            "B": B_dependencies,
+        }
 
-        B = utils.obj_array(self.num_factors)
+        super().__init__(params, dependencies)
 
-        B[LOCATION_FACTOR_ID] = B_locs
-        B[TRIAL_FACTOR_ID] = np.eye(self.num_reward_conditions).reshape(
-            self.num_reward_conditions, self.num_reward_conditions, 1
-        )
-        return B
+    def generate_A(self):
+        """
+        T-maze has 3 observation modalities:
+            location: [center, left, right, cue],
+            reward [no reward, reward, punishment]
+            and cue [no clue, left arm, right arm],
+        and 2 state factors: agent location [center, left, right, cue] and reward location [left, right]
+        """
+        A = []
+        A.append(jnp.eye(4))
+        A.append(jnp.zeros([3, 4, 2]))
+        A.append(jnp.zeros([3, 4, 2]))
 
-    def _construct_likelihood_dist(self):
+        A_dependencies = [[0], [0, 1], [0, 1]]
 
-        A = utils.obj_array_zeros([ [obs_dim] + self.num_states for obs_dim in self.num_obs] )
-
-        for loc in range(self.num_states[LOCATION_FACTOR_ID]):
-            for reward_condition in range(self.num_states[TRIAL_FACTOR_ID]):
-
-                # The case when the agent is in the centre location
+        # 4 locations : [center, left, right, cue]
+        for loc in range(4):
+            # 2 reward conditions: [left, right]
+            for reward_condition in range(2):
+                # start location
                 if loc == 0:
                     # When in the centre location, reward observation is always 'no reward'
                     # or the outcome with index 0
-                    A[REWARD_MODALITY_ID][0, loc, reward_condition] = 1.0
+                    A[1] = A[1].at[0, loc, reward_condition].set(1.0)
 
-                    # When in the centre location, cue is totally ambiguous with respect to the reward condition
-                    A[CUE_MODALITY_ID][:, loc, reward_condition] = 1.0 / self.num_obs[2]
+                    # When in the centre location, cue is absent
+                    A[2] = A[2].at[0, loc, reward_condition].set(1.0)
 
                 # The case when loc == 3, or the cue location ('bottom arm')
                 elif loc == 3:
 
                     # When in the cue location, reward observation is always 'no reward'
                     # or the outcome with index 0
-                    A[REWARD_MODALITY_ID][0, loc, reward_condition] = 1.0
+                    A[1] = A[1].at[0, loc, reward_condition].set(1.0)
 
                     # When in the cue location, the cue indicates the reward condition umambiguously
                     # signals where the reward is located
-                    A[CUE_MODALITY_ID][reward_condition, loc, reward_condition] = 1.0
+                    A[2] = A[2].at[reward_condition + 1, loc, reward_condition].set(1.0)
 
-                # The case when the agent is in one of the (potentially-) rewarding armS
+                # The case when the agent is in one of the (potentially) rewarding arms
                 else:
 
                     # When location is consistent with reward condition
                     if loc == (reward_condition + 1):
                         # Means highest probability is concentrated over reward outcome
-                        high_prob_idx = REWARD_IDX
+                        high_prob_idx = 1
                         # Lower probability on loss outcome
-                        low_prob_idx = LOSS_IDX
+                        low_prob_idx = 2
                     else:
                         # Means highest probability is concentrated over loss outcome
-                        high_prob_idx = LOSS_IDX
+                        high_prob_idx = 2
                         # Lower probability on reward outcome
-                        low_prob_idx = REWARD_IDX
+                        low_prob_idx = 1
 
-                    reward_probs = self.reward_probs[0]
-                    A[REWARD_MODALITY_ID][high_prob_idx, loc, reward_condition] = reward_probs
+                    A[1] = A[1].at[high_prob_idx, loc, reward_condition].set(self.reward_probability)
+                    A[1] = A[1].at[low_prob_idx, loc, reward_condition].set(1 - self.reward_probability)
 
-                    reward_probs = self.reward_probs[1]
-                    A[REWARD_MODALITY_ID][low_prob_idx, loc, reward_condition] = reward_probs
+                    # Cue is absent here
+                    A[2] = A[2].at[0, loc, reward_condition].set(1.0)
 
-                    # Cue is ambiguous when in the reward location
-                    A[CUE_MODALITY_ID][:, loc, reward_condition] = 1.0 / self.num_obs[2]
+        return A, A_dependencies
 
-                # The agent always observes its location, regardless of the reward condition
-                A[LOCATION_MODALITY_ID][loc, loc, reward_condition] = 1.0
+    def generate_B(self):
+        """
+        T-maze has 2 state factors:
+        agent location [center, left, right, cue] and reward location [left, right]
+        agent can move between locations by teleporting, reward location stays fixed
+        """
+        B = []
 
-        return A
+        # agent can teleport to any location
+        B_loc = jnp.eye(4)
+        B_loc = B_loc.reshape(4, 4, 1)
+        B_loc = jnp.tile(B_loc, (1, 1, 4))
+        B_loc = B_loc.transpose(1, 2, 0)
+        B.append(B_loc)
 
-    def _construct_state(self, state_tuple):
+        # reward condition stays fixed
+        B_reward = jnp.eye(2).reshape(2, 2, 1)
+        B.append(B_reward)
 
-        state = utils.obj_array(self.num_factors)
-        for f, ns in enumerate(self.num_states):
-            state[f] = utils.onehot(state_tuple[f], ns)
+        B_dependencies = [[0], [1]]
 
-        return state
+        return B, B_dependencies
 
-    @property
-    def state(self):
-        return self._state
+    def generate_D(self, reward_condition=None):
+        """
+        Agent starts at center
+        Reward condition can be set or randomly sampled
+        """
+        D = []
+        D_loc = jnp.zeros([4])
+        D_loc = D_loc.at[0].set(1.0)
+        D.append(D_loc)
 
-    @property
-    def reward_condition(self):
-        return self._reward_condition
-
-
-class TMazeEnvNullOutcome(Env):
-    """ Implementation of the 3-arm T-Maze environment where there is an additional null outcome within the cue modality, so that the agent
-    doesn't get a random cue observation, but a null one, when it visits non-cue locations"""
-
-    def __init__(self, reward_probs=None):
-
-        if reward_probs is None:
-            a = 0.98
-            b = 1.0 - a
-            self.reward_probs = [a, b]
+        if reward_condition is None:
+            D_reward = jnp.ones(2) * 0.5
         else:
-            if sum(reward_probs) != 1:
-                raise ValueError("Reward probabilities must sum to 1!")
-            elif len(reward_probs) != 2:
-                raise ValueError("Only two reward conditions currently supported...")
+            D_reward = jnp.zeros(2)
+            D_reward = D_reward.at[reward_condition].set(1.0)
+        D.append(D_reward)
+        return D
+
+    def render(self, mode="human"):
+        batch_size = self.params["A"][0].shape[0]
+
+        # Create n x n subplots for the batch_size
+        n = math.ceil(math.sqrt(batch_size))
+
+        # Create the subplots
+        fig, axes = plt.subplots(n, n, figsize=(6, 6))
+
+        # Loop through the batch_size and plot on each subplot
+        for i in range(batch_size):
+            row = i // n
+            col = i % n
+            if batch_size == 1:
+                ax = axes
             else:
-                self.reward_probs = reward_probs
+                ax = axes[row, col]
 
-        self.num_states = [4, 2]
-        self.num_locations = self.num_states[LOCATION_FACTOR_ID]
-        self.num_controls = [self.num_locations, 1]
-        self.num_reward_conditions = self.num_states[TRIAL_FACTOR_ID]
-        self.num_cues = self.num_reward_conditions
-        self.num_obs = [self.num_locations, self.num_reward_conditions + 1, self.num_cues + 1]
-        self.num_factors = len(self.num_states)
-        self.num_modalities = len(self.num_obs)
+            grid_dims = [3, 3]
+            X, Y = jnp.meshgrid(jnp.arange(grid_dims[1] + 1), jnp.arange(grid_dims[0] + 1))
+            h = ax.pcolormesh(
+                X, Y, jnp.ones(grid_dims), edgecolors="none", vmin=0, vmax=30, linewidth=5, cmap="coolwarm", snap=True
+            )
+            ax.invert_yaxis()
+            ax.axis("off")
+            ax.set_aspect("equal")
 
-        self._transition_dist = self._construct_transition_dist()
-        self._likelihood_dist = self._construct_likelihood_dist()
+            edge_left = ax.add_patch(
+                patches.Rectangle(
+                    (0, 1),
+                    1.0,
+                    2.0,
+                    linewidth=0,
+                    facecolor=[1.0, 1.0, 1.0],
+                )
+            )
 
-        self._reward_condition = None
-        self._state = None
+            edge_right = ax.add_patch(
+                patches.Rectangle(
+                    (2, 1),
+                    1.0,
+                    2.0,
+                    linewidth=0,
+                    facecolor=[1.0, 1.0, 1.0],
+                )
+            )
 
-    def reset(self, state=None):
-        if state is None:
-            loc_state = utils.onehot(0, self.num_locations)
-            
-            self._reward_condition = np.random.randint(self.num_reward_conditions) # randomly select a reward condition
-            reward_condition = utils.onehot(self._reward_condition, self.num_reward_conditions)
+            arm_left = ax.add_patch(
+                patches.Rectangle(
+                    (0, 0),
+                    1.0,
+                    1.0,
+                    linewidth=0,
+                    facecolor="tab:orange",
+                )
+            )
 
-            full_state = utils.obj_array(self.num_factors)
-            full_state[LOCATION_FACTOR_ID] = loc_state
-            full_state[TRIAL_FACTOR_ID] = reward_condition
-            self._state = full_state
-        else:
-            self._state = state
-        return self._get_observation()
+            arm_right = ax.add_patch(
+                patches.Rectangle(
+                    (2, 0),
+                    1.0,
+                    1.0,
+                    linewidth=0,
+                    facecolor="tab:purple",
+                )
+            )
 
-    def step(self, actions):
-        prob_states = utils.obj_array(self.num_factors)
-        for factor, state in enumerate(self._state):
-            prob_states[factor] = self._transition_dist[factor][:, :, int(actions[factor])].dot(state)
-        state = [utils.sample(ps_i) for ps_i in prob_states]
-        self._state = self._construct_state(state)
-        return self._get_observation()
+            # show the cue
+            cue = self.current_obs[2][i, 0]
+            if cue == 0:
+                cue_color = "tab:gray"
+            elif cue == 1:
+                # left
+                cue_color = "tab:orange"
+            elif cue == 2:
+                # right
+                cue_color = "tab:purple"
 
+            cue = ax.add_patch(
+                patches.Circle(
+                    (1.5, 2.5),
+                    0.3,
+                    linewidth=0,
+                    facecolor=cue_color,
+                )
+            )
 
-    def sample_action(self):
-        return [np.random.randint(self.num_controls[i]) for i in range(self.num_factors)]
+            # show the reward
+            loc = self.current_obs[0][i, 0]
 
-    def get_likelihood_dist(self):
-        return self._likelihood_dist.copy()
+            reward = self.current_obs[1][i, 0]
 
-    def get_transition_dist(self):
-        return self._transition_dist.copy()
+            if loc == 1:
+                coords = (0.5, 0.5)
+            elif loc == 2:
+                coords = (2.5, 0.5)
 
-    def _get_observation(self):
+            if reward == 1:
+                # cheese
+                cheese_im = OffsetImage(cheese_img, zoom=0.025 / n)
+                ab_cheese = AnnotationBbox(cheese_im, coords, xycoords="data", frameon=False)
+                an_cheese = ax.add_artist(ab_cheese)
+                an_cheese.set_zorder(2)
 
-        prob_obs = [maths.spm_dot(A_m, self._state) for A_m in self._likelihood_dist]
+            elif reward == 2:
+                # shock
+                shock_im = OffsetImage(shock_img, zoom=0.1 / n)
+                ab_shock = AnnotationBbox(shock_im, coords, xycoords="data", frameon=False)
+                ab_shock = ax.add_artist(ab_shock)
+                ab_shock.set_zorder(2)
 
-        obs = [utils.sample(po_i) for po_i in prob_obs]
-        return obs
+            # show the mouse
+            if loc == 0:
+                # center
+                up_mouse_im = OffsetImage(up_mouse_img, zoom=0.04 / n)
+                ab_mouse = AnnotationBbox(up_mouse_im, (1.5, 1.5), xycoords="data", frameon=False)
+                ab_mouse = ax.add_artist(ab_mouse)
+                ab_mouse.set_zorder(3)
+            elif loc == 1:
+                # left
+                left_mouse_im = OffsetImage(left_mouse_img, zoom=0.04 / n)
+                ab_mouse = AnnotationBbox(left_mouse_im, (0.75, 0.5), xycoords="data", frameon=False)
+                ab_mouse = ax.add_artist(ab_mouse)
+                ab_mouse.set_zorder(3)
+            elif loc == 2:
+                # right
+                right_mouse_im = OffsetImage(right_mouse_img, zoom=0.04 / n)
+                ab_mouse = AnnotationBbox(right_mouse_im, (2.25, 0.5), xycoords="data", frameon=False)
+                ab_mouse = ax.add_artist(ab_mouse)
+                ab_mouse.set_zorder(3)
+            elif loc == 3:
+                # bottom
+                down_mouse_im = OffsetImage(mouse_img, zoom=0.04 / n)
+                ab_mouse = AnnotationBbox(down_mouse_im, (1.5, 2.25), xycoords="data", frameon=False)
+                ab_mouse = ax.add_artist(ab_mouse)
+                ab_mouse.set_zorder(3)
 
-    def _construct_transition_dist(self):
-        B_locs = np.eye(self.num_locations)
-        B_locs = B_locs.reshape(self.num_locations, self.num_locations, 1)
-        B_locs = np.tile(B_locs, (1, 1, self.num_locations))
-        B_locs = B_locs.transpose(1, 2, 0)
+        # Hide any extra subplots if batch_size isn't a perfect square
+        for i in range(batch_size, n * n):
+            fig.delaxes(axes.flatten()[i])
 
-        B = utils.obj_array(self.num_factors)
+        plt.tight_layout()
 
-        B[LOCATION_FACTOR_ID] = B_locs
-        B[TRIAL_FACTOR_ID] = np.eye(self.num_reward_conditions).reshape(
-            self.num_reward_conditions, self.num_reward_conditions, 1
-        )
-        return B
-
-    def _construct_likelihood_dist(self):
-
-        A = utils.obj_array_zeros([ [obs_dim] + self.num_states for _, obs_dim in enumerate(self.num_obs)] )
-        
-        for loc in range(self.num_states[LOCATION_FACTOR_ID]):
-            for reward_condition in range(self.num_states[TRIAL_FACTOR_ID]):
-
-                if loc == 0:  # the case when the agent is in the centre location
-                    # When in the centre location, reward observation is always 'no reward', or the outcome with index 0
-                    A[REWARD_MODALITY_ID][0, loc, reward_condition] = 1.0
-
-                    # When in the center location, cue observation is always 'no cue', or the outcome with index 0
-                    A[CUE_MODALITY_ID][0, loc, reward_condition] = 1.0
-
-                # The case when loc == 3, or the cue location ('bottom arm')
-                elif loc == 3:
-
-                    # When in the cue location, reward observation is always 'no reward', or the outcome with index 0
-                    A[REWARD_MODALITY_ID][0, loc, reward_condition] = 1.0
-
-                    # When in the cue location, the cue indicates the reward condition umambiguously
-                    # signals where the reward is located
-                    A[CUE_MODALITY_ID][reward_condition + 1, loc, reward_condition] = 1.0
-
-                # The case when the agent is in one of the (potentially-) rewarding arms
-                else:
-
-                    # When location is consistent with reward condition
-                    if loc == (reward_condition + 1):
-                        # Means highest probability is concentrated over reward outcome
-                        high_prob_idx = REWARD_IDX
-                        # Lower probability on loss outcome
-                        low_prob_idx = LOSS_IDX  #
-                    else:
-                        # Means highest probability is concentrated over loss outcome
-                        high_prob_idx = LOSS_IDX
-                        # Lower probability on reward outcome
-                        low_prob_idx = REWARD_IDX
-
-                    reward_probs = self.reward_probs[0]
-                    A[REWARD_MODALITY_ID][high_prob_idx, loc, reward_condition] = reward_probs
-                    reward_probs = self.reward_probs[1]
-                    A[REWARD_MODALITY_ID][low_prob_idx, loc, reward_condition] = reward_probs
-
-                    # When in the one of the rewarding arms, cue observation is always 'no cue', or the outcome with index 0
-                    A[CUE_MODALITY_ID][0, loc, reward_condition] = 1.0
-
-                # The agent always observes its location, regardless of the reward condition
-                A[LOCATION_MODALITY_ID][loc, loc, reward_condition] = 1.0
-
-        return A
-
-    def _construct_state(self, state_tuple):
-
-        state = utils.obj_array(self.num_factors)
-
-        for f, ns in enumerate(self.num_states):
-            state[f] = utils.onehot(state_tuple[f], ns)
-            
-        return state
-
-    @property
-    def state(self):
-        return self._state
-
-    @property
-    def reward_condition(self):
-        return self._reward_condition
+        if mode == "human":
+            plt.show()
+        elif mode == "rgb_array":
+            return fig2img(fig)

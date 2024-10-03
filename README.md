@@ -120,8 +120,7 @@ If you would like to contribute to this repo, we recommend using venv and pip
 cd <path_to_repo_fork>
 python3 -m venv env
 source env/bin/activate
-pip install -r requirements.txt
-pip install -e ./ # This will install pymdp as a local dev package
+pip install -e .  # This will install pymdp as a local dev package
 ```
 
 You should then be able to run tests locally with `pytest`
