@@ -56,5 +56,8 @@ packages = [
     'pymdp.legacy.envs',
 ]
 
+[tool.setuptools.package-data]
+pymdp = ['envs/assets/*']
+
 [tool.black]
 line-length = 120
