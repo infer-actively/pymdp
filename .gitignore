@@ -9,3 +9,4 @@ __pycache__
 env/
 pymdp.egg-info
 inferactively_pymdp.egg-info
+venv/
