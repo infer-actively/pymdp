@@ -26,13 +26,26 @@ shock_img = plt.imread(os.path.join(assets_dir, "shock.png"))
 class TMaze(Env):
     """
     Implementation of the 3-arm T-Maze environment.
+    A T-shaped maze where an agent must navigate to find a reward, with:
+    - 4 locations: center, left arm, right arm, and cue position (bottom arm) 
+    - 2 reward conditions: reward in left or right arm
+    - Cues that indicate which arm contains the reward
     """
 
     reward_probability: float = field(static=True)
 
     def __init__(self, batch_size=1, reward_probability=0.98, reward_condition=None):
+
+        """
+        Initialize T-Maze environment. A is the observation likelihood matrix, B is the transition matrix, D is the initial state distribution.
+        Args:
+            batch_size: Number of parallel environments
+            reward_probability: Probability of getting reward/punishment in correct/incorrect arm
+            reward_condition: If specified, fixes reward to left (0) or right (1) arm, otherwise reward is randomly assigned
+        """
         self.reward_probability = reward_probability
 
+        # Generate and broadcast observation likelihood(A), transition (B), and initial state (D) tensors to the batch size
         A, A_dependencies = self.generate_A()
         A = [jnp.broadcast_to(a, (batch_size,) + a.shape) for a in A]
         B, B_dependencies = self.generate_B()
@@ -46,8 +59,8 @@ class TMaze(Env):
             "D": D,
         }
 
-        dependencies = {
-            "A": A_dependencies,
+        dependencies = { # specifying which matrix is dependent on which state factors allows you to not have to specify all combinations of state factors in the matrix
+            "A": A_dependencies, 
             "B": B_dependencies,
         }
 
@@ -55,11 +68,15 @@ class TMaze(Env):
 
     def generate_A(self):
         """
-        T-maze has 3 observation modalities:
-            location: [center, left, right, cue],
-            reward [no reward, reward, punishment]
-            and cue [no clue, left arm, right arm],
-        and 2 state factors: agent location [center, left, right, cue] and reward location [left, right]
+        Generate observation likelihood tensors.
+        
+        Returns three observation matrices:
+        A[0]: Location observations (4x4 identity matrix)
+            - Maps true location to observed location
+        A[1]: Reward observations (3x4x2 matrix)
+            - [no outcome, reward, punishment] x [4 locations] x [2 reward conditions]
+        A[2]: Cue observations (3x4x2 matrix)
+            - [no cue, cued left arm, cued right arm] x [4 locations] x [2 reward conditions]
         """
         A = []
         A.append(jnp.eye(4))
@@ -68,62 +85,45 @@ class TMaze(Env):
 
         A_dependencies = [[0], [0, 1], [0, 1]]
 
-        # 4 locations : [center, left, right, cue]
-        for loc in range(4):
-            # 2 reward conditions: [left, right]
-            for reward_condition in range(2):
-                # start location
-                if loc == 0:
-                    # When in the centre location, reward observation is always 'no reward'
-                    # or the outcome with index 0
+        
+        for loc in range(4): # for each location: [center, left, right, cue]
+            for reward_condition in range(2): # for each reward condition: [left, right]
+                if loc == 0: # when at starting location, the centre location, there is no reward and no cue
                     A[1] = A[1].at[0, loc, reward_condition].set(1.0)
-
-                    # When in the centre location, cue is absent
                     A[2] = A[2].at[0, loc, reward_condition].set(1.0)
 
-                # The case when loc == 3, or the cue location ('bottom arm')
-                elif loc == 3:
-
-                    # When in the cue location, reward observation is always 'no reward'
-                    # or the outcome with index 0
+                elif loc == 3: # when at cue location, the cue indicates the reward condition unambiguously but there is no reward
                     A[1] = A[1].at[0, loc, reward_condition].set(1.0)
-
-                    # When in the cue location, the cue indicates the reward condition umambiguously
-                    # signals where the reward is located
                     A[2] = A[2].at[reward_condition + 1, loc, reward_condition].set(1.0)
 
-                # The case when the agent is in one of the (potentially) rewarding arms
-                else:
-
-                    # When location is consistent with reward condition
-                    if loc == (reward_condition + 1):
-                        # Means highest probability is concentrated over reward outcome
-                        high_prob_idx = 1
-                        # Lower probability on loss outcome
-                        low_prob_idx = 2
+                else: # when at one of the outcome (reward or punishment) arms
+                    if loc == (reward_condition + 1): # if the agent is at the correct reward location
+                        high_prob_idx = 1 # there is a high probability of reward
+                        low_prob_idx = 2 # there is a low probability of punishment
                     else:
-                        # Means highest probability is concentrated over loss outcome
-                        high_prob_idx = 2
-                        # Lower probability on reward outcome
-                        low_prob_idx = 1
+                        high_prob_idx = 2 # otherwise, there is a high probability of punishment   
+                        low_prob_idx = 1 # there is a low probability of reward
 
                     A[1] = A[1].at[high_prob_idx, loc, reward_condition].set(self.reward_probability)
                     A[1] = A[1].at[low_prob_idx, loc, reward_condition].set(1 - self.reward_probability)
 
-                    # Cue is absent here
-                    A[2] = A[2].at[0, loc, reward_condition].set(1.0)
+                    A[2] = A[2].at[0, loc, reward_condition].set(1.0) # there are no cues in the outcome arms
 
         return A, A_dependencies
 
     def generate_B(self):
         """
-        T-maze has 2 state factors:
-        agent location [center, left, right, cue] and reward location [left, right]
-        agent can move between locations by teleporting, reward location stays fixed
+        Generate transition model matrices.
+        
+        Returns two transition matrices:
+        B[0]: Location transitions (4x4x4)
+            - Agent can teleport between any locations
+        B[1]: Reward condition transitions (2x2x1)
+            - Reward location stays fixed
         """
         B = []
 
-        # agent can teleport to any location
+        # agent can move from any location to any location according to the environment
         B_loc = jnp.eye(4)
         B_loc = B_loc.reshape(4, 4, 1)
         B_loc = jnp.tile(B_loc, (1, 1, 4))
@@ -140,17 +140,27 @@ class TMaze(Env):
 
     def generate_D(self, reward_condition=None):
         """
-        Agent starts at center
-        Reward condition can be set or randomly sampled
+        Generate initial state distribution.
+        
+        Returns two initial state vectors:
+        D[0]: Initial location (4,)
+            - Agent always starts in center (index 0)
+        D[1]: Initial reward condition (2,)
+            - Either random (50/50) or fixed based on reward_condition
+        
+        Args:
+            reward_condition: If specified, fixes reward to left (0) or right (1) arm, otherwise random
         """
         D = []
         D_loc = jnp.zeros([4])
-        D_loc = D_loc.at[0].set(1.0)
+        D_loc = D_loc.at[0].set(1.0) # the agent always starts at the centre
         D.append(D_loc)
 
         if reward_condition is None:
+            # 50/50 chance of reward in left/right arm
             D_reward = jnp.ones(2) * 0.5
         else:
+            # reward is fixed in the left/right arm
             D_reward = jnp.zeros(2)
             D_reward = D_reward.at[reward_condition].set(1.0)
         D.append(D_reward)

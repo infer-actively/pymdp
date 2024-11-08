@@ -12,56 +12,147 @@ from jax import random as jr
 from jaxtyping import Array, PRNGKeyArray
 from matplotlib.lines import Line2D
 
+
+def get_maze_matrix(small=False):
+
+    """
+    We create a matrix representation of the T-maze environment
+    
+    Matrix values:
+    0: Grid cells the agent can move through
+    1: Initial position of the agent
+    2: Walls of the grid cells
+    3, 6, 9: Cue locations (multiples of 3, where 3 is cue for reward set 1, 6 for set 2, etc.)
+    4+: Potential reward locations:
+        4-5: Reward set 1 locations
+        7-8: Reward set 2 locations
+        10-11: Reward set 3 locations
+    
+    Args:
+        small: If True, creates a 3x5 maze with 2 reward sets
+               If False, creates a 5x5 maze with 3 reward sets
+    """
+
+    if small:
+        M = np.zeros((3, 5))  # 3x5 grid
+
+        # Set the reward locations for sets 1 and 2
+        M[0,1] = 4  # First location of reward set 1
+        M[1,1] = 5  # Second location of reward set 1
+        M[1,3] = 7  # First location of reward set 2
+        M[0,3] = 8  # Second location of reward set 2
+
+        # Set the cue locations
+        M[2,0] = 3  # Cue for reward set 1 (3 = 3*1)
+        M[2,4] = 6  # Cue for reward set 2 (6 = 3*2)
+
+        # Set the initial position
+        M[2,3] = 1
+    else:
+        M = np.zeros((5, 5))  # 5x5 grid
+
+        # Set the reward locations for sets 1, 2, and 3
+        M[0,1] = 4   # First location of reward set 1
+        M[1,1] = 5   # Second location of reward set 1
+        M[1,3] = 7   # First location of reward set 2
+        M[0,3] = 8   # Second location of reward set 2
+        M[4,1] = 10  # First location of reward set 3
+        M[4,3] = 11  # Second location of reward set 3
+
+        # Set the cue locations
+        M[2,0] = 3   # Cue for reward set 1 (3 = 3*1)
+        M[2,4] = 6   # Cue for reward set 2 (6 = 3*2)
+        M[3,2] = 9   # Cue for reward set 3 (9 = 3*3)
+
+        # Set the initial position
+        M[2,2] = 1
+
+    return M
+
 def parse_maze(maze, rng_key: PRNGKeyArray):
     """
+    Parses the maze matrix into a format needed for the environment and its visualization.
+    
     Parameters
     ----------
-    maze
-        a matrix representation of the environment
-        where indices have particular meaning:
-        0: Empty space
-        1: The initial position of the agent
-        2: Walls
-        3 + i: Cue for reward i
-        4 + i: Potential reward location i 1
-        4 + i: Potential reward location i 2
+    maze : array
+        A matrix representation of the environment where values represent:
+        0: Grid cells the agent can move through
+        1: Initial position of the agent
+        2: Walls of the grid cells 
+        3, 6, 9: Cue locations (multiples of 3, where 3 is cue for reward set 1, 6 for set 2, etc.)
+        4+: Potential reward locations:
+            4-5: Reward set 1 locations
+            7-8: Reward set 2 locations
+            10-11: Reward set 3 locations
+    
+    rng_key : PRNGKeyArray
+        Random key for determining which location in each set will be reward vs punishment
+    
     Returns
     ----------
-    env_info
-        a dictionary containing the environment information needed for
-        constructing the agent/environment matrices and visualization
-        purposes
+    env_info : dict
+        Dictionary containing:
+        - maze: The original maze matrix
+        - actions: Possible movements [(up), (down), (left), (right)]
+        - num_cues: Number of cue-reward sets
+        - cue_positions: Coordinates of each cue
+        - reward_indices: Flattened indices of true reward locations
+        - no_reward_indices: Flattened indices of punishment locations
+        - initial_position: Starting coordinates of agent
+        - reward_1_positions: Coordinates of first potential reward location in each set
+        - reward_2_positions: Coordinates of second potential reward location in each set
+        - reward_locations: Binary array indicating which position (1 or 2) contains reward for each set
     """
-
     rows, cols = maze.shape
 
+    # Calculate number of cue-reward sets based on highest value in maze
+    # (max value - 2) // 3 gives us number of sets because:
+    # Set 1: cue=3, rewards=4,5
+    # Set 2: cue=6, rewards=7,8
+    # Set 3: cue=9, rewards=10,11
     num_cues = int((jnp.max(maze) - 2) // 3)
 
+    
+    # Store coordinates for each set's cue and potential reward locations
     cue_positions = []
     reward_1_positions = []
     reward_2_positions = []
     for i in range(num_cues):
+        # For set i:
+        # Cue value = 3 + 3i (3,6,9)
         cue_positions.append(tuple(jnp.argwhere(maze == 3 + 3 * i)[0]))
+        # First reward location value = 4 + 3i (4,7,10)
         reward_1_positions.append(tuple(jnp.argwhere(maze == 4 + 3 * i)[0]))
+        # Second reward location value = 5 + 3i (5,8,11)
         reward_2_positions.append(tuple(jnp.argwhere(maze == 5 + 3 * i)[0]))
 
-    # Initialize agent's starting position (can be customized if required)
+    # Get agent's starting position (value = 1 in maze)
     initial_position = tuple(jnp.argwhere(maze == 1)[0])
 
-    # Actions: up, down, left, right
+    # Define possible movements in (row, col) format
     actions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
-    # Set reward location randomly
-    reward_locations = jr.choice(rng_key, 2, shape=(num_cues,))
+    # Randomly assign which location in each set will be reward vs punishment
+    # reward_locations[i] = 0 means first location is reward, 1 means second location is reward
+        # Using uniform random numbers
+    key, subkey = jr.split(rng_key)
+    reward_locations = (jr.uniform(subkey, shape=(num_cues,)) > 0.5).astype(jnp.int32)
+    # reward_locations = jr.choice(rng_key, 2, shape=(num_cues,))
     reward_indices = []
     no_reward_indices = []
 
+    # Convert 2D coordinates to flattened indices for each set
     for i in range(num_cues):
         if reward_locations[i] == 0:
+            # First location (4,7,10) is reward
             reward_indices += [jnp.ravel_multi_index(jnp.array(reward_1_positions[i]), maze.shape).item()]
+            # Second location (5,8,11) is punishment
             no_reward_indices += [jnp.ravel_multi_index(jnp.array(reward_2_positions[i]), maze.shape).item()]
         else:
+            # Second location is reward
             reward_indices += [jnp.ravel_multi_index(jnp.array(reward_2_positions[i]), maze.shape).item()]
+            # First location is punishment
             no_reward_indices += [jnp.ravel_multi_index(jnp.array(reward_1_positions[i]), maze.shape).item()]
 
     return {
@@ -329,23 +420,35 @@ def render(maze_info, env_state, show_img=True):
         alpha=0.5,
     )
 
-    plt.scatter(
-        [ri[1] for ri in reward_1_positions[-1:]],
-        [ri[0] for ri in reward_1_positions[-1:]],
-        marker="o",
-        color="red",
-        s=50,
-        label="Positive",
-    )
+    for i, (r1, r2) in enumerate(zip(reward_1_positions, reward_2_positions)):
+        if i == maze_info["num_cues"] - 1:  # Only for the true reward set
+            if maze_info["reward_locations"][i] == 0:
+                # First location is reward
+                plt.scatter(r1[1], r1[0], color='red', s=100, marker='o', zorder=4, label = "Reward")  # Red dot
+                plt.scatter(r2[1], r2[0], color='blue', s=100, marker='o', zorder=4, label = "Punishment")  # Blue dot
+            else:
+                # Second location is reward
+                plt.scatter(r2[1], r2[0], color='red', s=100, marker='o', zorder=4, label = "Reward")  # Red dot
+                plt.scatter(r1[1], r1[0], color='blue', s=100, marker='o', zorder=4, label = "Punishment")  # Blue dot
 
-    plt.scatter(
-        [ri[1] for ri in reward_2_positions[-1:]],
-        [ri[0] for ri in reward_2_positions[-1:]],
-        marker="o",
-        color="blue",
-        s=50,
-        label="Negative",
-    )
+
+    # plt.scatter(
+    #     [ri[1] for ri in reward_1_positions[-1:]],
+    #     [ri[0] for ri in reward_1_positions[-1:]],
+    #     marker="o",
+    #     color="red",
+    #     s=50,
+    #     label="Reward",
+    # )
+
+    # plt.scatter(
+    #     [ri[1] for ri in reward_2_positions[-1:]],
+    #     [ri[0] for ri in reward_2_positions[-1:]],
+    #     marker="o",
+    #     color="blue",
+    #     s=50,
+    #     label="Punishment",
+    # )
 
     plt.scatter(
         current_position[1],
@@ -361,9 +464,9 @@ def render(maze_info, env_state, show_img=True):
     handles, labels = plt.gca().get_legend_handles_labels()
     for i in range(num_cues):
         if i == num_cues - 1:
-            label = "Reward set"
+            label = "True Reward Set"
         else:
-            label = f"Distractor {i + 1} set"
+            label = f"Distractor Set {i + 1}"
         patch = Line2D(
             [0],
             [0],
