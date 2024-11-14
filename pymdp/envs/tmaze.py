@@ -1,17 +1,18 @@
 import os
 import math
 import jax.numpy as jnp
-
-import io
+import jax.random as jr
+import jax.tree_util as jtu
+import jax.lax
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import scipy.ndimage as ndimage
 from pymdp.utils import fig2img
-
 from equinox import field
-
 from .env import Env
+from pymdp.agent import Agent
+# import io
 
 # load assets
 assets_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "assets")
@@ -27,23 +28,28 @@ class TMaze(Env):
     """
     Implementation of the 3-arm T-Maze environment.
     A T-shaped maze where an agent must navigate to find a reward, with:
-    - 4 locations: center, left arm, right arm, and cue position (bottom arm) 
+    - 4 locations: centre, left arm, right arm, and cue position (bottom arm) 
     - 2 reward conditions: reward in left or right arm
     - Cues that indicate which arm contains the reward
     """
 
     reward_probability: float = field(static=True)
+    punishment_probability: float = field(static=True)
+    cue_validity: float = field(static=True)
 
-    def __init__(self, batch_size=1, reward_probability=0.98, reward_condition=None):
-
+    def __init__(self, batch_size=1, reward_probability=1.0, punishment_probability=1.0, cue_validity=0.95, reward_condition=None):
         """
         Initialize T-Maze environment. A is the observation likelihood matrix, B is the transition matrix, D is the initial state distribution.
         Args:
             batch_size: Number of parallel environments
-            reward_probability: Probability of getting reward/punishment in correct/incorrect arm
+            reward_probability: Probability of getting reward in correct arm
+            punishment_probability: Probability of getting punishment in incorrect arm
+            cue_validity: Probability of cue correctly indicating reward location
             reward_condition: If specified, fixes reward to left (0) or right (1) arm, otherwise reward is randomly assigned
         """
         self.reward_probability = reward_probability
+        self.punishment_probability = punishment_probability
+        self.cue_validity = cue_validity
 
         # Generate and broadcast observation likelihood(A), transition (B), and initial state (D) tensors to the batch size
         A, A_dependencies = self.generate_A()
@@ -71,43 +77,52 @@ class TMaze(Env):
         Generate observation likelihood tensors.
         
         Returns three observation matrices:
-        A[0]: Location observations (4x4 identity matrix)
+        A[0]: Location observations (5x5 identity matrix)
             - Maps true location to observed location
-        A[1]: Reward observations (3x4x2 matrix)
-            - [no outcome, reward, punishment] x [4 locations] x [2 reward conditions]
-        A[2]: Cue observations (3x4x2 matrix)
-            - [no cue, cued left arm, cued right arm] x [4 locations] x [2 reward conditions]
+            - [centre, left, right, cue, middle] x [centre, left, right, cue, middle]
+        A[1]: Reward observations (3x5 x2 matrix)
+            - [no outcome, reward, punishment] x [5 locations] x [2 reward conditions]
+        A[2]: Cue observations (3x5x2 matrix)
+            - [no cue, cued left arm, cued right arm] x [5 locations] x [2 reward conditions]
         """
         A = []
-        A.append(jnp.eye(4))
-        A.append(jnp.zeros([3, 4, 2]))
-        A.append(jnp.zeros([3, 4, 2]))
+        A.append(jnp.eye(5))
+        A.append(jnp.zeros([3, 5, 2]))
+        A.append(jnp.zeros([3, 5, 2]))
 
         A_dependencies = [[0], [0, 1], [0, 1]]
 
         
-        for loc in range(4): # for each location: [center, left, right, cue]
+        for loc in range(5): # for each location: [centre, left, right, cue, middle]
             for reward_condition in range(2): # for each reward condition: [left, right]
-                if loc == 0: # when at starting location, the centre location, there is no reward and no cue
+                if loc == 0: # when at starting location (centre, there is no reward and no cue
                     A[1] = A[1].at[0, loc, reward_condition].set(1.0)
                     A[2] = A[2].at[0, loc, reward_condition].set(1.0)
 
-                elif loc == 3: # when at cue location, the cue indicates the reward condition unambiguously but there is no reward
-                    A[1] = A[1].at[0, loc, reward_condition].set(1.0)
-                    A[2] = A[2].at[reward_condition + 1, loc, reward_condition].set(1.0)
+                elif loc == 3: # when at cue location
+                    A[1] = A[1].at[0, loc, reward_condition].set(1.0)  # still no reward at cue location
 
+                    # set high probability for correct cue based on cue_validity
+                    A[2] = A[2].at[reward_condition + 1, loc, reward_condition].set(self.cue_validity)
+                    # set low probability for incorrect cue
+                    other_cue = (1 - reward_condition) + 1  # if reward_condition is 0, other_cue is 2; if 1, other_cue is 1
+                    A[2] = A[2].at[other_cue, loc, reward_condition].set(1 - self.cue_validity)
+
+                elif loc == 4: # when at middle location
+                    A[1] = A[1].at[0, loc, reward_condition].set(1.0) # there are no outcomes at the middle
+                    # A[2] = A[2].at[0, loc, reward_condition].set(1.0) # there are no cues at the middle
                 else: # when at one of the outcome (reward or punishment) arms
                     if loc == (reward_condition + 1): # if the agent is at the correct reward location
-                        high_prob_idx = 1 # there is a high probability of reward
-                        low_prob_idx = 2 # there is a low probability of punishment
+                        # In correct arm: probability of reward, otherwise no outcome
+                        A[1] = A[1].at[1, loc, reward_condition].set(self.reward_probability)
+                        A[1] = A[1].at[0, loc, reward_condition].set(1 - self.reward_probability)
                     else:
-                        high_prob_idx = 2 # otherwise, there is a high probability of punishment   
-                        low_prob_idx = 1 # there is a low probability of reward
+                       # In incorrect arm: probability of punishment, otherwise no outcome
+                        A[1] = A[1].at[2, loc, reward_condition].set(self.punishment_probability)
+                        A[1] = A[1].at[0, loc, reward_condition].set(1 - self.punishment_probability)
 
-                    A[1] = A[1].at[high_prob_idx, loc, reward_condition].set(self.reward_probability)
-                    A[1] = A[1].at[low_prob_idx, loc, reward_condition].set(1 - self.reward_probability)
-
-                    A[2] = A[2].at[0, loc, reward_condition].set(1.0) # there are no cues in the outcome arms
+                A[2] = A[2].at[0, loc, reward_condition].set(1.0) # there are no cues in the outcome arms or middle
+                A[2] = A[2].at[0, 3, reward_condition].set(0.0)  # at cue location, there are cues so 'no cue' observation is 0
 
         return A, A_dependencies
 
@@ -116,18 +131,39 @@ class TMaze(Env):
         Generate transition model matrices.
         
         Returns two transition matrices:
-        B[0]: Location transitions (4x4x4)
-            - Agent can teleport between any locations
+        B[0]: Location transitions (5x5x5)
+            - Agent can move between adjacent locations in the T-maze
         B[1]: Reward condition transitions (2x2x1)
             - Reward location stays fixed
         """
         B = []
 
-        # agent can move from any location to any location according to the environment
-        B_loc = jnp.eye(4)
-        B_loc = B_loc.reshape(4, 4, 1)
-        B_loc = jnp.tile(B_loc, (1, 1, 4))
-        B_loc = B_loc.transpose(1, 2, 0)
+        
+        num_locations = 5  # 0: centre, 1: left, 2: right, 3: cue, 4: middle
+        B_loc = jnp.zeros((num_locations, num_locations, num_locations))
+        
+        # defining valid (adjacent) connections in the T-maze
+        valid_connections = [ # (from_location, to_location)
+            (0, 3),  # centre <-> cue
+            (3, 0),
+            (0, 4),  # centre <-> middle
+            (4, 0),
+            (4, 1),  # middle <-> left arm
+            (1, 4),
+            (4, 2),  # middle <-> right arm
+            (2, 4),
+        ]
+        
+        # filling in the transition matrix
+        for _from in range(num_locations):
+            for _to in range(num_locations):
+                for action in range(num_locations):
+                    if action == _to:  # trying to move to location '_to'
+                        if (_from, _to) in valid_connections:  # if movement is valid
+                            B_loc = B_loc.at[_to, _from, action].set(1.0)
+                        else:  # if movement is invalid, stay in current location
+                            B_loc = B_loc.at[_from, _from, action].set(1.0)
+        
         B.append(B_loc)
 
         # reward condition stays fixed
@@ -143,8 +179,8 @@ class TMaze(Env):
         Generate initial state distribution.
         
         Returns two initial state vectors:
-        D[0]: Initial location (4,)
-            - Agent always starts in center (index 0)
+        D[0]: Initial location (5,)
+            - Agent always starts in centre (index 0)
         D[1]: Initial reward condition (2,)
             - Either random (50/50) or fixed based on reward_condition
         
@@ -152,7 +188,7 @@ class TMaze(Env):
             reward_condition: If specified, fixes reward to left (0) or right (1) arm, otherwise random
         """
         D = []
-        D_loc = jnp.zeros([4])
+        D_loc = jnp.zeros([5])
         D_loc = D_loc.at[0].set(1.0) # the agent always starts at the centre
         D.append(D_loc)
 
@@ -237,18 +273,22 @@ class TMaze(Env):
             cue = self.current_obs[2][i, 0]
             if cue == 0:
                 cue_color = "tab:gray"
+                edge_color = "tab:gray"
             elif cue == 1:
                 # left
                 cue_color = "tab:orange"
+                edge_color = "tab:gray"
             elif cue == 2:
                 # right
                 cue_color = "tab:purple"
+                edge_color = "tab:gray"
 
             cue = ax.add_patch(
                 patches.Circle(
                     (1.5, 2.5),
                     0.3,
-                    linewidth=0,
+                    linewidth=8,
+                    edgecolor=edge_color,
                     facecolor=cue_color,
                 )
             )
@@ -279,7 +319,7 @@ class TMaze(Env):
 
             # show the mouse
             if loc == 0:
-                # center
+                # centre
                 up_mouse_im = OffsetImage(up_mouse_img, zoom=0.04 / n)
                 ab_mouse = AnnotationBbox(up_mouse_im, (1.5, 1.5), xycoords="data", frameon=False)
                 ab_mouse = ax.add_artist(ab_mouse)
@@ -302,6 +342,12 @@ class TMaze(Env):
                 ab_mouse = AnnotationBbox(down_mouse_im, (1.5, 2.25), xycoords="data", frameon=False)
                 ab_mouse = ax.add_artist(ab_mouse)
                 ab_mouse.set_zorder(3)
+            elif loc == 4:
+                # middle
+                middle_mouse_im = OffsetImage(up_mouse_img, zoom=0.04 / n)
+                ab_mouse = AnnotationBbox(middle_mouse_im, (1.5, 0.5), xycoords="data", frameon=False)
+                ab_mouse = ax.add_artist(ab_mouse)
+                ab_mouse.set_zorder(3)
 
         # Hide any extra subplots if batch_size isn't a perfect square
         for i in range(batch_size, n * n):
@@ -313,3 +359,115 @@ class TMaze(Env):
             plt.show()
         elif mode == "rgb_array":
             return fig2img(fig)
+
+
+
+def aif_loop(agent: Agent, env: Env, num_timesteps: int, rng_key: jr.PRNGKey):
+    """
+    Rollout an agent in an environment for a number of timesteps.
+
+    Parameters
+    ----------
+    agent: ``Agent``
+        Agent to interact with the environment
+    env: ``Env`
+        Environment to interact with
+    num_timesteps: ``int``
+        Number of timesteps to rollout for
+    rng_key: ``PRNGKey``
+        Random key to use for sampling actions
+
+    Returns
+    ----------
+    last: ``dict``
+        Carry dictionary from the last timestep
+    info: ``dict``
+        Dictionary containing information about the rollout, i.e. executed actions, observations, beliefs, etc.
+    env: ``Env``
+        Environment state after the rollout
+    """
+    # get the batch_size of the agent
+    batch_size = agent.batch_size
+
+    def default_policy_search(agent, qs, rng_key):
+        qpi, _ = agent.infer_policies(qs)
+        return qpi, None
+
+    policy_search = default_policy_search
+
+    def step_fn(carry, x):
+        action_t = carry["action_t"]
+        observation_t = carry["observation_t"]
+        qs = carry["qs"]
+        empirical_prior = carry["empirical_prior"]
+        env = carry["env"]
+        rng_key = carry["rng_key"]
+
+        # We infer the posterior using FPI
+        # so we don't need past actions or qs_hist
+        qs = agent.infer_states(
+            observations=observation_t,
+            empirical_prior=empirical_prior,
+        )
+
+        rng_key, key = jr.split(rng_key)
+        qpi, _ = policy_search(agent, qs, key)
+
+        keys = jr.split(rng_key, batch_size + 1)
+        rng_key = keys[0]
+        action_t = agent.sample_action(qpi, rng_key=keys[1:])
+
+        keys = jr.split(rng_key, batch_size + 1)
+        rng_key = keys[0]
+        observation_t, env = env.step(rng_key=keys[1:], actions=action_t)
+
+        empirical_prior, qs = agent.update_empirical_prior(action_t, qs)
+
+        carry = {
+            "action_t": action_t,
+            "observation_t": observation_t,
+            "qs": jtu.tree_map(lambda x: x[:, -1:, ...], qs),
+            "empirical_prior": empirical_prior,
+            "env": env,
+            "rng_key": rng_key,
+        }
+        info = {
+            "qpi": qpi,
+            "qs": jtu.tree_map(lambda x: x[:, 0, ...], qs),
+            "env": env,
+            "observation": observation_t,
+            "action": action_t,
+        }
+
+        return carry, info
+
+    # generate initial observation
+    keys = jr.split(rng_key, batch_size + 1)
+    rng_key = keys[0]
+    observation_0, env = env.step(keys[1:])
+
+    # initial belief
+    qs_0 = jtu.tree_map(lambda x: jnp.expand_dims(x, -2), agent.D)
+
+    # infer initial action to get the right shape
+    qpi_0, _ = agent.infer_policies(qs_0)
+    keys = jr.split(rng_key, batch_size + 1)
+    rng_key = keys[0]
+    action_t = agent.sample_action(qpi_0, rng_key=keys[1:])
+    # but set it to zeros
+    action_t *= 0
+
+    initial_carry = {
+        "qs": qs_0,
+        "action_t": action_t,
+        "observation_t": observation_0,
+        "empirical_prior": agent.D,
+        "env": env,
+        "rng_key": rng_key,
+    }
+
+    # Scan over time dimension (axis 1)
+    last, info = jax.lax.scan(step_fn, initial_carry, jnp.arange(num_timesteps))
+
+    info = jtu.tree_map(lambda x: jnp.swapaxes(x, 0, 1), info)
+    return last, info, env

@@ -5,6 +5,8 @@ from functools import partial
 from equinox import Module, field, tree_at
 from jax import vmap, random as jr, tree_util as jtu
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
+import numpy as np
 
 def _float_to_int_index(x):
     # converting float to integer for array indexing while preserving the og data structure for gradient computation    
