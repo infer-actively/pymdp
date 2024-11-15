@@ -36,6 +36,7 @@ class TMaze(Env):
     reward_probability: float = field(static=True)
     punishment_probability: float = field(static=True)
     cue_validity: float = field(static=True)
+    reward_condition: float = field(static=True)
 
     def __init__(self, batch_size=1, reward_probability=1.0, punishment_probability=1.0, cue_validity=0.95, reward_condition=None):
         """
@@ -50,13 +51,14 @@ class TMaze(Env):
         self.reward_probability = reward_probability
         self.punishment_probability = punishment_probability
         self.cue_validity = cue_validity
+        self.reward_condition = reward_condition
 
         # Generate and broadcast observation likelihood(A), transition (B), and initial state (D) tensors to the batch size
         A, A_dependencies = self.generate_A()
         A = [jnp.broadcast_to(a, (batch_size,) + a.shape) for a in A]
         B, B_dependencies = self.generate_B()
         B = [jnp.broadcast_to(b, (batch_size,) + b.shape) for b in B]
-        D = self.generate_D(reward_condition)
+        D = self.generate_D()
         D = [jnp.broadcast_to(d, (batch_size,) + d.shape) for d in D]
 
         params = {
@@ -174,7 +176,7 @@ class TMaze(Env):
 
         return B, B_dependencies
 
-    def generate_D(self, reward_condition=None):
+    def generate_D(self):
         """
         Generate initial state distribution.
         
@@ -192,13 +194,13 @@ class TMaze(Env):
         D_loc = D_loc.at[0].set(1.0) # the agent always starts at the centre
         D.append(D_loc)
 
-        if reward_condition is None:
+        if self.reward_condition is None:
             # 50/50 chance of reward in left/right arm
             D_reward = jnp.ones(2) * 0.5
         else:
             # reward is fixed in the left/right arm
             D_reward = jnp.zeros(2)
-            D_reward = D_reward.at[reward_condition].set(1.0)
+            D_reward = D_reward.at[self.reward_condition].set(1.0)
         D.append(D_reward)
         return D
 
