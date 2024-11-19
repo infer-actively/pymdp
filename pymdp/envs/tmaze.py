@@ -97,34 +97,34 @@ class TMaze(Env):
         
         for loc in range(5): # for each location: [centre, left, right, cue, middle]
             for reward_condition in range(2): # for each reward condition: [left, right]
-                if loc == 0: # when at starting location (centre, there is no reward and no cue
+                if loc == 0: # when at starting location (centre), there is no reward and no cue
                     A[1] = A[1].at[0, loc, reward_condition].set(1.0)
                     A[2] = A[2].at[0, loc, reward_condition].set(1.0)
 
                 elif loc == 3: # when at cue location
                     A[1] = A[1].at[0, loc, reward_condition].set(1.0)  # still no reward at cue location
-
-                    # set high probability for correct cue based on cue_validity
+                    
+                    # set probability for correct cue based on cue_validity
                     A[2] = A[2].at[reward_condition + 1, loc, reward_condition].set(self.cue_validity)
-                    # set low probability for incorrect cue
-                    other_cue = (1 - reward_condition) + 1  # if reward_condition is 0, other_cue is 2; if 1, other_cue is 1
-                    A[2] = A[2].at[other_cue, loc, reward_condition].set(1 - self.cue_validity)
+                    # set probability for incorrect cue
+                    wrong_cue = (1 - reward_condition) + 1  # if reward_condition is 0 (left), wrong_cue is 2 (right); if reward_condition is 1 (right), wrong_cue is 1 (left)
+                    A[2] = A[2].at[wrong_cue, loc, reward_condition].set(1 - self.cue_validity)
 
                 elif loc == 4: # when at middle location
                     A[1] = A[1].at[0, loc, reward_condition].set(1.0) # there are no outcomes at the middle
-                    # A[2] = A[2].at[0, loc, reward_condition].set(1.0) # there are no cues at the middle
+                    A[2] = A[2].at[0, loc, reward_condition].set(1.0) # there are no cues at the middle
+
                 else: # when at one of the outcome (reward or punishment) arms
                     if loc == (reward_condition + 1): # if the agent is at the correct reward location
-                        # In correct arm: probability of reward, otherwise no outcome
+                        # in correct arm: probability of reward, otherwise no outcome
                         A[1] = A[1].at[1, loc, reward_condition].set(self.reward_probability)
                         A[1] = A[1].at[0, loc, reward_condition].set(1 - self.reward_probability)
                     else:
-                       # In incorrect arm: probability of punishment, otherwise no outcome
+                       # in incorrect arm: probability of punishment, otherwise no outcome
                         A[1] = A[1].at[2, loc, reward_condition].set(self.punishment_probability)
                         A[1] = A[1].at[0, loc, reward_condition].set(1 - self.punishment_probability)
 
-                A[2] = A[2].at[0, loc, reward_condition].set(1.0) # there are no cues in the outcome arms or middle
-                A[2] = A[2].at[0, 3, reward_condition].set(0.0)  # at cue location, there are cues so 'no cue' observation is 0
+                    A[2] = A[2].at[0, loc, reward_condition].set(1.0) # there are no cues in the outcome arms
 
         return A, A_dependencies
 
@@ -207,13 +207,13 @@ class TMaze(Env):
     def render(self, mode="human"):
         batch_size = self.params["A"][0].shape[0]
 
-        # Create n x n subplots for the batch_size
+        # create n x n subplots for the batch_size
         n = math.ceil(math.sqrt(batch_size))
 
-        # Create the subplots
+        # create the subplots
         fig, axes = plt.subplots(n, n, figsize=(6, 6))
 
-        # Loop through the batch_size and plot on each subplot
+        # loop through the batch_size and plot on each subplot
         for i in range(batch_size):
             row = i // n
             col = i % n
@@ -405,8 +405,7 @@ def aif_loop(agent: Agent, env: Env, num_timesteps: int, rng_key: jr.PRNGKey):
         env = carry["env"]
         rng_key = carry["rng_key"]
 
-        # We infer the posterior using FPI
-        # so we don't need past actions or qs_hist
+        # we infer the posterior using FPI so we don't need past actions or qs_hist
         qs = agent.infer_states(
             observations=observation_t,
             empirical_prior=empirical_prior,
@@ -446,7 +445,7 @@ def aif_loop(agent: Agent, env: Env, num_timesteps: int, rng_key: jr.PRNGKey):
     # generate initial observation
     keys = jr.split(rng_key, batch_size + 1)
     rng_key = keys[0]
-    observation_0, env = env.step(keys[1:])
+    observation_0, env = env.reset(keys[1:])
 
     # initial belief
     qs_0 = jtu.tree_map(lambda x: jnp.expand_dims(x, -2), agent.D)
@@ -456,7 +455,6 @@ def aif_loop(agent: Agent, env: Env, num_timesteps: int, rng_key: jr.PRNGKey):
     keys = jr.split(rng_key, batch_size + 1)
     rng_key = keys[0]
     action_t = agent.sample_action(qpi_0, rng_key=keys[1:])
-    # but set it to zeros
     action_t *= 0
 
     initial_carry = {
@@ -468,8 +466,37 @@ def aif_loop(agent: Agent, env: Env, num_timesteps: int, rng_key: jr.PRNGKey):
         "rng_key": rng_key,
     }
 
-    # Scan over time dimension (axis 1)
+    # scan over time dimension
     last, info = jax.lax.scan(step_fn, initial_carry, jnp.arange(num_timesteps))
 
-    info = jtu.tree_map(lambda x: jnp.swapaxes(x, 0, 1), info)
+    initial_info = {
+        "action": jnp.expand_dims(action_t, 0),
+        "observation": [jnp.expand_dims(o, 0) for o in observation_0],  
+        "qs": jtu.tree_map(lambda x: jnp.transpose(x, (1, 0) + tuple(range(2, x.ndim))), qs_0), 
+        "qpi": jnp.expand_dims(qpi_0, 0),  
+        "env": env
+    }
+    # def concat_or_pass(init, steps):
+    #     if isinstance(init, list):
+    #         return [jnp.concatenate([i, s], axis=0) for i, s in zip(init, steps)]
+    #     elif isinstance(init, jnp.ndarray):
+    #         if init.ndim < steps.ndim:
+    #             init = jnp.expand_dims(init, 1)
+    #         return jnp.concatenate([init, steps], axis=0)
+    #     return steps
+    
+    def concat_or_pass(init, steps):
+        if isinstance(init, list):
+            return [jnp.concatenate([i, s], axis=0) for i, s in zip(init, steps)]
+        elif isinstance(init, jnp.ndarray):
+            if init.ndim < steps.ndim:
+                init = jnp.expand_dims(init, 0)  # Add time dimension at start
+            elif init.shape[1:] != steps.shape[1:]:  # If dimensions after time don't match
+                # Transpose to match steps dimensions
+                init = jnp.transpose(init, (1, 0) + tuple(range(2, init.ndim)))
+            return jnp.concatenate([init, steps], axis=0)
+        return steps
+
+    info = jtu.tree_map(concat_or_pass, initial_info, info)
+
     return last, info, env
