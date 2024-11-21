@@ -48,6 +48,7 @@ def rollout(agent: Agent, env: Env, num_timesteps: int, rng_key: jr.PRNGKey, pol
         qs = carry["qs"]
         empirical_prior = carry["empirical_prior"]
         env = carry["env"]
+        agent = carry["agent"]
         rng_key = carry["rng_key"]
 
         # perform state inference using variational inference (FPI) - uses A matrix to map between hidden states and observations
@@ -76,12 +77,14 @@ def rollout(agent: Agent, env: Env, num_timesteps: int, rng_key: jr.PRNGKey, pol
             "qs": jtu.tree_map(lambda x: x[:, -1:, ...], qs), # keep only latest belief
             "empirical_prior": empirical_prior,
             "env": env,
+            "agent": agent,
             "rng_key": rng_key,
         }
         info = {
             "qpi": qpi,
             "qs": jtu.tree_map(lambda x: x[:, 0, ...], qs),
             "env": env,
+            "agent": agent,
             "observation": observation_t,
             "action": action_t,
         }
@@ -110,6 +113,7 @@ def rollout(agent: Agent, env: Env, num_timesteps: int, rng_key: jr.PRNGKey, pol
         "observation_t": observation_0,
         "empirical_prior": agent.D,
         "env": env,
+        "agent": agent,
         "rng_key": rng_key,
     }
 
@@ -122,7 +126,8 @@ def rollout(agent: Agent, env: Env, num_timesteps: int, rng_key: jr.PRNGKey, pol
         "observation": [jnp.expand_dims(o, 0) for o in observation_0],  
         "qs": jtu.tree_map(lambda x: jnp.transpose(x, (1, 0) + tuple(range(2, x.ndim))), qs_0), 
         "qpi": jnp.expand_dims(qpi_0, 0),  
-        "env": env
+        "env": env,
+        "agent": agent,
     }
     
     # helper function to concatenate initial state with trajectory by dealing with different shapes and data types
