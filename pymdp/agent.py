@@ -6,7 +6,7 @@
 __author__: Conor Heins, Dimitrije Markovic, Alexander Tschantz, Daphne Demekas, Brennan Klein
 
 """
-
+import jax
 import math as pymath
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -356,7 +356,8 @@ class Agent(Module):
                 agent = tree_at(lambda x: (x.B, x.pB), agent, (E_qB, qB))
 
         return agent
-    
+
+
     def infer_states(self, observations, empirical_prior, *, past_actions=None, qs_hist=None, mask=None):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.

@@ -2,6 +2,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
 import jax.lax
+import equinox as eqx
 
 from pymdp.agent import Agent
 from pymdp.envs.env import Env
@@ -45,7 +46,7 @@ def rollout(agent: Agent, env: Env, num_timesteps: int, rng_key: jr.PRNGKey, pol
         # carrying the current timestep's action, observation, beliefs, empirical prior, environment state, and random key
         action_t = carry["action_t"]
         observation_t = carry["observation_t"]
-        qs = carry["qs"]
+        qs_prev = carry["qs"]
         empirical_prior = carry["empirical_prior"]
         env = carry["env"]
         agent = carry["agent"]
@@ -59,6 +60,25 @@ def rollout(agent: Agent, env: Env, num_timesteps: int, rng_key: jr.PRNGKey, pol
 
         rng_key, key = jr.split(rng_key)
         qpi, _ = policy_search(agent, qs, key) # compute policy posterior using EFE - uses C to consider preferred outcomes
+        
+        # for learning A and/or B
+        if agent.learn_A or agent.learn_B:
+            if agent.learn_B:
+                # stacking beliefs for B learning
+                beliefs_B = jtu.tree_map(lambda x, y: jnp.concatenate([x,y], axis=1), qs_prev, qs)
+                # reshaping action to match the stacked beliefs
+                action_B = jnp.expand_dims(action_t, 1)  # adding time dimension
+            else:
+                beliefs_B = None
+                action_B = action_t
+
+            agent = agent.infer_parameters(
+                qs, 
+                observation_t, 
+                action_B if agent.learn_B else action_t,
+                beliefs_B=beliefs_B
+            )
+
 
         keys = jr.split(rng_key, batch_size + 1)
         rng_key = keys[0]
