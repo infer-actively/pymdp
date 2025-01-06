@@ -33,8 +33,9 @@ class TMaze(Env):
     punishment_probability: float = field(static=True)
     cue_validity: float = field(static=True)
     reward_condition: float = field(static=True)
+    dependent_outcomes: bool = field(static=True)
 
-    def __init__(self, batch_size=1, reward_probability=1.0, punishment_probability=1.0, cue_validity=0.95, reward_condition=None):
+    def __init__(self, batch_size=1, reward_probability=1.0, punishment_probability=1.0, cue_validity=0.95, reward_condition=None, dependent_outcomes=False):
         """
         Initialize T-Maze environment. A is the observation likelihood matrix, B is the transition matrix, D is the initial state distribution.
         Args:
@@ -43,11 +44,13 @@ class TMaze(Env):
             punishment_probability: Probability of getting punishment in incorrect arm
             cue_validity: Probability of cue correctly indicating reward location
             reward_condition: If specified, fixes reward to left (0) or right (1) arm, otherwise reward is randomly assigned
+            dependent_outcomes: If True, punishment occurs as a function of reward probability (i.e., if reward probability is 0.8, then 20% punishment). If False, punishment occurs with set probability (i.e., 20% no outcome and punishment will only occur in the other (non-rewarding) arm)
         """
         self.reward_probability = reward_probability
         self.punishment_probability = punishment_probability
         self.cue_validity = cue_validity
         self.reward_condition = reward_condition
+        self.dependent_outcomes = dependent_outcomes
 
         # Generate and broadcast observation likelihood(A), transition (B), and initial state (D) tensors to the batch size
         A, A_dependencies = self.generate_A()
@@ -111,14 +114,24 @@ class TMaze(Env):
                     A[2] = A[2].at[0, loc, reward_condition].set(1.0) # there are no cues at the middle
 
                 else: # when at one of the outcome (reward or punishment) arms
-                    if loc == (reward_condition + 1): # if the agent is at the correct reward location
-                        # in correct arm: probability of reward, otherwise no outcome
+                    if loc == (reward_condition + 1):  # if at correct reward location
+                        # probability of reward, otherwise no outcome or punishment depending on dependent_outcomes
                         A[1] = A[1].at[1, loc, reward_condition].set(self.reward_probability)
-                        A[1] = A[1].at[0, loc, reward_condition].set(1 - self.reward_probability)
-                    else:
-                       # in incorrect arm: probability of punishment, otherwise no outcome
-                        A[1] = A[1].at[2, loc, reward_condition].set(self.punishment_probability)
-                        A[1] = A[1].at[0, loc, reward_condition].set(1 - self.punishment_probability)
+                        if self.dependent_outcomes:
+                            # if dependent, remaining probability goes to punishment
+                            A[1] = A[1].at[2, loc, reward_condition].set(1 - self.reward_probability)
+                        else:
+                            # if independent, remaining probability goes to no outcome
+                            A[1] = A[1].at[0, loc, reward_condition].set(1 - self.reward_probability)
+                    else: # if at incorrect reward location
+                        if self.dependent_outcomes:
+                            # if dependent, probabilities are flipped from correct location
+                            A[1] = A[1].at[2, loc, reward_condition].set(self.reward_probability)
+                            A[1] = A[1].at[1, loc, reward_condition].set(1 - self.reward_probability)
+                        else:
+                            # if independent, punishment occurs with set probability
+                            A[1] = A[1].at[2, loc, reward_condition].set(self.punishment_probability)
+                            A[1] = A[1].at[0, loc, reward_condition].set(1 - self.punishment_probability)
 
                     A[2] = A[2].at[0, loc, reward_condition].set(1.0) # there are no cues in the outcome arms
 
