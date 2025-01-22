@@ -2,7 +2,6 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
 import jax.lax
-import equinox as eqx
 
 from pymdp.agent import Agent
 from pymdp.envs.env import Env
