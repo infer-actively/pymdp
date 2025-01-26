@@ -356,7 +356,6 @@ class Agent(Module):
 
         return agent
 
-
     def infer_states(self, observations, empirical_prior, *, past_actions=None, qs_hist=None, mask=None):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
