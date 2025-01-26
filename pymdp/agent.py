@@ -6,7 +6,6 @@
 __author__: Conor Heins, Dimitrije Markovic, Alexander Tschantz, Daphne Demekas, Brennan Klein
 
 """
-import jax
 import math as pymath
 import jax.numpy as jnp
 import jax.tree_util as jtu
