@@ -6,20 +6,25 @@ from equinox import Module, field, tree_at
 from jax import vmap, random as jr, tree_util as jtu
 import jax.numpy as jnp
 
+def _float_to_int_index(x):
+    # converting float to integer for array indexing while preserving the og data structure for gradient computation    
+    return jnp.asarray(x, jnp.int32)
 
 def select_probs(positions, matrix, dependency_list, actions=None):
-    args = tuple(p for i, p in enumerate(positions) if i in dependency_list)
-    args += () if actions is None else (actions,)
-
-    return matrix[..., *args]
+    # creating integer indices from float state positions for the positions specified in dependency_list
+    index_args = tuple(_float_to_int_index(p) for i, p in enumerate(positions) 
+                      if i in dependency_list)
+    if actions is not None:
+        index_args += (_float_to_int_index(actions),)
+    return matrix[..., *index_args]
 
 
 def cat_sample(key, p):
-    a = jnp.arange(p.shape[-1])
+    a = jnp.arange(p.shape[-1], dtype=jnp.float32)
     if p.ndim > 1:
         choice = lambda key, p: jr.choice(key, a, p=p)
         keys = jr.split(key, len(p))
-        print(keys.shape)
+        # print(keys.shape)
         return vmap(choice)(keys, p)
 
     return jr.choice(key, a, p=p)
