@@ -34,10 +34,10 @@ def update_obs_likelihood_dirichlet(pA, A, obs, qs, *, A_dependencies, onehot_ob
     """ JAX version of ``pymdp.learning.update_obs_likelihood_dirichlet`` """
 
     obs_m = lambda o, dim: nn.one_hot(o, dim) if not onehot_obs else o
-    update_A_fn = lambda pA_m, o_m, dim, dependencies_m: update_obs_likelihood_dirichlet_m(
+    update_A_fn = lambda pA_m, o_m, dim, dependencies_m: None if pA_m is None else update_obs_likelihood_dirichlet_m(
         pA_m, obs_m(o_m, dim), qs, dependencies_m, lr=lr
     )
-    result = tree_map(update_A_fn, pA, obs, num_obs, A_dependencies)
+    result = tree_map(update_A_fn, pA, obs, num_obs, A_dependencies, is_leaf=lambda x: x is None)
     qA = []
     E_qA = []
     for i, r in enumerate(result):
@@ -70,19 +70,37 @@ def update_state_transition_dirichlet_f(pB_f, actions_f, joint_qs_f, lr=1.0):
 
     return qB_f, dirichlet_expected_value(qB_f)
 
-def update_state_transition_dirichlet(pB, joint_beliefs, actions, *, num_controls, lr, factors_to_update='all'):
+def update_state_transition_dirichlet(pB, B, joint_beliefs, actions, *, num_controls, lr, factors_to_update='all'):
     """"
     Update posterior Diriichlet parameters of the state transition likelihood model (B) given the joint beliefs over hidden states and actions.
     """
     nf = len(pB)
 
+    actions_onehot_fn = lambda f, dim: nn.one_hot(actions[..., f], dim, axis=-1)
+
+    update_B_f_fn = lambda pB_f, joint_qs_f, f, na: None if pB_f is None else update_state_transition_dirichlet_f(
+        pB_f, actions_onehot_fn(f, na), joint_qs_f, lr=lr
+    )
+
     if factors_to_update == 'all':
         factors_to_update = list(range(nf))
-    qB = [pb_f for pb_f in pB]
-    E_qB = [dirichlet_expected_value(qb_f) for qb_f in qB]
 
-    for f in factors_to_update:
-        qB[f], E_qB[f] = update_state_transition_dirichlet_f(pB[f], nn.one_hot(actions[..., f], num_controls[f], axis=-1), joint_beliefs[f], lr=lr)
+    result = tree_map(
+        update_B_f_fn,
+        pB, joint_beliefs, factors_to_update, num_controls,
+        is_leaf=lambda x: x is None
+    )
+
+    qB = []
+    E_qB = []
+
+    for i, r in enumerate(result):
+        if r is None:
+            qB.append(None)
+            E_qB.append(B[i])
+        else:
+            qB.append(r[0])
+            E_qB.append(r[1])
 
     return qB, E_qB
     

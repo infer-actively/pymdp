@@ -342,6 +342,7 @@ class Agent(Module):
             lr = jnp.broadcast_to(lr_pB, (self.batch_size,))
             qB, E_qB = vmap(update_B)(
                 self.pB,
+                self.B,
                 joint_beliefs,
                 actions,
                 lr=lr
