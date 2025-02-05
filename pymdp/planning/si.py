@@ -269,7 +269,7 @@ def tree_backward(node, prune_penalty=512, gamma=1):
 
 
 def policy_entropy(node):
-    return -jnp.dot(node["q_pi"], jnp.log(node["q_pi"] + pymdp.maths.EPS_VAL))
+    return -jnp.dot(node["q_pi"], jnp.log(node["q_pi"] + 1e-16))
 
 
 def stack_leaves(data):
