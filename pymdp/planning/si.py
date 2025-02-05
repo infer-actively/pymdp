@@ -1,17 +1,15 @@
 import itertools
-import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from jax import nn
 from jax import vmap
 
 import pymdp
-from pymdp.jax.control import (
+from pymdp.control import (
     compute_info_gain,
     compute_expected_utility,
     compute_expected_state,
     compute_expected_obs,
-    calc_inductive_value_t,
 )
 
 
@@ -56,7 +54,11 @@ class Tree:
         return node["parent"]
 
     def leaves(self):
-        return [node for node in self.nodes if "qs" in node.keys() and len(node["children"]) == 0]
+        return [
+            node
+            for node in self.nodes
+            if "qs" in node.keys() and len(node["children"]) == 0
+        ]
 
     def append(self, node):
         self.nodes.append(node)
@@ -70,7 +72,9 @@ def step(agent, qs, policies):
         ig = compute_info_gain(qs, qo, a, agent.A_dependencies)
         return qs, qo, u, ig
 
-    qs, qo, u, ig = vmap(lambda policy: vmap(_step)(agent.A, agent.B, agent.C, qs, policy))(policies)
+    qs, qo, u, ig = vmap(
+        lambda policy: vmap(_step)(agent.A, agent.B, agent.C, qs, policy)
+    )(policies)
     G = u + ig
     return qs, qo, G
 
@@ -99,7 +103,9 @@ def tree_search(
     for _ in range(horizon):
         leaves = tree.leaves()
         qs_leaves = stack_leaves([leaf["qs"] for leaf in leaves])
-        qs_pi, qo_pi, G = vmap(lambda leaf: step_fn(agent, leaf, agent.policies))(qs_leaves)
+        qs_pi, qo_pi, G = vmap(lambda leaf: step_fn(agent, leaf, agent.policies))(
+            qs_leaves
+        )
         q_pi = nn.softmax(G * gamma, axis=1)
 
         for l, node in enumerate(leaves):
