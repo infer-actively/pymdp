@@ -242,7 +242,7 @@ def dot_likelihood(A,obs):
     s[0] = obs.shape[0]
     X = A * obs.reshape(tuple(s))
     X = np.sum(X, axis=0, keepdims=True)
-    LL = np.squeeze(X)
+    LL = np.squeeze(X, axis=0)
 
     # check to see if `LL` is a scalar
     if np.prod(LL.shape) <= 1.0:
