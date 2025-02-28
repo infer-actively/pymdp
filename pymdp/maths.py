@@ -138,7 +138,7 @@ def compute_accuracy(qs, obs, A):
     for q in qs[1:]:
         x = jnp.expand_dims(x, -1) * q
 
-    joint = ll * x
+    joint = log_likelihood * x
     return joint.sum()
 
 
