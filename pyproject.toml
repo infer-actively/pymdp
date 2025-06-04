@@ -41,6 +41,12 @@ gpu = [
     'jaxlib[cuda12]>=0.3.4',
 ]
 
+nb = 
+    [
+        'mediapy>=1.2.4',
+        'pygraphviz>=1.14',
+    ]
+
 [project.urls]
 Documentation = "https://pymdp-rtd.readthedocs.io/en/stable/"
 Repository = "https://github.com/infer-actively/pymdp"
