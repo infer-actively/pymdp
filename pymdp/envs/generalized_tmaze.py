@@ -29,25 +29,25 @@ def get_maze_matrix(small=False):
         10-11: Reward set 3 locations
     
     Args:
-        small: If True, creates a 3x5 maze with 2 reward sets
+        small: If True, creates a 3x3 maze with 2 reward sets
                If False, creates a 5x5 maze with 3 reward sets
     """
 
     if small:
-        M = np.zeros((3, 5))  # 3x5 grid
+        M = np.zeros((3, 3))  # 3x3 grid
 
         # Set the reward locations for sets 1 and 2
-        M[0,1] = 4  # First location of reward set 1
-        M[1,1] = 5  # Second location of reward set 1
-        M[1,3] = 7  # First location of reward set 2
-        M[0,3] = 8  # Second location of reward set 2
+        M[0,0] = 4  # First location of reward set 1
+        M[1,0] = 5  # Second location of reward set 1
+        M[1,2] = 7  # First location of reward set 2
+        M[0,2] = 8  # Second location of reward set 2
 
         # Set the cue locations
         M[2,0] = 3  # Cue for reward set 1 (3 = 3*1)
-        M[2,4] = 6  # Cue for reward set 2 (6 = 3*2)
+        M[2,2] = 6  # Cue for reward set 2 (6 = 3*2)
 
         # Set the initial position
-        M[2,3] = 1
+        M[2,1] = 1
     else:
         M = np.zeros((5, 5))  # 5x5 grid
 
