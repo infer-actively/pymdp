@@ -12,7 +12,7 @@ import jax.numpy as jnp
 
 
 def mcts_policy_search(
-    search_algo=mctx.muzero_policy, max_depth=6, num_simulations=4096
+    search_algo=mctx.gumbel_muzero_policy, max_depth=6, num_simulations=4096
 ):
 
     def si_policy(agent, beliefs, rng_key):
@@ -41,21 +41,21 @@ def mcts_policy_search(
     return si_policy
 
 
-@vmap
-def compute_neg_efe(agent, qs, action):
+@partial(vmap, in_axes=(0, 0, 0, None, 0, None, 0, None, None))
+def compute_neg_efe(qs, action, A, A_dependencies, B, B_dependencies, C, use_states_info_gain=True, use_utility=True):
     qs_next_pi = compute_expected_state(
-        qs, agent.B, action, B_dependencies=agent.B_dependencies
+        qs, B, action, B_dependencies=B_dependencies
     )
-    qo_next_pi = compute_expected_obs(qs_next_pi, agent.A, agent.A_dependencies)
-    if agent.use_states_info_gain:
+    qo_next_pi = compute_expected_obs(qs_next_pi, A, A_dependencies)
+    if use_states_info_gain:
         exp_info_gain = compute_info_gain(
-            qs_next_pi, qo_next_pi, agent.A, agent.A_dependencies
+            qs_next_pi, qo_next_pi, A, A_dependencies
         )
     else:
         exp_info_gain = 0.0
 
-    if agent.use_utility:
-        exp_utility = compute_expected_utility(qo_next_pi, agent.C)
+    if use_utility:
+        exp_utility = compute_expected_utility(qo_next_pi, C)
     else:
         exp_utility = 0.0
 
@@ -74,7 +74,15 @@ def make_aif_recurrent_fn():
     def recurrent_fn(agent, rng_key, action, embedding):
         multi_action = agent.policies[action, 0]
         qs = embedding
-        neg_efe, qs_next_pi, qo_next_pi = compute_neg_efe(agent, qs, multi_action)
+        neg_efe, qs_next_pi, qo_next_pi = compute_neg_efe(qs,
+                                                          multi_action,
+                                                          agent.A,
+                                                          agent.A_dependencies,
+                                                          agent.B,
+                                                          agent.B_dependencies,
+                                                          agent.C,
+                                                          agent.use_states_info_gain,
+                                                          agent.use_utility)
 
         # recursively branch the policy + outcome tree
         choice = lambda key, po: jr.categorical(key, logits=jnp.log(po))
