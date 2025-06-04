@@ -22,9 +22,9 @@ shock_img = plt.imread(os.path.join(assets_dir, "shock.png"))
 
 class TMaze(Env):
     """
-    Implementation of the 3-arm T-Maze environment.
+    Implementation of the T-Maze environment, a type of contextual 2-arm bandit.
     A T-shaped maze where an agent must navigate to find a reward, with:
-    - 4 locations: centre, left arm, right arm, and cue position (bottom arm) 
+    - 4 locations: centre, left arm, right arm, and cue position (bottom) 
     - 2 reward conditions: reward in left or right arm
     - Cues that indicate which arm contains the reward
     """
