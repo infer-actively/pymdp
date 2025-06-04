@@ -23,7 +23,7 @@ def si_policy_search(
     gamma=1,
 ):
 
-    def search_fn(agent, qs, rng_key):
+    def search_fn(agent, qs, rng_key=None):
         tree = tree_search(
             agent,
             qs,
