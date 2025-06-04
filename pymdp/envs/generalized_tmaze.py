@@ -52,16 +52,16 @@ def get_maze_matrix(small=False):
         M = np.zeros((5, 5))  # 5x5 grid
 
         # Set the reward locations for sets 1, 2, and 3
-        M[0,1] = 4   # First location of reward set 1
-        M[1,1] = 5   # Second location of reward set 1
-        M[1,3] = 7   # First location of reward set 2
-        M[0,3] = 8   # Second location of reward set 2
+        M[0,0] = 4   # First location of reward set 1
+        M[1,0] = 5   # Second location of reward set 1
+        M[1,4] = 7   # First location of reward set 2
+        M[0,4] = 8   # Second location of reward set 2
         M[4,1] = 10  # First location of reward set 3
         M[4,3] = 11  # Second location of reward set 3
 
         # Set the cue locations
-        M[2,0] = 3   # Cue for reward set 1 (3 = 3*1)
-        M[2,4] = 6   # Cue for reward set 2 (6 = 3*2)
+        M[2,1] = 3   # Cue for reward set 1 (3 = 3*1)
+        M[2,3] = 6   # Cue for reward set 2 (6 = 3*2)
         M[3,2] = 9   # Cue for reward set 3 (9 = 3*3)
 
         # Set the initial position
@@ -495,6 +495,7 @@ def render(maze_info, env_state, show_img=True):
     if show_img:
         plt.show()
 
+    plt.close()
     return image
 
 
