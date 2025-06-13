@@ -171,7 +171,7 @@ class Agent(Module):
         self.action_maps = None
         self.num_controls_multi = num_controls
         if (
-            B_action_dependencies is not None
+            policies is None and B_action_dependencies is not None
         ):  # note, this only works when B_action_dependencies is not the trivial case of [[0], [1], ...., [num_factors-1]]
             policies_multi = control.construct_policies(
                 self.num_controls_multi,
