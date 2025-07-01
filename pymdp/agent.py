@@ -131,10 +131,10 @@ class Agent(Module):
         inference_algo="fpi",
         num_iter=16,
         batch_size=1,
-        learn_A=True,
-        learn_B=True,
+        learn_A=False,
+        learn_B=False,
         learn_C=False,
-        learn_D=True,
+        learn_D=False,
         learn_E=False,
     ):
         if B_action_dependencies is not None:
