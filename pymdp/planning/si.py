@@ -35,7 +35,7 @@ def si_policy_search(
             prune_penalty=prune_penalty,
             gamma=gamma,
         )
-        return tree.root()["q_pi"], tree
+        return tree.root()["q_pi"][None, ...], {"tree": tree}
 
     return search_fn
 
