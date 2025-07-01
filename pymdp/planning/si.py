@@ -11,6 +11,7 @@ from pymdp.control import (
     compute_expected_state,
     compute_expected_obs,
 )
+from pymdp.maths import stable_entropy
 
 
 def si_policy_search(
@@ -269,8 +270,7 @@ def tree_backward(node, prune_penalty=512, gamma=1):
 
 
 def policy_entropy(node):
-    #return pymdp.maths.entropy(node["q_pi"] + 1e-16)
-    return -jnp.dot(node["q_pi"], jnp.log(node["q_pi"] + 1e-16))
+    return stable_entropy(node["q_pi"])
 
 
 def stack_leaves(data):
