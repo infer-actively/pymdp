@@ -206,7 +206,7 @@ class Agent(Module):
         
         for f, b_f in enumerate(B):
             b_f_state_factors = tuple([self.num_states[f] for f in self.B_dependencies[f]])
-            if b_f.ndim > (len(b_f_state_factors) + 1):  # this indicates there's a leading batch dimension
+            if b_f.ndim > (len(b_f_state_factors) + 2):  # this indicates there's a leading batch dimension
                 if b_f.shape[0] == 1 and batch_size > 1:
                     B[f] = jnp.broadcast_to(b_f, (batch_size,) + b_f.shape[1:])
                     if pB is not None:
@@ -217,7 +217,7 @@ class Agent(Module):
                     raise ValueError(
                         f"Batch size {batch_size} does not match the first dimension of B[{f}] with shape {b_f.shape}"
                     )
-            elif b_f.ndim == (len(b_f_state_factors) + 1):  # this indicates no leading batch dimension
+            elif b_f.ndim == (len(b_f_state_factors) + 2):  # this indicates no leading batch dimension
                 B[f] = jnp.broadcast_to(b_f, (batch_size,) + b_f.shape)
                 if pB is not None:
                     pB[f] = jnp.broadcast_to(pB[f], (batch_size,) + b_f.shape)
