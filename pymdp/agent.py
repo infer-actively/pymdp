@@ -181,6 +181,10 @@ class Agent(Module):
             B, pB, self.action_maps = self._flatten_B_action_dims(B, pB, self.B_action_dependencies)
             policies = self._construct_flattend_policies(policies_multi, self.action_maps)
             self.sampling_mode = "full"
+        
+        # extract shapes from A and B
+        self.num_states = self._get_num_states_from_B(B, self.B_dependencies)
+        self.num_controls = [b_f.shape[-1] for b_f in B] # dimensions of control states for each hidden state factor
 
         # check that batch_size is consistent with shapes of given A and B
         for m, a_m in enumerate(A):
@@ -223,10 +227,8 @@ class Agent(Module):
                 if D is not None:
                     D[f] = jnp.broadcast_to(D[f], (batch_size,) + D[f].shape)
 
-        # extract shapes from A and B
-        self.num_states = [x.shape[1] for x in B]
-        self.num_obs = [x.shape[1] for x in A]
-        self.num_controls = [x.shape[-1] for x in B]
+        # now that shapes of A/B have been made consistent and have (batch_size,)-sized leading dimension applied, we can infer num_obs from the first dimension of A
+        self.num_obs = [a_m.shape[1] for a_m in A] # dimensions of observations for each modality
 
         # static parameters
         self.num_iter = num_iter
@@ -336,6 +338,21 @@ class Agent(Module):
     def unique_multiactions(self):
         size = pymath.prod(self.num_controls)
         return jnp.unique(self.policies[:, 0], axis=0, size=size, fill_value=-1)
+
+    def _get_num_states_from_B(self, B, B_dependencies):
+        """ Use the shapes of B and the B_dependencies to determine the number of states for each factor."""
+  
+        num_states = []
+        for (f, B_deps_f) in enumerate(B_dependencies):  
+            if f in B_deps_f:
+                self_factor_index = B_deps_f.index(f)
+            else:
+                raise ValueError(f"num_states cannot be inferred from B, B_dependencies if the dynamics of hidden state {f} is not conditioned on itself")
+            
+            num_states_f = B[f].shape[-(len(B_deps_f) + 1 - self_factor_index)]
+            num_states.append(num_states_f)
+        
+        return num_states
 
     def infer_parameters(self, beliefs_A, outcomes, actions, beliefs_B=None, lr_pA=1., lr_pB=1., **kwargs):
         agent = self
