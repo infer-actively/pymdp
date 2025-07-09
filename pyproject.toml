@@ -41,8 +41,7 @@ gpu = [
     'jaxlib[cuda12]>=0.3.4',
 ]
 
-nb = 
-    [
+nb = [
         'mediapy>=1.2.4',
         'pygraphviz>=1.14',
     ]
