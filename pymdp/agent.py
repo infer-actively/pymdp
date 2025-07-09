@@ -138,7 +138,7 @@ class Agent(Module):
         learn_E=False,
     ):
         if B_action_dependencies is not None:
-            assert num_controls is not None, "Please specify num_controls for complex action dependencies"
+            assert num_controls is not None, "Please specify num_controls if you're also using complex action dependencies"
 
         # extract high level variables
         self.num_modalities = len(A)
@@ -169,7 +169,6 @@ class Agent(Module):
 
         # flatten B action dims for multiple action dependencies
         self.action_maps = None
-        self.num_controls_multi = num_controls
         if (
             B_action_dependencies is not None
         ):  # note, this only works when B_action_dependencies is not the trivial case of [[0], [1], ...., [num_factors-1]]
