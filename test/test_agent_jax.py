@@ -5,20 +5,19 @@
 __author__: Dimitrije Markovic, Conor Heins
 """
 
-import os
 import unittest
 
 import numpy as np
 import jax.numpy as jnp
 from jax import vmap, nn, random
 import jax.tree_util as jtu
+import math as pymath
 
 from pymdp.legacy import utils
 from pymdp.agent import Agent
 from pymdp.maths import compute_log_likelihood_single_modality
 from pymdp.utils import norm_dist
 from equinox import Module
-from typing import Any, List
 
 class TestAgentJax(unittest.TestCase):
 
