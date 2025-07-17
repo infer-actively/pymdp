@@ -130,7 +130,7 @@ class Agent(Module):
         sampling_mode="full",
         inference_algo="fpi",
         num_iter=16,
-        apply_batch=True,
+        batch_size=1,
         learn_A=True,
         learn_B=True,
         learn_C=False,
@@ -138,7 +138,7 @@ class Agent(Module):
         learn_E=False,
     ):
         if B_action_dependencies is not None:
-            assert num_controls is not None, "Please specify num_controls for complex action dependencies"
+            assert num_controls is not None, "Please specify num_controls if you're also using complex action dependencies"
 
         # extract high level variables
         self.num_modalities = len(A)
@@ -165,11 +165,10 @@ class Agent(Module):
         if H is not None:
             H = [jnp.array(h.data) if isinstance(h, Distribution) else h for h in H]
 
-        self.batch_size = A[0].shape[0] if not apply_batch else 1
+        self.batch_size = batch_size
 
         # flatten B action dims for multiple action dependencies
         self.action_maps = None
-        self.num_controls_multi = num_controls
         if (
             B_action_dependencies is not None
         ):  # note, this only works when B_action_dependencies is not the trivial case of [[0], [1], ...., [num_factors-1]]
@@ -182,12 +181,54 @@ class Agent(Module):
             B, pB, self.action_maps = self._flatten_B_action_dims(B, pB, self.B_action_dependencies)
             policies = self._construct_flattend_policies(policies_multi, self.action_maps)
             self.sampling_mode = "full"
-
+        
         # extract shapes from A and B
-        batch_dim_fn = lambda x: x.shape[0] if apply_batch else x.shape[1]
-        self.num_states = jtu.tree_map(batch_dim_fn, B)
-        self.num_obs = jtu.tree_map(batch_dim_fn, A)
-        self.num_controls = [B[f].shape[-1] for f in range(self.num_factors)]
+        self.num_states = self._get_num_states_from_B(B, self.B_dependencies)
+        self.num_controls = [b_f.shape[-1] for b_f in B] # dimensions of control states for each hidden state factor
+
+        # check that batch_size is consistent with shapes of given A and B
+        for m, a_m in enumerate(A):
+            a_m_state_factors = tuple([self.num_states[f] for f in self.A_dependencies[m]])
+            if a_m.ndim > (len(a_m_state_factors) + 1): # this indicates there's a leading batch dimension
+                if a_m.shape[0] == 1 and batch_size > 1:
+                    A[m] = jnp.broadcast_to(a_m, (batch_size,) + a_m.shape[1:])
+                    if pA is not None:
+                        pA[m] = jnp.broadcast_to(pA[m], (batch_size,) + a_m.shape[1:])
+                    if C is not None:
+                        C[m] = jnp.broadcast_to(C[m], (batch_size,) + C[m].shape[1:])
+                elif a_m.shape[0] != batch_size:
+                    raise ValueError(
+                        f"Batch size {batch_size} does not match the first dimension of A[{m}] with shape {a_m.shape}"
+                    )
+            elif a_m.ndim == (len(a_m_state_factors) + 1):  # this indicates no leading batch dimension
+                A[m] = jnp.broadcast_to(a_m, (batch_size,) + a_m.shape)
+                if pA is not None:
+                    pA[m] = jnp.broadcast_to(pA[m], (batch_size,) + a_m.shape)
+                if C is not None:
+                    C[m] = jnp.broadcast_to(C[m], (batch_size,) + C[m].shape)
+        
+        for f, b_f in enumerate(B):
+            b_f_state_factors = tuple([self.num_states[f] for f in self.B_dependencies[f]])
+            if b_f.ndim > (len(b_f_state_factors) + 2):  # this indicates there's a leading batch dimension
+                if b_f.shape[0] == 1 and batch_size > 1:
+                    B[f] = jnp.broadcast_to(b_f, (batch_size,) + b_f.shape[1:])
+                    if pB is not None:
+                        pB[f] = jnp.broadcast_to(pB[f], (batch_size,) + b_f.shape[1:])
+                    if D is not None:
+                        D[f] = jnp.broadcast_to(D[f], (batch_size,) + D[f].shape[1:])
+                elif b_f.shape[0] != batch_size:
+                    raise ValueError(
+                        f"Batch size {batch_size} does not match the first dimension of B[{f}] with shape {b_f.shape}"
+                    )
+            elif b_f.ndim == (len(b_f_state_factors) + 2):  # this indicates no leading batch dimension
+                B[f] = jnp.broadcast_to(b_f, (batch_size,) + b_f.shape)
+                if pB is not None:
+                    pB[f] = jnp.broadcast_to(pB[f], (batch_size,) + b_f.shape)
+                if D is not None:
+                    D[f] = jnp.broadcast_to(D[f], (batch_size,) + D[f].shape)
+
+        # now that shapes of A/B have been made consistent and have (batch_size,)-sized leading dimension applied, we can infer num_obs from the first dimension of A
+        self.num_obs = [a_m.shape[1] for a_m in A] # dimensions of observations for each modality
 
         # static parameters
         self.num_iter = num_iter
@@ -229,37 +270,36 @@ class Agent(Module):
         else:
             self.policies = policies
 
-        # setup pytree leaves A, B, C, D, E, pA, pB, H, I
-        if apply_batch:
-            A = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), A)
-            B = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), B)
-
-        if pA is not None and apply_batch:
-            pA = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), pA)
-
-        if pB is not None and apply_batch:
-            pB = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), pB)
-
         if C is None:
             C = [jnp.ones((self.batch_size, self.num_obs[m])) / self.num_obs[m] for m in range(self.num_modalities)]
-        elif apply_batch:
-            C = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), C)
-
+    
         if D is None:
             D = [jnp.ones((self.batch_size, self.num_states[f])) / self.num_states[f] for f in range(self.num_factors)]
-        elif apply_batch:
-            D = jtu.tree_map(lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape), D)
 
         if E is None:
             E = jnp.ones((self.batch_size, len(self.policies))) / len(self.policies)
-        elif apply_batch:
-            E = jnp.broadcast_to(E, (self.batch_size,) + E.shape)
+        else:
+            if E.ndim > 1:
+                if E.shape[0] == 1 and batch_size > 1:
+                    E = jnp.broadcast_to(E, (batch_size,) + E.shape[1:])
+                elif E.shape[0] != batch_size:
+                    raise ValueError(
+                        f"Batch size {batch_size} does not match the first dimension of E with shape {E.shape}"
+                    )
+            elif E.ndim == 1:
+                E = jnp.broadcast_to(E, (self.batch_size,) + E.shape)
 
-        if H is not None and apply_batch:
-            H = jtu.tree_map(
-                lambda x: jnp.broadcast_to(x, (self.batch_size,) + x.shape),
-                H,
-            )
+        if H is not None:
+            for f, h_f in enumerate(H):
+                if h_f.ndim > 1:
+                    if h_f.shape[0] == 1 and batch_size > 1:
+                        H[f] = jnp.broadcast_to(h_f, (batch_size,) + h_f.shape[1:])
+                    elif h_f.shape[0] != batch_size:
+                        raise ValueError(
+                            f"Batch size {batch_size} does not match the first dimension of H[{f}] with shape {h_f.shape}"
+                        )
+                elif h_f.ndim == 1:
+                    H[f] = jnp.broadcast_to(h_f, (self.batch_size,) + h_f.shape)
 
         self.A = A
         self.B = B
@@ -298,6 +338,21 @@ class Agent(Module):
     def unique_multiactions(self):
         size = pymath.prod(self.num_controls)
         return jnp.unique(self.policies[:, 0], axis=0, size=size, fill_value=-1)
+
+    def _get_num_states_from_B(self, B, B_dependencies):
+        """ Use the shapes of B and the B_dependencies to determine the number of states for each factor."""
+  
+        num_states = []
+        for (f, B_deps_f) in enumerate(B_dependencies):  
+            if f in B_deps_f:
+                self_factor_index = B_deps_f.index(f)
+            else:
+                raise ValueError(f"num_states cannot be inferred from B, B_dependencies if the dynamics of hidden state {f} is not conditioned on itself")
+            
+            num_states_f = B[f].shape[-(len(B_deps_f) + 1 - self_factor_index)]
+            num_states.append(num_states_f)
+        
+        return num_states
 
     def infer_parameters(self, beliefs_A, outcomes, actions, beliefs_B=None, lr_pA=1., lr_pB=1., **kwargs):
         agent = self

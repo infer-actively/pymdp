@@ -5,22 +5,324 @@
 __author__: Dimitrije Markovic, Conor Heins
 """
 
-import os
 import unittest
 
 import numpy as np
 import jax.numpy as jnp
 from jax import vmap, nn, random
 import jax.tree_util as jtu
+import math as pymath
 
 from pymdp.legacy import utils
 from pymdp.agent import Agent
 from pymdp.maths import compute_log_likelihood_single_modality
 from pymdp.utils import norm_dist
 from equinox import Module
-from typing import Any, List
 
 class TestAgentJax(unittest.TestCase):
+
+    def test_no_desired_batch_no_batched_input_construction(self):
+        """
+        Tests for the case where the user wants no batch size, and they pass in tensors with no batch size
+        """
+
+        num_obs = [2, 3, 4]
+        num_states = [4, 5, 2]
+        num_controls = [2, 3, 1]
+
+        A_factor_list = [[0], [0, 1], [0, 1, 2]]
+        B_factor_list = [[0], [0, 1], [1, 2]]
+
+        A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=None)
+
+        agent = Agent(
+            A, B, 
+            A_dependencies=A_factor_list, 
+            B_dependencies=B_factor_list, 
+            num_controls=num_controls,
+        )
+
+        for m in range(len(num_obs)):
+            num_states_m = tuple([num_states[f] for f in A_factor_list[m]])
+            self.assertTrue(agent.A[m].shape == (1, num_obs[m]) + num_states_m)
+            self.assertTrue(agent.C[m].shape == (1, num_obs[m]))
+
+        for f in range(len(num_states)):
+            num_states_f = tuple([num_states[f] for f in B_factor_list[f]])
+            self.assertTrue(agent.B[f].shape == (1, num_states[f]) + num_states_f + (num_controls[f],))
+            self.assertTrue(agent.D[f].shape == (1, num_states[f]))
+        
+        self.assertTrue(agent.num_obs == num_obs)
+        self.assertTrue(agent.num_states == num_states)
+        self.assertTrue(agent.num_controls == num_controls)
+        
+        # Test the version with complex action dependencies
+        num_obs = [2, 3]
+        num_states = [4, 5, 2]
+        num_controls = [2, 3, 2]
+        A_factor_list = [[0, 1], [1]]
+        B_factor_list = [[0], [0, 1, 2], [2]]
+        B_factor_control_list = [[], [0, 1], [0, 2]]
+
+        A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=B_factor_control_list)
+
+        agent = Agent(
+            A, B, 
+            A_dependencies=A_factor_list, 
+            B_dependencies=B_factor_list, 
+            B_action_dependencies=B_factor_control_list,
+            num_controls=num_controls,
+            sampling_mode="full",
+        )
+
+        self.assertTrue(agent.num_obs == num_obs)
+        self.assertTrue(agent.num_states == num_states)
+
+        for m in range(len(num_obs)):
+            num_states_m = tuple([num_states[f] for f in A_factor_list[m]])
+            self.assertTrue(agent.A[m].shape == (1, num_obs[m]) + num_states_m)
+            self.assertTrue(agent.C[m].shape == (1, num_obs[m]))
+
+        num_controls_flattened = []
+        for f,action_dependency in enumerate(B_factor_control_list):
+            if action_dependency == []:
+                num_controls_f_flattened = 1
+            else:
+                num_controls_f_flattened = pymath.prod([num_controls[d] for d in action_dependency])
+
+            num_controls_flattened.append(num_controls_f_flattened)
+            num_states_f = tuple([num_states[f] for f in B_factor_list[f]])
+            self.assertTrue(agent.B[f].shape == (1, num_states[f]) + num_states_f + (num_controls_f_flattened,))
+            self.assertTrue(agent.D[f].shape == (1, num_states[f]))
+        self.assertTrue(agent.num_controls == num_controls_flattened)
+
+            
+    def test_desired_batch_no_batched_input_construction(self):
+        """
+        Tests for the case where the user wants > 1 batch size, and they pass in tensors with no batch size
+        """
+        num_obs = [2, 3, 4]
+        num_states = [4, 5, 2]
+        num_controls = [2, 3, 1]
+        desired_batch_size = 3
+
+        A_factor_list = [[0], [0, 1], [0, 1, 2]]
+        B_factor_list = [[0], [0, 1], [1, 2]]
+
+        A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=None)
+
+        agent = Agent(
+            A, B, 
+            A_dependencies=A_factor_list, 
+            B_dependencies=B_factor_list, 
+            num_controls=num_controls,
+            batch_size=desired_batch_size,
+        )
+
+        for m in range(len(num_obs)):
+            num_states_m = tuple([num_states[f] for f in A_factor_list[m]])
+            self.assertTrue(agent.A[m].shape == (desired_batch_size, num_obs[m]) + num_states_m)
+            self.assertTrue(agent.C[m].shape == (desired_batch_size, num_obs[m]))
+
+        for f in range(len(num_states)):
+            num_states_f = tuple([num_states[f] for f in B_factor_list[f]])
+            self.assertTrue(agent.B[f].shape == (desired_batch_size, num_states[f]) + num_states_f + (num_controls[f],))
+            self.assertTrue(agent.D[f].shape == (desired_batch_size, num_states[f]))
+        
+        self.assertTrue(agent.num_obs == num_obs)
+        self.assertTrue(agent.num_states == num_states)
+        self.assertTrue(agent.num_controls == num_controls)
+
+        # Test the version with complex action dependencies
+        num_obs = [2, 3]
+        num_states = [4, 5, 2]
+        num_controls = [2, 3, 2]
+        A_factor_list = [[0, 1], [1]]
+        B_factor_list = [[0], [0, 1, 2], [2]]
+        B_factor_control_list = [[], [0, 1], [0, 2]]
+        desired_batch_size = 3
+
+
+        A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=B_factor_control_list)
+
+        agent = Agent(
+            A, B, 
+            A_dependencies=A_factor_list, 
+            B_dependencies=B_factor_list, 
+            B_action_dependencies=B_factor_control_list,
+            num_controls=num_controls,
+            sampling_mode="full",
+            batch_size=desired_batch_size,
+        )
+
+        self.assertTrue(agent.num_obs == num_obs)
+        self.assertTrue(agent.num_states == num_states)
+
+        for m in range(len(num_obs)):
+            num_states_m = tuple([num_states[f] for f in A_factor_list[m]])
+            self.assertTrue(agent.A[m].shape == (desired_batch_size, num_obs[m]) + num_states_m)
+            self.assertTrue(agent.C[m].shape == (desired_batch_size, num_obs[m]))
+
+        num_controls_flattened = []
+        for f,action_dependency in enumerate(B_factor_control_list):
+            if action_dependency == []:
+                num_controls_f_flattened = 1
+            else:
+                num_controls_f_flattened = pymath.prod([num_controls[d] for d in action_dependency])
+
+            num_controls_flattened.append(num_controls_f_flattened)
+            num_states_f = tuple([num_states[f] for f in B_factor_list[f]])
+            self.assertTrue(agent.B[f].shape == (desired_batch_size, num_states[f]) + num_states_f + (num_controls_f_flattened,))
+            self.assertTrue(agent.D[f].shape == (desired_batch_size, num_states[f]))
+        self.assertTrue(agent.num_controls == num_controls_flattened)
+
+    def test_desired_batch_and_batched_input_construction(self):
+        """
+        Tests for the case where the user wants >= 1 batch size, and they pass in tensors with that correct >= 1 batch size
+        """
+        num_obs = [2, 3, 4]
+        num_states = [4, 5, 2]
+        num_controls = [2, 3, 1]
+
+        A_factor_list = [[0], [0, 1], [0, 1, 2]]
+        B_factor_list = [[0], [0, 1], [1, 2]]
+
+        A_single = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+        B_single = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=None)
+        A = [a[None,...] for a in A_single]
+        B = [b[None,...] for b in B_single]
+
+        agent = Agent(
+            A, B, 
+            A_dependencies=A_factor_list, 
+            B_dependencies=B_factor_list, 
+            num_controls=num_controls,
+            batch_size=1,
+        )
+
+        for m in range(len(num_obs)):
+            num_states_m = tuple([num_states[f] for f in A_factor_list[m]])
+            self.assertTrue(agent.A[m].shape == (1,) + (num_obs[m],) + num_states_m)
+            self.assertTrue(agent.C[m].shape == (1,) + (num_obs[m],))
+
+        for f in range(len(num_states)):
+            num_states_f = tuple([num_states[f] for f in B_factor_list[f]])
+            self.assertTrue(agent.B[f].shape == (1,) + (num_states[f],) + num_states_f + (num_controls[f],))
+            self.assertTrue(agent.D[f].shape == (1,) + (num_states[f],))
+        
+        self.assertTrue(agent.num_obs == num_obs)
+        self.assertTrue(agent.num_states == num_states)
+        self.assertTrue(agent.num_controls == num_controls)
+        
+        desired_batch_size = 3
+        A = [jnp.broadcast_to(a, (desired_batch_size,) + a.shape) for a in A_single]
+        B = [jnp.broadcast_to(b, (desired_batch_size,) + b.shape) for b in B_single]
+        agent = Agent(
+            A, B, 
+            A_dependencies=A_factor_list, 
+            B_dependencies=B_factor_list, 
+            num_controls=num_controls,
+            batch_size=desired_batch_size,
+        )
+
+        for m in range(len(num_obs)):
+            num_states_m = tuple([num_states[f] for f in A_factor_list[m]])
+            self.assertTrue(agent.A[m].shape == (desired_batch_size,) + (num_obs[m],) + num_states_m)
+            self.assertTrue(agent.C[m].shape == (desired_batch_size,) + (num_obs[m],))
+
+        for f in range(len(num_states)):
+            num_states_f = tuple([num_states[f] for f in B_factor_list[f]])
+            self.assertTrue(agent.B[f].shape == (desired_batch_size,) + (num_states[f],) + num_states_f + (num_controls[f],))
+            self.assertTrue(agent.D[f].shape == (desired_batch_size,) + (num_states[f],))
+        
+        self.assertTrue(agent.num_obs == num_obs)
+        self.assertTrue(agent.num_states == num_states)
+        self.assertTrue(agent.num_controls == num_controls)
+
+
+        ### Now test the version with complex action dependencies
+        num_obs = [2, 3]
+        num_states = [4, 5, 2]
+        num_controls = [2, 3, 2]
+        A_factor_list = [[0, 1], [1]]
+        B_factor_list = [[0], [0, 1, 2], [2]]
+        B_factor_control_list = [[], [0, 1], [0, 2]]
+
+        A_single = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_factor_list)
+        B_single = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=B_factor_control_list)
+        A = [a[None,...] for a in A_single]
+        B = [b[None,...] for b in B_single]
+
+        agent = Agent(
+            A, B, 
+            A_dependencies=A_factor_list, 
+            B_dependencies=B_factor_list, 
+            B_action_dependencies=B_factor_control_list,
+            num_controls=num_controls,
+            sampling_mode="full",
+            batch_size=1,
+        )
+
+        self.assertTrue(agent.num_obs == num_obs)
+        self.assertTrue(agent.num_states == num_states)
+
+        for m in range(len(num_obs)):
+            num_states_m = tuple([num_states[f] for f in A_factor_list[m]])
+            self.assertTrue(agent.A[m].shape == (1, num_obs[m]) + num_states_m)
+            self.assertTrue(agent.C[m].shape == (1, num_obs[m]))
+
+        num_controls_flattened = []
+        for f,action_dependency in enumerate(B_factor_control_list):
+            if action_dependency == []:
+                num_controls_f_flattened = 1
+            else:
+                num_controls_f_flattened = pymath.prod([num_controls[d] for d in action_dependency])
+
+            num_controls_flattened.append(num_controls_f_flattened)
+            num_states_f = tuple([num_states[f] for f in B_factor_list[f]])
+            self.assertTrue(agent.B[f].shape == (1, num_states[f]) + num_states_f + (num_controls_f_flattened,))
+            self.assertTrue(agent.D[f].shape == (1, num_states[f]))
+        self.assertTrue(agent.num_controls == num_controls_flattened)
+
+        desired_batch_size = 3
+        A = [jnp.broadcast_to(a, (desired_batch_size,) + a.shape) for a in A_single]
+        B = [jnp.broadcast_to(b, (desired_batch_size,) + b.shape) for b in B_single]
+
+        agent = Agent(
+            A, B, 
+            A_dependencies=A_factor_list, 
+            B_dependencies=B_factor_list, 
+            B_action_dependencies=B_factor_control_list,
+            num_controls=num_controls,
+            sampling_mode="full",
+            batch_size=desired_batch_size,
+        )
+
+        self.assertTrue(agent.num_obs == num_obs)
+        self.assertTrue(agent.num_states == num_states)
+
+        for m in range(len(num_obs)):
+            num_states_m = tuple([num_states[f] for f in A_factor_list[m]])
+            self.assertTrue(agent.A[m].shape == (desired_batch_size, num_obs[m]) + num_states_m)
+            self.assertTrue(agent.C[m].shape == (desired_batch_size, num_obs[m]))
+
+        num_controls_flattened = []
+        for f,action_dependency in enumerate(B_factor_control_list):
+            if action_dependency == []:
+                num_controls_f_flattened = 1
+            else:
+                num_controls_f_flattened = pymath.prod([num_controls[d] for d in action_dependency])
+
+            num_controls_flattened.append(num_controls_f_flattened)
+            num_states_f = tuple([num_states[f] for f in B_factor_list[f]])
+            self.assertTrue(agent.B[f].shape == (desired_batch_size, num_states[f]) + num_states_f + (num_controls_f_flattened,))
+            self.assertTrue(agent.D[f].shape == (desired_batch_size, num_states[f]))
+        self.assertTrue(agent.num_controls == num_controls_flattened)
+
 
     def test_vmappable_agent_methods(self):
 
