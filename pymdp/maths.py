@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from functools import partial
 from typing import Optional, Tuple, List
 from jax import tree_util, nn, jit, vmap, lax
-from jax.scipy.special import xlogy
+from jax.scipy.special import xlogy, digamma
 from opt_einsum import contract
 from multimethod import multimethod
 from jaxtyping import ArrayLike
@@ -11,6 +11,13 @@ from jax.experimental import sparse
 from jax.experimental.sparse._base import JAXSparse
 
 MINVAL = jnp.finfo(float).eps
+
+# --- Toggle for information-gain formulation ---------------------------------
+# Set to ``True`` to use exact information-gain over parameters instead of the legacy
+# spm_wnorm heuristic.  Changing this single line lets you switch behaviour
+# globally without touching the rest of the code-base.
+USE_EXACT_PARAM_INFO_GAIN = True  # ⇦ CHANGE THIS LINE TO ``True`` FOR THE FIX
+# -----------------------------------------------------------------------------
 
 def stable_xlogx(x):
     return xlogy(x, jnp.clip(x, MINVAL))
@@ -172,12 +179,38 @@ def multidimensional_outer(arrs):
 
     return x
 
+def _exact_wnorm(A):
+    """
+    Implements (-1) * eq. (D.15) in Da Costa et al. ‘Active inference on discrete state-spaces: A synthesis’, Journal of Mathematical Psychology, 2020.
+
+    Note: Like the legacy SPM implementation this function clips A for numerical stability. However note that if some values of Aare set to zero e.g. by Bayesian model reduction, these are non-zeroed in this calculation, and thus contribute a large amount to the information gain unless these are zeroed when multiplying by beliefs about states and expected observations. In principle, this should be the case.
+    """
+    # Clip once and reuse for numerical stability
+    safe_A = jnp.clip(A, MINVAL)
+    safe_sumA = jnp.clip(safe_A.sum(axis=0), MINVAL)
+
+    wA = (
+        jnp.log(safe_sumA) - jnp.log(safe_A)
+        + 1. / safe_A - 1. / safe_sumA
+        + digamma(safe_A) - digamma(safe_sumA)
+    )
+
+    return -wA # TODO: minus sign here gives negative info gain for backward compatibility with spm implementation. Later will need to remove minus sign here to get positive info gain and adjust function documentation accordingly.
 
 def spm_wnorm(A):
     """
-    Returns Expectation of logarithm of Dirichlet parameters over a set of
-    Categorical distributions, stored in the columns of A.
+    Returns the weight matrix used in PyMDP's parameter information-gain term.
+
+    Historically this was the heuristic ``1/Σα − 1/α``. If the global flag
+    ``USE_EXACT_PARAM_INFO_GAIN`` is set to *True* we instead return the exact value of
+    the weight matrix used in the info gain computation defined in ``_exact_wnorm`` 
+    while keeping the original function signature so that the rest of the codebase remains unchanged.
     """
+    if USE_EXACT_PARAM_INFO_GAIN:
+        return _exact_wnorm(A)
+
+    """spm legacy heuristic for computing information-gain over parameters:
+    Implements (-2) * second line of eq. (D.17) in Da Costa et al. ‘Active inference on discrete state-spaces: A synthesis’, Journal of Mathematical Psychology, 2020"""
     norm = 1. / A.sum(axis=0)
     avg = 1. / (A + MINVAL)
     wA = norm - avg
