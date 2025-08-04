@@ -307,7 +307,6 @@ class Agent(Module):
         self.D = D
         self.E = E
         self.H = H
-        self.I = I
         self.pA = pA
         self.pB = pB
 
@@ -328,6 +327,7 @@ class Agent(Module):
             I = I
         else:
             I = jtu.tree_map(lambda x: jnp.expand_dims(jnp.zeros_like(x), 1), D)
+        self.I = I
 
         self.onehot_obs = onehot_obs
 
