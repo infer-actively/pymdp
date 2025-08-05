@@ -472,7 +472,6 @@ class TestControl(unittest.TestCase):
 
         num_states = [2, 3]  
         num_obs = [3, 3, 3]
-        num_controls = [1, 3]
 
         A_factor_list = [[0, 1], [0, 1], [1]] 
         
@@ -693,7 +692,6 @@ class TestControl(unittest.TestCase):
             gamma=16.0
         )
 
-        factor_idx = 0
         modality_idx = 0
         t_idx = 0
 
@@ -840,7 +838,6 @@ class TestControl(unittest.TestCase):
             gamma=16.0
         )
 
-        factor_idx = 0
         modality_idx = 0
         t_idx = 0
 
@@ -890,7 +887,6 @@ class TestControl(unittest.TestCase):
             gamma=16.0
         )
 
-        factor_idx = 0
         modality_idx = 0
         t_idx = 0
 
@@ -997,8 +993,6 @@ class TestControl(unittest.TestCase):
             gamma=16.0
         )
 
-        factor_idx = 0
-        modality_idx = 0
         t_idx = 0
 
         efe_valid = np.zeros(len(policies))
@@ -1131,9 +1125,6 @@ class TestControl(unittest.TestCase):
             gamma=16.0
         )
 
-        factor_idx = 0
-        modality_idx = 0
-        t_idx = 0
 
         efe_valid = np.zeros(len(policies))
 
@@ -1178,7 +1169,6 @@ class TestControl(unittest.TestCase):
             gamma=16.0
         )
 
-        t_idx = 0
 
         efe_valid = np.zeros(len(policies))
 
@@ -1271,9 +1261,6 @@ class TestControl(unittest.TestCase):
             gamma=16.0
         )
 
-        factor_idx = 0
-        modality_idx = 0
-        t_idx = 0
 
         efe_valid = np.zeros(len(policies))
 
@@ -1317,7 +1304,6 @@ class TestControl(unittest.TestCase):
             gamma=16.0
         )
 
-        t_idx = 0
 
         efe_valid = np.zeros(len(policies))
 
@@ -1409,7 +1395,7 @@ class TestControl(unittest.TestCase):
         self.assertEqual(len(q_pi), len(policies))
         self.assertEqual(len(efe), len(policies))
 
-        chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
+        control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
 
     def test_sample_action(self):
         """
@@ -1449,9 +1435,6 @@ class TestControl(unittest.TestCase):
             gamma=16.0
         )
 
-        factor_idx = 0
-        modality_idx = 0
-        t_idx = 0
 
         chosen_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic")
         sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="stochastic", alpha=1.0)
@@ -1618,7 +1601,7 @@ class TestControl(unittest.TestCase):
         
         C = utils.to_obj_array(np.array([1.5, 1.0, 1.0]))
 
-        D = utils.to_obj_array(utils.onehot(0, num_states[0]))
+        utils.to_obj_array(utils.onehot(0, num_states[0]))
         E = np.array([0.05, 0.05, 0.9])
 
         policies = control.construct_policies(num_states, num_controls, policy_len=1)

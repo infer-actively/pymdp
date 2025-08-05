@@ -635,7 +635,7 @@ def plot_likelihood(A, title=""):
     with hotter colors indicating higher probability.
     """
 
-    ax = sns.heatmap(A, cmap="OrRd", linewidth=2.5)
+    sns.heatmap(A, cmap="OrRd", linewidth=2.5)
     plt.xticks(range(A.shape[1]+1))
     plt.yticks(range(A.shape[0]+1))
     plt.title(title)
