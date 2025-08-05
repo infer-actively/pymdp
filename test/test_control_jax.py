@@ -5,9 +5,7 @@
 __author__: Dimitrije Markovic, Conor Heins
 """
 
-import os
 import unittest
-import pytest
 
 import numpy as np
 import jax.numpy as jnp
