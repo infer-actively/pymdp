@@ -10,7 +10,7 @@ __author__: Conor Heins, Alexander Tschantz, Daphne Demekas, Brennan Klein
 import warnings
 import numpy as np
 from pymdp.legacy import inference, control, learning
-from pymdp.legacy import utils, maths
+from pymdp.legacy import utils
 import copy
 
 class Agent(object):

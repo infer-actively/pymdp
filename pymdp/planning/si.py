@@ -4,7 +4,6 @@ import jax.tree_util as jtu
 from jax import nn
 from jax import vmap
 
-import pymdp
 from pymdp.control import (
     compute_info_gain,
     compute_expected_utility,

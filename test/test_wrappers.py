@@ -1,6 +1,4 @@
-import os
 import unittest
-from pathlib import Path
 from pymdp.legacy.utils import Dimensions, get_model_dimensions_from_labels
 
 class TestWrappers(unittest.TestCase):

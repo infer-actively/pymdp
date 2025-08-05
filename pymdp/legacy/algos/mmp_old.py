@@ -3,10 +3,8 @@
 # pylint: disable=no-member
 
 import numpy as np
-import sys
-import pathlib
 
-from pymdp.legacy.maths import spm_dot, get_joint_likelihood, spm_norm, softmax, calc_free_energy
+from pymdp.legacy.maths import spm_dot, get_joint_likelihood, spm_norm, softmax
 from pymdp.legacy import utils
 
 

@@ -5,7 +5,6 @@
 __author__: Dimitrije Markovic, Conor Heins
 """
 
-import os
 import unittest
 from functools import partial
 
@@ -17,14 +16,11 @@ from jax import random as jr
 
 from pymdp.algos import run_vanilla_fpi as fpi_jax
 from pymdp.algos import run_factorized_fpi as fpi_jax_factorized
-from pymdp.algos import update_variational_filtering as ovf_jax
 from pymdp.legacy.algos import run_vanilla_fpi as fpi_numpy
-from pymdp.legacy.algos import run_mmp as mmp_numpy
 from pymdp.algos import run_mmp as mmp_jax
-from pymdp.algos import run_vmp as vmp_jax
-from pymdp.legacy import utils, maths
+from pymdp.legacy import utils
 
-from typing import Any, List, Dict
+from typing import List, Dict
 
 def make_model_configs(source_seed=0, num_models=4) -> Dict:
     rng_keys = jr.split(jr.PRNGKey(source_seed), num_models)

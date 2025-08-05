@@ -6,12 +6,10 @@
 import itertools
 import jax.numpy as jnp
 import jax.tree_util as jtu
-from typing import List, Tuple, Optional
+from typing import List
 from functools import partial
-from jax.scipy.special import xlogy
-from jax import lax, jit, vmap, nn
+from jax import lax, vmap, nn
 from jax import random as jr
-from itertools import chain
 from jaxtyping import Array
 
 from pymdp.maths import *

@@ -5,7 +5,6 @@
 __author__: Conor Heins, Alexander Tschantz, Daphne Demekas, Brennan Klein
 """
 
-import os
 import unittest
 
 import numpy as np

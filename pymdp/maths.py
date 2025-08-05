@@ -2,7 +2,7 @@ import jax.numpy as jnp
 
 from functools import partial
 from typing import Optional, Tuple, List
-from jax import tree_util, nn, jit, vmap, lax
+from jax import tree_util, nn, jit
 from jax.scipy.special import xlogy
 from opt_einsum import contract
 from multimethod import multimethod

@@ -5,7 +5,7 @@
 
 import itertools
 import numpy as np
-from pymdp.legacy.maths import softmax, softmax_obj_arr, spm_dot, spm_wnorm, spm_MDP_G, spm_log_single, kl_div, entropy
+from pymdp.legacy.maths import softmax, softmax_obj_arr, spm_dot, spm_wnorm, spm_MDP_G, spm_log_single, entropy
 from pymdp.legacy.inference import update_posterior_states_factorized, average_states_over_policies
 from pymdp.legacy import utils
 import copy
