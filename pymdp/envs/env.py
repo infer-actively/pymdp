@@ -16,7 +16,7 @@ def select_probs(positions, matrix, dependency_list, actions=None):
                       if i in dependency_list)
     if actions is not None:
         index_args += (_float_to_int_index(actions),)
-    return matrix[..., *index_args]
+    return matrix[(..., *index_args)]
 
 
 def cat_sample(key, p):
