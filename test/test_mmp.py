@@ -39,7 +39,7 @@ class MMP(unittest.TestCase):
         t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")
         prev_actions = mat_contents["previous_actions"].astype("int64") - 1
         result_spm = mat_contents["qs"][0]
-        likelihoods = mat_contents["likelihoods"][0]
+        mat_contents["likelihoods"][0]
 
         num_obs, num_states, _, num_factors = get_model_dimensions(A, B)
         prev_obs = convert_observation_array(
@@ -77,7 +77,7 @@ class MMP(unittest.TestCase):
         t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")
         prev_actions = mat_contents["previous_actions"].astype("int64") - 1
         result_spm = mat_contents["qs"][0]
-        likelihoods = mat_contents["likelihoods"][0]
+        mat_contents["likelihoods"][0]
 
         num_obs, num_states, _, num_factors = get_model_dimensions(A, B)
         prev_obs = convert_observation_array(
@@ -111,7 +111,7 @@ class MMP(unittest.TestCase):
         t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")
         # prev_actions = mat_contents["previous_actions"].astype("int64") - 1
         result_spm = mat_contents["qs"][0]
-        likelihoods = mat_contents["likelihoods"][0]
+        mat_contents["likelihoods"][0]
 
         num_obs, num_states, _, num_factors = get_model_dimensions(A, B)
         prev_obs = convert_observation_array(
@@ -146,7 +146,7 @@ class MMP(unittest.TestCase):
         t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")
         prev_actions = mat_contents["previous_actions"].astype("int64") - 1
         result_spm = mat_contents["qs"][0]
-        likelihoods = mat_contents["likelihoods"][0]
+        mat_contents["likelihoods"][0]
 
         num_obs, num_states, _, num_factors = get_model_dimensions(A, B)
         prev_obs = convert_observation_array(

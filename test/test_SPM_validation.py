@@ -24,14 +24,14 @@ class TestSPM(unittest.TestCase):
         B = mat_contents["B"][0]
         C = to_obj_array(mat_contents["C"][0][0][:,0])
         obs_matlab = mat_contents["obs"].astype("int64")
-        policy = mat_contents["policies"].astype("int64") - 1
+        mat_contents["policies"].astype("int64") - 1
         t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")
         actions_matlab = mat_contents["actions"].astype("int64") - 1
-        qs_matlab = mat_contents["qs"][0]
+        mat_contents["qs"][0]
         xn_matlab = mat_contents["xn"][0]
         vn_matlab = mat_contents["vn"][0]
 
-        likelihoods_matlab = mat_contents["likelihoods"][0]
+        mat_contents["likelihoods"][0]
 
         num_obs, num_states, _, num_factors = get_model_dimensions(A, B)
         obs = convert_observation_array(obs_matlab, num_obs)

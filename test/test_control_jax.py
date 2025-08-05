@@ -51,7 +51,7 @@ class TestControlJax(unittest.TestCase):
         Tests the jax-ified version of computations of expected observations under some hidden states and policy
         """
         gm_params = generate_model_params()
-        num_factors_list, num_states_list, num_modalities_list, num_obs_list, A_deps_list = gm_params['nf_list'], gm_params['ns_list'], gm_params['nm_list'], gm_params['no_list'], gm_params['A_deps_list']
+        _num_factors_list, num_states_list, _num_modalities_list, num_obs_list, A_deps_list = gm_params['nf_list'], gm_params['ns_list'], gm_params['nm_list'], gm_params['no_list'], gm_params['A_deps_list']
         for (num_states, num_obs, A_deps) in zip(num_states_list, num_obs_list, A_deps_list):
             
             qs_numpy = utils.random_single_categorical(num_states)
@@ -120,7 +120,7 @@ class TestControlJax(unittest.TestCase):
         self.assertGreater(cue_info_gain, arm_info_gain)
 
         gm_params = generate_model_params()
-        num_factors_list, num_states_list, num_modalities_list, num_obs_list, A_deps_list = gm_params['nf_list'], gm_params['ns_list'], gm_params['nm_list'], gm_params['no_list'], gm_params['A_deps_list']
+        _num_factors_list, num_states_list, _num_modalities_list, num_obs_list, A_deps_list = gm_params['nf_list'], gm_params['ns_list'], gm_params['nm_list'], gm_params['no_list'], gm_params['A_deps_list']
         for (num_states, num_obs, A_deps) in zip(num_states_list, num_obs_list, A_deps_list):
 
             qs_numpy = utils.random_single_categorical(num_states)

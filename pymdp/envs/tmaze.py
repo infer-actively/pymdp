@@ -241,14 +241,14 @@ class TMaze(Env):
 
             grid_dims = [3, 3]
             X, Y = jnp.meshgrid(jnp.arange(grid_dims[1] + 1), jnp.arange(grid_dims[0] + 1))
-            h = ax.pcolormesh(
+            ax.pcolormesh(
                 X, Y, jnp.ones(grid_dims), edgecolors="none", vmin=0, vmax=30, linewidth=5, cmap="coolwarm", snap=True
             )
             ax.invert_yaxis()
             ax.axis("off")
             ax.set_aspect("equal")
 
-            edge_left = ax.add_patch(
+            ax.add_patch(
                 patches.Rectangle(
                     (0, 1),
                     1.0,
@@ -258,7 +258,7 @@ class TMaze(Env):
                 )
             )
 
-            edge_right = ax.add_patch(
+            ax.add_patch(
                 patches.Rectangle(
                     (2, 1),
                     1.0,
@@ -268,7 +268,7 @@ class TMaze(Env):
                 )
             )
 
-            arm_left = ax.add_patch(
+            ax.add_patch(
                 patches.Rectangle(
                     (0, 0),
                     1.0,
@@ -278,7 +278,7 @@ class TMaze(Env):
                 )
             )
 
-            arm_right = ax.add_patch(
+            ax.add_patch(
                 patches.Rectangle(
                     (2, 0),
                     1.0,
