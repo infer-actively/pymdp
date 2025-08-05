@@ -12,8 +12,8 @@ from jax import lax, vmap, nn
 from jax import random as jr
 from jaxtyping import Array
 
-from pymdp.maths import *
-# import pymdp.jax.utils as utils
+from pymdp.maths import factor_dot, log_stable, stable_entropy, stable_xlogx, spm_wnorm
+
 
 def get_marginals(q_pi, policies, num_controls):
     """
