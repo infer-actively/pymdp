@@ -704,7 +704,7 @@ class Agent(Module):
             ), f"Please input an `A_dependencies` whose {m}-th indices correspond to the hidden state factors that line up with lagging dimensions of A[{m}]..."
             if self.pA is not None:
                 assert (
-                    self.pA[m].shape[2:] == factor_dims if self.pA[m] is not None else True,
+                    self.pA[m].shape[2:] == factor_dims if self.pA[m] is not None else True
                 ), f"Please input an `A_dependencies` whose {m}-th indices correspond to the hidden state factors that line up with lagging dimensions of pA[{m}]..."
             assert max(self.A_dependencies[m]) <= (
                 self.num_factors - 1
