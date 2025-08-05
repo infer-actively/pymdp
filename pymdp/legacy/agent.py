@@ -137,7 +137,7 @@ class Agent(object):
         self.pB = pB
 
         # If no `num_controls` are given, then this is inferred from the shapes of the input B matrices
-        if num_controls == None:
+        if num_controls is None:
             self.num_controls = [self.B[f].shape[-1] for f in range(self.num_factors)]
         else:
             inferred_num_controls = [self.B[f].shape[-1] for f in range(self.num_factors)]
@@ -146,7 +146,7 @@ class Agent(object):
 
         # checking that `A_factor_list` and `B_factor_list` are consistent with `num_factors`, `num_states`, and lagging dimensions of `A` and `B` tensors
         self.factorized = False
-        if A_factor_list == None:
+        if A_factor_list is None:
             self.A_factor_list = self.num_modalities * [list(range(self.num_factors))] # defaults to having all modalities depend on all factors
             for m in range(self.num_modalities):
                 factor_dims = tuple([self.num_states[f] for f in self.A_factor_list[m]])
@@ -174,7 +174,7 @@ class Agent(object):
                         'A_modality_list': A_modality_list
                         }
 
-        if B_factor_list == None:
+        if B_factor_list is None:
             self.B_factor_list = [[f] for f in range(self.num_factors)] # defaults to having all factors depend only on themselves
             for f in range(self.num_factors):
                 factor_dims = tuple([self.num_states[f] for f in self.B_factor_list[f]])
@@ -193,7 +193,7 @@ class Agent(object):
 
         # Users have the option to make only certain factors controllable.
         # default behaviour is to make all hidden state factors controllable, i.e. `self.num_factors == len(self.num_controls)`
-        if control_fac_idx == None:
+        if control_fac_idx is None:
             self.control_fac_idx = [f for f in range(self.num_factors) if self.num_controls[f] > 1]
         else:
 
@@ -289,7 +289,7 @@ class Agent(object):
                 )
                 self.edge_handling_params['use_BMA'] = False
         
-        if inference_algo == None:
+        if inference_algo is None:
             self.inference_algo = "VANILLA"
             self.inference_params = self._get_default_params()
             if inference_horizon > 1:

@@ -44,7 +44,6 @@ class SceneConstruction(Env):
 
     def step(self,action_label):
 
-        location = self.current_location
 
         if action_label == 'start': 
           

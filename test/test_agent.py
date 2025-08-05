@@ -192,9 +192,9 @@ class TestAgent(unittest.TestCase):
         for t in range(T):
 
             o = [np.random.randint(num_ob) for num_ob in num_obs] # just randomly generate observations at each timestep, no generative process
-            qx = agent.infer_states(o)
+            agent.infer_states(o)
             agent.infer_policies()
-            action = agent.sample_action()
+            agent.sample_action()
         
         self.assertEqual(len(agent.prev_obs), T)
         self.assertEqual(len(agent.prev_actions), T)
@@ -207,7 +207,6 @@ class TestAgent(unittest.TestCase):
         # 3 x 3, 2-dimensional grid world
         num_obs = [9]
         num_states = [9]
-        num_controls = [4]
 
         A = utils.obj_array_zeros([ [num_obs[0], num_states[0]] ])
         A[0] = np.eye(num_obs[0])
@@ -325,7 +324,7 @@ class TestAgent(unittest.TestCase):
             
             prev_state = next_state
             o = [prev_state] 
-            qx = agent.infer_states(o)
+            agent.infer_states(o)
             agent.infer_policies()
             agent.sample_action()
 
@@ -755,7 +754,7 @@ class TestAgent(unittest.TestCase):
             obs_seq.append([np.random.randint(obs_dim) for obs_dim in num_obs])
         
         for t in range(5):
-            qs_out = agent.infer_states(obs_seq[t])
+            agent.infer_states(obs_seq[t])
             agent.infer_policies()
             agent.sample_action()
 
@@ -770,7 +769,7 @@ class TestAgent(unittest.TestCase):
             obs_seq.append([np.random.randint(obs_dim) for obs_dim in num_obs])
         
         for t in range(5):
-            qs_out = agent.infer_states(obs_seq[t])
+            agent.infer_states(obs_seq[t])
             agent.infer_policies()
             agent.sample_action()
         
@@ -794,7 +793,7 @@ class TestAgent(unittest.TestCase):
             obs_seq.append([np.random.randint(obs_dim) for obs_dim in num_obs])
         
         for t in range(5):
-            qs_out = agent.infer_states(obs_seq[t])
+            agent.infer_states(obs_seq[t])
             agent.infer_policies()
             agent.sample_action()
             agent.update_A(obs_seq[t])

@@ -431,7 +431,7 @@ def spm_calc_qo_entropy(A, x):
         the entropy of the marginal distribution over observations/outcomes
     """
 
-    num_modalities = len(A)
+    len(A)
 
     # Probability distribution over the hidden causes: i.e., Q(x)
     qx = spm_cross(x)
@@ -483,7 +483,7 @@ def spm_calc_neg_ambig(A, x):
         the negative ambiguity (negative entropy of the likelihood of observations given hidden states, expected under current posterior over hidden states)
     """
 
-    num_modalities = len(A)
+    len(A)
 
     # Probability distribution over the hidden causes: i.e., Q(x)
     qx = spm_cross(x)
@@ -538,7 +538,7 @@ def spm_MDP_G(A, x):
         about hidden states x, were it to be observed. 
     """
 
-    num_modalities = len(A)
+    len(A)
 
     # Probability distribution over the hidden causes: i.e., Q(x)
     qx = spm_cross(x)

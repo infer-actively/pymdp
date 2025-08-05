@@ -47,7 +47,7 @@ def run_vanilla_fpi(A, obs, num_obs, num_states, prior=None, num_iter=10, dF=1.0
     """
 
     # get model dimensions
-    n_modalities = len(num_obs)
+    len(num_obs)
     n_factors = len(num_states)
 
     """
@@ -377,7 +377,7 @@ def _run_vanilla_fpi_faster(A, obs, n_observations, n_states, prior=None, num_it
     """
 
     # get model dimensions
-    n_modalities = len(n_observations)
+    len(n_observations)
     n_factors = len(n_states)
 
     """

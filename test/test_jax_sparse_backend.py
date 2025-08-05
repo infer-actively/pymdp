@@ -111,7 +111,7 @@ class TestJaxSparseOperations(unittest.TestCase):
             gm_params["ns_list"],
             gm_params["no_list"],
         )
-        num_controls_list, B_deps_list = (
+        num_controls_list, _B_deps_list = (
             gm_params["nc_list"],
             gm_params["B_deps_list"],
         )

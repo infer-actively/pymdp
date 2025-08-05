@@ -252,7 +252,7 @@ class Agent(Module):
         self.learn_E = learn_E
 
         # construct control factor indices
-        if control_fac_idx == None:
+        if control_fac_idx is None:
             self.control_fac_idx = [f for f in range(self.num_factors) if self.num_controls[f] > 1]
         else:
             msg = "Check control_fac_idx - must be consistent with `num_states` and `num_factors`..."
@@ -702,7 +702,7 @@ class Agent(Module):
             assert (
                 self.A[m].shape[2:] == factor_dims
             ), f"Please input an `A_dependencies` whose {m}-th indices correspond to the hidden state factors that line up with lagging dimensions of A[{m}]..."
-            if self.pA != None:
+            if self.pA is not None:
                 assert (
                     self.pA[m].shape[2:] == factor_dims if self.pA[m] is not None else True,
                 ), f"Please input an `A_dependencies` whose {m}-th indices correspond to the hidden state factors that line up with lagging dimensions of pA[{m}]..."
@@ -715,7 +715,7 @@ class Agent(Module):
             assert (
                 self.B[f].shape[2:-1] == factor_dims
             ), f"Please input a `B_dependencies` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of B[{f}]..."
-            if self.pB != None:
+            if self.pB is not None:
                 assert (
                     self.pB[f].shape[2:-1] == factor_dims
                 ), f"Please input a `B_dependencies` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of pB[{f}]..."
