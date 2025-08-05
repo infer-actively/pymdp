@@ -5,7 +5,6 @@
 __author__: Dimitrije Markovic, Conor Heins
 """
 
-import os
 import unittest
 
 import numpy as np
@@ -13,7 +12,7 @@ import jax.numpy as jnp
 
 from pymdp.algos import run_vanilla_fpi as fpi_jax
 from pymdp.legacy.algos import run_vanilla_fpi as fpi_numpy
-from pymdp.legacy import utils, maths
+from pymdp.legacy import utils
 
 class TestInferenceJax(unittest.TestCase):
 
