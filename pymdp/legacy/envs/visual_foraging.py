@@ -72,7 +72,7 @@ class SceneConstruction(Env):
 
     def reset(self):
         self.current_location = "start"
-        print(f'Re-initialized location to Start location')
+        print('Re-initialized location to Start location')
         what_obs = 'null'
 
         return what_obs, self.current_location

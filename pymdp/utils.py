@@ -8,7 +8,6 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 
 import jax
 import jax.numpy as jnp
-import jax.tree_util as jtu
 import numpy as np
 
 import io
@@ -16,13 +15,8 @@ import matplotlib.pyplot as plt
 
 from typing import (
     Any,
-    Callable,
     List,
-    NamedTuple,
-    Optional,
     Sequence,
-    Union,
-    Tuple,
 )
 
 Tensor = Any  # maybe jnp.ndarray, but typing seems not to be well defined for jax

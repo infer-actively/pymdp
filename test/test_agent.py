@@ -7,11 +7,9 @@ __author__: Conor Heins, Alexander Tschantz, Daphne Demekas, Brennan Klein
 
 """
 
-import os
 import unittest
 
 import numpy as np
-from copy import deepcopy
 
 from pymdp.legacy.agent import Agent
 from pymdp.legacy import utils, maths

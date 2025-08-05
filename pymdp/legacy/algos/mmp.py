@@ -3,9 +3,8 @@
 
 import numpy as np
 
-from pymdp.legacy.utils import to_obj_array, get_model_dimensions, obj_array, obj_array_zeros, obj_array_uniform
+from pymdp.legacy.utils import get_model_dimensions, obj_array, obj_array_zeros, obj_array_uniform
 from pymdp.legacy.maths import spm_dot, spm_norm, softmax, calc_free_energy, spm_log_single, factor_dot_flex
-import copy
 
 def run_mmp(
     lh_seq, B, policy, prev_actions=None, prior=None, num_iter=10, grad_descent=True, tau=0.25, last_timestep = False):

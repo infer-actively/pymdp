@@ -5,7 +5,6 @@
 import numpy as np
 from pymdp.legacy.maths import spm_dot, dot_likelihood, get_joint_likelihood, softmax, calc_free_energy, spm_log_single, spm_log_obj_array
 from pymdp.legacy.utils import to_obj_array, obj_array, obj_array_uniform
-from itertools import chain
 from copy import deepcopy
 
 def run_vanilla_fpi(A, obs, num_obs, num_states, prior=None, num_iter=10, dF=1.0, dF_tol=0.001, compute_vfe=True):

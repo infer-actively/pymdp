@@ -1,4 +1,3 @@
-import jax.numpy as jnp
 import numpyro.distributions as dist
 from jax import lax
 from numpyro import plate, sample, deterministic

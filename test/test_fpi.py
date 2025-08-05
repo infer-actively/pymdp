@@ -5,7 +5,6 @@
 __author__: Conor Heins
 """
 
-import os
 import unittest
 
 import numpy as np
