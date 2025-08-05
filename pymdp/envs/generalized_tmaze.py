@@ -6,10 +6,9 @@ import matplotlib.pyplot as plt
 import io
 import PIL.Image
 
-import jax.numpy as jnp
 import jax.tree_util as jtu
 from jax import random as jr
-from jaxtyping import Array, PRNGKeyArray
+from jaxtyping import PRNGKeyArray
 from matplotlib.lines import Line2D
 
 

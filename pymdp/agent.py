@@ -9,8 +9,8 @@ __author__: Conor Heins, Dimitrije Markovic, Alexander Tschantz, Daphne Demekas,
 import math as pymath
 import jax.numpy as jnp
 import jax.tree_util as jtu
-from jax import nn, vmap, random
-from pymdp import inference, control, learning, utils, maths
+from jax import nn, vmap
+from pymdp import inference, control, learning, utils
 from pymdp.distribution import Distribution, get_dependencies
 from equinox import Module, field, tree_at
 

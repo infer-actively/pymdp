@@ -5,25 +5,21 @@
 __author__: Conor Heins, Toon Van de Maele, Ozan Catal
 """
 
-import os
 import unittest
-from functools import partial
 
-import copy
 
 import numpy as np
 import jax.numpy as jnp
 import jax.tree_util as jtu
-from jax import vmap, nn
 from jax import random as jr
 
 from pymdp.inference import smoothing_ovf
-from pymdp.legacy import utils, maths
+from pymdp.legacy import utils
 from pymdp.legacy.control import construct_policies
 
 from jax.experimental import sparse
 
-from typing import Any, List, Dict
+from typing import List, Dict
 
 def make_model_configs(source_seed=0, num_models=4) -> Dict:
     """
