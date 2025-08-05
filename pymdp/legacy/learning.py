@@ -271,7 +271,7 @@ def _prune_prior(prior, levels_to_remove, dirichlet = False):
 
     if utils.is_obj_array(prior): # in case of multiple hidden state factors
 
-        assert all([type(levels) == list for levels in levels_to_remove])
+        assert all(isinstance(levels, list) for levels in levels_to_remove)
 
         num_factors = len(prior)
 
@@ -297,8 +297,7 @@ def _prune_prior(prior, levels_to_remove, dirichlet = False):
             reduced_prior = reduced_prior[factors_to_keep]
 
     else: # in case of one hidden state factor
-
-        assert all([type(level_i) == int for level_i in levels_to_remove])
+        assert all(isinstance(level_i, int) for level_i in levels_to_remove)
 
         ns = len(prior)
         levels_to_keep = list(set(range(ns)) - set(levels_to_remove))
@@ -349,7 +348,7 @@ def _prune_A(A, obs_levels_to_prune, state_levels_to_prune, dirichlet = False):
 
     if utils.is_obj_array(A): # in case of multiple observation modality
 
-        assert all([type(o_m_levels) == list for o_m_levels in obs_levels_to_prune])
+        assert all(isinstance(o_m_levels, list) for o_m_levels in obs_levels_to_prune)
 
         num_modalities = len(A)
 
@@ -367,7 +366,7 @@ def _prune_A(A, obs_levels_to_prune, state_levels_to_prune, dirichlet = False):
             raise(NotImplementedError("Need to figure out how to re-distribute concentration parameters from pruned rows/columns, across remaining rows/columns"))
     else: # in case of one observation modality
 
-        assert all([type(o_levels_i) == int for o_levels_i in obs_levels_to_prune])
+        assert all(isinstance(o_levels_i, int) for o_levels_i in obs_levels_to_prune)
 
         no = A.shape[0]
         rows_to_keep = np.array(list(set(range(no)) - set(obs_levels_to_prune)), dtype = np.intp)
@@ -424,7 +423,7 @@ def _prune_B(B, state_levels_to_prune, action_levels_to_prune, dirichlet = False
 
     if utils.is_obj_array(B): # in case of multiple hidden state factors
 
-        assert all([type(ns_f_levels) == list for ns_f_levels in state_levels_to_prune])
+        assert all(isinstance(ns_f_levels, list) for ns_f_levels in state_levels_to_prune)
 
         num_factors = len(B)
 
@@ -444,8 +443,7 @@ def _prune_B(B, state_levels_to_prune, action_levels_to_prune, dirichlet = False
 
     else: # in case of one hidden state factor
 
-        assert all([type(state_level_i) == int for state_level_i in state_levels_to_prune])
-
+        assert all(isinstance(state_level_i, int) for state_level_i in state_levels_to_prune)
         ns = B.shape[0]
         states_to_keep = np.array(list(set(range(ns)) - set(state_levels_to_prune)), dtype = np.intp)
             
