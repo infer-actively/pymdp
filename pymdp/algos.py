@@ -179,7 +179,7 @@ def variational_filtering_step(prior, Bs, ln_As, A_dependencies):
 def update_variational_filtering(obs, A, B, prior, A_dependencies, **kwargs):
     """Online variational filtering belief update that uses a sparse dependency matrix for A"""
 
-    T = obs[0].shape[0]
+    obs[0].shape[0]
     def pad(x):
         npad = [(0, 0)] * jnp.ndim(x)
         npad[0] = (0, 1)

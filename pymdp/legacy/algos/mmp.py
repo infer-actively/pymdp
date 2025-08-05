@@ -389,7 +389,7 @@ def _run_mmp_testing(
         for t in range(infer_len):
 
             if t == (infer_len - 1):
-                debug_flag = True
+                pass
 
             for f in range(num_factors):
                 # likelihood

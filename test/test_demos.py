@@ -41,7 +41,7 @@ class TestDemos(unittest.TestCase):
         for t in range(T):
     
             # update agent
-            belief_state = agent.infer_states(observation)
+            agent.infer_states(observation)
             agent.infer_policies()
             action = agent.sample_action()
 
@@ -91,13 +91,9 @@ class TestDemos(unittest.TestCase):
         obs = env.reset() # reset the environment and get an initial observation
 
         # these are useful for displaying read-outs during the loop over time
-        reward_conditions = ["Right", "Left"]
-        location_observations = ['CENTER','RIGHT ARM','LEFT ARM','CUE LOCATION']
-        reward_observations = ['No reward','Reward!','Loss!']
-        cue_observations = ['Cue Right','Cue Left']
       
         for t in range(T):
-            qx = agent.infer_states(obs)
+            agent.infer_states(obs)
 
             q_pi, G = agent.infer_policies()
 
@@ -199,13 +195,13 @@ class TestDemos(unittest.TestCase):
         for linear_index, xy_coordinates in state_mapping.items():
             x, y = xy_coordinates
             grid[y,x] = linear_index # rows are the y-coordinate, columns are the x-coordinate -- so we index into the grid we'll be visualizing using '[y, x]'
-        fig = plt.figure(figsize = (3,3))
+        plt.figure(figsize = (3,3))
         sns.set(font_scale=1.5)
         sns.heatmap(grid, annot=True,  cbar = False, fmt='.0f', cmap='crest')
 
         A = np.eye(9)
 
-        labels = [state_mapping[i] for i in range(A.shape[1])]
+        [state_mapping[i] for i in range(A.shape[1])]
 
         # plot_likelihood(A)
 
@@ -264,7 +260,7 @@ class TestDemos(unittest.TestCase):
 
         A = np.eye(9)
        
-        labels = [state_mapping[i] for i in range(A.shape[1])]
+        [state_mapping[i] for i in range(A.shape[1])]
        
         # def plot_empirical_prior(B):
         #     fig, axes = plt.subplots(3,2, figsize=(8, 10))
@@ -369,7 +365,7 @@ class TestDemos(unittest.TestCase):
         # plot_beliefs(Qs)
 
         REWARD_LOCATION = 7
-        reward_state = state_mapping[REWARD_LOCATION]
+        state_mapping[REWARD_LOCATION]
 
         C = np.zeros(num_states)
         C[REWARD_LOCATION] = 1. 
