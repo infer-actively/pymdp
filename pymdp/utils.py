@@ -26,8 +26,10 @@ ShapeList = list[Shape]
 
 
 def norm_dist(dist: Tensor) -> Tensor:
-    """Normalizes a Categorical probability distribution"""
-    return dist / dist.sum(0)
+    """Normalizes a Categorical probability distribution"""    
+    dist = dist + 1e-3
+    normalized_dist = dist / dist.sum(0)
+    return normalized_dist
 
 
 def list_array_uniform(shape_list: ShapeList) -> Vector:
