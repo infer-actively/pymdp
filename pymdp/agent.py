@@ -702,10 +702,19 @@ class Agent(Module):
             assert (
                 self.A[m].shape[2:] == factor_dims
             ), f"Please input an `A_dependencies` whose {m}-th indices correspond to the hidden state factors that line up with lagging dimensions of A[{m}]..."
+            
+            # validate A tensor is normalised
+            utils.validate_normalization(self.A[m], axis=1, tensor_name=f"A[{m}]")
+            
             if self.pA is not None:
                 assert (
                     self.pA[m].shape[2:] == factor_dims if self.pA[m] is not None else True
                 ), f"Please input an `A_dependencies` whose {m}-th indices correspond to the hidden state factors that line up with lagging dimensions of pA[{m}]..."
+                
+                # validate pA tensor is normalised, if it exists
+                if self.pA[m] is not None:
+                    utils.validate_normalization(self.pA[m], axis=1, tensor_name=f"pA[{m}]")
+                    
             assert max(self.A_dependencies[m]) <= (
                 self.num_factors - 1
             ), f"Check modality {m} of `A_dependencies` - must be consistent with `num_states` and `num_factors`..."
@@ -715,10 +724,19 @@ class Agent(Module):
             assert (
                 self.B[f].shape[2:-1] == factor_dims
             ), f"Please input a `B_dependencies` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of B[{f}]..."
+            
+            # validate B tensor is normalised
+            utils.validate_normalization(self.B[f], axis=1, tensor_name=f"B[{f}]")
+            
             if self.pB is not None:
                 assert (
                     self.pB[f].shape[2:-1] == factor_dims
                 ), f"Please input a `B_dependencies` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of pB[{f}]..."
+                
+                # validate pB tensor is normalised, if it exists
+                if self.pB[f] is not None:
+                    utils.validate_normalization(self.pB[f], axis=1, tensor_name=f"pB[{f}]")
+                    
             assert max(self.B_dependencies[f]) <= (
                 self.num_factors - 1
             ), f"Check factor {f} of `B_dependencies` - must be consistent with `num_states` and `num_factors`..."
