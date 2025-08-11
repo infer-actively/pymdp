@@ -412,7 +412,7 @@ class Agent(Module):
 
         return agent
 
-    def infer_states(self, observations, empirical_prior, *, past_actions=None, qs_hist=None, mask=None):
+    def infer_states(self, observations, empirical_prior, *, past_actions=None, qs_hist=None, mask=None, onehot_obs=False):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
@@ -436,7 +436,7 @@ class Agent(Module):
         """
 
         # TODO: infer this from shapes
-        if not self.onehot_obs:
+        if not self.onehot_obs and not onehot_obs:
             o_vec = [nn.one_hot(o, self.num_obs[m]) for m, o in enumerate(observations)]
         else:
             o_vec = observations
