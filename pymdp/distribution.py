@@ -90,7 +90,7 @@ class Distribution:
         ]
         self.data[tuple(index_list)] = value
 
-    def normalize(self, add_noise: bool = False):
+    def normalize(self, add_noise: float = 0.0):
         self.data = norm_dist(self.data, add_noise=add_noise)
 
     def __repr__(self):
