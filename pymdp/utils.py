@@ -36,11 +36,8 @@ def norm_dist(dist: Tensor, add_noise: float = 0.0) -> Tensor:
     column_sums = dist.sum(0)
     zero_sum_mask = column_sums == 0
 
-    if jnp.any(zero_sum_mask):
-        if add_noise > 0.0:
-            print("Warning: There are columns that sum to zero in tensor. Adding noise only to zero-sum columns.")
-        else:
-            print("Warning: There are columns that sum to zero in tensor. These will result in NaN values. To fix, set add_noise to a small positive value (e.g., add_noise=1e-3) in the function.")
+    if jnp.any(zero_sum_mask) and add_noise == 0.0:
+        raise ValueError("There are columns that sum to zero in tensor. These will result in NaN values. To fix, normalize the distribution and set add_noise to a small positive value (e.g., add_noise=1e-3) in the norm_dist function.")
     
     # add_noise to zero-sum columns only
     noise_tensor = jnp.where(zero_sum_mask, add_noise, 0.0)
