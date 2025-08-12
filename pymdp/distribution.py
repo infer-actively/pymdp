@@ -90,8 +90,8 @@ class Distribution:
         ]
         self.data[tuple(index_list)] = value
 
-    def normalize(self):
-        self.data = norm_dist(self.data)
+    def normalize(self, add_noise: bool = False):
+        self.data = norm_dist(self.data, add_noise=add_noise)
 
     def __repr__(self):
         return f"Distribution({self.event}, {self.batch})\n {self.data}"
