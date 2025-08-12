@@ -25,9 +25,25 @@ Shape = Sequence[int]
 ShapeList = list[Shape]
 
 
-def norm_dist(dist: Tensor) -> Tensor:
-    """Normalizes a Categorical probability distribution"""    
-    dist = dist + 1e-3
+def norm_dist(dist: Tensor, add_noise: bool = False) -> Tensor:
+    """Normalizes a Categorical probability distribution
+
+    dist : Tensor
+        The distribution to normalise
+    add_noise : bool, optional
+        Whether to add small noise to avoid division by zero (default: False)
+    """
+    # check for zero-sum columns before processing
+    column_sums = dist.sum(0)
+    zero_sum_mask = column_sums == 0
+    
+    if jnp.any(zero_sum_mask):
+        print("Warning: There are columns that sum to zero. Consider using add_noise=True to avoid division by zero as it may give NaNs.")
+    
+    # add noise if requested
+    if add_noise:
+        dist = dist + 1e-3
+    
     normalized_dist = dist / dist.sum(0)
     return normalized_dist
 
