@@ -177,7 +177,7 @@ def rollout(
         qs_0 = jtu.tree_map(lambda x: jnp.expand_dims(x, -2), agent.D)
 
         # put action to -1 to indicate no action taken yet
-        action_0 = -jnp.ones(agent.policies.shape[1:], dtype=jnp.int32)
+        action_0 = -jnp.ones((agent.batch_size, agent.policies.shape[-1]), dtype=jnp.int32)
 
         # set up initial state to carry through timesteps
         initial_carry = {
