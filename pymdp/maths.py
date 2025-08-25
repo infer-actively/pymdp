@@ -12,13 +12,6 @@ from jax.experimental.sparse._base import JAXSparse
 
 MINVAL = jnp.finfo(float).eps
 
-# --- Toggle for information-gain formulation ---------------------------------
-# Set to ``True`` to use exact information-gain over parameters instead of the legacy
-# spm_wnorm heuristic.  Changing this single line lets you switch behaviour
-# globally without touching the rest of the code-base.
-USE_EXACT_PARAM_INFO_GAIN = True  # ⇦ CHANGE THIS LINE TO ``True`` FOR THE FIX
-# -----------------------------------------------------------------------------
-
 def stable_xlogx(x):
     return xlogy(x, jnp.clip(x, MINVAL))
 
@@ -197,16 +190,16 @@ def _exact_wnorm(A):
 
     return -wA # TODO: minus sign here gives negative info gain for backward compatibility with spm implementation. Later will need to remove minus sign here to get positive info gain and adjust function documentation accordingly.
 
-def spm_wnorm(A):
+def spm_wnorm(A, exact_param_info_gain=True):
     """
     Returns the weight matrix used in PyMDP's parameter information-gain term.
 
-    Historically this was the heuristic ``1/Σα − 1/α``. If the global flag
-    ``USE_EXACT_PARAM_INFO_GAIN`` is set to *True* we instead return the exact value of
-    the weight matrix used in the info gain computation defined in ``_exact_wnorm`` 
+    Historically this was the heuristic ``1/Σα − 1/α``. If exact_param_info_gain is set to *True* we instead return the exact value of
+    the weight matrix used in the info gain computation defined in _exact_wnorm 
     while keeping the original function signature so that the rest of the codebase remains unchanged.
     """
-    if USE_EXACT_PARAM_INFO_GAIN:
+
+    if exact_param_info_gain:
         return _exact_wnorm(A)
 
     """spm legacy heuristic for computing information-gain over parameters:
