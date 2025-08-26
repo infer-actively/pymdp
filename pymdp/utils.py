@@ -25,26 +25,28 @@ Shape = Sequence[int]
 ShapeList = list[Shape]
 
 
-def norm_dist(dist: Tensor, add_noise: float = 0.0) -> Tensor:
-    """Normalizes a Categorical probability distribution
+def norm_dist(dist: Tensor) -> Tensor:
+    """Normalizes a Categorical probability distribution"""
+    return dist / dist.sum(0)
 
-    add_noise : float, optional
-        Amount of noise to add only to zero-sum columns to avoid division by zero (default: 0.0)
-        If 0.0, zero-sum columns will result in NaN values with a warning
+
+def validate_normalization(tensor: Tensor, axis: int = 1, tensor_name: str = "tensor") -> None:
     """
-    # check for zero-sum columns before processing
-    column_sums = dist.sum(0)
-    zero_sum_mask = column_sums == 0
-
-    if jnp.any(zero_sum_mask) and add_noise == 0.0:
-        raise ValueError("There are columns that sum to zero in tensor. These will result in NaN values. To fix, normalize the distribution and set add_noise to a small positive value (e.g., add_noise=1e-3) in the norm_dist function.")
+    Validates that a probability tensor has normalised distributions along specified axis.
+    It raises a ValueError if tensor has zero-filled distributions or unnormalised distributions
+    """
+    # sum along the specified axis
+    sums = jnp.sum(tensor, axis=axis)
     
-    # add_noise to zero-sum columns only
-    noise_tensor = jnp.where(zero_sum_mask, add_noise, 0.0)
-    adjusted_dist = dist + noise_tensor
-    normalized_dist = adjusted_dist / adjusted_dist.sum(0)
+    # check for zero-filled distributions
+    zero_filled = jnp.any(jnp.isclose(sums, 0.0))
+    if zero_filled:
+        raise ValueError(f"Please ensure that {tensor_name}'s {axis}-th axis does not sum to zero...")
     
-    return normalized_dist
+    # check for unnormalised distributions (non-zero but not summing to 1)
+    not_normalised = jnp.any(~jnp.isclose(sums, 1.0))
+    if not_normalised:
+        raise ValueError(f"Please ensure that {tensor_name}'s {axis}-th axis is properly normalised and sums to 1...")
 
 
 def list_array_uniform(shape_list: ShapeList) -> Vector:
