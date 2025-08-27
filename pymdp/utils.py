@@ -41,12 +41,12 @@ def validate_normalization(tensor: Tensor, axis: int = 1, tensor_name: str = "te
     # check for zero-filled distributions
     zero_filled = jnp.any(jnp.isclose(sums, 0.0))
     if zero_filled:
-        raise ValueError(f"Please ensure that {tensor_name}'s {axis}-th axis does not sum to zero...")
+        raise ValueError(f"Please ensure that none of the distributions along {tensor_name}'s {axis}-th axis sum to zero...")
     
     # check for unnormalised distributions (non-zero but not summing to 1)
     not_normalised = jnp.any(~jnp.isclose(sums, 1.0))
     if not_normalised:
-        raise ValueError(f"Please ensure that {tensor_name}'s {axis}-th axis is properly normalised and sums to 1...")
+        raise ValueError(f"Please ensure that all distributions along {tensor_name}'s {axis}-th axis are properly normalised and sum to 1...")
 
 
 def list_array_uniform(shape_list: ShapeList) -> Vector:
