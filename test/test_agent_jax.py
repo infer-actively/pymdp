@@ -418,6 +418,13 @@ class TestAgentJax(unittest.TestCase):
         # Should not raise; Agent.__init__ calls self._validate() which calls validate_normalization
         _ = Agent(A, B, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls)
 
+        # also in presence of Dirichlet priors
+        pA = [10.0 * a for a in A]  # uniform Dirichlet priors
+        pB = [10.0 * b for b in B]
+
+        # Should not raise; Agent.__init__ calls self._validate() which calls validate_normalization
+        _ = Agent(A, B, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls, pA=pA, pB=pB) 
+
     def test_agent_validate_normalization_raises_on_bad_A(self):
         """
         If A is not normalized along its outcome axis (axis=1 after broadcasting),
@@ -437,6 +444,12 @@ class TestAgentJax(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             _ = Agent(A_bad, B, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls)
+        
+        # also raises in presence of Dirichlet priors
+        pA = [(10.0 * a + 1.0) for a in A_bad]  # uniform Dirichlet priors
+        pB = [(10.0 * b) for b in B]
+        with self.assertRaises(ValueError):
+            _ = Agent(A_bad, B, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls, pA=pA, pB=pB)
 
     def test_agent_validate_normalization_raises_on_bad_B(self):
         """
@@ -457,6 +470,12 @@ class TestAgentJax(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             _ = Agent(A, B_bad, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls)
+        
+        # also raises in presence of Dirichlet priors
+        pA = [10.0 * a for a in A]  # uniform Dirichlet priors
+        pB = [(10.0 * b + 1) for b in B_bad]
+        with self.assertRaises(ValueError):
+            _ = Agent(A, B_bad, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls, pA=pA, pB=pB)
 
 
 if __name__ == "__main__":
