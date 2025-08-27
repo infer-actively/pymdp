@@ -710,10 +710,6 @@ class Agent(Module):
                 assert (
                     self.pA[m].shape[2:] == factor_dims if self.pA[m] is not None else True
                 ), f"Please input an `A_dependencies` whose {m}-th indices correspond to the hidden state factors that line up with lagging dimensions of pA[{m}]..."
-                
-                # validate pA tensor is normalised, if it exists
-                if self.pA[m] is not None:
-                    utils.validate_normalization(self.pA[m], axis=1, tensor_name=f"pA[{m}]")
                     
             assert max(self.A_dependencies[m]) <= (
                 self.num_factors - 1
@@ -732,10 +728,6 @@ class Agent(Module):
                 assert (
                     self.pB[f].shape[2:-1] == factor_dims
                 ), f"Please input a `B_dependencies` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of pB[{f}]..."
-                
-                # validate pB tensor is normalised, if it exists
-                if self.pB[f] is not None:
-                    utils.validate_normalization(self.pB[f], axis=1, tensor_name=f"pB[{f}]")
                     
             assert max(self.B_dependencies[f]) <= (
                 self.num_factors - 1
