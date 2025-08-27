@@ -85,7 +85,7 @@ def infer_and_plan(
 
     info = {"empirical_prior": empirical_prior, "qpi": qpi}
     info.update(xtra)  # add extra information from policy search
-    return action, qs, info
+    return agent, action, qs, info
 
 
 def rollout(
@@ -139,7 +139,7 @@ def rollout(
 
         # infer next action and beliefs using the agent's inference and planning methods
         # first timestep we don't have a prev action yet, so then we call with action=None
-        action_next, qs, xtra = infer_and_plan(
+        updated_agent, action_next, qs, xtra = infer_and_plan(
             agent, qs_prev, observation, action, keys[1], policy_search=policy_search
         )
 
@@ -154,7 +154,7 @@ def rollout(
             "observation": observation_next,
             "qs": jtu.tree_map(lambda x: x[:, -1:, ...], qs),  # keep only latest belief
             "env": env_next,
-            "agent": agent,
+            "agent": updated_agent,
             "rng_key": rng_key,
         }
         info = {
@@ -163,6 +163,14 @@ def rollout(
             "observation": observation,
             "action": action_next,
         }
+
+        if updated_agent.learn_A:
+            xtra["A"] = updated_agent.A
+            xtra["pA"] = updated_agent.pA
+        if updated_agent.learn_B:
+            xtra["B"] = updated_agent.B
+            xtra["pB"] = updated_agent.pB
+            
         info.update(xtra)  # add extra information from inference and planning
 
         return carry, info
