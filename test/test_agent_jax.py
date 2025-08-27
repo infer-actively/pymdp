@@ -401,6 +401,62 @@ class TestAgentJax(unittest.TestCase):
         
         self.assertTrue(action_multi.shape[-1] == len(agent.num_controls))
         self.assertTrue(jnp.allclose(action, action_reconstruct))
+    
+    def test_agent_validate_normalization_ok(self):
+        """
+        Agent should construct without errors when A and B are normalized
+        """
+        num_obs = [3, 4]
+        num_states = [4, 5]
+        num_controls = [1, 2]
+        A_deps = [[0, 1], [0, 1]]
+        B_deps = [[0], [1]]
+
+        A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_deps)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_deps, B_factor_control_list=None)
+
+        # Should not raise; Agent.__init__ calls self._validate() which calls validate_normalization
+        _ = Agent(A, B, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls)
+
+    def test_agent_validate_normalization_raises_on_bad_A(self):
+        """
+        If A is not normalized along its outcome axis (axis=1 after broadcasting),
+        Agent construction should raise a ValueError via validate_normalization
+        """
+        num_obs = [3, 4]
+        num_states = [4, 5]
+        num_controls = [1, 2]
+        A_deps = [[0, 1], [0, 1]]
+        B_deps = [[0], [1]]
+
+        A_bad = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_deps)
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_deps, B_factor_control_list=None)
+
+        # Corrupt A[0]: add to one categorical distribution so sums != 1 along axis=1
+        A_bad[0][:,0,1] += 0.05  # preserves shape, breaks normalization on axis=1
+
+        with self.assertRaises(ValueError):
+            _ = Agent(A_bad, B, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls)
+
+    def test_agent_validate_normalization_raises_on_bad_B(self):
+        """
+        If B is zero-filled (or otherwise unnormalized) along its state axis (axis=1 after broadcasting),
+        Agent construction should raise a ValueError via validate_normalization
+        """
+        num_obs = [3, 4]
+        num_states = [4, 5]
+        num_controls = [2, 2]
+        A_deps = [[0, 1], [0, 1]]
+        B_deps = [[0], [1]]
+
+        A = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_deps)
+        B_bad = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_deps, B_factor_control_list=None)
+
+        # Corrupt B[0]: make it zero so sums == 0 along axis=1
+        B_bad[0][:,0,1] *= 0.0  # preserves shape, breaks normalization on axis=1
+
+        with self.assertRaises(ValueError):
+            _ = Agent(A, B_bad, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls)
 
 
 if __name__ == "__main__":
