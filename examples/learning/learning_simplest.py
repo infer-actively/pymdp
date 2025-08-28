@@ -30,53 +30,55 @@ from pymdp.maths import dirichlet_expected_value
 key_idx = 1 # Initialize master random key index at the start
 
 #%% Initialise environment
-batch_size = 1
+batch_size = 3
 env = SimplestEnv(batch_size=batch_size)
 
 # %% ### 1. Basic Demo
 #
 # This demo shows how to use the simplest environment with an active inference agent.
-# The environment consists of two states (left and right) and two actions (stay and move).
-# The agent can observe which state it is in perfectly.
-#
-# First, we'll create an instance of the simplest environment
+# The environment consists of two states (left and right) and two actions (go left and go right).
+# The agent can observe which state it is in perfectly (identity A matrix).
 
 # Set up random key
 key = jr.PRNGKey(key_idx)
 
-# Initialize agent's learning config
-learning_config = LearningConfig(learn_A=False, learn_B=False, learn_D=False)
+# Create the agent's generative model based on the environment parameters
+# Get A tensors (observation model) from environment
+A = [jnp.array(a, dtype=jnp.float32) for a in env.params["A"]]
+A_dependencies = env.dependencies["A"]
 
-# Initialise POMDP model from environment and learning config
-model, key = POMDPModel.from_env(
-    env=env,
-    learning=learning_config,
-    key=key,
-    T=100               #can play with this
+# Get B tensors (transition model) from environment  
+B = [jnp.array(b, dtype=jnp.float32) for b in env.params["B"]]
+B_dependencies = env.dependencies["B"]
+
+# Get D tensors (initial state beliefs) from environment
+D = [jnp.array(d, dtype=jnp.float32) for d in env.params["D"]]
+
+# Create C tensors (preferences) - all zeros means no preference
+C = [jnp.zeros((batch_size, a.shape[1]), dtype=jnp.float32) for a in A]
+
+# Create the agent
+agent = Agent(
+    A, B, C, D,
+    policy_len=1,  # Plan one step ahead
+    A_dependencies=A_dependencies,
+    B_dependencies=B_dependencies, 
+    batch_size=batch_size,
+    learn_A=False,
+    learn_B=False
 )
 
-# Update initial beliefs (D): Equal probability for all states
-model = model.set_uniform_D()
+# %% Print setup
+print("=== Basic Demo Setup ===")
+print(f"Environment A matrix (observation model):\n{env.params['A'][0][0]}")
+print(f"Environment B matrix (transition model):\n{env.params['B'][0][0]}")
+print(f"Agent starting beliefs: {D[0][0]}")
 
-# Set up preference (C) matrix
-# C = [jnp.zeros((batch_size, 2), dtype=jnp.float32).at[:, 1].set(1.0)]  # The agent prefers to be in the right state (state 1)
-C = [jnp.zeros((batch_size, model.structure.num_obs[0]), dtype=jnp.float32)]  # All states equally preferred
+# %% Run basic simulation
+key = jr.PRNGKey(key_idx)
+T = 5  # Number of timesteps
+last, info, _ = rollout(agent, env, num_timesteps=T, rng_key=key)
 
-# Initialize the agent based on model and other parameters
-agent = Agent.from_model(
-    model=model,
-    C=C,
-    policy_len=1,            # Plan one step ahead
-    inference_algo="fpi",
-    apply_batch=False,
-    action_selection="stochastic"
-)
+# %%  Print rollout
+print_rollout(info, batch_idx=0)
 
-# Run simulation
-key, rollout_key = jr.split(key)
-final_state, info, _ = rollout(agent, env, num_timesteps=model.structure.T, rng_key=rollout_key)
-
-# Print rollout and visualize results
-plot_beliefs(info, agent)
-render_rollout(env, info)  # Optionally: render_rollout(env, info, save_gif=True, filename="figures/simplest.gif")
-print_rollout(info)

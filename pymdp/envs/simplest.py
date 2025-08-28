@@ -326,19 +326,19 @@ def print_parameter_learning(info: Dict[str, Any], learning_config: Dict[str, bo
 def print_rollout(info, batch_idx=0):
     """Print a human-readable version of the rollout."""
     # Extract variables from info dictionary
-    observations = info["observation"][0] # First modality, shape: (T+1, batch_size, 1)
-    beliefs = info["qs"][0] # First factor, shape: (T+1, batch_size, 1, 2)
-    policies = info["qpi"] # Shape: (T+1, batch_size, num_policies)
-    actions = info["action"] # Shape: (T+1, batch_size, 1)
-    empirical_priors = info["empirical_prior"][0]
+    observations = info["observation"][0] # First modality, shape: (batch_size, T+1, 1)
+    beliefs = info["qs"][0] # First factor, shape: (batch_size, T+1, 2)
+    policies = info["qpi"] # Shape: (batch_size, T+1, num_policies)
+    actions = info["action"] # Shape: (batch_size, T+1, 1)
+    empirical_priors = info["empirical_prior"][0] # Shape: (batch_size, T+1, 2)
     
     # Get dimensions
-    num_timesteps = observations.shape[0]
+    num_timesteps = observations.shape[1]
     
     # Print experiment setup
     print("\n=== Experiment Setup ===")
-    print(f"Number of timesteps: {observations.shape[0]-1}")  # -1 because includes initial observation
-    print(f"Batch size: {observations.shape[1]}")
+    print(f"Number of timesteps: {observations.shape[1]-1}")  # -1 because includes initial observation
+    print(f"Batch size: {observations.shape[0]}")
     print(f"Number of policies: {policies.shape[-1]}")
     
     def format_state_dist(left_prob, right_prob):
@@ -347,9 +347,9 @@ def print_rollout(info, batch_idx=0):
     
     # Print initial timestep info
     print("\n=== Initial Timestep (t=0) ===")
-    print("Prior beliefs (D):", format_state_dist(empirical_priors[0, batch_idx, 0], empirical_priors[0, batch_idx, 1]))
-    print(f"Observation: [{['Left', 'Right'][int(observations[0, batch_idx, 0])]}]")
-    print("Posterior beliefs:", format_state_dist(beliefs[0, batch_idx, 0, 0], beliefs[0, batch_idx, 0, 1]))
+    print("Prior beliefs (D):", format_state_dist(empirical_priors[batch_idx, 0, 0], empirical_priors[batch_idx, 0, 1]))
+    print(f"Observation: [{['Left', 'Right'][int(observations[batch_idx, 0, 0])]}]")
+    print("Posterior beliefs:", format_state_dist(beliefs[batch_idx, 0, 0], beliefs[batch_idx, 0, 1]))
     print("-" * 50)
 
     # Print trajectory
@@ -358,24 +358,24 @@ def print_rollout(info, batch_idx=0):
         
         # Print policy distribution
         print("Policy selection:")
-        for p_idx, p_prob in enumerate(policies[t, batch_idx]):
+        for p_idx, p_prob in enumerate(policies[batch_idx, t]):
             prob_str = f"{float(p_prob):.3f}"
             print(f"  Policy {p_idx:<15} : {prob_str:>8}")
  
         # Print action and its consequences
-        next_action = int(actions[t, batch_idx, 0].item())
+        next_action = int(actions[batch_idx, t, 0].item())
         print(f"Action: [Move to {['Left', 'Right'][next_action]}]")
         
         # Print prediction (empirical prior)
         print("Predicted next state:", format_state_dist(
-            empirical_priors[t, batch_idx, 0],
-            empirical_priors[t, batch_idx, 1]
+            empirical_priors[batch_idx, t, 0],
+            empirical_priors[batch_idx, t, 1]
         ))
         
         # Print actual observation and posterior
-        next_obs = int(observations[t, batch_idx, 0].item())
+        next_obs = int(observations[batch_idx, t, 0].item())
         print(f"Observation: [{['Left', 'Right'][next_obs]}]")
-        print("Posterior beliefs:", format_state_dist(beliefs[t, batch_idx, 0, 0], beliefs[t, batch_idx, 0, 1]))
+        print("Posterior beliefs:", format_state_dist(beliefs[batch_idx, t, 0], beliefs[batch_idx, t, 1]))
         print("-" * 50)
     
     print("\n=== End of Experiment ===")
