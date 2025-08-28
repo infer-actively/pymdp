@@ -2,20 +2,20 @@ import jax.numpy as jnp
 import matplotlib.patches as patches
 from pymdp.utils import fig2img
 from equinox import field
-from .pomdp_env import POMDPEnv
+from .env import Env
 import matplotlib.pyplot as plt
 from jax import nn
 from pymdp.learning import LearningConfig
 from typing import Dict, Any
 
 
-class SimplestEnv(POMDPEnv):
+class SimplestEnv(Env):
     """
-    Implementation of the simplest environment in JAX.
+    Implementation of the simplest environment in JAX. Useful for debugging and prototyping new features.
     This environment has two states (locations) and serves as a minimal test case for pymdp.
     Each state represents a location (left=0, right=1).
     There are two possible actions (left=0, right=1) which deterministically lead to their respective states.
-    This is a fully observed environment - the observation likelihood matrix A is the identity matrix,
+    This is a fully observed environment: i.e., the observation likelihood matrix A is the identity matrix,
     meaning that each state maps deterministically to its corresponding observation with probability 1.
     This makes the true state of the environment directly observable to the agent.
     """
@@ -51,25 +51,6 @@ class SimplestEnv(POMDPEnv):
         # Pass parameters to parent class without labels (will use our overridden _initialize_default_labels method)
         super().__init__(params=params, dependencies=dependencies)
 
-    def _initialize_default_labels(self):
-        """Override the default labels method to provide specific labels for SimplestEnv.
-        
-        Returns
-        -------
-        Dict
-            Dictionary containing human-readable labels for this environment
-        """
-        return {
-            "state_factors": {
-                "Location": ["Left", "Right"]
-            },
-            "observation_modalities": {
-                "Location": ["Left", "Right"]
-            },
-            "control_factors": {
-                "Go": ["Left", "Right"]
-            }
-        }
         
     def generate_A(self):
         """
@@ -217,45 +198,6 @@ class SimplestEnv(POMDPEnv):
             plt.close(fig)
             return img
 
-    def get_default_model_params(self):
-        """Get default model parameters for SimplestEnv environment.
-        
-        Returns
-        -------
-        dict
-            Dictionary of default model parameters
-        """
-        # Get default parameters from parent
-        params = super().get_default_model_params()
-        
-        # Override planning horizon for SimplestEnv
-        params["T"] = 100  # Longer horizon since it's a simple environment
-        
-        return params
-        
-    def get_default_C(self):
-        """Get default preference matrices C for SimplestEnv environment.
-        
-        Returns
-        -------
-        list
-            List of C matrices for each observation modality
-        """
-        # SimplestEnv only has one observation modality
-        # Use the parent implementation which already handles the batch size
-        return super().get_default_C()
-        
-    def get_default_agent_params(self):
-        """Get default agent parameters for SimplestEnv environment.
-        
-        Returns
-        -------
-        dict
-            Dictionary of default agent parameters
-        """
-        # Return default parameters from parent
-        return super().get_default_agent_params()
-
 
 def plot_beliefs(info, agent=None, show=True):
     """Plot the agent's initial beliefs, final beliefs, and (if agent provided) preferences.
@@ -356,7 +298,7 @@ def print_parameter_learning(info: Dict[str, Any], learning_config: LearningConf
     learning_config : LearningConfig
         Configuration specifying which parameters are being learned.
     """
-    #TODO: IF one passes action labels as arguments else use an index range, can reuse this function for multiple environments and put this in pymdp/analysis/learning.py 
+    #TODO: If one passes action labels as arguments else use an index range, can reuse this function for multiple environments and put this in pymdp/analysis/learning.py 
 
     if learning_config.learn_A:
         print('\n ====Parameter A learning====')
@@ -380,7 +322,6 @@ def print_parameter_learning(info: Dict[str, Any], learning_config: LearningConf
         #     print(f't={t}, qD=', info["agent"].pD[0][t], 'D=', info["agent"].D[0][t])
 
 
-#legacy function. environment agnostic version is in analysis.py
 def print_rollout(info, batch_idx=0):
     """Print a human-readable version of the rollout."""
     # Extract variables from info dictionary
