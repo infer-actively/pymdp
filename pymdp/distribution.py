@@ -144,7 +144,7 @@ class Model(dict):
     def __getattr__(self, key):
         if key in ["A", "B", "C", "D", "H"]:
             return DistributionIndexer(self[key])
-        raise AttributeError("Model only supports attributes A,B,C and D")
+        raise AttributeError("Model only supports attributes A,B,C,D and H")
 
 
 def compile_model(config):
