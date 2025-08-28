@@ -5,7 +5,7 @@ from equinox import field
 from .env import Env
 import matplotlib.pyplot as plt
 from jax import nn
-from pymdp.learning import LearningConfig
+# from pymdp.learning import LearningConfig  # Not available in this branch
 from typing import Dict, Any
 
 
@@ -288,24 +288,25 @@ def plot_A_learning(agent, info, env):
     
     return plt
 
-def print_parameter_learning(info: Dict[str, Any], learning_config: LearningConfig) -> None:
+def print_parameter_learning(info: Dict[str, Any], learning_config: Dict[str, bool]) -> None:
     """Print and analyze parameter learning results.
     
     Parameters
     ----------
     info : Dict[str, Any]
         Dictionary containing agent learning information
-    learning_config : LearningConfig
-        Configuration specifying which parameters are being learned.
+    learning_config : Dict[str, bool]
+        Dictionary specifying which parameters are being learned.
+        Expected keys: 'learn_A', 'learn_B', 'learn_D'
     """
     #TODO: If one passes action labels as arguments else use an index range, can reuse this function for multiple environments and put this in pymdp/analysis/learning.py 
 
-    if learning_config.learn_A:
+    if learning_config['learn_A']:
         print('\n ====Parameter A learning====')
         print('\n Initial matrix A:\n', info["agent"].A[0][0,0,:])
         print('\n Final matrix A:\n', info["agent"].A[0][-1,0,:])
 
-    if learning_config.learn_B:
+    if learning_config['learn_B']:
         print('\n ====Parameter B learning====')
         actions = ['Left', 'Right']
         for a in range(2): 
@@ -313,7 +314,7 @@ def print_parameter_learning(info: Dict[str, Any], learning_config: LearningConf
         for a in range(2): 
             print('\n Final matrix B under action', actions[a], ':\n', info["agent"].B[0][-1,0,:,:,a])
 
-    if learning_config.learn_D:
+    if learning_config['learn_D']:
         print('\n ====Parameter D learning====')
         print('\n Initial D matrix:\n', info["agent"].D[0][0])
         print('\n Final learned D matrix:\n', info["agent"].D[0][-1])

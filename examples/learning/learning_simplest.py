@@ -19,14 +19,12 @@
 
 # %% Importing necessary libraries
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
 from jax import random as jr
-from pymdp.learning import LearningConfig
 from pymdp.envs.simplest import SimplestEnv, print_rollout, plot_beliefs, plot_A_learning, print_parameter_learning
-from pymdp.envs.rollout import rollout, counterfactual_rollout
+from pymdp.envs.rollout import rollout
 from pymdp.agent import Agent
-from pymdp.models.pomdp import POMDPModel, POMDPStructure
-from pymdp.maths import compute_prediction_errors
-from pymdp.analysis import render_rollout, plot_prediction_errors, plot_model_comparison
+from pymdp.maths import dirichlet_expected_value
 
 # if __name__ == "__main__":
 key_idx = 1 # Initialize master random key index at the start
