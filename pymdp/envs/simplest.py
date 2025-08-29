@@ -6,25 +6,25 @@ from .env import Env
 import matplotlib.pyplot as plt
 from jax import nn
 # from pymdp.learning import LearningConfig  # Not available in this branch
-from typing import Dict, Any
+from typing import Dict, Any, List, Tuple, Optional, Union
 
 
 class SimplestEnv(Env):
     """
-    Implementation of the simplest environment in JAX. Useful for debugging and prototyping new features.
-    This environment has two states (locations) and serves as a minimal test case for pymdp.
-    Each state represents a location (left=0, right=1).
-    There are two possible actions (left=0, right=1) which deterministically lead to their respective states.
-    This is a fully observed environment: i.e., the observation likelihood matrix A is the identity matrix,
-    meaning that each state maps deterministically to its corresponding observation with probability 1.
-    This makes the true state of the environment directly observable to the agent.
+    The simplest possible Active Inference environment for testing and learning.
+    A minimal two-location world with:
+    - 2 states: Left (0) and Right (1) locations  
+    - 2 observations: Left (0) and Right (1)
+    - 2 actions: Go Left (0) and Go Right (1)
+    - Fully observable (i.e. A = identity matrix)
+    - Deterministic transitions (actions always succeed)
     """
 
     state: jnp.ndarray = field(static=False)
 
-    def __init__(self, batch_size=1):
+    def __init__(self, batch_size: int = 1) -> None:
         """
-        Initialize the simplest environment.
+        Initialize SimplestEnv.
         
         Args:
             batch_size: Number of parallel environments
@@ -52,92 +52,66 @@ class SimplestEnv(Env):
         super().__init__(params=params, dependencies=dependencies)
 
         
-    def generate_A(self):
+    def generate_A(self) -> Tuple[List[jnp.ndarray], List[List[int]]]:
         """
         Generate observation likelihood tensor.
-        Maps true location to observed location with a simple identity mapping.
+        
+        Returns identity matrix for perfect observability:
+        A[0]: Location observations (2x2 identity matrix)
+            - Maps true location to observed location
+            - [Left, Right] x [Left, Right]
         """
-        A = [jnp.eye(2)] # Simple identity mapping between states and observations
-
-        A_dependencies = [[0]]  # Only depends on location factor
+        A = [jnp.eye(2)]  # Identity mapping: perfect observability
+        A_dependencies = [[0]]  # Location observation depends on location state factor
         
         return A, A_dependencies
 
-    def generate_B(self):
+    def generate_B(self) -> Tuple[List[jnp.ndarray], List[List[int]]]:
         """
         Generate transition tensor.
-        Shape: (next_state, current_state, action)
-        For each action (left=0, right=1), we deterministically transition to that state.
         
-        B[0] has shape (2, 2, 2) where:
-        - First dimension (2): next state (left=0, right=1)
-        - Second dimension (2): current state (left=0, right=1)
-        - Third dimension (2): action (left=0, right=1)
-        
-        For action=left (0):
-            [[1, 1],  # Always go to left state (state 0)
-             [0, 0]]
-        For action=right (1):
-            [[0, 0],  # Always go to right state (state 1)
-             [1, 1]]
+        Deterministic transitions where actions always succeed:
+        B[0]: Location transitions (2x2x2 tensor)
+            - Shape: (next_state, current_state, action)
+            - Action 0 (Left): Always go to state 0 regardless of current state
+            - Action 1 (Right): Always go to state 1 regardless of current state
         """
         B = []
         
-        # Initialize transition tensor
+        # Initialize transition tensor: B[next_state, current_state, action]
         B_locs = jnp.zeros((2, 2, 2))
         
-        # For action 0 (left), always go to state 0 (left)
+        # Action 0 (Go Left): Always transition to state 0 regardless of current state
         B_locs = B_locs.at[0, :, 0].set(1.0)
         
-        # For action 1 (right), always go to state 1 (right)
+        # Action 1 (Go Right): Always transition to state 1 regardless of current state
         B_locs = B_locs.at[1, :, 1].set(1.0)
         
         B.append(B_locs)
-        
-        B_dependencies = [[0]]  # Only depends on location factor
+        B_dependencies = [[0]]  # Location state depends on movement control factor
         
         return B, B_dependencies
 
-    def generate_D(self):
+    def generate_D(self) -> List[jnp.ndarray]:
         """
         Generate initial state distribution.
-        Always starts at location 0 (left).
         
-        This method serves two important roles:
-        1. Environment Initialization: Determines the actual starting state distribution
-           when the environment is reset. With [1.0, 0.0], the environment will always
-           start deterministically in the left (0) state.
-        2. Agent's Prior Beliefs: When an agent is created from this environment,
-           this distribution becomes the agent's initial prior belief about states
-           (unless explicitly overridden).
-        
-        Returns
-        -------
-        List[jnp.ndarray]
-            A list containing the initial state distribution for the location factor.
-            [1.0, 0.0] means deterministically start in state 0 (left).
-            
-        Notes
-        -----
-        We use a deterministic initial state ([1.0, 0.0]) rather than uniform ([0.5, 0.5])
-        to make the environment behavior more predictable for testing and demonstration.
-        This simplifies debugging.
-        
-        If you want to test D learning or have more randomized initial states, you could
-        modify this to return a uniform distribution: jnp.array([0.5, 0.5]), 
-        or use model.set_uniform_D() for the agent's generative model.
+        Always starts at Left location (state 0) for predictable behavior.
+        D[0]: Initial location distribution [1.0, 0.0]
         """
-        D = [jnp.array([1.0, 0.0])]  # Start at location 0 (left)
+        D = [jnp.array([1.0, 0.0])]  # Deterministically start at Left location
         return D
 
-    def render(self, mode="human", observations=None):
+    def render(self, mode: str = "human", observations: Optional[List[jnp.ndarray]] = None) -> Optional[jnp.ndarray]:
         """
-        Render the environment.
+        Render the environment state.
+        
+        Shows agent position as red circle on a 2D grid with Left and Right locations.
         
         Args:
             mode: 'human' displays plot, 'rgb_array' returns image array
             observations: List of observation arrays from environment
-        
+            
         Returns:
             Image array if mode=='rgb_array', else None
         """
@@ -199,8 +173,10 @@ class SimplestEnv(Env):
             return img
 
 
-def plot_beliefs(info, agent=None, show=True, batch_idx=0):
-    """Plot the agent's initial beliefs, final beliefs, and (if agent provided) preferences.
+def plot_beliefs(info: Dict[str, Any], agent: Optional[Any] = None, 
+                 show: bool = True, batch_idx: int = 0) -> plt:
+    """
+    Plot agent's initial beliefs, final beliefs, and (if agent provided) preferences.
      
     Args:
         info: Rollout info dict with 'qs' for belief history
