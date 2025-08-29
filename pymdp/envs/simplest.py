@@ -239,54 +239,55 @@ def plot_beliefs(info, agent=None, show=True):
     
     return plt
 
-def plot_A_learning(agent, info, env):
-    """Plot the agent's learning progress for A matrix.
+# Legacy function:
+# def plot_A_learning(agent, info, env):
+#     """Plot the agent's learning progress for A matrix.
     
-    Args:
-        agent: Agent instance with parameter learning enabled
-        info: Dict containing rollout info with parameter history
-        env: Environment instance containing true parameters
-    """
+#     Args:
+#         agent: Agent instance with parameter learning enabled
+#         info: Dict containing rollout info with parameter history
+#         env: Environment instance containing true parameters
+#     """
     
-    plt.figure(figsize=(12, 5))
-    plt.clf()  # Clear the current figure
+#     plt.figure(figsize=(12, 5))
+#     plt.clf()  # Clear the current figure
     
-    if agent.learn_A:
-        # Create subplot for A matrix
-        ax1 = plt.subplot(121)
+#     if agent.learn_A:
+#         # Create subplot for A matrix
+#         ax1 = plt.subplot(121)
         
-        # Plot distance on left y-axis
-        A_hist = info["agent"].A[0] # is the 0 indexing because of the batch-index? No it is the zeroth observation modality.
-        timesteps = range(len(A_hist))
-        distances = [jnp.linalg.norm(A - env.params["A"][0]) for A in A_hist]
-        dist_line = ax1.plot(timesteps, distances, 'k--', label='Distance to true A', linewidth=2)[0]
-        ax1.set_xlabel('Timestep')
-        ax1.set_ylabel('Distance to true parameters')
-        ax1.set_ylim(bottom=0) # Set y-axis to include 0 
+#         # Plot distance on left y-axis
+#         A_hist = info["agent"].A[0] # is the 0 indexing because of the batch-index? No it is the zeroth observation modality.
+#         timesteps = range(len(A_hist))
+#         distances = [jnp.linalg.norm(A - env.params["A"][0]) for A in A_hist]
+#         dist_line = ax1.plot(timesteps, distances, 'k--', label='Distance to true A', linewidth=2)[0]
+#         ax1.set_xlabel('Timestep')
+#         ax1.set_ylabel('Distance to true parameters')
+#         ax1.set_ylim(bottom=0) # Set y-axis to include 0 
         
-        # Create twin axis for probabilities
-        ax2 = ax1.twinx()
+#         # Create twin axis for probabilities
+#         ax2 = ax1.twinx()
         
-        # Plot individual elements on right y-axis
-        A_array = jnp.array(A_hist)
-        lines = []
-        lines.append(ax2.plot(timesteps, A_array[:, 0, 0], label='A[0,0]', alpha=0.5)[0])
-        lines.append(ax2.plot(timesteps, A_array[:, 0, 1], label='A[0,1]', alpha=0.5)[0])
-        lines.append(ax2.plot(timesteps, A_array[:, 1, 0], label='A[1,0]', alpha=0.5)[0])
-        lines.append(ax2.plot(timesteps, A_array[:, 1, 1], label='A[1,1]', alpha=0.5)[0])
-        ax2.set_ylabel('Belief')
+#         # Plot individual elements on right y-axis
+#         A_array = jnp.array(A_hist)
+#         lines = []
+#         lines.append(ax2.plot(timesteps, A_array[:, 0, 0], label='A[0,0]', alpha=0.5)[0])
+#         lines.append(ax2.plot(timesteps, A_array[:, 0, 1], label='A[0,1]', alpha=0.5)[0])
+#         lines.append(ax2.plot(timesteps, A_array[:, 1, 0], label='A[1,0]', alpha=0.5)[0])
+#         lines.append(ax2.plot(timesteps, A_array[:, 1, 1], label='A[1,1]', alpha=0.5)[0])
+#         ax2.set_ylabel('Belief')
         
-        # Merge legends
-        all_lines = [dist_line] + lines
-        labs = [l.get_label() for l in all_lines]
-        ax1.legend(all_lines, labs, loc='center left')
+#         # Merge legends
+#         all_lines = [dist_line] + lines
+#         labs = [l.get_label() for l in all_lines]
+#         ax1.legend(all_lines, labs, loc='center left')
         
-        plt.title('A Matrix Learning')
+#         plt.title('A Matrix Learning')
     
-    plt.tight_layout()
-    plt.show()
+#     plt.tight_layout()
+#     plt.show()
     
-    return plt
+#     return plt
 
 def print_parameter_learning(info: Dict[str, Any], learning_config: Dict[str, bool]) -> None:
     """Print and analyze parameter learning results.
@@ -324,7 +325,7 @@ def print_parameter_learning(info: Dict[str, Any], learning_config: Dict[str, bo
 
 
 def print_rollout(info, batch_idx=0):
-    """Print a human-readable version of the rollout."""
+    """Print a human-readable version of the rollout for some batch index."""
     # Extract variables from info dictionary
     observations = info["observation"][0] # First modality, shape: (batch_size, T+1, 1)
     beliefs = info["qs"][0] # First factor, shape: (batch_size, T+1, 2)

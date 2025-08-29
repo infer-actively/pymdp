@@ -82,3 +82,5 @@ last, info, _ = rollout(agent, env, num_timesteps=T, rng_key=key)
 # %%  Print rollout
 print_rollout(info, batch_idx=0)
 
+#%%
+
