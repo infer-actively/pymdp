@@ -25,7 +25,6 @@ from pymdp.envs.simplest import SimplestEnv, print_rollout, render_rollout, plot
 # plot_beliefs, plot_A_learning, print_parameter_learning,
 from pymdp.envs.rollout import rollout
 from pymdp.agent import Agent
-from pymdp.maths import dirichlet_expected_value
 
 # if __name__ == "__main__":
 key_idx = 1 # Initialize master random key index at the start
