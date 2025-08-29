@@ -21,7 +21,8 @@
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from jax import random as jr
-from pymdp.envs.simplest import SimplestEnv, print_rollout, plot_beliefs, plot_A_learning, print_parameter_learning
+from pymdp.envs.simplest import SimplestEnv, print_rollout, render_rollout, plot_beliefs
+# plot_beliefs, plot_A_learning, print_parameter_learning,
 from pymdp.envs.rollout import rollout
 from pymdp.agent import Agent
 from pymdp.maths import dirichlet_expected_value
@@ -30,10 +31,10 @@ from pymdp.maths import dirichlet_expected_value
 key_idx = 1 # Initialize master random key index at the start
 
 #%% Initialise environment
-batch_size = 3
+batch_size = 2
 env = SimplestEnv(batch_size=batch_size)
 
-# %% ### 1. Basic Demo
+# %% ### 1. Basic Demo (no learning)
 #
 # This demo shows how to use the simplest environment with an active inference agent.
 # The environment consists of two states (left and right) and two actions (go left and go right).
@@ -57,6 +58,9 @@ D = [jnp.array(d, dtype=jnp.float32) for d in env.params["D"]]
 # Create C tensors (preferences) - all zeros means no preference
 C = [jnp.zeros((batch_size, a.shape[1]), dtype=jnp.float32) for a in A]
 
+# Slightly prefer right state (observation 1) - optional
+C[0] = C[0].at[:, 1].set(0.1) 
+
 # Create the agent
 agent = Agent(
     A, B, C, D,
@@ -65,7 +69,8 @@ agent = Agent(
     B_dependencies=B_dependencies, 
     batch_size=batch_size,
     learn_A=False,
-    learn_B=False
+    learn_B=False,
+    action_selection="stochastic",
 )
 
 # %% Print setup
@@ -79,8 +84,12 @@ key = jr.PRNGKey(key_idx)
 T = 5  # Number of timesteps
 last, info, _ = rollout(agent, env, num_timesteps=T, rng_key=key)
 
-# %%  Print rollout
-print_rollout(info, batch_idx=0)
+#%% Rendering
+render_rollout(env, info)
+
+# %%  Numerical results for a given batch index
+batch_idx = 0
+print_rollout(info, batch_idx=batch_idx)
+plot_beliefs(info, agent, batch_idx=batch_idx)
 
 #%%
-

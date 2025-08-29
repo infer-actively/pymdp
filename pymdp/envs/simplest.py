@@ -199,13 +199,14 @@ class SimplestEnv(Env):
             return img
 
 
-def plot_beliefs(info, agent=None, show=True):
+def plot_beliefs(info, agent=None, show=True, batch_idx=0):
     """Plot the agent's initial beliefs, final beliefs, and (if agent provided) preferences.
      
     Args:
         info: Rollout info dict with 'qs' for belief history
         agent: Agent instance (optional)
         show: Whether to call plt.show()
+        batch_idx: Which batch element to plot (default: 0)
     """
     
     n_plots = 3 if agent is not None else 2
@@ -213,14 +214,14 @@ def plot_beliefs(info, agent=None, show=True):
 
     # Plot initial beliefs as a bar plot
     plt.subplot(1, n_plots, 1)
-    plt.bar([0, 1], info['empirical_prior'][0][0, 0, 0])  # (T+1, 1, 1, 2) -> get first timestep's beliefs
+    plt.bar([0, 1], info['empirical_prior'][0][batch_idx, 0])  # (batch_size, T+1, 2) -> get first timestep's beliefs
     plt.title('Initial Beliefs')
     plt.xticks([0, 1], ['Left', 'Right'])
     plt.ylim(0, 1)
 
     # Plot final beliefs as a bar plot
     plt.subplot(1, n_plots, 2)
-    plt.bar([0, 1], info['qs'][0][-1, 0, 0])  # (T+1, 1, 1, 2) -> get last timestep's beliefs
+    plt.bar([0, 1], info['qs'][0][batch_idx, -1])  # (batch_size, T+1, 2) -> get last timestep's beliefs
     plt.title('Final Beliefs')
     plt.xticks([0, 1], ['Left', 'Right'])
     plt.ylim(0, 1)
@@ -228,7 +229,7 @@ def plot_beliefs(info, agent=None, show=True):
     # Plot preferences as a bar plot
     if agent is not None:
         plt.subplot(1, n_plots, 3)
-        plt.bar([0, 1], nn.softmax(agent.C[0][0]))
+        plt.bar([0, 1], nn.softmax(agent.C[0][batch_idx]))
         plt.title('Preferences')
         plt.xticks([0, 1], ['Left', 'Right'])
         plt.ylim(0, 1)
@@ -289,39 +290,116 @@ def plot_beliefs(info, agent=None, show=True):
     
 #     return plt
 
-def print_parameter_learning(info: Dict[str, Any], learning_config: Dict[str, bool]) -> None:
-    """Print and analyze parameter learning results.
+# def print_parameter_learning(info: Dict[str, Any], learning_config: Dict[str, bool]) -> None:
+#     """Print and analyze parameter learning results.
+    
+#     Parameters
+#     ----------
+#     info : Dict[str, Any]
+#         Dictionary containing agent learning information
+#     learning_config : Dict[str, bool]
+#         Dictionary specifying which parameters are being learned.
+#         Expected keys: 'learn_A', 'learn_B', 'learn_D'
+#     """
+#     #TODO: If one passes action labels as arguments else use an index range, can reuse this function for multiple environments and put this in pymdp/analysis/learning.py 
+
+#     if learning_config['learn_A']:
+#         print('\n ====Parameter A learning====')
+#         print('\n Initial matrix A:\n', info["agent"].A[0][0,0,:])
+#         print('\n Final matrix A:\n', info["agent"].A[0][-1,0,:])
+
+#     if learning_config['learn_B']:
+#         print('\n ====Parameter B learning====')
+#         actions = ['Left', 'Right']
+#         for a in range(2): 
+#             print('\n Initial matrix B under action', actions[a], ':\n', info["agent"].B[0][0,0,:,:,a])
+#         for a in range(2): 
+#             print('\n Final matrix B under action', actions[a], ':\n', info["agent"].B[0][-1,0,:,:,a])
+
+#     if learning_config['learn_D']:
+#         print('\n ====Parameter D learning====')
+#         print('\n Initial D matrix:\n', info["agent"].D[0][0])
+#         print('\n Final learned D matrix:\n', info["agent"].D[0][-1])
+#         #TODO: add a verbose argument to print learned parameters at every timestep, such as below
+#         # for t in range(T+1):
+#         #     print(f't={t}, qD=', info["agent"].pD[0][t], 'D=', info["agent"].D[0][t])
+
+
+def render_rollout(env, info, save_gif=False, filename=None, fps=1):
+    """Render a video of the agent's trajectory through any environment that implements a render method.
+    
+    This function iterates through the rollout information and renders each timestep using the 
+    environment's built-in render method. It works with any environment that implements the
+    standard render(mode="rgb_array", observations=observations_t) interface.
     
     Parameters
     ----------
-    info : Dict[str, Any]
-        Dictionary containing agent learning information
-    learning_config : Dict[str, bool]
-        Dictionary specifying which parameters are being learned.
-        Expected keys: 'learn_A', 'learn_B', 'learn_D'
+    env : Env
+        Environment instance (TMaze, SimplestEnv, etc.)
+    info : dict
+        Dictionary containing rollout information, as returned by the rollout function
+    save_gif : bool, optional
+        Whether to save the animation as a gif, by default False
+    filename : str, optional
+        Path to save the gif if save_gif is True, by default None
+    fps : int, optional
+        Frames per second for the rendered video, by default 1
+        
+    Returns
+    -------
+    None
+        Displays the animation in the notebook or saves it as a gif
     """
-    #TODO: If one passes action labels as arguments else use an index range, can reuse this function for multiple environments and put this in pymdp/analysis/learning.py 
+    import mediapy
+    from PIL import Image
+    import os
+    from warnings import warn
 
-    if learning_config['learn_A']:
-        print('\n ====Parameter A learning====')
-        print('\n Initial matrix A:\n', info["agent"].A[0][0,0,:])
-        print('\n Final matrix A:\n', info["agent"].A[0][-1,0,:])
-
-    if learning_config['learn_B']:
-        print('\n ====Parameter B learning====')
-        actions = ['Left', 'Right']
-        for a in range(2): 
-            print('\n Initial matrix B under action', actions[a], ':\n', info["agent"].B[0][0,0,:,:,a])
-        for a in range(2): 
-            print('\n Final matrix B under action', actions[a], ':\n', info["agent"].B[0][-1,0,:,:,a])
-
-    if learning_config['learn_D']:
-        print('\n ====Parameter D learning====')
-        print('\n Initial D matrix:\n', info["agent"].D[0][0])
-        print('\n Final learned D matrix:\n', info["agent"].D[0][-1])
-        #TODO: add a verbose argument to print learned parameters at every timestep, such as below
-        # for t in range(T+1):
-        #     print(f't={t}, qD=', info["agent"].pD[0][t], 'D=', info["agent"].D[0][t])
+    # Check if multi-trial
+    try:
+        from pymdp.envs.rollout import is_multi_trial
+        is_multi, _ = is_multi_trial(info)
+        if is_multi: 
+            warn("render_rollout is currently not implemented for multi-trial rollouts.")
+            return 0
+    except ImportError:
+        # If we can't import is_multi_trial, assume single trial
+        pass
+    
+    # Get the number of timesteps in the rollout
+    num_timesteps = info["observation"][0].shape[1]  # Shape: (batch_size, T+1, 1)
+    
+    # Get the number of observation modalities
+    num_modalities = len(info["observation"])
+    
+    frames = [None] * num_timesteps
+    for t in range(num_timesteps):  # iterate over timesteps
+        # Prepare observations for current timestep
+        observations_t = [info["observation"][mod_idx][:, t] for mod_idx in range(num_modalities)]
+        
+        # Call the environment's render method
+        frame = env.render(mode="rgb_array", observations=observations_t)
+        frames[t] = jnp.asarray(frame, dtype=jnp.uint8)
+        plt.close()  # close the figure to prevent memory leak
+    
+    # Convert frames to array and display video
+    frames = jnp.array(frames, dtype=jnp.uint8)
+    mediapy.show_video(frames, fps=fps)
+    
+    # Save as gif if requested
+    if save_gif:
+        if filename is None:
+            raise ValueError("If save_gif is True, a filename must be provided")
+        
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        pil_frames = [Image.fromarray(frame) for frame in frames]
+        pil_frames[0].save(
+            filename,
+            save_all=True,
+            append_images=pil_frames[1:],
+            duration=int(1000/fps),  # milliseconds per frame
+            loop=0
+        )
 
 
 def print_rollout(info, batch_idx=0):
