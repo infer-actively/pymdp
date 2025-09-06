@@ -84,7 +84,7 @@ def update_state_transition_dirichlet(pB, B, joint_beliefs, actions, *, num_cont
        """ 
        Conditionally-update the Dirichlet posterior over a given single factor's B parameters
        Updating is conditional upon the value of `f`: if the factor index (f) is greater than -1, then use the value of f as the factor index
-       to create the appropriate one-hot representation of the action corresponding to the the f-th control factor and perform the update. Otherwise, do not perform t he update
+       to create the appropriate one-hot representation of the action corresponding to the the f-th control factor and perform the update. Otherwise, do not perform the update
        """
        qB_f, E_qB_f = lax.cond(
                 f>-1,
