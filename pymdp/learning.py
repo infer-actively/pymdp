@@ -5,7 +5,7 @@
 from pymdp.maths import multidimensional_outer, dirichlet_expected_value
 from jax.tree_util import tree_map
 from jaxtyping import Array
-from jax import vmap, nn
+from jax import vmap, nn, lax
 
 def update_obs_likelihood_dirichlet_m(pA_m, obs_m, qs, dependencies_m, lr=1.0):
     """JAX version of ``pymdp.learning.update_obs_likelihood_dirichlet_m``"""
@@ -73,34 +73,56 @@ def update_state_transition_dirichlet_f(pB_f, actions_f, joint_qs_f, lr=1.0):
 def update_state_transition_dirichlet(pB, B, joint_beliefs, actions, *, num_controls, lr, factors_to_update='all'):
     """"
     Update posterior Diriichlet parameters of the state transition likelihood model (B) given the joint beliefs over hidden states and actions.
+
+    Supports selective learning of only particular hidden state factors via the `factors_to_update` argument, which can either be "all" or a list of factor indices to update.
     """
     nf = len(pB)
 
     actions_onehot_fn = lambda f, dim: nn.one_hot(actions[..., f], dim, axis=-1)
 
-    update_B_f_fn = lambda pB_f, joint_qs_f, f, na: None if pB_f is None else update_state_transition_dirichlet_f(
-        pB_f, actions_onehot_fn(f, na), joint_qs_f, lr=lr
-    )
+    def update_B_f_fn(pB_f, joint_qs_f, f, na):
+       """ 
+       Conditionally-update the Dirichlet posterior over a given single factor's B parameters
+       Updating is conditional upon the value of `f`: if the factor index (f) is greater than -1, then use the value of f as the factor index
+    to create the appropriate one-hot representation 
+       of the action corresponding to the the f-th control factor and perform the update. Otherwise, do not perform t he update
+       """
+       qB_f, E_qB_f = lax.cond(
+                f>-1,
+                lambda: update_state_transition_dirichlet_f(pB_f, actions_onehot_fn(f, na), joint_qs_f, lr=lr),
+                lambda: (pB_f, dirichlet_expected_value(pB_f)),
+            )
+       return qB_f, E_qB_f
+        
+    # update_B_f_fn = lambda pB_f, joint_qs_f, f, na: None if pB_f is None else update_state_transition_dirichlet_f(
+    #     pB_f, actions_onehot_fn(f, na), joint_qs_f, lr=lr
+    # )
 
     if factors_to_update == 'all':
-        factors_to_update = list(range(nf))
+        factors_to_update_sorted = list(range(nf))
+        # factors_to_update_expanded = [True]*nf
+    else:
+        factors_to_update_sorted = [-1]*nf
+        for f_i in sorted(factors_to_update):
+            factors_to_update_sorted[f_i] = f_i
+
 
     result = tree_map(
         update_B_f_fn,
-        pB, joint_beliefs, factors_to_update, num_controls,
-        is_leaf=lambda x: x is None
+        pB, joint_beliefs, factors_to_update_sorted, num_controls,
+        # is_leaf=lambda x: x is None
     )
 
     qB = []
     E_qB = []
 
     for i, r in enumerate(result):
-        if r is None:
-            qB.append(None)
-            E_qB.append(B[i])
-        else:
-            qB.append(r[0])
-            E_qB.append(r[1])
+        # if r is None:
+        #     qB.append(None)
+        #     E_qB.append(B[i])
+        # else:
+        qB.append(r[0])
+        E_qB.append(r[1])
 
     return qB, E_qB
     
