@@ -313,61 +313,6 @@ class TestLearningJax(unittest.TestCase):
 
         action_jax = jnp.array([action])
 
-        # Method to apply the selective update without using the implemented way
-        pB_jax_update = [pB_jax[f] for f in factors_to_update]
-        belief_jax_update = [belief_jax[f] for f in factors_to_update]
-        action_jax_update = jnp.concatenate([action_jax[..., f : f + 1] for f in factors_to_update], axis=-1)
-        num_controls_update = [num_controls[f] for f in factors_to_update]
-
-        pB_updated_jax_factors, _ = update_pB_jax(
-            pB_jax_update, B, belief_jax_update, action_jax_update, num_controls=num_controls_update, lr=l_rate
-        )
-
-        pB_updated_jax = []
-        for f, _ in enumerate(num_states):
-            if f in factors_to_update:
-                pB_updated_jax.append(pB_updated_jax_factors[factors_to_update.index(f)])
-            else:
-                pB_updated_jax.append(pB_jax[f])
-
-        for pB_np, pB_jax in zip(pB_updated_numpy, pB_updated_jax):
-            self.assertTrue(pB_np.shape == pB_jax.shape)
-            self.assertTrue(np.allclose(pB_np, pB_jax))
-
-    @pytest.mark.skip("currently failing with error: ValueError: List arity mismatch: 2 != 3; list: [1, 2].")
-    def test_update_state_likelihood_multi_factor_some_factors_no_action_2(self):
-        """
-        Testing the JAXified version of updating Dirichlet posterior over transition likelihood parameters.
-        qB is the posterior, pB is the prior and B is the expectation of the likelihood wrt the
-        current posterior over B, i.e. $B = E_Q(B)[P(s_t | s_{t-1}, u_{t-1}, B)]$
-        """
-
-        num_states = [3, 4, 2]
-        num_controls = [3, 5, 5]
-        qs_prev = utils.random_single_categorical(num_states)
-        qs = utils.random_single_categorical(num_states)
-        l_rate = 1.0
-
-        B = utils.random_B_matrix(num_states, num_controls)
-        pB = utils.obj_array_ones([B_f.shape for B_f in B])
-
-        action = list(np.array([np.random.randint(c_dim) for c_dim in num_controls]))
-
-        factors_to_update = np.random.choice(list(range(len(B))), replace=False, size=(2,)).tolist()
-
-        pB_updated_numpy = update_pB_numpy(pB, B, action, qs, qs_prev, lr=l_rate, factors=factors_to_update)
-
-        belief_jax = []
-        for f in range(len(num_states)):
-            # Extract factor
-            q_f = jnp.array([qs[..., f].tolist()])
-            q_prev_f = jnp.array([qs_prev[..., f].tolist()])
-            belief_jax.append([q_f, q_prev_f])
-
-        pB_jax = [jnp.array(b) for b in pB]
-
-        action_jax = jnp.array([action])
-
         pB_updated_jax_factors, _ = update_pB_jax(
             pB_jax, B, belief_jax, action_jax, num_controls=num_controls, lr=l_rate, factors_to_update=factors_to_update
         )
