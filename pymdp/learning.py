@@ -84,8 +84,7 @@ def update_state_transition_dirichlet(pB, B, joint_beliefs, actions, *, num_cont
        """ 
        Conditionally-update the Dirichlet posterior over a given single factor's B parameters
        Updating is conditional upon the value of `f`: if the factor index (f) is greater than -1, then use the value of f as the factor index
-    to create the appropriate one-hot representation 
-       of the action corresponding to the the f-th control factor and perform the update. Otherwise, do not perform t he update
+       to create the appropriate one-hot representation of the action corresponding to the the f-th control factor and perform the update. Otherwise, do not perform t he update
        """
        qB_f, E_qB_f = lax.cond(
                 f>-1,
@@ -93,14 +92,9 @@ def update_state_transition_dirichlet(pB, B, joint_beliefs, actions, *, num_cont
                 lambda: (pB_f, dirichlet_expected_value(pB_f)),
             )
        return qB_f, E_qB_f
-        
-    # update_B_f_fn = lambda pB_f, joint_qs_f, f, na: None if pB_f is None else update_state_transition_dirichlet_f(
-    #     pB_f, actions_onehot_fn(f, na), joint_qs_f, lr=lr
-    # )
 
     if factors_to_update == 'all':
         factors_to_update_sorted = list(range(nf))
-        # factors_to_update_expanded = [True]*nf
     else:
         factors_to_update_sorted = [-1]*nf
         for f_i in sorted(factors_to_update):
@@ -110,17 +104,12 @@ def update_state_transition_dirichlet(pB, B, joint_beliefs, actions, *, num_cont
     result = tree_map(
         update_B_f_fn,
         pB, joint_beliefs, factors_to_update_sorted, num_controls,
-        # is_leaf=lambda x: x is None
     )
 
     qB = []
     E_qB = []
 
-    for i, r in enumerate(result):
-        # if r is None:
-        #     qB.append(None)
-        #     E_qB.append(B[i])
-        # else:
+    for r in result:
         qB.append(r[0])
         E_qB.append(r[1])
 
