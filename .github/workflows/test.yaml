@@ -23,6 +23,6 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync
-      - name: Analysing the code with pylint
+      - name: Run tests
         run: |
           uv run pytest test
