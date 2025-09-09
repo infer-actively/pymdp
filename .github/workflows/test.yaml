@@ -1,9 +1,10 @@
 name: Test
 
 on:
+  push:
+    branches: [chore/notebook_cleanup]
   pull_request:
-    paths:
-      - "**.py"
+    branches: [chore/notebook_cleanup]
 
 jobs:
   build:
