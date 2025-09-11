@@ -12,8 +12,7 @@ def _float_to_int_index(x):
 
 def select_probs(positions, matrix, dependency_list, actions=None):
     # creating integer indices from float state positions for the positions specified in dependency_list
-    index_args = tuple(_float_to_int_index(p) for i, p in enumerate(positions) 
-                      if i in dependency_list)
+    index_args = tuple(_float_to_int_index(positions[i]) for i in dependency_list)
     if actions is not None:
         index_args += (_float_to_int_index(actions),)
     return matrix[(..., *index_args)]
