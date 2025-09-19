@@ -17,6 +17,7 @@ from equinox import Module, field, tree_at
 from typing import List, Optional, Union
 from jaxtyping import Array
 from functools import partial
+from jax import lax
 
 class Agent(Module):
     """
@@ -356,17 +357,74 @@ class Agent(Module):
 
     def infer_parameters(self, beliefs_A, outcomes, actions, beliefs_B=None, lr_pA=1., lr_pB=1., **kwargs):
         agent = self
-        beliefs_B = beliefs_A if beliefs_B is None else beliefs_B
-        if self.inference_algo == 'ovf':
-            smoothed_marginals_and_joints = vmap(inference.smoothing_ovf)(beliefs_A, self.B, actions)
-            marginal_beliefs = smoothed_marginals_and_joints[0]
-            joint_beliefs = smoothed_marginals_and_joints[1]
+
+        # ------------------------------------------------------------------
+        # Prepare the sequences we'll use for A- and B- learning
+        # ------------------------------------------------------------------
+        # For updating A we use 'marginal_beliefs' (possibly smoothed under OVF).
+        # For updating B we need a *time* sequence to construct joints or run smoothing.
+        seq_beliefs = beliefs_A if beliefs_B is None else beliefs_B  # (list over factors) each (B, T, Ns_f)
+
+        # Normalize action shape to include time if needed
+        if actions is not None and actions.ndim == 2:
+            # (B, Nu) -> (B, 1, Nu) so we can slice to T-1 below
+            actions = jnp.expand_dims(actions, 1)
+        
+        # Infer sequence length (T) from beliefs provided for B learning
+        # If learn_B is False we don't need a time sequence, but computing T is cheap and safe
+        T = seq_beliefs[0].shape[1]  # each factor has (B, T, Ns_f)
+
+        # Make actions time-conformant: always slice to T-1 along time
+        if actions is not None and actions.ndim == 3:
+            actions_Tm1 = actions[:, :max(T - 1, 0), :]    # (B, max(T-1, 0), Nu)
         else:
+            actions_Tm1 = actions  # None or already time-matched
+        
+        # A handy predicate: can we (meaningfully) update B now?
+        # We need at least one transition and all actions to be non-negative (sentinel -1 = invalid).
+        can_update_B = (
+            self.learn_B
+            and actions_Tm1 is not None
+            and (T > 1)
+            and (actions_Tm1.shape[1] == (T - 1))
+            and jnp.all(actions_Tm1 >= 0)
+        )
+
+        if self.inference_algo == 'ovf':
+            def update_with_smoothing(_):
+                # Use the *sequence* of filtered beliefs (seq_beliefs) for smoothing
+                #   vmap runs over batch: each call sees (T, Ns_f) and (T-1, Nu)
+                smoothed_marginals_and_joints = vmap(inference.smoothing_ovf)(
+                    seq_beliefs, self.B, actions_Tm1
+                )
+                marginal_beliefs = smoothed_marginals_and_joints[0]  # list[f] -> (B, T, Ns_f)
+                joint_beliefs = smoothed_marginals_and_joints[1]  # list[f] -> (B, T-1, Ns_f, Ns_parents_f)
+                return marginal_beliefs, joint_beliefs
+            
+            def use_filtered_beliefs(_):
+                # No valid transition yet (or sentinel action found):
+                # - Use filtered beliefs for A-learning,
+                # - and either skip B-learning or fall back to the two-frame outer-product joint.
+                marginal_beliefs = seq_beliefs
+                # Create empty joint_beliefs with same structure as the true branch would return
+                joint_beliefs = [jnp.empty((self.batch_size, seq_beliefs[0].shape[1]-1, self.num_states[f], *[self.num_states[dep] for dep in self.B_dependencies[f]])) for f in range(self.num_factors)]
+                return marginal_beliefs, joint_beliefs
+            
+            marginal_beliefs, joint_beliefs = lax.cond(
+                can_update_B,
+                update_with_smoothing,
+                use_filtered_beliefs,
+                operand=None
+            )
+        else:
+            # Non-OVF: keep existing behavior (use filtered marginals and build joints from t and t-1)
             marginal_beliefs = beliefs_A
             if self.learn_B:
-                nf = len(beliefs_B)
-                joint_fn = lambda f: [beliefs_B[f][:, 1:]] + [beliefs_B[f_idx][:, :-1] for f_idx in self.B_dependencies[f]]
+                nf = len(seq_beliefs)
+                joint_fn = lambda f: [seq_beliefs[f][:, 1:]] + [seq_beliefs[f_idx][:, :-1] for f_idx in self.B_dependencies[f]]
                 joint_beliefs = jtu.tree_map(joint_fn, list(range(nf)))
+            else:
+                joint_beliefs = None
 
         if self.learn_A:
             update_A = partial(
@@ -388,27 +446,22 @@ class Agent(Module):
             agent = tree_at(lambda x: (x.A, x.pA), agent, (E_qA, qA))
             
         if self.learn_B:
-            assert beliefs_B[0].shape[1] == actions.shape[1] + 1
-            update_B = partial(
-                learning.update_state_transition_dirichlet,
-                num_controls=self.num_controls
-            )
-
-            lr = jnp.broadcast_to(lr_pB, (self.batch_size,))
+            update_B = partial(learning.update_state_transition_dirichlet, num_controls=self.num_controls)
+            lrB = jnp.broadcast_to(lr_pB, (self.batch_size,))
             qB, E_qB = vmap(update_B)(
                 self.pB,
                 self.B,
                 joint_beliefs,
-                actions,
-                lr=lr
+                actions_Tm1,   # time-aligned actions
+                lr=lrB
             )
-            
             # if you have updated your beliefs about transitions, you need to re-compute the I matrix used for inductive inferenece
             if self.use_inductive and self.H is not None:
                 I_updated = vmap(control.generate_I_matrix)(self.H, E_qB, self.inductive_threshold, self.inductive_depth)
                 agent = tree_at(lambda x: (x.B, x.pB, x.I), agent, (E_qB, qB, I_updated))
             else:
                 agent = tree_at(lambda x: (x.B, x.pB), agent, (E_qB, qB))
+            # else: silently skip B-update at t=0 or if actions were invalid
 
         return agent
 
