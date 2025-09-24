@@ -92,6 +92,8 @@ class Agent(Module):
     sampling_mode: str = field(static=True)
     # fpi, vmp, mmp, ovf
     inference_algo: str = field(static=True)
+    # whether to perform leraning online or offline (options: "online", "offline")
+    learning_mode: str = field(static=True, default="online")
 
     learn_A: bool = field(static=True)
     learn_B: bool = field(static=True)
@@ -132,6 +134,7 @@ class Agent(Module):
         inference_algo="fpi",
         num_iter=16,
         batch_size=1,
+        learning_mode="online", # TODO: or should this be an argument to `self.infer_parameters()` or even `env/rollout.py:rollout()`
         learn_A=False,
         learn_B=False,
         learn_C=False,
@@ -246,6 +249,7 @@ class Agent(Module):
         self.use_inductive = use_inductive
 
         # learning parameters
+        self.learning_mode = learning_mode
         self.learn_A = learn_A
         self.learn_B = learn_B
         self.learn_C = learn_C
