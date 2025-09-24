@@ -205,6 +205,7 @@ def rollout(
     )  # transpose to have timesteps as first dimension
 
     if agent.learning_mode == "offline":
-        last["agent"] = last["agent"].infer_parameters(info['qs'], info['observation'], info['action'])
+        outcomes = jtu.tree_map(lambda x: x.squeeze(-1), info['observation']) if num_timesteps > 1 else info['observation']
+        last["agent"] = last["agent"].infer_parameters(info['qs'], outcomes, info['action'])
 
     return last, info, env
