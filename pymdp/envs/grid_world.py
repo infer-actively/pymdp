@@ -84,7 +84,6 @@ class GridWorld(Env):
         # Precompute data we need
         walls_flat = _flatten_walls(shape, walls)
         n_states = rows * cols
-        n_actions = 4 + int(include_stay)
 
         # --- Build A (likelihood), B (transitions), D (initial state) ---
         A, A_deps = _generate_A(n_states)
