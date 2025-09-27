@@ -25,6 +25,13 @@ class TestRolloutFunction(unittest.TestCase):
         self.B_dependencies = [[0]]
         self.batch_size = 1
 
+        self.num_obs_complex = [3, 5, 4]
+        self.num_states_complex = [2, 2, 2]
+        self.num_controls_complex = [1, 2, 3]
+        self.A_dependencies_complex = [[0, 1], [1, 2], [2]]
+        self.B_dependencies_complex = [[0], [1], [2]]
+
+
     def build_agent_env(
         self,
         *,
@@ -34,16 +41,23 @@ class TestRolloutFunction(unittest.TestCase):
         inference_algo="fpi",
         policy_len=1,
         seed=0,
+        simple=True,
     ):
-        A = utils.random_A_matrix(
-            self.num_obs, self.num_states, A_factor_list=self.A_dependencies
-        )
+        
+        num_obs = self.num_obs if simple else self.num_obs_complex
+        num_states = self.num_states if simple else self.num_states_complex
+        num_controls = self.num_controls if simple else self.num_controls_complex
+        A_deps = self.A_dependencies if simple else self.A_dependencies_complex
+        B_deps = self.B_dependencies if simple else self.B_dependencies_complex
+        A = utils.random_A_matrix(  
+            num_obs, num_states, A_factor_list=A_deps
+            )
         B = utils.random_B_matrix(
-            self.num_states, self.num_controls, B_factor_list=self.B_dependencies
+            num_states, num_controls, B_factor_list=B_deps
         )
         pA = utils.dirichlet_like(A, scale=1.0)
         pB = utils.dirichlet_like(B, scale=1.0)
-        D = utils.random_single_categorical(self.num_states)
+        D = utils.random_single_categorical(num_states)
 
         def _broadcast(arr_list):
             return [
@@ -60,9 +74,9 @@ class TestRolloutFunction(unittest.TestCase):
         agent = Agent(
             A_batched,
             B_batched,
-            A_dependencies=self.A_dependencies,
-            B_dependencies=self.B_dependencies,
-            num_controls=self.num_controls,
+            A_dependencies=A_deps,
+            B_dependencies=B_deps,
+            num_controls=num_controls,
             batch_size=self.batch_size,
             learn_A=learn_A,
             learn_B=learn_B,
@@ -74,7 +88,7 @@ class TestRolloutFunction(unittest.TestCase):
         )
 
         params = {"A": A_batched, "B": B_batched, "D": D_batched}
-        dependencies = {"A": self.A_dependencies, "B": self.B_dependencies}
+        dependencies = {"A": A_deps, "B": B_deps}
         env = Env(params, dependencies)
 
         initial = {
@@ -163,23 +177,29 @@ class TestRolloutFunction(unittest.TestCase):
         self.assertFalse(np.allclose(final_pB, initial["pB"][0]))
 
     def test_rollout_supports_multiple_inference_algorithms(self):
-        for algo, seed in (("vmp", 4), ("ovf", 5)):
-            policy_len = 2 if algo == "ovf" else 1
-            agent, env, _ = self.build_agent_env(
-                inference_algo=algo, policy_len=policy_len, seed=seed
-            )
-            key = jr.PRNGKey(seed)
-            num_steps = 2
+        
+        for is_simple in (True, False):
+            for algo, seed in (("vmp", 4), ("ovf", 5), ("mmp", 6)):
+                policy_len = 2
+                agent, env, _ = self.build_agent_env(
+                    inference_algo=algo, policy_len=policy_len, seed=seed, simple=is_simple
+                )
+                key = jr.PRNGKey(seed)
+                num_steps = 2
 
-            _, info, _ = rollout(agent, env, num_steps, key)
+                _, info, _ = rollout(agent, env, num_steps, key)
 
-            actions = np.asarray(info["action"])
-            self.assertEqual(actions.shape[0], agent.batch_size)
-            self.assertEqual(actions.shape[1], num_steps + 1)
+                actions = info["action"]
+                self.assertEqual(actions.shape[0], agent.batch_size)
+                self.assertEqual(actions.shape[1], num_steps + 1)
 
-            G = np.asarray(info["G"])
-            self.assertEqual(G.shape[0], agent.batch_size)
-            self.assertEqual(G.shape[1], num_steps + 1)
+                posterior_beliefs = info["qs"]
+                for f, ns in enumerate(agent.num_states):
+                    self.assertEqual(posterior_beliefs[f].shape, (agent.batch_size, num_steps+1, ns))
+
+                G = info["G"]
+                self.assertEqual(G.shape[0], agent.batch_size)
+                self.assertEqual(G.shape[1], num_steps + 1)
 
     def test_rollout_with_custom_policy_search_and_initial_carry(self):
         agent, env, _ = self.build_agent_env(learn_A=True, policy_len=2)
