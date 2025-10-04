@@ -23,7 +23,7 @@ classifiers=[
 ]
 requires-python = ">=3.10"
 dependencies = [
-    'numpy>=1.19.5', 
+    'numpy>=1.19.5',
     'jax>=0.3.4',
     'jaxlib>=0.3.4',
     'equinox>=0.9',
@@ -33,6 +33,7 @@ dependencies = [
     'mctx>=0.0.5',
     'networkx>=3.3',
     'pytest>=6.2.1',
+    "numpyro>=0.19.0",
 ]
 
 [project.optional-dependencies]
