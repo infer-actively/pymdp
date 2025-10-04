@@ -4,22 +4,60 @@ from numpyro import plate, sample, deterministic
 from numpyro.contrib.control_flow import scan
 
 def evolve_trials(agent, data):
+    """
+    Evolve agent beliefs through a sequence of trials.
+
+    Parameters
+    ----------
+    agent: Agent
+        Active inference agent
+    data: dict
+        Dictionary containing trial data from rollout. Must have keys:
+        - 'observation': list of arrays with shape (batch, timesteps, 1) per modality
+        - 'action': array with shape (batch, timesteps, num_controls)
+
+    Returns
+    -------
+    tuple
+        (probs, observations, actions) where probs are action probabilities
+
+    Note
+    ----
+    This function automatically transposes rollout format data from
+    (batch, timesteps, ...) to (timesteps, batch, ...) for processing.
+
+    Example
+    -------
+    # Using rollout data directly
+    last, info, env = rollout(agent, env, num_timesteps, rng_key)
+    probs, obs, acts = evolve_trials(agent, info)
+    """
+
+    observations = data['observation']
+    actions = data['action']
+
+    # Transpose rollout format: (batch, time, ...) -> (time, batch, ...)
+    # Rollout outputs observations where each array has shape (batch_size, num_timesteps, 1)
+    # Prepare data for scan
+    data_transposed = {
+        'observation': [o.swapaxes(0, 1) for o in observations],
+        'action': actions.swapaxes(0, 1),
+    }
 
     def step_fn(carry, xs):
         empirical_prior = carry
-        outcomes = xs['outcomes']
-        qs = agent.infer_states(outcomes, empirical_prior)
+        obs = xs['observation']
+        acts = xs['action']
+
+        qs = agent.infer_states(obs, empirical_prior)
         q_pi, _ = agent.infer_policies(qs)
+        probs = agent.multiaction_probabilities(q_pi)
 
-        probs = agent.action_probabilities(q_pi)
-
-        actions = xs['actions']
-        empirical_prior = agent.update_empirical_prior(actions, qs)
-        #TODO: if outcomes and actions are None, generate samples
-        return empirical_prior, (probs, outcomes, actions)
+        empirical_prior, _ = agent.update_empirical_prior(acts, qs)
+        return empirical_prior, (probs, obs, acts)
 
     prior = agent.D
-    _, res = lax.scan(step_fn, prior, data)
+    _, res = lax.scan(step_fn, prior, data_transposed)
 
     return res
 
