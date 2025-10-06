@@ -1,0 +1,25 @@
+[project]
+name = "simglucose-demo"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "gymnasium>=0.29.1",
+    "gym>=0.9.4",
+    "numpy>=1.26.4",
+    "pyvfg>=6.0.0",
+    "simglucose>=0.2.9",
+    "setuptools>=78.1.0",
+    "matplotlib>=3.8.0",
+    "ipykernel>=6.29.5",
+    "inferactively-pymdp",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29.5",
+]
+
+[tool.uv.sources]
+inferactively-pymdp = { git = "https://github.com/infer-actively/pymdp", branch = "chore/notebook_cleanup" }

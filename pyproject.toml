@@ -21,7 +21,7 @@ classifiers=[
     'License :: OSI Approved :: MIT License',
     'Programming Language :: Python :: 3',
 ]
-requires-python = ">=3.10"
+requires-python = "==3.13"
 dependencies = [
     'numpy>=1.19.5', 
     'jax>=0.3.4',
@@ -45,6 +45,14 @@ nb = [
         'mediapy>=1.2.4',
         'pygraphviz>=1.14',
     ]
+
+simglucose = [
+    "gymnasium>=0.29.1",
+    "gym>=0.9.4",
+    "pyvfg>=6.0.0",
+    "simglucose>=0.2.9",
+    "ipykernel>=6.29.5",
+]
 
 [project.urls]
 Documentation = "https://pymdp-rtd.readthedocs.io/en/stable/"

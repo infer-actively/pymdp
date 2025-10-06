@@ -11,3 +11,4 @@ pymdp.egg-info
 inferactively_pymdp.egg-info
 venv/
 .venv
+examples/simglucose/out/*
