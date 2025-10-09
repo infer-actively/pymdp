@@ -477,6 +477,20 @@ class TestAgentJax(unittest.TestCase):
         with self.assertRaises(ValueError):
             _ = Agent(A, B_bad, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls, pA=pA, pB=pB)
 
+    def test_agent_with_A_learning_requires_pA(self):
+        """Test that creating an agent with learn_A=True 
+        but no pA raises an AssertionError."""
+        
+        num_obs = [1]
+        num_states = [1] 
+        num_controls = [1]
+
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+
+        with self.assertRaises(AssertionError):
+            Agent(A=A, B=B, learn_A=True)
+        
 
 if __name__ == "__main__":
     unittest.main()       
