@@ -107,6 +107,10 @@ class TestDists(unittest.TestCase):
         self.assertIsNotNone
         self.assertIsNotNone(model.A[0][:, "II"])
         self.assertIsNotNone(model.A[1][1, :])
+        self.assertIsNotNone(model.B_action_dependencies)
+        self.assertIsNotNone(model.num_controls)
+        self.assertEqual(model.B_action_dependencies, [[0, 1], [1]])
+        self.assertEqual(model.num_controls, [2, 2])
 
     def test_tensor_shape_change_protection(self):
         """
@@ -126,3 +130,4 @@ class TestDists(unittest.TestCase):
             dist.data = np.ones((len(locations), len(locations)))
         except ValueError:
             self.fail("Setting tensor with the same shape should not raise a ValueError")
+      
