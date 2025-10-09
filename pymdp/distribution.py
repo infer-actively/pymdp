@@ -1,5 +1,6 @@
 import numpy as np
 from pymdp.utils import norm_dist
+from typing import Optional
 
 
 class Distribution:
@@ -144,6 +145,8 @@ class Model(dict):
         preferred_outcomes: list[Distribution],
         priors: list[Distribution],
         preferred_states: list[Distribution],
+        B_action_dependencies: Optional[list[list[int]]]=None,
+        num_controls: Optional[list[int]]=None,
     ):
         super().__init__()
         super().__setitem__("A", likelihoods)
@@ -151,11 +154,17 @@ class Model(dict):
         super().__setitem__("C", preferred_outcomes)
         super().__setitem__("D", priors)
         super().__setitem__("H", preferred_states)
+        super().__setitem__("B_action_dependencies", B_action_dependencies)
+        super().__setitem__("num_controls", num_controls)
 
     def __getattr__(self, key):
         if key in ["A", "B", "C", "D", "H"]:
             return DistributionIndexer(self[key])
-        raise AttributeError("Model only supports attributes A,B,C,D and H")
+        elif key == "B_action_dependencies":
+            return self["B_action_dependencies"]
+        elif key == "num_controls":
+            return self["num_controls"]
+        raise AttributeError("Model only supports attributes A,B,C,D,H, B_action_dependencies, and num_controls")
 
 
 def compile_model(config):
@@ -282,8 +291,22 @@ def compile_model(config):
         event_descr = {event: description}
         preferred_states.append(Distribution(event_descr, data=arr))
 
+    B_action_dependencies = [
+        [list(config["controls"].keys()).index(i) for i in s["controlled_by"]] 
+        for s in config["states"].values()
+    ]
+
+    num_controls = []
+    for c in config["controls"].values():
+        if "elements" in c:
+            num_controls.append(len(c["elements"]))
+        elif "size" in c:
+            num_controls.append(int(c["size"]))
+        else:
+            raise ValueError(f"Control {c} has no elements or size")
+
     return Model(
-        likelihoods, transitions, preferred_outcomes, priors, preferred_states
+        likelihoods, transitions, preferred_outcomes, priors, preferred_states, B_action_dependencies, num_controls
     )
 
 
