@@ -140,6 +140,9 @@ class Agent(Module):
         if B_action_dependencies is not None:
             assert num_controls is not None, "Please specify num_controls if you're also using complex action dependencies"
 
+        if learn_A:
+            assert pA is not None, "pA is required for A learning"
+
         # extract high level variables
         self.num_modalities = len(A)
         self.num_factors = len(B)
