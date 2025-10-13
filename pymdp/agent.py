@@ -92,7 +92,7 @@ class Agent(Module):
     sampling_mode: str = field(static=True)
     # fpi, vmp, mmp, ovf
     inference_algo: str = field(static=True)
-    # whether to perform leraning online or offline (options: "online", "offline")
+    # whether to perform learning online or offline (options: "online", "offline")
     learning_mode: str = field(static=True, default="online")
 
     learn_A: bool = field(static=True)
