@@ -10,12 +10,10 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
 
-from pymdp.legacy import utils
 from pymdp.agent import Agent
 from pymdp.envs.env import Env
 from pymdp.envs.rollout import rollout, default_policy_search
-
-
+from pymdp import utils
 class TestRolloutFunction(unittest.TestCase):
     def setUp(self):
         self.num_obs = [3]
@@ -23,7 +21,7 @@ class TestRolloutFunction(unittest.TestCase):
         self.num_controls = [2]
         self.A_dependencies = [[0]]
         self.B_dependencies = [[0]]
-        self.batch_size = 1
+        self.batch_size = 5
 
         self.num_obs_complex = [3, 5, 4]
         self.num_states_complex = [2, 2, 2]
@@ -49,43 +47,41 @@ class TestRolloutFunction(unittest.TestCase):
         num_controls = self.num_controls if simple else self.num_controls_complex
         A_deps = self.A_dependencies if simple else self.A_dependencies_complex
         B_deps = self.B_dependencies if simple else self.B_dependencies_complex
-        A = utils.random_A_matrix(  
-            num_obs, num_states, A_factor_list=A_deps
-            )
-        B = utils.random_B_matrix(
+        a_key, b_key, d_key = jr.split(jr.PRNGKey(seed), 3)
+        A = utils.random_A_matrix(a_key, num_obs, num_states, A_factor_list=A_deps)
+        B = utils.random_B_matrix(b_key, 
             num_states, num_controls, B_factor_list=B_deps
         )
-        pA = utils.dirichlet_like(A, scale=1.0)
-        pB = utils.dirichlet_like(B, scale=1.0)
-        D = utils.random_single_categorical(num_states)
+        pA = utils.list_array_scaled(jtu.tree_map(lambda x: x.shape, A), scale=1.0)
+        pB = utils.list_array_scaled(jtu.tree_map(lambda x: x.shape, B), scale=1.0)
+
+        D = utils.random_single_categoricals(d_key, num_states)
 
         def _broadcast(arr_list):
             return [
-                jnp.broadcast_to(jnp.array(arr), (self.batch_size,) + arr.shape)
+                jnp.broadcast_to(arr, (self.batch_size,) + arr.shape)
                 for arr in arr_list
             ]
 
-        A_batched = _broadcast(A)
-        B_batched = _broadcast(B)
-        pA_batched = _broadcast(pA)
-        pB_batched = _broadcast(pB)
-        D_batched = _broadcast(D)
-
         agent = Agent(
-            A_batched,
-            B_batched,
+            A,
+            B,
             A_dependencies=A_deps,
             B_dependencies=B_deps,
             num_controls=num_controls,
             batch_size=self.batch_size,
             learn_A=learn_A,
             learn_B=learn_B,
-            pA=pA_batched if learn_A else None,
-            pB=pB_batched if learn_B else None,
+            pA=pA if learn_A else None,
+            pB=pB if learn_B else None,
             learning_mode=learning_mode,
             inference_algo=inference_algo,
             policy_len=policy_len,
         )
+
+        A_batched = _broadcast(A)
+        B_batched = _broadcast(B)
+        D_batched = _broadcast(D)
 
         params = {"A": A_batched, "B": B_batched, "D": D_batched}
         dependencies = {"A": A_deps, "B": B_deps}
@@ -236,7 +232,7 @@ class TestRolloutFunction(unittest.TestCase):
 
         obs_series = np.asarray(info["observation"][0])
         np.testing.assert_array_equal(
-            np.squeeze(obs_series[0, 0]),
+            np.squeeze(obs_series[:, 0]),
             np.squeeze(np.asarray(init_obs[0])),
         )
 
@@ -293,12 +289,12 @@ class TestRolloutFunction(unittest.TestCase):
         self.assertEqual(qs.shape[0], self.batch_size)
         self.assertEqual(qs.shape[1], num_steps + 1)
 
-        counts = jnp.einsum("bti,btj->ij", qs[:, 1:, :], qs[:, :-1, :])
-        expected_pB = prior_pB[0] + counts[..., None]
-        expected_B = expected_pB / expected_pB.sum(axis=0, keepdims=True)
+        counts = jnp.einsum("bti,btj->bij", qs[:, 1:, :], qs[:, :-1, :])
+        expected_pB = prior_pB[0][None,...] + counts[..., None]
+        expected_B = expected_pB / expected_pB.sum(axis=1, keepdims=True)
 
-        learned_pB = last["agent"].pB[0][0]
-        learned_B = last["agent"].B[0][0]
+        learned_pB = last["agent"].pB[0]
+        learned_B = last["agent"].B[0]
 
         self.assertTrue(jnp.allclose(learned_pB, expected_pB, atol=1e-5))
         self.assertTrue(jnp.allclose(learned_B, expected_B, atol=1e-5))
