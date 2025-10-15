@@ -99,7 +99,7 @@ class TestRolloutFunction(unittest.TestCase):
         key = jr.PRNGKey(0)
         num_steps = 3
 
-        last, info, _ = rollout(agent, env, num_steps, key)
+        last, info, env_after = rollout(agent, env, num_steps, key)
 
         self.assertIn("observation", info)
         self.assertIn("action", info)
@@ -118,6 +118,13 @@ class TestRolloutFunction(unittest.TestCase):
         self.assertEqual(qs_series.shape[1], num_steps + 1)
 
         self.assertEqual(last["action"].shape[0], agent.batch_size)
+
+        for final_state, tracked_state in zip(env_after.state, last["env"].state):
+            self.assertTrue(jnp.allclose(final_state, tracked_state))
+
+        final_state_from_hist = jtu.tree_map(lambda x: x[:, -1], info["env"].state)
+        for final_state, final_from_hist in zip(last["env"].state, final_state_from_hist):
+            self.assertTrue(jnp.allclose(final_state, final_from_hist))
 
     def test_online_learning_updates_A_during_scan(self):
         agent, env, initial = self.build_agent_env(learn_A=True, learning_mode="online")
