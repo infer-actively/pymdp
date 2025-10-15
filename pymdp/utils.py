@@ -7,7 +7,8 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
 import jax
-import jax.numpy as jnp
+from jax import numpy as jnp, random as jr
+from jax import tree_util as jtu
 import numpy as np
 import equinox as eqx
 
@@ -26,9 +27,9 @@ Shape = Sequence[int]
 ShapeList = list[Shape]
 
 
-def norm_dist(dist: Tensor) -> Tensor:
+def norm_dist(dist: Tensor, event_dim=0) -> Tensor:
     """Normalizes a Categorical probability distribution"""
-    return dist / dist.sum(0)
+    return dist / dist.sum(event_dim, keepdims=True)
 
 
 def validate_normalization(tensor: Tensor, axis: int = 1, tensor_name: str = "tensor") -> None:
@@ -79,6 +80,57 @@ def list_array_scaled(shape_list: ShapeList, scale: float = 1.0) -> Vector:
 
     return arr
 
+def random_single_categoricals(key, dims_per_categorical):
+
+    num_categoricals = len(dims_per_categorical)
+    keys_per_categorical = jr.split(key, num=num_categoricals)
+
+    return jtu.tree_map(lambda ns, f: jr.dirichlet(keys_per_categorical[f], alpha=jnp.ones(ns)), dims_per_categorical, list(range(num_categoricals)))
+    
+
+def random_A_matrix(key, num_obs, num_states, A_factor_list=None):
+    num_obs    = [num_obs]    if isinstance(num_obs, int)    else num_obs
+    num_states = [num_states] if isinstance(num_states, int) else num_states
+    num_modalities = len(num_obs)
+
+    if A_factor_list is None:
+        num_factors = len(num_states)
+        A_factor_list = [list(range(num_factors))] * num_modalities
+
+    keys = jr.split(key, num_modalities)
+    A = []
+    for m, n_o in enumerate(num_obs):
+        batch_shape = tuple(num_states[idx] for idx in A_factor_list[m])  # trailing axes
+        # Sample Dirichlet with batch_shape; returns shape = batch_shape + (n_o,)
+        A_m = jr.dirichlet(keys[m], alpha=jnp.ones(n_o), shape=batch_shape)
+        # Move event/observation dim to the front -> (n_o, *batch_shape)
+        A.append(jnp.moveaxis(A_m, -1, 0))
+    return A
+
+def random_B_matrix(key, num_states, num_controls, B_factor_list=None, B_factor_control_list=None):
+
+    num_states = [num_states] if isinstance(num_states, int) else num_states
+    num_controls = [num_controls] if isinstance(num_controls, int) else num_controls
+    num_factors = len(num_states)
+
+    if B_factor_list is None:
+        B_factor_list = [[f] for f in range(num_factors)]
+
+    if B_factor_control_list is None:
+        assert len(num_controls) == len(num_states)
+        B_factor_control_list = [[f] for f in range(num_factors)]
+    else:
+        unique_controls = list(set(sum(B_factor_control_list, [])))        
+        assert unique_controls == list(range(len(num_controls)))
+
+    keys = jr.split(key, num_factors)
+    B = []
+    for f, ns in enumerate(num_states):
+        lagging_shape = [ns_f for i, ns_f in enumerate(num_states) if i in B_factor_list[f]]
+        control_shape = [na_f for i, na_f in enumerate(num_controls) if i in B_factor_control_list[f]]
+        B_f = jr.dirichlet(keys[f], alpha=jnp.ones(ns), shape=lagging_shape+control_shape)
+        B.append(jnp.moveaxis(B_f, -1, 0))
+    return B
 
 def get_combination_index(x, dims):
     """
