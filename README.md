@@ -12,7 +12,7 @@ This package is hosted on the [`infer-actively`](https://github.com/infer-active
 
 Most of the low-level mathematical operations are [NumPy](https://github.com/numpy/numpy) ports of their equivalent functions from the `SPM` [implementation](https://www.fil.ion.ucl.ac.uk/spm/doc/) in MATLAB. We have benchmarked and validated most of these functions against their SPM counterparts.
 
-⚠️ we are currently in the process of migrating `pymdp` to using [JAX](https://github.com/jax-ml/jax), as part of our roadmap for a v1 release of the package. For now, check out the v1.0.0_alpha branch for the best balance of new features and stability, although we intend to merge these features in as soon as possible.
+⚠️ we are currently in the process of migrating `pymdp` to using [JAX](https://github.com/jax-ml/jax), as part of our roadmap for a v1 release of the package. For now, check out the `v1.0.0_alpha` branch for the best balance of new features and stability, although we intend to merge these features into the master branch as soon as possible.
 
 ## Status
 
