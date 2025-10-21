@@ -23,7 +23,7 @@ classifiers=[
 ]
 requires-python = ">=3.10"
 dependencies = [
-    'numpy>=1.19.5', 
+    'numpy>=1.19.5',
     'jax>=0.3.4',
     'jaxlib>=0.3.4',
     'equinox>=0.9',
@@ -32,7 +32,17 @@ dependencies = [
     'seaborn>=0.11.1',
     'mctx>=0.0.5',
     'networkx>=3.3',
-    'pytest>=6.2.1',
+]
+
+[dependency-groups]
+test = [
+    "ipykernel>=7.0.1",
+    "jupyter>=1.1.1",
+    "mediapy>=1.2.4",
+    "nbval>=0.11.0",
+    "pygraphviz>=1.14",
+    "pytest-timeout>=2.4.0",
+    "pytest>=8.4.2",
 ]
 
 [project.optional-dependencies]
