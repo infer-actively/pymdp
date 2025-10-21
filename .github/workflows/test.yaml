@@ -22,7 +22,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
       - name: Install dependencies
         run: |
-          uv sync
-      - name: Analysing the code with pylint
+          uv sync --group test
+      - name: Running unit tests
         run: |
           uv run pytest test
