@@ -58,7 +58,7 @@ def infer_and_plan(
     )  # compute policy posterior using EFE - uses C to consider preferred outcomes
 
     # for learning A and/or B
-    if action_prev is not None:
+    if action_prev is not None and (agent.learning_mode == "online"):
         if agent.learn_A or agent.learn_B:
             if agent.learn_B:
                 # stacking beliefs for B learning
@@ -203,5 +203,9 @@ def rollout(
     info = jtu.tree_map(
         lambda x: x.transpose((1, 0) + tuple(range(2, x.ndim))), info
     )  # transpose to have timesteps as first dimension
+
+    if agent.learning_mode == "offline":
+        outcomes = jtu.tree_map(lambda x: x.squeeze(-1), info['observation']) if num_timesteps > 1 else info['observation']
+        last["agent"] = last["agent"].infer_parameters(info['qs'], outcomes, info['action'])
 
     return last, info, env

@@ -111,3 +111,22 @@ class TestDists(unittest.TestCase):
         self.assertIsNotNone(model.num_controls)
         self.assertEqual(model.B_action_dependencies, [[0, 1], [1]])
         self.assertEqual(model.num_controls, [2, 2])
+
+    def test_tensor_shape_change_protection(self):
+        """
+        Test that directly setting a tensor with a different shape
+        than the original tensor raises an exception.
+        """
+        locations = ["here", "there", "everywhere"]
+        data = np.zeros((len(locations), len(locations)))
+        dist = distribution.Distribution({"location": locations}, {"location": locations}, data)
+
+        # Attempting to set data with a mismatched shape should raise a ValueError
+        with self.assertRaises(ValueError):
+            dist.data = np.zeros((len(locations), len(locations) + 1))
+
+        # Setting data with the same shape should not raise an exception
+        try:
+            dist.data = np.ones((len(locations), len(locations)))
+        except ValueError:
+            self.fail("Setting tensor with the same shape should not raise a ValueError")

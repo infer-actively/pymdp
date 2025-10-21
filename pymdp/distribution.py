@@ -19,28 +19,39 @@ class Distribution:
         }
 
         if data is not None:
-            self.data = data
+            self._data = data
         else:
             shape = []
             for v in event.values():
                 shape.append(len(v))
             for v in batch.values():
                 shape.append(len(v))
-            self.data = np.zeros(shape)
+            self._data = np.zeros(shape)
+
+    @property
+    def data(self):
+        return self._data
+
+    @data.setter
+    def data(self, value):
+        if hasattr(self, '_data') and self._data is not None:
+            if self._data.shape != value.shape:
+                raise ValueError(f"When setting the tensor directly, the new shape {value.shape} must match the existing tensor shape {self._data.shape}")
+        self._data = value
 
     def get(self, batch=None, event=None):
         event_slices = self._get_slices(event, self.event_indices, self.event)
         batch_slices = self._get_slices(batch, self.batch_indices, self.batch)
 
         slices = event_slices + batch_slices
-        return self.data[tuple(slices)]
+        return self._data[tuple(slices)]
 
     def set(self, batch=None, event=None, values=None):
         event_slices = self._get_slices(event, self.event_indices, self.event)
         batch_slices = self._get_slices(batch, self.batch_indices, self.batch)
 
         slices = event_slices + batch_slices
-        self.data[tuple(slices)] = values
+        self._data[tuple(slices)] = values
 
     def _get_slices(self, keys, indices, full_indices):
         slices = []
@@ -81,7 +92,7 @@ class Distribution:
         index_list = [
             self._get_index_from_axis(i, idx) for i, idx in enumerate(indices)
         ]
-        return self.data[tuple(index_list)]
+        return self._data[tuple(index_list)]
 
     def __setitem__(self, indices, value):
         if not isinstance(indices, tuple):
@@ -89,7 +100,7 @@ class Distribution:
         index_list = [
             self._get_index_from_axis(i, idx) for i, idx in enumerate(indices)
         ]
-        self.data[tuple(index_list)] = value
+        self._data[tuple(index_list)] = value
 
     def normalize(self):
         self.data = norm_dist(self.data)
