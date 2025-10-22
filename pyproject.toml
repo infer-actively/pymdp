@@ -46,6 +46,10 @@ nb = [
         'pygraphviz>=1.14',
     ]
 
+modelfit = [
+    'pybefit @ git+https://github.com/dimarkov/pybefit.git',
+]
+
 [project.urls]
 Documentation = "https://pymdp-rtd.readthedocs.io/en/stable/"
 Repository = "https://github.com/infer-actively/pymdp"
