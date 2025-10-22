@@ -9,6 +9,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import jax
 import jax.numpy as jnp
 import numpy as np
+import equinox as eqx
 
 import io
 import matplotlib.pyplot as plt
@@ -35,18 +36,15 @@ def validate_normalization(tensor: Tensor, axis: int = 1, tensor_name: str = "te
     Validates that a probability tensor has normalised distributions along specified axis.
     It raises a ValueError if tensor has zero-filled distributions or unnormalised distributions
     """
+
     # sum along the specified axis
     sums = jnp.sum(tensor, axis=axis)
-    
+
     # check for zero-filled distributions
-    zero_filled = jnp.any(jnp.isclose(sums, 0.0))
-    if zero_filled:
-        raise ValueError(f"Please ensure that none of the distributions along {tensor_name}'s {axis}-th axis sum to zero...")
+    eqx.error_if(sums, jnp.any(jnp.isclose(sums,0.0)), ValueError(f"Please ensure that none of the distributions along {tensor_name}'s {axis}-th axis sum to zero..."))
     
-    # check for unnormalised distributions (non-zero but not summing to 1)
-    not_normalised = jnp.any(~jnp.isclose(sums, 1.0))
-    if not_normalised:
-        raise ValueError(f"Please ensure that all distributions along {tensor_name}'s {axis}-th axis are properly normalised and sum to 1...")
+    # check for unnormalized distributions (non-zero but not summing to 1)
+    eqx.error_if(sums, jnp.any(~jnp.isclose(sums,1.0)), ValueError(f"Please ensure that all distributions along {tensor_name}'s {axis}-th axis are properly normalised and sum to 1..."))
 
 
 def list_array_uniform(shape_list: ShapeList) -> Vector:
