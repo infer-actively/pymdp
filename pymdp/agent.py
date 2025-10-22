@@ -668,6 +668,22 @@ class Agent(Module):
             action = action.at[..., f].set(action_f)
         return action
 
+    def get_model_dimensions(self):
+        """
+        Get a dictionary of the model dimensions.
+        """
+        return {
+            "num_obs": self.num_obs,
+            "num_states": self.num_states,
+            "num_controls": self.num_controls,
+            "num_modalities": self.num_modalities,
+            "num_factors": self.num_factors,
+            "num_policies": len(self.policies),
+            "policy_len": self.policy_len,
+            "A_dependencies": self.A_dependencies,
+            "B_dependencies": self.B_dependencies,
+        }
+
     def _construct_dependencies(self, A_dependencies, B_dependencies, B_action_dependencies, A, B):
         if A_dependencies is not None:
             A_dependencies = A_dependencies
