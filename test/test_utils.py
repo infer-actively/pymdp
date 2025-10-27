@@ -11,6 +11,7 @@ import unittest
 import itertools
 import numpy as np
 from jax import numpy as jnp
+from equinox import EquinoxRuntimeError
 
 from pymdp.legacy import utils
 from pymdp import utils as jax_utils
@@ -80,7 +81,7 @@ class TestUtils(unittest.TestCase):
         Zero-filled distributions along the checked axis should raise ValueError
         """
         tensor = jnp.zeros((2, 3, 4))
-        with self.assertRaises(ValueError):
+        with self.assertRaises(EquinoxRuntimeError):
             jax_utils.validate_normalization(tensor, axis=1, tensor_name="zero_tensor")
 
     def test_validate_normalization_not_normalised_raises(self):
@@ -89,7 +90,7 @@ class TestUtils(unittest.TestCase):
         """
         base = jnp.ones((2, 3, 4)) / 3.0   # normalized
         bad = base * 2.0                   # sums to 2.0 along axis=1
-        with self.assertRaises(ValueError):
+        with self.assertRaises(EquinoxRuntimeError):
             jax_utils.validate_normalization(bad, axis=1, tensor_name="bad_tensor")
 
     def test_validate_normalization_axis_argument(self):
@@ -101,7 +102,7 @@ class TestUtils(unittest.TestCase):
         # should pass on axis=0
         jax_utils.validate_normalization(t, axis=0, tensor_name="axis0_ok")
         # should fail on axis=1 (each row sums to 2/3)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(EquinoxRuntimeError):
             jax_utils.validate_normalization(t, axis=1, tensor_name="axis1_bad")
 
 
