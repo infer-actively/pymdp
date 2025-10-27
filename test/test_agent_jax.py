@@ -9,15 +9,15 @@ import unittest
 
 import numpy as np
 import jax.numpy as jnp
-from jax import vmap, nn, random
+from jax import vmap, nn, random, jit, grad
 import jax.tree_util as jtu
 import math as pymath
 
 from pymdp.legacy import utils
 from pymdp.agent import Agent
-from pymdp.maths import compute_log_likelihood_single_modality
+from pymdp.maths import compute_log_likelihood_single_modality, log_stable
 from pymdp.utils import norm_dist
-from equinox import Module
+from equinox import Module, EquinoxRuntimeError
 
 class TestAgentJax(unittest.TestCase):
 
@@ -442,13 +442,13 @@ class TestAgentJax(unittest.TestCase):
         # Corrupt A[0]: add to one categorical distribution so sums != 1 along axis=1
         A_bad[0][:,0,1] += 0.05  # preserves shape, breaks normalization on axis=1
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(EquinoxRuntimeError):
             _ = Agent(A_bad, B, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls)
         
         # also raises in presence of Dirichlet priors
         pA = [(10.0 * a + 1.0) for a in A_bad]  # uniform Dirichlet priors
         pB = [(10.0 * b) for b in B]
-        with self.assertRaises(ValueError):
+        with self.assertRaises(EquinoxRuntimeError):
             _ = Agent(A_bad, B, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls, pA=pA, pB=pB)
 
     def test_agent_validate_normalization_raises_on_bad_B(self):
@@ -468,13 +468,13 @@ class TestAgentJax(unittest.TestCase):
         # Corrupt B[0]: make it zero so sums == 0 along axis=1
         B_bad[0][:,0,1] *= 0.0  # preserves shape, breaks normalization on axis=1
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(EquinoxRuntimeError):
             _ = Agent(A, B_bad, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls)
         
         # also raises in presence of Dirichlet priors
         pA = [10.0 * a for a in A]  # uniform Dirichlet priors
         pB = [(10.0 * b + 1) for b in B_bad]
-        with self.assertRaises(ValueError):
+        with self.assertRaises(EquinoxRuntimeError):
             _ = Agent(A, B_bad, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls, pA=pA, pB=pB)
 
     def test_agent_with_A_learning_requires_pA(self):
@@ -490,6 +490,152 @@ class TestAgentJax(unittest.TestCase):
 
         with self.assertRaises(AssertionError):
             Agent(A=A, B=B, learn_A=True)
+
+    def test_agent_construction_jittable(self):
+        """
+        Test that the constructor call of the Agent class is jittable
+        """
+        num_obs = [3, 4]
+        num_states = [4, 5, 6]
+        num_controls = [2, 3, 1]
+        A_dependencies = [[0], [0, 1, 2]]
+        B_dependencies = [[0], [1], [2]]
+        batch_size = 2
+
+        A = utils.random_A_matrix(
+            num_obs, num_states, A_factor_list=A_dependencies
+        )
+        B = utils.random_B_matrix(
+            num_states, num_controls, B_factor_list=B_dependencies
+        )
+        pA = utils.dirichlet_like(A, scale=1.0)
+        pB = utils.dirichlet_like(B, scale=1.0)
+        D = utils.random_single_categorical(num_states)
+
+        def _broadcast(arr_list):
+            return [
+                jnp.broadcast_to(jnp.array(arr), (batch_size,) + arr.shape)
+                for arr in arr_list
+            ]
+
+        A_batched = _broadcast(A)
+        B_batched = _broadcast(B)
+        pA_batched = _broadcast(pA)
+        pB_batched = _broadcast(pB)
+        D_batched = _broadcast(D)
+
+        def construct_agent(A, B, pA, pB, D):
+            """ Constructs simple wrapping function that just builds an Agent """
+
+            agent = Agent(
+                A,
+                B,
+                D=D,
+                A_dependencies=A_dependencies,
+                B_dependencies=B_dependencies,
+                num_controls=num_controls,
+                batch_size=batch_size,
+                learn_A=True,
+                learn_B=True,
+                pA=pA,
+                pB=pB,
+            )
+
+            return agent
+        
+        # write a unit test that the Agent constructor is jittable
+        jitted_constructor = jit(construct_agent)
+        agent_instance = jitted_constructor(
+            A_batched, B_batched, pA_batched, pB_batched, D_batched
+        )
+        self.assertIsInstance(agent_instance, Agent)
+
+    def test_valid_gradients_one_step_ahead(self):
+        """
+        This unit test checks that gradients can be computed through a single time step of
+        active inference, including construction of the agent, state inference, policy inference,
+        and computation of multi-action log-probabilities.
+        """
+
+        num_obs = [3, 4]
+        num_states = [4, 5, 6]
+        num_controls = [2, 3, 1]
+        A_dependencies = [[0], [0, 1, 2]]
+        B_dependencies = [[0], [1], [2]]
+        batch_size = 2
+
+        A = utils.random_A_matrix(
+            num_obs, num_states, A_factor_list=A_dependencies
+        )
+        B = utils.random_B_matrix(
+            num_states, num_controls, B_factor_list=B_dependencies
+        )
+        pA = utils.dirichlet_like(A, scale=1.0)
+        pB = utils.dirichlet_like(B, scale=1.0)
+        D = utils.random_single_categorical(num_states)
+
+        def _broadcast(arr_list):
+            return [
+                jnp.broadcast_to(jnp.array(arr), (batch_size,) + arr.shape)
+                for arr in arr_list
+            ]
+
+        A_batched = _broadcast(A)
+        B_batched = _broadcast(B)
+        pA_batched = _broadcast(pA)
+        pB_batched = _broadcast(pB)
+        D_batched = _broadcast(D)
+
+        def construct_agent(A, B, pA, pB, D):
+            """ Constructs simple wrapping function that just builds an Agent """
+
+            agent = Agent(
+                A,
+                B,
+                D=D,
+                A_dependencies=A_dependencies,
+                B_dependencies=B_dependencies,
+                num_controls=num_controls,
+                batch_size=batch_size,
+                learn_A=True,
+                learn_B=True,
+                pA=pA,
+                pB=pB,
+            )
+
+            return agent
+        
+        modality_keys = random.split(random.PRNGKey(0), len(num_obs))
+        observations = [random.randint(k, shape=(batch_size,), minval=0, maxval=d)[...,None] for d, k in zip(num_obs, modality_keys)]   
+
+        def one_step_active_inference(A, B, pA, pB, D):
+            """
+            Constructs an agent and runs a single step of active inference,
+            returning the log-probabilities of multi-actions.
+            """
+
+            agent = construct_agent(A, B, pA, pB, D)
+
+            # infer states
+            qs = agent.infer_states(observations, empirical_prior=D)
+
+            # infer policies
+            q_pi, G = agent.infer_policies(qs)
+
+            # compute multi-action log-probabilities
+            multiaction_probs = agent.multiaction_probabilities(q_pi)
+
+            return log_stable(multiaction_probs).sum()
+        
+        one_step_active_inference(A_batched, B_batched, pA_batched, pB_batched, D_batched)
+
+        gradients_wrt_params = grad(one_step_active_inference, argnums=(0,1,2,3,4))(
+            A_batched, B_batched, pA_batched, pB_batched, D_batched
+        )
+        self.assertTrue(all(jtu.tree_map(lambda x: x is not None, gradients_wrt_params)))
+        self.assertTrue(all(jtu.tree_map(lambda x: ~jnp.any(jnp.isnan(x)), gradients_wrt_params)))
+
+
         
 
 if __name__ == "__main__":
