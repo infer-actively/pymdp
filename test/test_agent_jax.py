@@ -442,13 +442,15 @@ class TestAgentJax(unittest.TestCase):
         # Corrupt A[0]: add to one categorical distribution so sums != 1 along axis=1
         A_bad[0][:,0,1] += 0.05  # preserves shape, breaks normalization on axis=1
 
-        with self.assertRaises(EquinoxRuntimeError):
+        with self.assertRaisesRegex((EquinoxRuntimeError, ValueError),
+                             r"properly normalised and sum to 1"):
             _ = Agent(A_bad, B, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls)
         
         # also raises in presence of Dirichlet priors
         pA = [(10.0 * a + 1.0) for a in A_bad]  # uniform Dirichlet priors
         pB = [(10.0 * b) for b in B]
-        with self.assertRaises(EquinoxRuntimeError):
+        with self.assertRaisesRegex((EquinoxRuntimeError, ValueError),
+                             r"properly normalised and sum to 1"):
             _ = Agent(A_bad, B, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls, pA=pA, pB=pB)
 
     def test_agent_validate_normalization_raises_on_bad_B(self):
@@ -468,13 +470,15 @@ class TestAgentJax(unittest.TestCase):
         # Corrupt B[0]: make it zero so sums == 0 along axis=1
         B_bad[0][:,0,1] *= 0.0  # preserves shape, breaks normalization on axis=1
 
-        with self.assertRaises(EquinoxRuntimeError):
+        with self.assertRaisesRegex((EquinoxRuntimeError, ValueError),
+                        r"sum to zero"):
             _ = Agent(A, B_bad, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls)
         
         # also raises in presence of Dirichlet priors
         pA = [10.0 * a for a in A]  # uniform Dirichlet priors
         pB = [(10.0 * b + 1) for b in B_bad]
-        with self.assertRaises(EquinoxRuntimeError):
+        with self.assertRaisesRegex((EquinoxRuntimeError, ValueError),
+                        r"sum to zero"):
             _ = Agent(A, B_bad, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls, pA=pA, pB=pB)
 
     def test_agent_with_A_learning_requires_pA(self):
@@ -586,7 +590,7 @@ class TestAgentJax(unittest.TestCase):
         pB_batched = _broadcast(pB)
         D_batched = _broadcast(D)
 
-        def construct_agent(A, B, pA, pB, D):
+        def construct_agent(A, B, pA, pB, D, inference_algo="fpi"):
             """ Constructs simple wrapping function that just builds an Agent """
 
             agent = Agent(
@@ -598,9 +602,10 @@ class TestAgentJax(unittest.TestCase):
                 num_controls=num_controls,
                 batch_size=batch_size,
                 learn_A=True,
-                learn_B=True,
+                learn_B=False,
                 pA=pA,
                 pB=pB,
+                inference_algo=inference_algo,
             )
 
             return agent
@@ -608,13 +613,13 @@ class TestAgentJax(unittest.TestCase):
         modality_keys = random.split(random.PRNGKey(0), len(num_obs))
         observations = [random.randint(k, shape=(batch_size,), minval=0, maxval=d)[...,None] for d, k in zip(num_obs, modality_keys)]   
 
-        def one_step_active_inference(A, B, pA, pB, D):
+        def one_step_active_inference(A, B, pA, pB, D, inference_algo="fpi"):
             """
             Constructs an agent and runs a single step of active inference,
             returning the log-probabilities of multi-actions.
             """
 
-            agent = construct_agent(A, B, pA, pB, D)
+            agent = construct_agent(A, B, pA, pB, D, inference_algo=inference_algo)
 
             # infer states
             qs = agent.infer_states(observations, empirical_prior=D)
@@ -627,12 +632,64 @@ class TestAgentJax(unittest.TestCase):
 
             return log_stable(multiaction_probs).sum()
         
-        one_step_active_inference(A_batched, B_batched, pA_batched, pB_batched, D_batched)
+        gradients_wrt_params = grad(one_step_active_inference, argnums=(0,1,2,3,4))(
+            A_batched, B_batched, pA_batched, pB_batched, D_batched, inference_algo="fpi"
+        )
+        self.assertTrue(all(jtu.tree_map(lambda x: ~jnp.any(jnp.isnan(x)), gradients_wrt_params)))
 
         gradients_wrt_params = grad(one_step_active_inference, argnums=(0,1,2,3,4))(
-            A_batched, B_batched, pA_batched, pB_batched, D_batched
+            A_batched, B_batched, pA_batched, pB_batched, D_batched, inference_algo="ovf"
         )
-        self.assertTrue(all(jtu.tree_map(lambda x: x is not None, gradients_wrt_params)))
+        self.assertTrue(all(jtu.tree_map(lambda x: ~jnp.any(jnp.isnan(x)), gradients_wrt_params)))
+
+        gradients_wrt_params = grad(one_step_active_inference, argnums=(0,1,2,3,4))(
+            A_batched, B_batched, pA_batched, pB_batched, D_batched, inference_algo="mmp"
+        )
+        self.assertTrue(all(jtu.tree_map(lambda x: ~jnp.any(jnp.isnan(x)), gradients_wrt_params)))
+
+        gradients_wrt_params = grad(one_step_active_inference, argnums=(0,1,2,3,4))(
+            A_batched, B_batched, pA_batched, pB_batched, D_batched, inference_algo="vmp"
+        )
+        self.assertTrue(all(jtu.tree_map(lambda x: ~jnp.any(jnp.isnan(x)), gradients_wrt_params)))
+
+        def one_step_active_inference_with_learning(A, B, pA, pB, D, inference_algo="fpi"):
+            """
+            Constructs an agent and runs a single step of active inference, including parameter updating,
+            returning the log-probabilities of multi-actions.
+            """
+
+            agent = construct_agent(A, B, pA, pB, D, inference_algo=inference_algo)
+
+            # infer states
+            qs = agent.infer_states(observations, empirical_prior=D)
+
+            agent = agent.infer_parameters(
+                qs,
+                observations,
+                actions=None,
+            )
+
+            # infer policies
+            q_pi, G = agent.infer_policies(qs)
+
+            # compute multi-action log-probabilities
+            multiaction_probs = agent.multiaction_probabilities(q_pi)
+
+            return log_stable(multiaction_probs).sum()
+        
+        gradients_wrt_params = grad(one_step_active_inference_with_learning, argnums=(0,1,2,3,4))(
+            A_batched, B_batched, pA_batched, pB_batched, D_batched, inference_algo="fpi"
+        )
+        self.assertTrue(all(jtu.tree_map(lambda x: ~jnp.any(jnp.isnan(x)), gradients_wrt_params)))
+
+        gradients_wrt_params = grad(one_step_active_inference_with_learning, argnums=(0,1,2,3,4))(
+            A_batched, B_batched, pA_batched, pB_batched, D_batched, inference_algo="mmp"
+        )
+        self.assertTrue(all(jtu.tree_map(lambda x: ~jnp.any(jnp.isnan(x)), gradients_wrt_params)))
+
+        gradients_wrt_params = grad(one_step_active_inference_with_learning, argnums=(0,1,2,3,4))(
+            A_batched, B_batched, pA_batched, pB_batched, D_batched, inference_algo="vmp"
+        )
         self.assertTrue(all(jtu.tree_map(lambda x: ~jnp.any(jnp.isnan(x)), gradients_wrt_params)))
 
 
