@@ -442,13 +442,15 @@ class TestAgentJax(unittest.TestCase):
         # Corrupt A[0]: add to one categorical distribution so sums != 1 along axis=1
         A_bad[0][:,0,1] += 0.05  # preserves shape, breaks normalization on axis=1
 
-        with self.assertRaises(EquinoxRuntimeError):
+        with self.assertRaisesRegex((EquinoxRuntimeError, ValueError),
+                             r"properly normalised and sum to 1"):
             _ = Agent(A_bad, B, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls)
         
         # also raises in presence of Dirichlet priors
         pA = [(10.0 * a + 1.0) for a in A_bad]  # uniform Dirichlet priors
         pB = [(10.0 * b) for b in B]
-        with self.assertRaises(EquinoxRuntimeError):
+        with self.assertRaisesRegex((EquinoxRuntimeError, ValueError),
+                             r"properly normalised and sum to 1"):
             _ = Agent(A_bad, B, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls, pA=pA, pB=pB)
 
     def test_agent_validate_normalization_raises_on_bad_B(self):
@@ -468,13 +470,15 @@ class TestAgentJax(unittest.TestCase):
         # Corrupt B[0]: make it zero so sums == 0 along axis=1
         B_bad[0][:,0,1] *= 0.0  # preserves shape, breaks normalization on axis=1
 
-        with self.assertRaises(EquinoxRuntimeError):
+        with self.assertRaisesRegex((EquinoxRuntimeError, ValueError),
+                        r"sum to zero"):
             _ = Agent(A, B_bad, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls)
         
         # also raises in presence of Dirichlet priors
         pA = [10.0 * a for a in A]  # uniform Dirichlet priors
         pB = [(10.0 * b + 1) for b in B_bad]
-        with self.assertRaises(EquinoxRuntimeError):
+        with self.assertRaisesRegex((EquinoxRuntimeError, ValueError),
+                        r"sum to zero"):
             _ = Agent(A, B_bad, A_dependencies=A_deps, B_dependencies=B_deps, num_controls=num_controls, pA=pA, pB=pB)
 
     def test_agent_with_A_learning_requires_pA(self):
