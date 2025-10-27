@@ -47,7 +47,7 @@ nb = [
     ]
 
 modelfit = [
-    'pybefit @ git+https://github.com/dimarkov/pybefit.git',
+    "pybefit @ git+https://github.com/conorheins/pybefit.git@fix/pymdp-compat",
 ]
 
 [project.urls]
