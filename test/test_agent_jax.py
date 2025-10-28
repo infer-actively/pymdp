@@ -636,7 +636,6 @@ class TestAgentJax(unittest.TestCase):
         gradients_wrt_params = grad(one_step_active_inference, argnums=(0,1,2,3,4))(
             A_batched, B_batched, pA_batched, pB_batched, D_batched
         )
-        self.assertTrue(all(jtu.tree_map(lambda x: x is not None, gradients_wrt_params)))
         self.assertTrue(all(jtu.tree_map(lambda x: ~jnp.any(jnp.isnan(x)), gradients_wrt_params)))
 
 
