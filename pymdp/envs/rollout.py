@@ -159,7 +159,7 @@ def rollout(
         }
         info = {
             "qs": jtu.tree_map(lambda x: x[:, 0, ...], qs),
-            "env": env,
+            "env": env_next,
             "observation": observation,
             "action": action_next,
         }
@@ -208,4 +208,4 @@ def rollout(
         outcomes = jtu.tree_map(lambda x: x.squeeze(-1), info['observation']) if num_timesteps > 1 else info['observation']
         last["agent"] = last["agent"].infer_parameters(info['qs'], outcomes, info['action'])
 
-    return last, info, env
+    return last, info, last["env"]
