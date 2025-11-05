@@ -14,7 +14,7 @@ from pymdp.legacy import utils
 from pymdp.agent import Agent
 from pymdp.envs.env import Env
 from pymdp.envs.rollout import rollout, default_policy_search
-
+from pymdp.utils import random_factorized_categorical
 
 class TestRolloutFunction(unittest.TestCase):
     def setUp(self):
@@ -35,6 +35,9 @@ class TestRolloutFunction(unittest.TestCase):
         policy_len=1,
         seed=0,
     ):
+        
+        A_key, B_key, D_key = jr.split(jr.PRNGKey(seed), 3)
+
         A = utils.random_A_matrix(
             self.num_obs, self.num_states, A_factor_list=self.A_dependencies
         )
@@ -43,7 +46,7 @@ class TestRolloutFunction(unittest.TestCase):
         )
         pA = utils.dirichlet_like(A, scale=1.0)
         pB = utils.dirichlet_like(B, scale=1.0)
-        D = utils.random_single_categorical(self.num_states)
+        D = random_factorized_categorical(D_key, self.num_states)
 
         def _broadcast(arr_list):
             return [

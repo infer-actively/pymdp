@@ -8,9 +8,11 @@ __author__: Dimitrije Markovic, Conor Heins
 import unittest
 
 import numpy as np
-import jax.numpy as jnp
+from jax import numpy as jnp, random as jr
 
 from pymdp.algos import run_vanilla_fpi as fpi_jax
+from pymdp.utils import random_factorized_categorical
+
 from pymdp.legacy.algos import run_vanilla_fpi as fpi_numpy
 from pymdp.legacy import utils
 
@@ -34,10 +36,13 @@ class TestInferenceJax(unittest.TestCase):
                         [2]
         ]
 
-        for (num_states, num_obs) in zip(num_states_list, num_obs_list):
-
+        keys = jr.split(jr.PRNGKey(42), len(num_states_list)*2).reshape((len(num_states_list), 2, 2))
+        for (keys_per_element, num_states, num_obs) in zip(keys, num_states_list, num_obs_list):
+            
+            # jax version of prior
+            prior_jax = random_factorized_categorical(keys_per_element[0], num_states)
             # numpy version
-            prior = utils.random_single_categorical(num_states)
+            prior = utils.obj_array_from_list(prior_jax)
             A = utils.random_A_matrix(num_obs, num_states)
 
             obs = utils.obj_array(len(num_obs))
@@ -47,11 +52,10 @@ class TestInferenceJax(unittest.TestCase):
             qs_numpy = fpi_numpy(A, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
             # jax version
-            prior = [jnp.array(prior_f) for prior_f in prior]
             A = [jnp.array(a_m) for a_m in A]
             obs = [jnp.array(o_m) for o_m in obs]
 
-            qs_jax = fpi_jax(A, obs, prior, num_iter=16)
+            qs_jax = fpi_jax(A, obs, prior_jax, num_iter=16)
 
             for f, _ in enumerate(qs_jax):
                 self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f]))
@@ -74,10 +78,12 @@ class TestInferenceJax(unittest.TestCase):
                         [2, 2, 2]
         ]
 
-        for (num_states, num_obs) in zip(num_states_list, num_obs_list):
+        keys = jr.split(jr.PRNGKey(43), len(num_states_list)*2).reshape((len(num_states_list), 2, 2))
+        for (keys_per_element, num_states, num_obs) in zip(keys, num_states_list, num_obs_list):
 
             # numpy version
-            prior = utils.random_single_categorical(num_states)
+            prior_jax = random_factorized_categorical(keys_per_element[0], num_states)
+            prior = utils.obj_array_from_list(prior_jax)
             A = utils.random_A_matrix(num_obs, num_states)
 
             obs = utils.obj_array(len(num_obs))
@@ -87,11 +93,10 @@ class TestInferenceJax(unittest.TestCase):
             qs_numpy = fpi_numpy(A, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
             # jax version
-            prior = [jnp.array(prior_f) for prior_f in prior]
             A = [jnp.array(a_m) for a_m in A]
             obs = [jnp.array(o_m) for o_m in obs]
 
-            qs_jax = fpi_jax(A, obs, prior, num_iter=16)
+            qs_jax = fpi_jax(A, obs, prior_jax, num_iter=16)
 
             for f, _ in enumerate(qs_jax):
                 self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f]))
@@ -114,10 +119,12 @@ class TestInferenceJax(unittest.TestCase):
                         [10]
         ]
 
-        for (num_states, num_obs) in zip(num_states_list, num_obs_list):
+        keys = jr.split(jr.PRNGKey(44), len(num_states_list)*2).reshape((len(num_states_list), 2, 2))
+        for (keys_per_element, num_states, num_obs) in zip(keys, num_states_list, num_obs_list):
 
             # numpy version
-            prior = utils.random_single_categorical(num_states)
+            prior_jax = random_factorized_categorical(keys_per_element[0], num_states)
+            prior = utils.obj_array_from_list(prior_jax)
             A = utils.random_A_matrix(num_obs, num_states)
 
             obs = utils.obj_array(len(num_obs))
@@ -127,11 +134,10 @@ class TestInferenceJax(unittest.TestCase):
             qs_numpy = fpi_numpy(A, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
             # jax version
-            prior = [jnp.array(prior_f) for prior_f in prior]
             A = [jnp.array(a_m) for a_m in A]
             obs = [jnp.array(o_m) for o_m in obs]
 
-            qs_jax = fpi_jax(A, obs, prior, num_iter=16)
+            qs_jax = fpi_jax(A, obs, prior_jax, num_iter=16)
 
             for f, _ in enumerate(qs_jax):
                 self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f]))
@@ -158,10 +164,12 @@ class TestInferenceJax(unittest.TestCase):
                         [5, 10, 6]
         ]
 
-        for (num_states, num_obs) in zip(num_states_list, num_obs_list):
+        keys = jr.split(jr.PRNGKey(45), len(num_states_list)*2).reshape((len(num_states_list), 2, 2))
+        for (keys_per_element, num_states, num_obs) in zip(keys, num_states_list, num_obs_list):
 
             # numpy version
-            prior = utils.random_single_categorical(num_states)
+            prior_jax = random_factorized_categorical(keys_per_element[0], num_states)
+            prior = utils.obj_array_from_list(prior_jax)
             A = utils.random_A_matrix(num_obs, num_states)
 
             obs = utils.obj_array(len(num_obs))
@@ -171,11 +179,10 @@ class TestInferenceJax(unittest.TestCase):
             qs_numpy = fpi_numpy(A, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
             # jax version
-            prior = [jnp.array(prior_f) for prior_f in prior]
             A = [jnp.array(a_m) for a_m in A]
             obs = [jnp.array(o_m) for o_m in obs]
 
-            qs_jax = fpi_jax(A, obs, prior, num_iter=16)
+            qs_jax = fpi_jax(A, obs, prior_jax, num_iter=16)
 
             for f, _ in enumerate(qs_jax):
                 self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f]))
@@ -203,10 +210,12 @@ class TestInferenceJax(unittest.TestCase):
                         [5, 10, 6]
         ]
 
-        for (num_states, num_obs) in zip(num_states_list, num_obs_list):
+        keys = jr.split(jr.PRNGKey(46), len(num_states_list)*2).reshape((len(num_states_list), 2, 2))
+        for (keys_per_element, num_states, num_obs) in zip(keys, num_states_list, num_obs_list):
 
             # numpy version
-            prior = utils.random_single_categorical(num_states)
+            prior_jax = random_factorized_categorical(keys_per_element[0], num_states)
+            prior = utils.obj_array_from_list(prior_jax)
             A = utils.random_A_matrix(num_obs, num_states)
 
             obs = utils.obj_array(len(num_obs))
@@ -220,11 +229,10 @@ class TestInferenceJax(unittest.TestCase):
                 obs_idx.append(np.where(ob)[0][0])
             
             # jax version
-            prior = [jnp.array(prior_f) for prior_f in prior]
             A = [jnp.array(a_m) for a_m in A]
             # obs = [jnp.array(o_m) for o_m in obs]
 
-            qs_jax = fpi_jax(A, obs_idx, prior, num_iter=16, distr_obs=False)
+            qs_jax = fpi_jax(A, obs_idx, prior_jax, num_iter=16, distr_obs=False)
 
             for f, _ in enumerate(qs_jax):
                 self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f]))

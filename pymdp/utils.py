@@ -7,7 +7,8 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 """
 
 import jax
-import jax.numpy as jnp
+from jax import numpy as jnp, random as jr
+from jax import tree_util as jtu
 import numpy as np
 import equinox as eqx
 
@@ -46,6 +47,18 @@ def validate_normalization(tensor: Tensor, axis: int = 1, tensor_name: str = "te
     # check for unnormalized distributions (non-zero but not summing to 1)
     eqx.error_if(sums, jnp.any(~jnp.isclose(sums,1.0)), f"Please ensure that all distributions along {tensor_name}'s {axis}-th axis are properly normalised and sum to 1...")
 
+def random_factorized_categorical(key, dims_per_var: Sequence[int]) -> List[jax.Array]:
+    """"
+    Creates a list of jax arrays representing random Categorical distributions with dimensions
+    given by dims_per_var[i]. In the context of observations or hidden state posteriors,
+    this can seen as a factorized categorical distribution over multiple variables, i.e.
+    P(X1, X2, ..., Xn) = P(X1)P(X2)...P(Xn)
+    """
+
+    num_vars = len(dims_per_var)
+    keys = jax.random.split(key, num_vars)
+
+    return jtu.tree_map(lambda dim, i: jr.dirichlet(keys[i], alpha=jnp.ones(dim)), dims_per_var, list(range(num_vars)))
 
 def list_array_uniform(shape_list: ShapeList) -> Vector:
     """

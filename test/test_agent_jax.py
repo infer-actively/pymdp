@@ -8,7 +8,7 @@ __author__: Dimitrije Markovic, Conor Heins
 import unittest
 
 import numpy as np
-import jax.numpy as jnp
+from jax import numpy as jnp, random as jr
 from jax import vmap, nn, random, jit, grad
 import jax.tree_util as jtu
 import math as pymath
@@ -16,7 +16,7 @@ import math as pymath
 from pymdp.legacy import utils
 from pymdp.agent import Agent
 from pymdp.maths import compute_log_likelihood_single_modality, log_stable
-from pymdp.utils import norm_dist
+from pymdp.utils import norm_dist, random_factorized_categorical
 from equinox import Module, EquinoxRuntimeError
 
 class TestAgentJax(unittest.TestCase):
@@ -506,6 +506,8 @@ class TestAgentJax(unittest.TestCase):
         B_dependencies = [[0], [1], [2]]
         batch_size = 2
 
+        A_key, B_key, D_key = jr.split(jr.PRNGKey(123), 3)
+
         A = utils.random_A_matrix(
             num_obs, num_states, A_factor_list=A_dependencies
         )
@@ -514,7 +516,7 @@ class TestAgentJax(unittest.TestCase):
         )
         pA = utils.dirichlet_like(A, scale=1.0)
         pB = utils.dirichlet_like(B, scale=1.0)
-        D = utils.random_single_categorical(num_states)
+        D = random_factorized_categorical(D_key, num_states)
 
         def _broadcast(arr_list):
             return [
@@ -568,6 +570,8 @@ class TestAgentJax(unittest.TestCase):
         B_dependencies = [[0], [1], [2]]
         batch_size = 2
 
+        A_key, B_key, D_key = jr.split(jr.PRNGKey(123), 3)
+
         A = utils.random_A_matrix(
             num_obs, num_states, A_factor_list=A_dependencies
         )
@@ -576,7 +580,7 @@ class TestAgentJax(unittest.TestCase):
         )
         pA = utils.dirichlet_like(A, scale=1.0)
         pB = utils.dirichlet_like(B, scale=1.0)
-        D = utils.random_single_categorical(num_states)
+        D = random_factorized_categorical(D_key, num_states)
 
         def _broadcast(arr_list):
             return [
