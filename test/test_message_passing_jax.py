@@ -18,6 +18,7 @@ from pymdp.algos import run_vanilla_fpi as fpi_jax
 from pymdp.algos import run_factorized_fpi as fpi_jax_factorized
 from pymdp.legacy.algos import run_vanilla_fpi as fpi_numpy
 from pymdp.algos import run_mmp as mmp_jax
+from pymdp.utils import random_factorized_categorical
 from pymdp.legacy import utils
 
 from typing import List, Dict
@@ -82,25 +83,27 @@ class TestMessagePassing(unittest.TestCase):
             }
         gm_params = make_model_configs(**cfg)
         num_states_list, num_obs_list = gm_params['ns_list'], gm_params['no_list']
-
-        for (num_states, num_obs) in zip(num_states_list, num_obs_list):
+        keys = jr.split(jr.PRNGKey(42), len(num_states_list)*3).reshape((len(num_states_list), 3, 2))
+        for (keys_per_element, num_states, num_obs) in zip(keys, num_states_list, num_obs_list):
+            
+            # jax version
+            prior_jax = random_factorized_categorical(keys_per_element[0], num_states)
 
             # numpy version
-            prior = utils.random_single_categorical(num_states)
-            A = utils.random_A_matrix(num_obs, num_states)
+            prior = utils.obj_array_from_list(prior_jax)
+            A = utils.random_A_matrix(num_obs, num_states) # TODO: replace with sampling using keys_per_element[1]
 
             obs = utils.obj_array(len(num_obs))
             for m, obs_dim in enumerate(num_obs):
-                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim)
+                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim) # TODO: replace with sampling using keys_per_element[2]
 
             qs_numpy = fpi_numpy(A, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
             # jax version
-            prior = [jnp.array(prior_f) for prior_f in prior]
             A = [jnp.array(a_m) for a_m in A]
             obs = [jnp.array(o_m) for o_m in obs]
 
-            qs_jax = fpi_jax(A, obs, prior, num_iter=16)
+            qs_jax = fpi_jax(A, obs, prior_jax, num_iter=16)
 
             for f, _ in enumerate(qs_jax):
                 self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f], atol=1e-4))
@@ -116,26 +119,26 @@ class TestMessagePassing(unittest.TestCase):
             }
         gm_params = make_model_configs(**cfg)
         num_states_list, num_obs_list = gm_params['ns_list'], gm_params['no_list']
+        keys = jr.split(jr.PRNGKey(43), len(num_states_list)*3).reshape((len(num_states_list), 3, 2))
+        for (keys_per_element, num_states, num_obs) in zip(keys, num_states_list, num_obs_list):
 
-        for (num_states, num_obs) in zip(num_states_list, num_obs_list):
-
-            # initialize arrays in numpy version
-            prior = utils.random_single_categorical(num_states)
-            A = utils.random_A_matrix(num_obs, num_states)
+            # jax version
+            prior_jax = random_factorized_categorical(keys_per_element[0], num_states)
+            
+            A = utils.random_A_matrix(num_obs, num_states) # TODO: replace with sampling using keys_per_element[1]
 
             obs = utils.obj_array(len(num_obs))
             for m, obs_dim in enumerate(num_obs):
-                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim)
+                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim) # TODO: replace with sampling using keys_per_element[2]
 
             # jax version
-            prior = [jnp.array(prior_f) for prior_f in prior]
             A = [jnp.array(a_m) for a_m in A]
             obs = [jnp.array(o_m) for o_m in obs]
 
             factor_lists = len(num_obs) * [list(range(len(num_states)))]
 
-            qs_jax = fpi_jax(A, obs, prior, num_iter=16)
-            qs_jax_factorized = fpi_jax_factorized(A, obs, prior, factor_lists, num_iter=16)
+            qs_jax = fpi_jax(A, obs, prior_jax, num_iter=16)
+            qs_jax_factorized = fpi_jax_factorized(A, obs, prior_jax, factor_lists, num_iter=16)
 
             for f, _ in enumerate(qs_jax):
                 self.assertTrue(np.allclose(qs_jax[f], qs_jax_factorized[f], atol=1e-6))
@@ -152,19 +155,26 @@ class TestMessagePassing(unittest.TestCase):
         gm_params = make_model_configs(**cfg)
 
         num_states_list, num_obs_list, A_dependencies_list = gm_params['ns_list'], gm_params['no_list'], gm_params['A_deps_list']
-
-        for (num_states, num_obs, a_deps_i) in zip(num_states_list, num_obs_list, A_dependencies_list):
+        keys = jr.split(jr.PRNGKey(44), len(num_states_list)*3).reshape((len(num_states_list), 3, 2))
+        for (keys_per_element, num_states, num_obs, a_deps_i) in zip(keys, num_states_list, num_obs_list, A_dependencies_list):
             
-            prior = utils.random_single_categorical(num_states)
+            prior_jax = random_factorized_categorical(keys_per_element[0], num_states)
 
             obs = utils.obj_array(len(num_obs))
             for m, obs_dim in enumerate(num_obs):
-                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim)
+                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim) # TODO: replace with sampling using keys_per_element[1]
 
-            A_reduced = utils.random_A_matrix(num_obs, num_states, A_factor_list=a_deps_i)
+            modality_keys = jr.split(keys_per_element[1], len(num_obs))
+            A_reduced = utils.obj_array(len(num_obs))
+            for m, (obs_dim, modality_key) in enumerate(zip(num_obs, modality_keys)):
+                lagging_dims = [num_states[idx] for idx in a_deps_i[m]]
+                modality_shape = (obs_dim, *lagging_dims)
+                modality_dist = jr.uniform(modality_key, shape=modality_shape)
+                A_reduced[m] = np.asarray(
+                    modality_dist / modality_dist.sum(axis=0, keepdims=True)
+                )
 
             # jax version
-            prior_jax = [jnp.array(prior_f) for prior_f in prior]
             A_reduced_jax = [jnp.array(a_m) for a_m in A_reduced]
             obs_jax = [jnp.array(o_m) for o_m in obs]
 

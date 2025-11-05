@@ -15,6 +15,7 @@ import jax.tree_util as jtu
 import pymdp.control as ctl_jax
 import pymdp.legacy.control as ctl_np
 
+from pymdp.utils import random_factorized_categorical
 from pymdp.legacy import utils
 
 cfg = {"source_key": 0, "num_models": 4}
@@ -52,10 +53,11 @@ class TestControlJax(unittest.TestCase):
         """
         gm_params = generate_model_params()
         _num_factors_list, num_states_list, _num_modalities_list, num_obs_list, A_deps_list = gm_params['nf_list'], gm_params['ns_list'], gm_params['nm_list'], gm_params['no_list'], gm_params['A_deps_list']
-        for (num_states, num_obs, A_deps) in zip(num_states_list, num_obs_list, A_deps_list):
+        keys = jr.split(jr.PRNGKey(42), len(num_states_list)*2).reshape((len(num_states_list), 2, 2))
+        for (keys_per_element, num_states, num_obs, A_deps) in zip(keys, num_states_list, num_obs_list, A_deps_list):
             
-            qs_numpy = utils.random_single_categorical(num_states)
-            qs_jax = list(qs_numpy)
+            qs_jax = random_factorized_categorical(keys_per_element[0], num_states)
+            qs_numpy = utils.obj_array_from_list(qs_jax)
 
             A_np = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_deps)
             A_jax = jtu.tree_map(lambda x: jnp.array(x), list(A_np))   
@@ -121,10 +123,11 @@ class TestControlJax(unittest.TestCase):
 
         gm_params = generate_model_params()
         _num_factors_list, num_states_list, _num_modalities_list, num_obs_list, A_deps_list = gm_params['nf_list'], gm_params['ns_list'], gm_params['nm_list'], gm_params['no_list'], gm_params['A_deps_list']
-        for (num_states, num_obs, A_deps) in zip(num_states_list, num_obs_list, A_deps_list):
+        keys = jr.split(jr.PRNGKey(1234), len(num_states_list)*2).reshape((len(num_states_list), 2, 2))
+        for (keys_per_element, num_states, num_obs, A_deps) in zip(keys, num_states_list, num_obs_list, A_deps_list):
 
-            qs_numpy = utils.random_single_categorical(num_states)
-            qs_jax = list(qs_numpy)
+            qs_jax = random_factorized_categorical(keys_per_element[0], num_states)
+            qs_numpy = utils.obj_array_from_list(qs_jax)
 
             A_np = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_deps)
             A_jax = jtu.tree_map(lambda x: jnp.array(x), list(A_np))   
