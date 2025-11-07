@@ -2,9 +2,9 @@ name: Test
 
 on:
   push:
-    branches: [chore/notebook_cleanup]
+    branches: [v1.0.0_alpha]
   pull_request:
-    branches: [chore/notebook_cleanup]
+    branches: [v1.0.0_alpha]
 
 jobs:
   build:
