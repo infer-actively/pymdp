@@ -59,7 +59,7 @@ def random_factorized_categorical(key, dims_per_var: Sequence[int]) -> List[jax.
     """
 
     num_vars = len(dims_per_var)
-    keys = jax.random.split(key, num_vars)
+    keys = jr.split(key, num_vars)
 
     return jtu.tree_map(lambda dim, i: jr.dirichlet(keys[i], alpha=jnp.ones(dim)), dims_per_var, list(range(num_vars)))
 
