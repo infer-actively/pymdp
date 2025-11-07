@@ -35,6 +35,20 @@ class TestUtils(unittest.TestCase):
                 self.assertTrue(bool(jnp.all(dist >= 0)))
                 self.assertTrue(bool(jnp.isclose(dist.sum(), 1.0)))
                 self.assertTrue(bool(jnp.allclose(dist, repeat[idx])))
+    
+    def test_norm_dist_list_version(self):
+        """"
+        Test `list_array_norm_dist`
+        """
+        dist_list = [jnp.array([0.2, 0.3, 0.5]), jnp.array([1.0, 2.0, 3.0, 4.0])]
+        normed_list = jax_utils.list_array_norm_dist(dist_list)
+
+        for idx, (orig, normed) in enumerate(zip(dist_list, normed_list)):
+            with self.subTest(factor=idx):
+                self.assertTrue(bool(jnp.all(normed >= 0)))
+                self.assertTrue(bool(jnp.isclose(normed.sum(), 1.0)))
+                expected = orig / orig.sum()
+                self.assertTrue(bool(jnp.allclose(normed, expected)))
 
     def test_get_combination_index(self):
         """

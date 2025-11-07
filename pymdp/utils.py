@@ -31,6 +31,9 @@ def norm_dist(dist: Tensor) -> Tensor:
     """Normalizes a Categorical probability distribution"""
     return dist / dist.sum(0)
 
+def list_array_norm_dist(dist_list: List[Tensor]) -> List[Tensor]:
+    """Normalizes a list of Categorical probability distributions"""
+    return jtu.tree_map(lambda dist: norm_dist(dist), dist_list)
 
 def validate_normalization(tensor: Tensor, axis: int = 1, tensor_name: str = "tensor") -> None:
     """
