@@ -35,6 +35,47 @@ class TestUtils(unittest.TestCase):
                 self.assertTrue(bool(jnp.all(dist >= 0)))
                 self.assertTrue(bool(jnp.isclose(dist.sum(), 1.0)))
                 self.assertTrue(bool(jnp.allclose(dist, repeat[idx])))
+
+    def test_random_A_array_shapes_and_normalization(self):
+        """
+        `random_A_array` should honor factor structure and yield normalized conditionals
+        """
+        key = jr.PRNGKey(42)
+        num_obs = [3, 2]
+        num_states = [4, 5, 6]
+        A_dependencies = [[0, 2], [1]]  # modality 0 depends on states 0 & 2, modality 1 on state 1 only
+
+        A = jax_utils.random_A_array(key, num_obs, num_states, A_dependencies=A_dependencies)
+
+        self.assertEqual(len(A), len(num_obs))
+        expected_shapes = [
+            (num_obs[0], num_states[0], num_states[2]),
+            (num_obs[1], num_states[1]),
+        ]
+
+        for idx, (A_m, expected_shape) in enumerate(zip(A, expected_shapes)):
+            with self.subTest(modality=idx):
+                self.assertEqual(A_m.shape, expected_shape)
+                # each column over the observation axis should be a normalized categorical distribution
+                marginal_sums = A_m.sum(axis=0)
+                self.assertTrue(bool(jnp.allclose(marginal_sums, jnp.ones_like(marginal_sums))))
+
+    def test_random_A_array_defaults_to_all_factors(self):
+        """
+        `random_A_array` should fallback to each modality depending on every hidden factor
+        """
+        key = jr.PRNGKey(7)
+        num_obs = [2, 3]
+        num_states = [4, 5]
+
+        A = jax_utils.random_A_array(key, num_obs, num_states)
+
+        self.assertEqual(len(A), len(num_obs))
+        for idx, (A_m, n_o) in enumerate(zip(A, num_obs)):
+            with self.subTest(modality=idx):
+                self.assertEqual(A_m.shape, (n_o, *tuple(num_states)))
+                marginal_sums = A_m.sum(axis=0)
+                self.assertTrue(bool(jnp.allclose(marginal_sums, jnp.ones_like(marginal_sums))))
     
     def test_norm_dist_list_version(self):
         """"

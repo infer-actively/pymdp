@@ -15,7 +15,7 @@ import jax.tree_util as jtu
 import pymdp.control as ctl_jax
 import pymdp.legacy.control as ctl_np
 
-from pymdp.utils import random_factorized_categorical
+from pymdp.utils import random_factorized_categorical, random_A_array
 from pymdp.legacy import utils
 
 cfg = {"source_key": 0, "num_models": 4}
@@ -59,8 +59,8 @@ class TestControlJax(unittest.TestCase):
             qs_jax = random_factorized_categorical(keys_per_element[0], num_states)
             qs_numpy = utils.obj_array_from_list(qs_jax)
 
-            A_np = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_deps)
-            A_jax = jtu.tree_map(lambda x: jnp.array(x), list(A_np))   
+            A_jax = random_A_array(keys_per_element[1], num_obs, num_states, A_dependencies=A_deps)
+            A_np = [np.array(A_m) for A_m in A_jax]
 
             qo_test = ctl_jax.compute_expected_obs(qs_jax, A_jax, A_deps) 
             qo_validation = ctl_np.get_expected_obs_factorized([qs_numpy], A_np, A_deps) # need to wrap `qs` in list because `get_expected_obs_factorized` expects a list of `qs` (representing multiple timesteps)
@@ -129,8 +129,8 @@ class TestControlJax(unittest.TestCase):
             qs_jax = random_factorized_categorical(keys_per_element[0], num_states)
             qs_numpy = utils.obj_array_from_list(qs_jax)
 
-            A_np = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_deps)
-            A_jax = jtu.tree_map(lambda x: jnp.array(x), list(A_np))   
+            A_jax = random_A_array(keys_per_element[1], num_obs, num_states, A_dependencies=A_deps)
+            A_np = [np.array(A_m) for A_m in A_jax]
 
             qo = ctl_jax.compute_expected_obs(qs_jax, A_jax, A_deps)
 

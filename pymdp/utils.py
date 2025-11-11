@@ -63,6 +63,32 @@ def random_factorized_categorical(key, dims_per_var: Sequence[int]) -> List[jax.
 
     return jtu.tree_map(lambda dim, i: jr.dirichlet(keys[i], alpha=jnp.ones(dim)), dims_per_var, list(range(num_vars)))
 
+def random_A_array(key, num_obs, num_states, A_dependencies=None) -> List[jax.Array]:
+    """"
+    Creates a list of jax arrays representing observation likelihoods (A tensors or A matrices) with shapes
+    determined by num_obs and num_states, and factorized according to A_factor_list.
+
+    The storage of each A tensor in a separate list element represents the factorized assumption over modalities, namely:
+    P(o^{1:M} | s^{1:F}) = P(o^1 | s^{factors for o^1}) * ... * P(o^M | s^{factors for o^M})
+    """
+    num_obs    = [num_obs]    if isinstance(num_obs, int)    else num_obs
+    num_states = [num_states] if isinstance(num_states, int) else num_states
+    num_modalities = len(num_obs)
+
+    if A_dependencies is None:
+        num_factors = len(num_states)
+        A_dependencies = [list(range(num_factors))] * num_modalities
+
+    keys = jr.split(key, num_modalities)
+    A = []
+    for m, n_o in enumerate(num_obs):
+        lagging_dimensions = tuple(num_states[idx] for idx in A_dependencies[m])  # trailing axes
+        # Sample Dirichlet with batch_shape=lagging_dimensions; returns shape = lagging_dimensions + (n_o,)
+        A_m = jr.dirichlet(keys[m], alpha=jnp.ones(n_o), shape=lagging_dimensions)
+        # Move event/observation dim to the front -> (n_o, *lagging_dimensions)
+        A.append(jnp.moveaxis(A_m, -1, 0))
+    return A
+
 def list_array_uniform(shape_list: ShapeList) -> Vector:
     """
     Creates a list of jax arrays representing uniform Categorical
@@ -146,6 +172,27 @@ def index_to_combination(index, dims):
 
     x = np.flip(np.stack(x, axis=-1), axis=-1)
     return x
+
+def make_A_full(A_reduced: List[jax.Array], A_dependencies: List[List[int]], num_obs: List[int], num_states: List[int]) -> List[jax.Array]:
+    """ 
+    Given a reduced A matrix, `A_reduced`, and a list of dependencies between hidden state factors and observation modalities, `A_dependencies`,
+    return a full A matrix, `A_full`, where `A_full[m]` is the full A matrix for modality `m`. This means all redundant conditional independencies
+    between observation modalities `m` and all hidden state factors (i.e. `range(len(num_states))`) are represented as lagging dimensions in `A_full`.
+    """
+    A_shape_list = [ [no] + num_states for no in num_obs]
+    A_full = list_array_zeros(A_shape_list) # initialize the full likelihood tensor (ALL modalities might depend on ALL factors)
+    all_factors = range(len(num_states)) # indices of all hidden state factors
+    for m, _ in enumerate(A_full):
+
+        # Step 1. Extract the list of the factors that modality `m` does NOT depend on
+        non_dependent_factors = list(set(all_factors) - set(A_dependencies[m])) 
+
+        # Step 2. broadcast or tile the reduced A matrix (`A_reduced`) along the dimensions of corresponding to `non_dependent_factors`, to give it the full shape of `(num_obs[m], *num_states)`
+        expanded_dims = [num_obs[m]] + [1 if f in non_dependent_factors else ns for (f, ns) in enumerate(num_states)]
+        tile_dims = [1] + [ns if f in non_dependent_factors else 1 for (f, ns) in enumerate(num_states)]
+        A_full[m] = jnp.tile(A_reduced[m].reshape(expanded_dims), tile_dims)
+    
+    return A_full
 
 
 def fig2img(fig):

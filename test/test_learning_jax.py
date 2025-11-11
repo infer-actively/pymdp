@@ -11,7 +11,7 @@ import numpy as np
 from jax import numpy as jnp, random as jr
 import jax.tree_util as jtu
 
-from pymdp.utils import random_factorized_categorical
+from pymdp.utils import random_factorized_categorical, random_A_array, list_array_scaled
 
 from pymdp.legacy.learning import update_obs_likelihood_dirichlet as update_pA_numpy
 from pymdp.legacy.learning import update_obs_likelihood_dirichlet_factorized as update_pA_numpy_factorized
@@ -41,12 +41,15 @@ class TestLearningJax(unittest.TestCase):
 
         keys = jr.split(jr.PRNGKey(42), len(num_obs_list)*3).reshape((len(num_obs_list), 3, 2))
         for (keys_per_model, num_obs, num_states, A_dependencies) in zip(keys, num_obs_list, num_states_list, A_dependencies_list):
-            # create numpy arrays to test numpy version of learning
 
-            # create A matrix initialization (expected initial value of P(o|s, A)) and prior over A (pA)
-            A_np = utils.random_A_matrix(num_obs, num_states)
-            pA_np = utils.dirichlet_like(A_np, scale=3.0)
+            # create jax arrays
+            A_jax = random_A_array(keys_per_model[1], num_obs, num_states, A_dependencies=A_dependencies)
+            pA_jax = list_array_scaled([a.shape for a in A_jax], scale=3.0)
 
+            # convert to numpy arrays for validation
+            A_np = utils.obj_array_from_list(A_jax)
+            pA_np = utils.obj_array_from_list(pA_jax)
+          
             # create random observations
             obs_np = utils.obj_array(len(num_obs))
             for m, obs_dim in enumerate(num_obs):
@@ -61,12 +64,10 @@ class TestLearningJax(unittest.TestCase):
             # run numpy version of learning
             qA_np_test = update_pA_numpy(pA_np, A_np, obs_np, qs_np, lr=l_rate)
 
-            pA_jax = jtu.tree_map(lambda x: jnp.array(x), list(pA_np))
-            A_jax = jtu.tree_map(lambda x: jnp.array(x), list(A_np))
             obs_jax = jtu.tree_map(lambda x: jnp.array(x)[None], list(obs_np))
             qs_jax = jtu.tree_map(lambda x: jnp.expand_dims(x,0), qs_jax)
 
-            qA_jax_test, E_qA_jax_test = update_pA_jax(
+            qA_jax_test, _ = update_pA_jax(
                 pA_jax,
                 A_jax,
                 obs_jax,
@@ -95,11 +96,14 @@ class TestLearningJax(unittest.TestCase):
 
         keys = jr.split(jr.PRNGKey(43), len(num_obs_list)*3).reshape((len(num_obs_list), 3, 2))
         for (keys_per_model, num_obs, num_states, A_dependencies) in zip(keys, num_obs_list, num_states_list, A_dependencies_list):
-            # create numpy arrays to test numpy version of learning
+            
+            # create jax arrays
+            A_jax = random_A_array(keys_per_model[1], num_obs, num_states, A_dependencies=A_dependencies)
+            pA_jax = list_array_scaled([a.shape for a in A_jax], scale=3.0)
 
-            # create A matrix initialization (expected initial value of P(o|s, A)) and prior over A (pA)
-            A_np = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_dependencies)
-            pA_np = utils.dirichlet_like(A_np, scale=3.0)
+            # convert to numpy arrays for validation
+            A_np = utils.obj_array_from_list(A_jax)
+            pA_np = utils.obj_array_from_list(pA_jax)
 
             # create random observations
             obs_np = utils.obj_array(len(num_obs))
@@ -115,12 +119,10 @@ class TestLearningJax(unittest.TestCase):
             # run numpy version of learning
             qA_np_test = update_pA_numpy_factorized(pA_np, A_np, obs_np, qs_np, A_dependencies, lr=l_rate)
 
-            pA_jax = jtu.tree_map(lambda x: jnp.array(x), list(pA_np))
-            A_jax = jtu.tree_map(lambda x: jnp.array(x), list(A_np))
             obs_jax = jtu.tree_map(lambda x: jnp.array(x)[None], list(obs_np))
             qs_jax = jtu.tree_map(lambda x: jnp.expand_dims(x, 0), qs_jax)
 
-            qA_jax_test, E_qA_jax_test = update_pA_jax(
+            qA_jax_test, _ = update_pA_jax(
                 pA_jax,
                 A_jax,
                 obs_jax,

@@ -18,7 +18,7 @@ from pymdp.algos import run_vanilla_fpi as fpi_jax
 from pymdp.algos import run_factorized_fpi as fpi_jax_factorized
 from pymdp.legacy.algos import run_vanilla_fpi as fpi_numpy
 from pymdp.algos import run_mmp as mmp_jax
-from pymdp.utils import random_factorized_categorical
+from pymdp.utils import random_factorized_categorical, random_A_array, make_A_full
 from pymdp.legacy import utils
 
 from typing import List, Dict
@@ -54,26 +54,6 @@ def make_model_configs(source_seed=0, num_models=4) -> Dict:
             'A_deps_list': A_deps_list,
             'B_deps_list': B_deps_list
         }
-
-def make_A_full(A_reduced: List[np.ndarray], A_dependencies: List[List[int]], num_obs: List[int], num_states: List[int]) -> np.ndarray:
-    """ 
-    Given a reduced A matrix, `A_reduced`, and a list of dependencies between hidden state factors and observation modalities, `A_dependencies`,
-    return a full A matrix, `A_full`, where `A_full[m]` is the full A matrix for modality `m`. This means all redundant conditional independencies
-    between observation modalities `m` and all hidden state factors (i.e. `range(len(num_states))`) are represented as lagging dimensions in `A_full`.
-    """
-    A_full = utils.initialize_empty_A(num_obs, num_states) # initialize the full likelihood tensor (ALL modalities might depend on ALL factors)
-    all_factors = range(len(num_states)) # indices of all hidden state factors
-    for m, A_m in enumerate(A_full):
-
-        # Step 1. Extract the list of the factors that modality `m` does NOT depend on
-        non_dependent_factors = list(set(all_factors) - set(A_dependencies[m])) 
-
-        # Step 2. broadcast or tile the reduced A matrix (`A_reduced`) along the dimensions of corresponding to `non_dependent_factors`, to give it the full shape of `(num_obs[m], *num_states)`
-        expanded_dims = [num_obs[m]] + [1 if f in non_dependent_factors else ns for (f, ns) in enumerate(num_states)]
-        tile_dims = [1] + [ns if f in non_dependent_factors else 1 for (f, ns) in enumerate(num_states)]
-        A_full[m] = np.tile(A_reduced[m].reshape(expanded_dims), tile_dims)
-    
-    return A_full
                 
 class TestMessagePassing(unittest.TestCase):
 
@@ -86,28 +66,25 @@ class TestMessagePassing(unittest.TestCase):
         keys = jr.split(jr.PRNGKey(42), len(num_states_list)*3).reshape((len(num_states_list), 3, 2))
         for (keys_per_element, num_states, num_obs) in zip(keys, num_states_list, num_obs_list):
             
-            # jax version
+            # jax arrays
             prior_jax = random_factorized_categorical(keys_per_element[0], num_states)
+            A_jax = random_A_array(keys_per_element[1], num_obs, num_states)
 
-            # numpy version
+            # numpy arrays
             prior = utils.obj_array_from_list(prior_jax)
-            A = utils.random_A_matrix(num_obs, num_states) # TODO: replace with sampling using keys_per_element[1]
+            A_np = utils.obj_array_from_list(A_jax)
 
             obs = utils.obj_array(len(num_obs))
             for m, obs_dim in enumerate(num_obs):
                 obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim) # TODO: replace with sampling using keys_per_element[2]
 
-            qs_numpy = fpi_numpy(A, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
+            qs_numpy = fpi_numpy(A_np, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
-            # jax version
-            A = [jnp.array(a_m) for a_m in A]
             obs = [jnp.array(o_m) for o_m in obs]
-
-            qs_jax = fpi_jax(A, obs, prior_jax, num_iter=16)
+            qs_jax = fpi_jax(A_jax, obs, prior_jax, num_iter=16)
 
             for f, _ in enumerate(qs_jax):
                 self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f], atol=1e-4))
-
 
     def test_fixed_point_iteration_factorized_fullyconnected(self):
         """
@@ -122,23 +99,19 @@ class TestMessagePassing(unittest.TestCase):
         keys = jr.split(jr.PRNGKey(43), len(num_states_list)*3).reshape((len(num_states_list), 3, 2))
         for (keys_per_element, num_states, num_obs) in zip(keys, num_states_list, num_obs_list):
 
-            # jax version
-            prior_jax = random_factorized_categorical(keys_per_element[0], num_states)
-            
-            A = utils.random_A_matrix(num_obs, num_states) # TODO: replace with sampling using keys_per_element[1]
+            # jax arrays
+            prior = random_factorized_categorical(keys_per_element[0], num_states)
+            A = random_A_array(keys_per_element[1], num_obs, num_states)
 
             obs = utils.obj_array(len(num_obs))
             for m, obs_dim in enumerate(num_obs):
                 obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim) # TODO: replace with sampling using keys_per_element[2]
 
-            # jax version
-            A = [jnp.array(a_m) for a_m in A]
             obs = [jnp.array(o_m) for o_m in obs]
-
             factor_lists = len(num_obs) * [list(range(len(num_states)))]
 
-            qs_jax = fpi_jax(A, obs, prior_jax, num_iter=16)
-            qs_jax_factorized = fpi_jax_factorized(A, obs, prior_jax, factor_lists, num_iter=16)
+            qs_jax = fpi_jax(A, obs, prior, num_iter=16)
+            qs_jax_factorized = fpi_jax_factorized(A, obs, prior, factor_lists, num_iter=16)
 
             for f, _ in enumerate(qs_jax):
                 self.assertTrue(np.allclose(qs_jax[f], qs_jax_factorized[f], atol=1e-6))
@@ -158,35 +131,20 @@ class TestMessagePassing(unittest.TestCase):
         keys = jr.split(jr.PRNGKey(44), len(num_states_list)*3).reshape((len(num_states_list), 3, 2))
         for (keys_per_element, num_states, num_obs, a_deps_i) in zip(keys, num_states_list, num_obs_list, A_dependencies_list):
             
-            prior_jax = random_factorized_categorical(keys_per_element[0], num_states)
+            prior = random_factorized_categorical(keys_per_element[0], num_states)
 
             obs = utils.obj_array(len(num_obs))
             for m, obs_dim in enumerate(num_obs):
                 obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim) # TODO: replace with sampling using keys_per_element[1]
 
-            modality_keys = jr.split(keys_per_element[1], len(num_obs))
-            A_reduced = utils.obj_array(len(num_obs))
-            for m, (obs_dim, modality_key) in enumerate(zip(num_obs, modality_keys)):
-                lagging_dims = [num_states[idx] for idx in a_deps_i[m]]
-                modality_shape = (obs_dim, *lagging_dims)
-                modality_dist = jr.uniform(modality_key, shape=modality_shape)
-                A_reduced[m] = np.asarray(
-                    modality_dist / modality_dist.sum(axis=0, keepdims=True)
-                )
-
-            # jax version
-            A_reduced_jax = [jnp.array(a_m) for a_m in A_reduced]
+            A_reduced = random_A_array(keys_per_element[1], num_obs, num_states, A_dependencies=a_deps_i)
+            A_full = make_A_full(A_reduced, a_deps_i, num_obs, num_states) # create the full A matrix, where all hidden state factors are represented in the lagging dimensions of each sub-A array
+           
             obs_jax = [jnp.array(o_m) for o_m in obs]
 
-            qs_out = fpi_jax_factorized(A_reduced_jax, obs_jax, prior_jax, a_deps_i, num_iter=16)
+            qs_out = fpi_jax_factorized(A_reduced, obs_jax, prior, a_deps_i, num_iter=16)
 
-            # create the full A matrix, where all hidden state factors are represented in the lagging dimensions of each sub-A array
-            A_full = make_A_full(A_reduced, a_deps_i, num_obs, num_states)
-           
-            # jax version
-            A_full_jax = [jnp.array(a_m) for a_m in A_full]
-
-            qs_validation = fpi_jax(A_full_jax, obs_jax, prior_jax, num_iter=16)
+            qs_validation = fpi_jax(A_full, obs_jax, prior, num_iter=16)
 
             for qs_f_val, qs_f_out in zip(qs_validation, qs_out):
                 self.assertTrue(np.allclose(qs_f_val, qs_f_out))
@@ -207,15 +165,12 @@ class TestMessagePassing(unittest.TestCase):
         for num_states, num_obs, num_controls, A_deps, B_deps in zip(num_states_list, num_obs_list, num_controls_list, A_dependencies_list, B_dependencies_list):
 
             # create a version of a_deps_i where each sub-list is sorted
-            prior = [jr.dirichlet(key, alpha=jnp.ones((ns,)), shape=(batch_size,)) for ns, key in zip(num_states, jr.split(jr.PRNGKey(0), len(num_states)))] 
+            prior = vmap(lambda k: random_factorized_categorical(k, num_states), in_axes=0)(jr.split(jr.PRNGKey(0), batch_size))
 
             obs = [jr.categorical(key, logits=jnp.zeros(no), shape=(n_timesteps,batch_size)) for no, key in zip(num_obs, jr.split(jr.PRNGKey(1), len(num_obs)))]
             obs = jtu.tree_map(lambda x, no: nn.one_hot(x, num_classes=no), obs, num_obs)
 
-            A_sub_shapes = [ [ns for f, ns in enumerate(num_states) if f in a_deps_i] for a_deps_i in A_deps ]
-            A_sampling_keys = jr.split(jr.PRNGKey(2), len(num_obs))
-            A = [jr.dirichlet(key, alpha=jnp.ones(no) / no, shape=factor_shapes) for no, factor_shapes, key in zip(num_obs, A_sub_shapes, A_sampling_keys)]
-            A = jtu.tree_map(lambda a: jnp.moveaxis(a, -1, 0), A) # move observations into leading dimensions
+            A = random_A_array(jr.PRNGKey(2), num_obs, num_states, A_dependencies=A_deps)
             A = jtu.tree_map(lambda a: jnp.broadcast_to(a, (batch_size,) + a.shape), A)
 
             B_sub_shapes = [ [ns for f, ns in enumerate(num_states) if f in b_deps_i] + [nc] for nc, b_deps_i in zip(num_controls, B_deps) ]
