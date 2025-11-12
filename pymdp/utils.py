@@ -9,6 +9,7 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import jax
 from jax import numpy as jnp, random as jr
 from jax import tree_util as jtu
+from jax import nn
 import numpy as np
 import equinox as eqx
 import math
@@ -205,7 +206,6 @@ def init_agent_from_spec(num_obs, num_states, A_dependencies, A_sparsity_level=N
             # artificially controlling the amount of zeros in A matrices
         
             A_m = np.zeros([batch_size] + full_dimension)
-            total_elements = np.prod(lagging_dims)
             nonzero_per_distribution = max(1, int((1.0 - A_sparsity_level) * obs_dim_i))
 
             for batch in range(batch_size):

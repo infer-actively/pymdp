@@ -284,7 +284,7 @@ class TestInferStatesComparison(unittest.TestCase):
 
             if should_skip_extreme:
                 skipped_count += 1
-                print(f"  ⏭️  Skipped due to extreme dimensions")
+                print("  ⏭️  Skipped due to extreme dimensions")
                 continue
 
             with self.subTest(spec=spec['name']):
@@ -320,7 +320,7 @@ class TestInferStatesComparison(unittest.TestCase):
 
             if should_skip_extreme:
                 skipped_count += 1
-                print(f"  ⏭️  Skipped due to extreme dimensions")
+                print("  ⏭️  Skipped due to extreme dimensions")
                 continue
 
             with self.subTest(spec=spec['name']):
@@ -331,7 +331,7 @@ class TestInferStatesComparison(unittest.TestCase):
 
     def test_sparsity_with_batch(self):
         """Test sparse matrix support with batch size."""
-        print(f"\nTesting sparsity support (with batch)")
+        print("\nTesting sparsity support (with batch)")
 
         # Use first spec for sparsity test
         spec = self.AGENT_SPECS[0]
@@ -343,7 +343,7 @@ class TestInferStatesComparison(unittest.TestCase):
         # Test with sparsity using the helper function
         self._test_single_spec_with_batch(spec, batch_size=batch_size, A_sparsity_level=A_sparsity_level, use_sparsity=True)
 
-        print(f"✓ Sparse matrix operations completed successfully")
+        print("✓ Sparse matrix operations completed successfully")
 
 if __name__ == '__main__':
     unittest.main()
