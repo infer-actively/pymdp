@@ -9,6 +9,7 @@ from multimethod import multimethod
 from jaxtyping import ArrayLike
 from jax.experimental import sparse
 from jax.experimental.sparse._base import JAXSparse
+import jax.experimental.sparse as jsparse
 
 MINVAL = jnp.finfo(float).eps
 
@@ -22,8 +23,9 @@ def stable_cross_entropy(x, y):
     return - xlogy(x, y).sum()
 
 def log_stable(x):
+    if isinstance(x, jsparse.BCOO):
+        x = jsparse.todense(x)
     return jnp.log(jnp.clip(x, min=MINVAL))
-
 
 @multimethod
 @partial(jit, static_argnames=["keep_dims"])
@@ -219,6 +221,81 @@ def dirichlet_expected_value(dir_arr, event_dim=0):
     expected_val = jnp.divide(dir_arr, dir_arr.sum(axis=event_dim, keepdims=True))
     return expected_val
 
+
+# Infer states hybrid
+
+# NOTE: In this script, factor_dot_flex and factor_dot are JIT-compiled:
+#   @partial(jit, static_argnames=["dims", "keep_dims"])
+# In the edge deployment workflow, these functions were *not* JIT-compiled at this stage.
+
+def compute_log_likelihoods_padded(obs_padded, A_padded):
+    return log_stable(
+        (jnp.expand_dims(obs_padded, tuple(range(obs_padded.ndim, A_padded.ndim))) * A_padded).sum(axis=1)
+    )
+
+def deconstruct_lls(lls_padded, A_shapes):
+    # Extract batch size from the first A_shape (all should have the same batch size)
+    batch_size = lls_padded.shape[0] // len(A_shapes)
+    lls = []
+    for i, a_shape in enumerate(A_shapes):
+        ll = lls_padded[i*batch_size : (i+1)*batch_size]
+        idx = [
+            slice(0, batch_size)
+        ] + [
+            slice(0, dim) for dim in a_shape[2:]
+        ] + [
+            0 for _ in range(ll.ndim - len(a_shape) + 1)
+        ]
+        lls.append(ll[tuple(idx)])
+    return lls
+
+# Infer states hybrid block
+
+def compute_log_likelihoods_flat_block_diag_einsum(A_big: jnp.ndarray, obs_big: jnp.ndarray):
+    """Step 1: Compute flat log-likelihoods using block diagonal matrix multiplication."""
+    # ll_flat = A_big @ obs_big
+    ll_flat = jnp.einsum('brc,bc->br', A_big, obs_big)
+    if isinstance(ll_flat, jsparse.BCOO):
+        ll_flat = jsparse.todense(ll_flat)
+    return log_stable(ll_flat)
+
+def compute_log_likelihoods_flat_block_diag(A_big: jnp.ndarray, obs_big: jnp.ndarray):
+    """Step 1: Compute flat log-likelihoods using block diagonal matrix multiplication."""
+    ll_flat = A_big @ obs_big
+    if isinstance(ll_flat, jsparse.BCOO):
+        ll_flat = jsparse.todense(ll_flat)
+    return log_stable(ll_flat)
+
+def deconstruct_log_likelihoods_block_diag(ll_flat: jnp.ndarray, state_shapes, cuts):
+    """Step 2: Deconstruct flat log-likelihoods back to original shapes."""
+    pieces = jnp.split(ll_flat, cuts, axis=1)
+    out = [p.reshape(p.shape[0], *shape) for p, shape in zip(pieces, state_shapes)]
+    return out
+
+def compute_log_likelihoods_block_diag(A_big, obs_big, state_shapes, cuts, use_einsum=False):
+    """Compute log‑likelihoods using block diagonal approach (atomic version)."""
+    # obs_big = concatenate_observations_block_diag(obs_list)
+    if use_einsum:
+        ll_flat = compute_log_likelihoods_flat_block_diag_einsum(A_big, obs_big)
+    else:
+        ll_flat = vmap(compute_log_likelihoods_flat_block_diag)(A_big, obs_big)
+    out = deconstruct_log_likelihoods_block_diag(ll_flat, state_shapes, cuts)
+    return out
+
+
+# Infer states end2end padded
+
+def log_stable_sparse(x):
+    if isinstance(x, jsparse.BCOO):
+        x = x.sum_duplicates(nse=x.nse)
+        return jsparse.BCOO((jnp.log(jnp.clip(x.data, min=MINVAL)), x.indices), shape=x.shape)
+    return jnp.log(jnp.clip(x, min=MINVAL))
+    
+def compute_log_likelihood_per_modality_end2end2_padded(obs_padded, A_padded, sparsity):
+    likelihood = (
+        jnp.expand_dims(obs_padded, tuple(range(obs_padded.ndim, A_padded.ndim))) * A_padded
+    ).sum(axis=2)
+    return log_stable(likelihood) if sparsity == 'll_only' else log_stable_sparse(likelihood)
 
 if __name__ == "__main__":
     obs = [0, 1, 2]
