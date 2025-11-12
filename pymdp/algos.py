@@ -347,6 +347,122 @@ def run_online_filtering(A, B, obs, prior, A_dependencies, num_iter=1, tau=1.):
     qs = update_marginals(get_mmp_messages, obs, A, B, prior, A_dependencies, num_iter=num_iter, tau=tau)
     return qs 
 
+
+# Infer states hybrid & hybdrid block
+
+def run_factorized_fpi_hybrid(log_likelihoods, prior, A_dependencies, num_iter):
+    
+    log_prior = jtu.tree_map(log_stable, prior)
+    log_q = jtu.tree_map(jnp.zeros_like, prior)
+
+    def scan_fn(carry, t):
+        log_q = carry
+        q = jtu.tree_map(nn.softmax, log_q)
+        marginal_ll = all_marginal_log_likelihood(q, log_likelihoods, A_dependencies)
+        log_q = jtu.tree_map(add, marginal_ll, log_prior)
+        return log_q, None
+
+    res, _ = lax.scan(scan_fn, log_q, jnp.arange(num_iter))
+    qs = jtu.tree_map(nn.softmax, res)
+    
+    return jtu.tree_map(lambda x: jnp.expand_dims(x, 0), qs)
+
+# Infer states end2end padded
+
+def get_qs_padded(qs, max_state_dim):
+    qs_padded = []
+    for q in qs:
+        qs_padded.append(jnp.zeros((q.shape[0], max_state_dim)).at[:, 0:q.shape[1]].set(q))
+    return qs_padded
+
+def compute_qL_marginals(lls_padded, qs_padded, A_dependencies, max_state_dim):
+
+    dp_dict = {}
+    qL_marginals_padded = [[] for i in range(len(A_dependencies))]
+    
+    for i, A_dep in enumerate(A_dependencies):
+    
+        if len(A_dep) == 1:
+            
+            qL_marginals_padded[i].append(lls_padded[i])
+    
+        else:
+            
+            for j in range(len(A_dep)):
+    
+                axes_factors = tuple((axis, factor) for axis, factor in enumerate(A_dep) if j != axis)
+    
+                existing_key = None
+                for sublen in range(len(axes_factors), 0, -1):
+                    if axes_factors[:sublen] in dp_dict:
+                        existing_key = axes_factors[:sublen]
+                        break
+    
+                new_key = () if existing_key is None else existing_key
+                offset = 0 if existing_key is None else len(existing_key)
+                curr_prod = lls_padded if existing_key is None else dp_dict[existing_key]
+                
+                for axis, factor in axes_factors[offset:]:
+                    new_key = new_key + ((axis, factor),)
+                    q_reshaped = qs_padded[factor].reshape(
+                        [1, lls_padded.shape[1]] + [max_state_dim if k == axis else 1 for k in range(lls_padded.ndim - 2)]
+                    )
+                    curr_prod = curr_prod * q_reshaped
+                    dp_dict[new_key] = curr_prod
+
+                qL_marginals_padded[i].append(
+                    dp_dict[axes_factors][i].sum(
+                        axis=[axis + 1 for axis, _ in axes_factors]
+                    )
+                )
+
+    return qL_marginals_padded
+
+def qL_flatten(qL_marginals_padded):
+    
+    qL_marginals = []
+    for _qs in qL_marginals_padded:
+        qL_marginals.append([])
+        for _q in _qs:
+            idx = (slice(0, _q.shape[0]), slice(0, _q.shape[1])) + tuple(0 for _ in range(_q.ndim - 2))
+            qL_marginals[-1].append(_q[idx])
+            
+    return qL_marginals
+
+def compute_qL_all(qL_marginals, A_dependencies, num_factors):
+
+    qL_all = [jnp.zeros_like(qL_marginals[0][0])] * num_factors
+    
+    for m, factor_list_m in enumerate(A_dependencies):
+        for l, f in enumerate(factor_list_m):
+            qL_all[f] += qL_marginals[m][l]
+
+    return qL_all
+
+def run_factorized_fpi_end2end_padded(lls_padded, prior, A_dependencies, max_obs_dim, max_state_dim, num_iter):
+    
+    log_prior = jtu.tree_map(log_stable, prior)
+    log_q = jtu.tree_map(jnp.zeros_like, prior)
+
+    def scan_fn(carry, t):
+        
+        log_q = carry
+        q = jtu.tree_map(nn.softmax, log_q)
+        
+        qs_padded = get_qs_padded(q, max_state_dim)
+        qL_marginals_padded = compute_qL_marginals(lls_padded, qs_padded, A_dependencies, max_state_dim)
+        qL_flat = qL_flatten(qL_marginals_padded)
+        qL_all = compute_qL_all(qL_flat, A_dependencies, len(q))
+        
+        log_q = jtu.tree_map(lambda q, lp: q[:, 0:lp.shape[1]] + lp, qL_all, log_prior)
+        
+        return log_q, None
+
+    res, _ = lax.scan(scan_fn, log_q, jnp.arange(num_iter))
+    qs = jtu.tree_map(nn.softmax, res)
+
+    return jtu.tree_map(lambda x: jnp.expand_dims(x, 1), qs)
+
 if __name__ == "__main__":
     prior = [jnp.ones(2)/2, jnp.ones(2)/2, nn.softmax(jnp.array([0, -80., -80., -80, -80.]))]
     obs = [nn.one_hot(0, 5), nn.one_hot(5, 10)]
