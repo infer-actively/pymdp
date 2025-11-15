@@ -9,8 +9,11 @@ __author__: Conor Heins, Alexander Tschantz, Brennan Klein
 import jax
 from jax import numpy as jnp, random as jr
 from jax import tree_util as jtu
+from jax import nn
 import numpy as np
 import equinox as eqx
+import math
+import itertools
 
 import io
 import matplotlib.pyplot as plt
@@ -207,3 +210,141 @@ def fig2img(fig):
     im = data.reshape((int(h), int(w), -1))
     plt.close(fig)
     return im[:, :, :3]
+
+
+# Infer states optimized methods
+
+def apply_padding_batched(xs):
+    '''xs: list of arrays'''
+    
+    max_rank = max(x.ndim for x in xs)
+    max_dims = [sum(x.shape[0] for x in xs)] + [max(x.shape[i] for x in xs if i < x.ndim) for i in range(1, max_rank)]
+    
+    xs_padded = jnp.zeros(max_dims, dtype=xs[0].dtype)
+
+    i = 0
+    for x in xs:
+        slices = (slice(i, i+x.shape[0]),)
+        for j in range(1, max_rank):
+            if j < x.ndim:
+                slices += (slice(0, x.shape[j]),)
+            else:
+                slices += (0,)
+        xs_padded = xs_padded.at[slices].set(x)
+        i += x.shape[0]
+        
+    return xs_padded
+
+def get_sample_obs(num_obs, batch_size=1):
+    obs = [np.random.randint(0, obs_dim, (batch_size, 1)) for obs_dim in num_obs]
+    return [jnp.array(o) for o in obs]
+
+def init_agent_from_spec(num_obs, num_states, A_dependencies, A_sparsity_level=None, batch_size=1):
+
+    A = []
+    
+    for i, obs_dim_i in enumerate(num_obs):
+        
+        lagging_dims = [num_states[f_j] for f_j in A_dependencies[i]]
+        full_dimension = [obs_dim_i] + lagging_dims
+
+        if A_sparsity_level is not None:
+
+            # artificially controlling the amount of zeros in A matrices
+        
+            A_m = np.zeros([batch_size] + full_dimension)
+            nonzero_per_distribution = max(1, int((1.0 - A_sparsity_level) * obs_dim_i))
+
+            for batch in range(batch_size):
+        
+                it = np.nditer(np.empty(lagging_dims), flags=['multi_index'])
+                for _ in it:
+                    idx = it.multi_index
+                    nonzero_indices = np.random.choice(obs_dim_i, size=nonzero_per_distribution, replace=False)
+                    values = np.random.rand(nonzero_per_distribution)
+                    values /= values.sum()
+                    for i, val in zip(nonzero_indices, values):
+                        A_m[(batch, i) + idx] = val
+
+        else:
+            A_m = [np.random.rand(*full_dimension) for batch in range(batch_size)]
+            A_m = [a / a.sum(axis=0, keepdims=True) for a in A_m]
+            A_m = np.concatenate([a[np.newaxis, ...] for a in A_m], axis=0)
+        
+        A.append(A_m)
+    
+    D = [(1.0 / ns) * np.ones((batch_size, ns)) for ns in num_states]
+    
+    A = [jnp.array(a) for a in A]
+    D = [jnp.array(d) for d in D]
+    
+    # A = [jnp.expand_dims(a, axis=0) for a in A]
+    # D = [jnp.expand_dims(d, axis=0) for d in D]
+
+    return A, D    
+
+# Block diagonal approach functions
+def build_block_diag_A(A_list: List[jnp.ndarray]):
+    """Return block‑diagonal matrix and per‑modality state shapes."""
+    A_flat = [a.reshape(a.shape[0], -1, a.shape[-1]) for a in A_list]
+    state_shapes = tuple(tuple(int(d) for d in a.shape[1:-1]) for a in A_list)  # hashable tuples
+    
+    sizes = tuple(math.prod(shape) for shape in state_shapes)   # rows per modality
+    cuts  = tuple(itertools.accumulate(sizes))[:-1]
+    
+    row_off = jnp.cumsum(jnp.array([0] + [a.shape[1] for a in A_flat]))
+    col_off = jnp.cumsum(jnp.array([0] + [a.shape[-1] for a in A_flat]))
+    bs, rows, cols = A_list[0].shape[0], int(row_off[-1]), int(col_off[-1])
+
+    A_big = jnp.zeros((bs, rows, cols), dtype=A_list[0].dtype)
+    for m, a in enumerate(A_flat):
+        r0, r1 = int(row_off[m]),   int(row_off[m + 1])
+        c0, c1 = int(col_off[m]),   int(col_off[m + 1])
+        A_big = A_big.at[:, r0:r1, c0:c1].set(a)
+    return A_big, state_shapes, cuts
+
+# Preprocessing functions for block diagonal approach
+def preprocess_A_for_block_diag(A):
+    """Preprocess A matrices for block diagonal approach."""
+    A_big, state_shapes, cuts = build_block_diag_A(A)
+    return A_big, state_shapes, cuts
+
+def prepare_obs_for_block_diag(obs, num_obs):
+    """Prepare observation vectors for block diagonal approach."""
+    # Convert to one-hot if needed
+    o_vec = [nn.one_hot(o, num_obs[m]) for m, o in enumerate(obs)]
+    obs_tmp = jtu.tree_map(lambda x: x[-1], o_vec)
+    return obs_tmp
+
+def concatenate_observations_block_diag(obs_list: List[jnp.ndarray]):
+    """Step 0: Concatenate observations for block diagonal approach."""
+    return jnp.concatenate(obs_list, axis=1)
+
+def apply_A_end2end_padding_batched(A):
+    
+    max_rank = max(a.ndim for a in A)
+    max_dims = [len(A), A[0].shape[0], max(a.shape[1] for a in A)] + [max(max(a.shape[2:]) for a in A)]*(max_rank - 2)
+    
+    A_padded = jnp.zeros(max_dims, dtype=A[0].dtype)
+
+    for i, a in enumerate(A):
+        slices = (i, slice(0, a.shape[0]))
+        for j in range(1, max_rank):
+            if j < a.ndim:
+                slices += (slice(0, a.shape[j]),)
+            else:
+                slices += (0,)
+        A_padded = A_padded.at[slices].set(a)
+        
+    return A_padded
+
+def apply_obs_end2end_padding_batched(obs, max_obs_dim):
+    
+    full_shape = [len(obs), obs[0].shape[0], max_obs_dim]
+    
+    obs_padded = jnp.zeros(full_shape, dtype=obs[0].dtype)
+
+    for i, o in enumerate(obs):
+        obs_padded = obs_padded.at[i, :, slice(0, o.shape[1])].set(o)
+        
+    return obs_padded
