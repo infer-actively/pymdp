@@ -6,6 +6,7 @@ __author__: Dimitrije Markovic, Conor Heins
 """
 
 import unittest
+from functools import partial
 
 import numpy as np
 from jax import numpy as jnp, random as jr
@@ -14,6 +15,7 @@ import jax.tree_util as jtu
 import math as pymath
 
 from pymdp import utils
+from pymdp import control
 from pymdp.agent import Agent
 from pymdp.maths import compute_log_likelihood_single_modality, log_stable
 from equinox import Module, EquinoxRuntimeError
@@ -569,6 +571,60 @@ class TestAgentJax(unittest.TestCase):
             A_batched, B_batched, pA_batched, pB_batched, D_batched
         )
         self.assertIsInstance(agent_instance, Agent)
+    
+    def test_b_learning_updates_inductive_matrix(self):
+        """
+        Ensure the inductive I matrices are recomputed after B-learning when inductive inference is enabled.
+        """
+        num_obs = [2]
+        num_states = [2]
+        num_controls = [2]
+        A_dependencies = [[0]]
+        B_dependencies = [[0]]
+        batch_size = 1
+        inductive_depth = 3
+
+        a_key, b_key, d_key = jr.split(jr.PRNGKey(777), 3)
+        A = utils.random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
+        B = utils.random_B_array(b_key, num_states, num_controls, B_dependencies=B_dependencies)
+        D = utils.random_factorized_categorical(d_key, num_states)
+        H = [jnp.array([1.0, 0.0])]
+        pB = [jnp.ones_like(b) for b in B]
+
+        agent = Agent(
+            A,
+            B,
+            D=D,
+            H=H,
+            pB=pB,
+            A_dependencies=A_dependencies,
+            B_dependencies=B_dependencies,
+            num_controls=num_controls,
+            batch_size=batch_size,
+            learn_B=True,
+            use_inductive=True,
+            inductive_depth=inductive_depth,
+            inductive_threshold=0.1,
+        )
+
+        beliefs = [jnp.array([[[0.7, 0.3], [0.2, 0.8]]], dtype=jnp.float32)]
+        dummy_outcomes = [jnp.zeros((batch_size,), dtype=jnp.int32)]
+        actions = jnp.array([[[1]]], dtype=jnp.int32)
+
+        agent = agent.infer_parameters(
+            beliefs,
+            dummy_outcomes,
+            actions,
+        )
+
+        expected_I = vmap(partial(control.generate_I_matrix, depth=agent.inductive_depth))(
+            agent.H,
+            agent.B,
+            agent.inductive_threshold,
+        )
+
+        for f in range(agent.num_factors):
+            self.assertTrue(jnp.array_equal(agent.I[f], expected_I[f]))
 
     def test_valid_gradients_one_step_ahead(self):
         """

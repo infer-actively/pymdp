@@ -464,7 +464,7 @@ class Agent(Module):
             )
             # if you have updated your beliefs about transitions, you need to re-compute the I matrix used for inductive inferenece
             if self.use_inductive and self.H is not None:
-                I_updated = vmap(control.generate_I_matrix)(self.H, E_qB, self.inductive_threshold, self.inductive_depth)
+                I_updated = vmap(partial(control.generate_I_matrix, depth=self.inductive_depth))(self.H, E_qB, self.inductive_threshold)
                 agent = tree_at(lambda x: (x.B, x.pB, x.I), agent, (E_qB, qB, I_updated))
             else:
                 agent = tree_at(lambda x: (x.B, x.pB), agent, (E_qB, qB))
