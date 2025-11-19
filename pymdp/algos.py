@@ -104,7 +104,7 @@ def mirror_gradient_descent_step(tau, ln_A, lnB_past, lnB_future, ln_qs):
     return qs
 
 def update_marginals(get_messages, obs, A, B, prior, A_dependencies, B_dependencies, num_iter=1, tau=1.,):
-    """" Version of marginal update that uses a sparse dependency matrix for A """
+    """ Version of marginal update that uses a sparse dependency matrix for A """
 
     T = obs[0].shape[0]
     ln_B = jtu.tree_map(log_stable, B)
@@ -373,4 +373,3 @@ if __name__ == "__main__":
 
     # log_prior = jnp.array([0, -80., -80., -80, -80.])
     # print(jit(grad(sum_prod))(log_prior))
-

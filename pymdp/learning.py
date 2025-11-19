@@ -71,7 +71,7 @@ def update_state_transition_dirichlet_f(pB_f, actions_f, joint_qs_f, lr=1.0):
     return qB_f, dirichlet_expected_value(qB_f)
 
 def update_state_transition_dirichlet(pB, B, joint_beliefs, actions, *, num_controls, lr, factors_to_update='all'):
-    """"
+    """
     Update posterior Diriichlet parameters of the state transition likelihood model (B) given the joint beliefs over hidden states and actions.
 
     Supports selective learning of only particular hidden state factors via the `factors_to_update` argument, which can either be "all" or a list of factor indices to update.

@@ -51,7 +51,7 @@ def validate_normalization(tensor: Tensor, axis: int = 1, tensor_name: str = "te
     eqx.error_if(sums, jnp.any(~jnp.isclose(sums,1.0)), f"Please ensure that all distributions along {tensor_name}'s {axis}-th axis are properly normalised and sum to 1...")
 
 def random_factorized_categorical(key, dims_per_var: Sequence[int]) -> List[jax.Array]:
-    """"
+    """
     Creates a list of jax arrays representing random Categorical distributions with dimensions
     given by dims_per_var[i]. In the context of observations or hidden state posteriors,
     this can seen as a factorized categorical distribution over multiple variables, i.e.
@@ -64,7 +64,7 @@ def random_factorized_categorical(key, dims_per_var: Sequence[int]) -> List[jax.
     return jtu.tree_map(lambda dim, i: jr.dirichlet(keys[i], alpha=jnp.ones(dim)), dims_per_var, list(range(num_vars)))
 
 def random_A_array(key, num_obs, num_states, A_dependencies=None) -> List[jax.Array]:
-    """"
+    """
     Creates a list of jax arrays representing observation likelihoods (A tensors or A matrices) with shapes
     determined by num_obs and num_states, and factorized according to A_factor_list.
 
@@ -90,7 +90,7 @@ def random_A_array(key, num_obs, num_states, A_dependencies=None) -> List[jax.Ar
     return A
 
 def random_B_array(key, num_states, num_controls, B_dependencies=None, B_action_dependencies=None):
-    """"
+    """
     Creates a list of jax arrays representing state transition likelihoods (B tensors or B matrices) with shapes
     determined by num_states and num_controls, and factorized according to B_dependencies and B_action_dependencies.
     

@@ -170,7 +170,7 @@ class MMP(unittest.TestCase):
         for f in range(num_factors):
             self.assertTrue(np.isclose(result_spm[f].squeeze(), result_pymdp[f]).all())
     
-    """"
+    """
     @ NOTE (from Conor Heins 07.04.2021)
     Please keep this uncommented code below here. We need to figure out how to re-include optional arguments e.g. `save_vfe_seq` 
     into `run_mmp` so that important tests like these can run again some day. My only dumb solution for now would be to just have a 'UnitTest variant' of the MMP function
