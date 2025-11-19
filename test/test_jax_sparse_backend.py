@@ -14,7 +14,7 @@ import jax.tree_util as jtu
 from jax import random as jr
 
 from pymdp.inference import smoothing_ovf
-from pymdp.legacy import utils
+from pymdp import utils
 from pymdp.legacy.control import construct_policies
 
 from jax.experimental import sparse
@@ -73,59 +73,23 @@ def make_model_configs(source_seed=0, num_models=4) -> Dict:
     }
 
 
-def make_A_full(
-    A_reduced: List[np.ndarray],
-    A_dependencies: List[List[int]],
-    num_obs: List[int],
-    num_states: List[int],
-) -> np.ndarray:
-    """
-    Given a reduced A matrix, `A_reduced`, and a list of dependencies between hidden state factors and observation modalities, `A_dependencies`,
-    return a full A matrix, `A_full`, where `A_full[m]` is the full A matrix for modality `m`. This means all redundant conditional independencies
-    between observation modalities `m` and all hidden state factors (i.e. `range(len(num_states))`) are represented as lagging dimensions in `A_full`.
-    """
-    A_full = utils.initialize_empty_A(
-        num_obs, num_states
-    )  # initialize the full likelihood tensor (ALL modalities might depend on ALL factors)
-    all_factors = range(len(num_states))  # indices of all hidden state factors
-    for m, A_m in enumerate(A_full):
-
-        # Step 1. Extract the list of the factors that modality `m` does NOT depend on
-        non_dependent_factors = list(set(all_factors) - set(A_dependencies[m]))
-
-        # Step 2. broadcast or tile the reduced A matrix (`A_reduced`) along the dimensions of corresponding to
-        # `non_dependent_factors`, to give it the full shape of `(num_obs[m], *num_states)`
-        expanded_dims = [num_obs[m]] + [1 if f in non_dependent_factors else ns for (f, ns) in enumerate(num_states)]
-        tile_dims = [1] + [ns if f in non_dependent_factors else 1 for (f, ns) in enumerate(num_states)]
-        A_full[m] = np.tile(A_reduced[m].reshape(expanded_dims), tile_dims)
-
-    return A_full
-
-
 class TestJaxSparseOperations(unittest.TestCase):
 
     def test_sparse_smoothing(self):
         cfg = {"source_seed": 1, "num_models": 4}
         gm_params = make_model_configs(**cfg)
-        num_states_list, num_obs_list = (
-            gm_params["ns_list"],
-            gm_params["no_list"],
-        )
-        num_controls_list, _B_deps_list = (
-            gm_params["nc_list"],
-            gm_params["B_deps_list"],
-        )
-
-        num_states_list = num_states_list
+        num_states_list = gm_params["ns_list"]
+        
+        num_controls_list = gm_params["nc_list"]
 
         n_time = 8
         n_batch = 1
 
-        for num_states, num_obs, num_controls in zip(num_states_list, num_obs_list, num_controls_list):
+        b_keys = jr.split(jr.PRNGKey(42), cfg["num_models"])
+        for b_key, num_states, num_controls in zip(b_keys, num_states_list, num_controls_list):
 
             # Randomly create a B matrix that contains a lot of zeros
-            B = utils.random_B_matrix(num_states, num_controls)
-            B = [jnp.array(x.astype(np.float32)) for x in B]
+            B = utils.random_B_array(b_key, num_states, num_controls)
             # Map all values below the mean to 0 to create a B tensor with zeros
             B = jtu.tree_map(
                 lambda x: jnp.array(utils.norm_dist(jnp.clip((x - x.mean()), 0, 1))),

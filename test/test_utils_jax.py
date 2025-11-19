@@ -15,6 +15,7 @@ from jax import random as jr
 from equinox import EquinoxRuntimeError
 
 from pymdp import utils as jax_utils
+from pymdp.legacy import utils as legacy_utils
 
 class TestUtils(unittest.TestCase):
 
@@ -75,6 +76,56 @@ class TestUtils(unittest.TestCase):
             with self.subTest(modality=idx):
                 self.assertEqual(A_m.shape, (n_o, *tuple(num_states)))
                 marginal_sums = A_m.sum(axis=0)
+                self.assertTrue(bool(jnp.allclose(marginal_sums, jnp.ones_like(marginal_sums))))
+
+    def test_random_B_array_shapes_and_normalization(self):
+        """`random_B_array` should honor provided dependencies and normalise per control slice"""
+
+        key = jr.PRNGKey(11)
+        num_states = [3, 2]
+        num_controls = [2, 3]
+        B_dependencies = [[0, 1], [1]]
+        B_action_dependencies = [[0], [0, 1]]
+
+        B = jax_utils.random_B_array(
+            key,
+            num_states,
+            num_controls,
+            B_dependencies=B_dependencies,
+            B_action_dependencies=B_action_dependencies,
+        )
+
+        expected_shapes = [
+            (num_states[0], num_states[0], num_states[1], num_controls[0]),
+            (num_states[1], num_states[1], num_controls[0], num_controls[1]),
+        ]
+
+        self.assertEqual(len(B), len(num_states))
+        for idx, (B_f, expected_shape) in enumerate(zip(B, expected_shapes)):
+            with self.subTest(factor=idx):
+                self.assertEqual(B_f.shape, expected_shape)
+                marginal_sums = B_f.sum(axis=0)
+                self.assertTrue(bool(jnp.allclose(marginal_sums, jnp.ones_like(marginal_sums))))
+
+    def test_random_B_array_defaults_to_self_dependencies(self):
+        """`random_B_array` should default to self-transition dependencies when none provided"""
+
+        key = jr.PRNGKey(13)
+        num_states = [4, 5]
+        num_controls = [2, 3]
+
+        B = jax_utils.random_B_array(key, num_states, num_controls)
+
+        expected_shapes = [
+            (num_states[0], num_states[0], num_controls[0]),
+            (num_states[1], num_states[1], num_controls[1]),
+        ]
+
+        self.assertEqual(len(B), len(num_states))
+        for idx, (B_f, expected_shape) in enumerate(zip(B, expected_shapes)):
+            with self.subTest(factor=idx):
+                self.assertEqual(B_f.shape, expected_shape)
+                marginal_sums = B_f.sum(axis=0)
                 self.assertTrue(bool(jnp.allclose(marginal_sums, jnp.ones_like(marginal_sums))))
     
     def test_norm_dist_list_version(self):
@@ -168,6 +219,25 @@ class TestUtils(unittest.TestCase):
         # should fail on axis=1 (each row sums to 2/3)
         with self.assertRaises(EquinoxRuntimeError):
             jax_utils.validate_normalization(t, axis=1, tensor_name="axis1_bad")
+
+    def test_create_controllable_B_matches_legacy(self):
+        """`create_controllable_B` should reproduce the legacy construction semantics"""
+
+        num_states = [2, 3]
+        num_controls = [2, 3]
+
+        legacy_B = legacy_utils.construct_controllable_B(num_states, num_controls)
+        jax_B = jax_utils.create_controllable_B(num_states, num_controls)
+
+        self.assertEqual(len(jax_B), len(num_states))
+        for idx, (jax_factor, legacy_factor, ns, nc) in enumerate(zip(jax_B, legacy_B, num_states, num_controls)):
+            with self.subTest(factor=idx):
+                self.assertEqual(jax_factor.shape, (ns, ns, nc))
+                factor_np = np.array(jax_factor)
+                self.assertTrue(np.allclose(factor_np, legacy_factor))
+                # summing over future states should yield ones for each (current state, action) pair
+                marginal = factor_np.sum(axis=0)
+                self.assertTrue(np.allclose(marginal, np.ones_like(marginal)))
 
 
 if __name__ == "__main__":

@@ -13,10 +13,9 @@ from jax import vmap, nn, jit, grad
 import jax.tree_util as jtu
 import math as pymath
 
-from pymdp.legacy import utils
+from pymdp import utils
 from pymdp.agent import Agent
 from pymdp.maths import compute_log_likelihood_single_modality, log_stable
-from pymdp.utils import norm_dist, random_factorized_categorical, random_A_array, list_array_scaled
 from equinox import Module, EquinoxRuntimeError
 
 class TestAgentJax(unittest.TestCase):
@@ -33,15 +32,15 @@ class TestAgentJax(unittest.TestCase):
         num_controls = [2, 3, 1]
 
         A_dependencies = [[0], [0, 1], [0, 1, 2]]
-        B_factor_list = [[0], [0, 1], [1, 2]]
+        B_dependencies = [[0], [0, 1], [1, 2]]
 
-        A = random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
-        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=None)
+        A = utils.random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
+        B = utils.random_B_array(b_key, num_states, num_controls, B_dependencies=B_dependencies)
 
         agent = Agent(
             A, B, 
             A_dependencies=A_dependencies, 
-            B_dependencies=B_factor_list, 
+            B_dependencies=B_dependencies, 
             num_controls=num_controls,
         )
 
@@ -51,7 +50,7 @@ class TestAgentJax(unittest.TestCase):
             self.assertTrue(agent.C[m].shape == (1, num_obs[m]))
 
         for f in range(len(num_states)):
-            num_states_f = tuple([num_states[f] for f in B_factor_list[f]])
+            num_states_f = tuple([num_states[f] for f in B_dependencies[f]])
             self.assertTrue(agent.B[f].shape == (1, num_states[f]) + num_states_f + (num_controls[f],))
             self.assertTrue(agent.D[f].shape == (1, num_states[f]))
         
@@ -64,17 +63,17 @@ class TestAgentJax(unittest.TestCase):
         num_states = [4, 5, 2]
         num_controls = [2, 3, 2]
         A_dependencies = [[0, 1], [1]]
-        B_factor_list = [[0], [0, 1, 2], [2]]
-        B_factor_control_list = [[], [0, 1], [0, 2]]
+        B_dependencies = [[0], [0, 1, 2], [2]]
+        B_action_dependencies = [[], [0, 1], [0, 2]]
 
-        A = random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
-        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=B_factor_control_list)
+        A = utils.random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
+        B = utils.random_B_array(b_key, num_states, num_controls, B_dependencies=B_dependencies, B_action_dependencies=B_action_dependencies    )
 
         agent = Agent(
             A, B, 
             A_dependencies=A_dependencies, 
-            B_dependencies=B_factor_list, 
-            B_action_dependencies=B_factor_control_list,
+            B_dependencies=B_dependencies, 
+            B_action_dependencies=B_action_dependencies,
             num_controls=num_controls,
             sampling_mode="full",
         )
@@ -88,14 +87,14 @@ class TestAgentJax(unittest.TestCase):
             self.assertTrue(agent.C[m].shape == (1, num_obs[m]))
 
         num_controls_flattened = []
-        for f,action_dependency in enumerate(B_factor_control_list):
+        for f,action_dependency in enumerate(B_action_dependencies):
             if action_dependency == []:
                 num_controls_f_flattened = 1
             else:
                 num_controls_f_flattened = pymath.prod([num_controls[d] for d in action_dependency])
 
             num_controls_flattened.append(num_controls_f_flattened)
-            num_states_f = tuple([num_states[f] for f in B_factor_list[f]])
+            num_states_f = tuple([num_states[f] for f in B_dependencies[f]])
             self.assertTrue(agent.B[f].shape == (1, num_states[f]) + num_states_f + (num_controls_f_flattened,))
             self.assertTrue(agent.D[f].shape == (1, num_states[f]))
         self.assertTrue(agent.num_controls == num_controls_flattened)
@@ -113,15 +112,15 @@ class TestAgentJax(unittest.TestCase):
         a_key, b_key = jr.split(jr.PRNGKey(2), 2)
     
         A_dependencies = [[0], [0, 1], [0, 1, 2]]
-        B_factor_list = [[0], [0, 1], [1, 2]]
+        B_dependencies = [[0], [0, 1], [1, 2]]
 
-        A = random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
-        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=None)
+        A = utils.random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
+        B = utils.random_B_array(b_key, num_states, num_controls, B_dependencies=B_dependencies, B_action_dependencies=None)
 
         agent = Agent(
             A, B, 
             A_dependencies=A_dependencies, 
-            B_dependencies=B_factor_list, 
+            B_dependencies=B_dependencies, 
             num_controls=num_controls,
             batch_size=desired_batch_size,
         )
@@ -132,7 +131,7 @@ class TestAgentJax(unittest.TestCase):
             self.assertTrue(agent.C[m].shape == (desired_batch_size, num_obs[m]))
 
         for f in range(len(num_states)):
-            num_states_f = tuple([num_states[f] for f in B_factor_list[f]])
+            num_states_f = tuple([num_states[f] for f in B_dependencies[f]])
             self.assertTrue(agent.B[f].shape == (desired_batch_size, num_states[f]) + num_states_f + (num_controls[f],))
             self.assertTrue(agent.D[f].shape == (desired_batch_size, num_states[f]))
         
@@ -145,19 +144,19 @@ class TestAgentJax(unittest.TestCase):
         num_states = [4, 5, 2]
         num_controls = [2, 3, 2]
         A_dependencies = [[0, 1], [1]]
-        B_factor_list = [[0], [0, 1, 2], [2]]
-        B_factor_control_list = [[], [0, 1], [0, 2]]
+        B_dependencies = [[0], [0, 1, 2], [2]]
+        B_action_dependencies = [[], [0, 1], [0, 2]]
         desired_batch_size = 3
 
         
-        A = random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
-        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=B_factor_control_list)
+        A = utils.random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
+        B = utils.random_B_array(b_key, num_states, num_controls, B_dependencies=B_dependencies, B_action_dependencies=B_action_dependencies)
 
         agent = Agent(
             A, B, 
             A_dependencies=A_dependencies, 
-            B_dependencies=B_factor_list, 
-            B_action_dependencies=B_factor_control_list,
+            B_dependencies=B_dependencies, 
+            B_action_dependencies=B_action_dependencies,
             num_controls=num_controls,
             sampling_mode="full",
             batch_size=desired_batch_size,
@@ -172,14 +171,14 @@ class TestAgentJax(unittest.TestCase):
             self.assertTrue(agent.C[m].shape == (desired_batch_size, num_obs[m]))
 
         num_controls_flattened = []
-        for f,action_dependency in enumerate(B_factor_control_list):
+        for f,action_dependency in enumerate(B_action_dependencies):
             if action_dependency == []:
                 num_controls_f_flattened = 1
             else:
                 num_controls_f_flattened = pymath.prod([num_controls[d] for d in action_dependency])
 
             num_controls_flattened.append(num_controls_f_flattened)
-            num_states_f = tuple([num_states[f] for f in B_factor_list[f]])
+            num_states_f = tuple([num_states[f] for f in B_dependencies[f]])
             self.assertTrue(agent.B[f].shape == (desired_batch_size, num_states[f]) + num_states_f + (num_controls_f_flattened,))
             self.assertTrue(agent.D[f].shape == (desired_batch_size, num_states[f]))
         self.assertTrue(agent.num_controls == num_controls_flattened)
@@ -195,17 +194,17 @@ class TestAgentJax(unittest.TestCase):
         a_key, b_key = jr.split(jr.PRNGKey(3), 2)
 
         A_dependencies = [[0], [0, 1], [0, 1, 2]]
-        B_factor_list = [[0], [0, 1], [1, 2]]
+        B_dependencies = [[0], [0, 1], [1, 2]]
 
-        A_single = random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
-        B_single = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=None)
+        A_single = utils.random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
+        B_single = utils.random_B_array(b_key, num_states, num_controls, B_dependencies=B_dependencies, B_action_dependencies=None)
         A = [a[None,...] for a in A_single]
         B = [b[None,...] for b in B_single]
 
         agent = Agent(
             A, B, 
             A_dependencies=A_dependencies, 
-            B_dependencies=B_factor_list, 
+            B_dependencies=B_dependencies, 
             num_controls=num_controls,
             batch_size=1,
         )
@@ -216,7 +215,7 @@ class TestAgentJax(unittest.TestCase):
             self.assertTrue(agent.C[m].shape == (1,) + (num_obs[m],))
 
         for f in range(len(num_states)):
-            num_states_f = tuple([num_states[f] for f in B_factor_list[f]])
+            num_states_f = tuple([num_states[f] for f in B_dependencies[f]])
             self.assertTrue(agent.B[f].shape == (1,) + (num_states[f],) + num_states_f + (num_controls[f],))
             self.assertTrue(agent.D[f].shape == (1,) + (num_states[f],))
         
@@ -230,7 +229,7 @@ class TestAgentJax(unittest.TestCase):
         agent = Agent(
             A, B, 
             A_dependencies=A_dependencies, 
-            B_dependencies=B_factor_list, 
+            B_dependencies=B_dependencies, 
             num_controls=num_controls,
             batch_size=desired_batch_size,
         )
@@ -241,7 +240,7 @@ class TestAgentJax(unittest.TestCase):
             self.assertTrue(agent.C[m].shape == (desired_batch_size,) + (num_obs[m],))
 
         for f in range(len(num_states)):
-            num_states_f = tuple([num_states[f] for f in B_factor_list[f]])
+            num_states_f = tuple([num_states[f] for f in B_dependencies[f]])
             self.assertTrue(agent.B[f].shape == (desired_batch_size,) + (num_states[f],) + num_states_f + (num_controls[f],))
             self.assertTrue(agent.D[f].shape == (desired_batch_size,) + (num_states[f],))
         
@@ -255,19 +254,19 @@ class TestAgentJax(unittest.TestCase):
         num_states = [4, 5, 2]
         num_controls = [2, 3, 2]
         A_dependencies = [[0, 1], [1]]
-        B_factor_list = [[0], [0, 1, 2], [2]]
-        B_factor_control_list = [[], [0, 1], [0, 2]]
+        B_dependencies = [[0], [0, 1, 2], [2]]
+        B_action_dependencies = [[], [0, 1], [0, 2]]
 
-        A_single = random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
-        B_single = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=B_factor_control_list)
+        A_single = utils.random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
+        B_single = utils.random_B_array(b_key, num_states, num_controls, B_dependencies=B_dependencies, B_action_dependencies=B_action_dependencies)
         A = [a[None,...] for a in A_single]
         B = [b[None,...] for b in B_single]
 
         agent = Agent(
             A, B, 
             A_dependencies=A_dependencies, 
-            B_dependencies=B_factor_list, 
-            B_action_dependencies=B_factor_control_list,
+            B_dependencies=B_dependencies, 
+            B_action_dependencies=B_action_dependencies,
             num_controls=num_controls,
             sampling_mode="full",
             batch_size=1,
@@ -282,14 +281,14 @@ class TestAgentJax(unittest.TestCase):
             self.assertTrue(agent.C[m].shape == (1, num_obs[m]))
 
         num_controls_flattened = []
-        for f,action_dependency in enumerate(B_factor_control_list):
+        for f,action_dependency in enumerate(B_action_dependencies):
             if action_dependency == []:
                 num_controls_f_flattened = 1
             else:
                 num_controls_f_flattened = pymath.prod([num_controls[d] for d in action_dependency])
 
             num_controls_flattened.append(num_controls_f_flattened)
-            num_states_f = tuple([num_states[f] for f in B_factor_list[f]])
+            num_states_f = tuple([num_states[f] for f in B_dependencies[f]])
             self.assertTrue(agent.B[f].shape == (1, num_states[f]) + num_states_f + (num_controls_f_flattened,))
             self.assertTrue(agent.D[f].shape == (1, num_states[f]))
         self.assertTrue(agent.num_controls == num_controls_flattened)
@@ -301,8 +300,8 @@ class TestAgentJax(unittest.TestCase):
         agent = Agent(
             A, B, 
             A_dependencies=A_dependencies, 
-            B_dependencies=B_factor_list, 
-            B_action_dependencies=B_factor_control_list,
+            B_dependencies=B_dependencies, 
+            B_action_dependencies=B_action_dependencies,
             num_controls=num_controls,
             sampling_mode="full",
             batch_size=desired_batch_size,
@@ -317,14 +316,14 @@ class TestAgentJax(unittest.TestCase):
             self.assertTrue(agent.C[m].shape == (desired_batch_size, num_obs[m]))
 
         num_controls_flattened = []
-        for f,action_dependency in enumerate(B_factor_control_list):
+        for f,action_dependency in enumerate(B_action_dependencies):
             if action_dependency == []:
                 num_controls_f_flattened = 1
             else:
                 num_controls_f_flattened = pymath.prod([num_controls[d] for d in action_dependency])
 
             num_controls_flattened.append(num_controls_f_flattened)
-            num_states_f = tuple([num_states[f] for f in B_factor_list[f]])
+            num_states_f = tuple([num_states[f] for f in B_dependencies[f]])
             self.assertTrue(agent.B[f].shape == (desired_batch_size, num_states[f]) + num_states_f + (num_controls_f_flattened,))
             self.assertTrue(agent.D[f].shape == (desired_batch_size, num_states[f]))
         self.assertTrue(agent.num_controls == num_controls_flattened)
@@ -352,8 +351,8 @@ class TestAgentJax(unittest.TestCase):
 
         A_key, B_key, obs_key, test_key = jr.split(sampling_key, 4)
 
-        all_A = vmap(norm_dist)(jr.uniform(A_key, shape = (N, dim, dim)))
-        all_B = vmap(norm_dist)(jr.uniform(B_key, shape = (N, dim, dim)))
+        all_A = vmap(utils.norm_dist)(jr.uniform(A_key, shape = (N, dim, dim)))
+        all_B = vmap(utils.norm_dist)(jr.uniform(B_key, shape = (N, dim, dim)))
         all_obs = vmap(nn.one_hot, (0, None))(jr.choice(obs_key, dim, shape = (N,)), dim)
 
         my_agent = BasicAgent(all_A, all_B)
@@ -379,16 +378,16 @@ class TestAgentJax(unittest.TestCase):
         a_key, b_key = jr.split(jr.PRNGKey(5), 2)
 
         A_dependencies = [[0], [0, 1], [0, 1, 2]]
-        B_factor_list = [[0], [0, 1], [1, 2]]
-        B_factor_control_list = [[], [0, 1], [0, 2]]
-        A = random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
-        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list, B_factor_control_list=B_factor_control_list)
+        B_dependencies = [[0], [0, 1], [1, 2]]
+        B_action_dependencies = [[], [0, 1], [0, 2]]
+        A = utils.random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
+        B = utils.random_B_array(b_key, num_states, num_controls, B_dependencies=B_dependencies, B_action_dependencies=B_action_dependencies)
         
         agent = Agent(
             A, B, 
             A_dependencies=A_dependencies, 
-            B_dependencies=B_factor_list, 
-            B_action_dependencies=B_factor_control_list,
+            B_dependencies=B_dependencies, 
+            B_action_dependencies=B_action_dependencies,
             num_controls=num_controls,
             sampling_mode="full",
         )
@@ -422,14 +421,14 @@ class TestAgentJax(unittest.TestCase):
         A_dependencies = [[0, 1], [0, 1]]
         B_deps = [[0], [1]]
 
-        A = random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
-        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_deps, B_factor_control_list=None)
+        A = utils.random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
+        B = utils.random_B_array(b_key, num_states, num_controls, B_dependencies=B_deps, B_action_dependencies=None)
 
         # Should not raise; Agent.__init__ calls self._validate() which calls validate_normalization
         _ = Agent(A, B, A_dependencies=A_dependencies, B_dependencies=B_deps, num_controls=num_controls)
 
         # also in presence of Dirichlet priors
-        pA = list_array_scaled(jtu.tree_map(lambda x: x.shape, A), scale=10.0)  # uniform Dirichlet priors
+        pA = utils.list_array_scaled(jtu.tree_map(lambda x: x.shape, A), scale=10.0)  # uniform Dirichlet priors
         pB = [10.0 * b for b in B]
              
         # Should not raise; Agent.__init__ calls self._validate() which calls validate_normalization
@@ -449,8 +448,8 @@ class TestAgentJax(unittest.TestCase):
         A_dependencies = [[0, 1], [0, 1]]
         B_dependencies = [[0], [1]]
 
-        A_bad = random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
-        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_dependencies, B_factor_control_list=None)
+        A_bad = utils.random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
+        B = utils.random_B_array(b_key, num_states, num_controls, B_dependencies=B_dependencies, B_action_dependencies=None)
         # Corrupt A[0]: add to one categorical distribution so sums != 1 along axis=1
         A_bad[0] = A_bad[0].at[:,0,1].add(0.05)  # preserves shape, breaks normalization on axis=1
 
@@ -479,10 +478,10 @@ class TestAgentJax(unittest.TestCase):
         A_dependencies = [[0, 1], [0, 1]]
         B_dependencies = [[0], [1]]
 
-        A = random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
-        B_bad = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_dependencies, B_factor_control_list=None)
+        A = utils.random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
+        B_bad = utils.random_B_array(b_key, num_states, num_controls, B_dependencies=B_dependencies, B_action_dependencies=None)
         # Corrupt B[0]: make it zero so sums == 0 along axis=1
-        B_bad[0][:,0,1] = 0.0  # preserves shape, breaks normalization on axis=1
+        B_bad[0] = B_bad[0].at[:,0,1].set(0.0) # preserves shape, breaks normalization on axis=1
 
         with self.assertRaisesRegex((EquinoxRuntimeError, ValueError),
                         r"sum to zero"):
@@ -504,8 +503,8 @@ class TestAgentJax(unittest.TestCase):
         num_controls = [1]
 
         a_key, b_key = jr.split(jr.PRNGKey(8), 2)
-        A = random_A_array(a_key, num_obs, num_states)
-        B = utils.random_B_matrix(num_states, num_controls)
+        A = utils.random_A_array(a_key, num_obs, num_states)
+        B = utils.random_B_array(b_key, num_states, num_controls)
 
         with self.assertRaises(AssertionError):
             Agent(A=A, B=B, learn_A=True)
@@ -523,15 +522,15 @@ class TestAgentJax(unittest.TestCase):
 
         a_key, b_key, d_key = jr.split(jr.PRNGKey(123), 3)
 
-        A = random_A_array(
+        A = utils.random_A_array(
             a_key, num_obs, num_states, A_dependencies=A_dependencies
         )
-        B = utils.random_B_matrix(
-            num_states, num_controls, B_factor_list=B_dependencies
+        B = utils.random_B_array(
+            b_key, num_states, num_controls, B_dependencies=B_dependencies
         )
-        pA = list_array_scaled(jtu.tree_map(lambda x: x.shape, A), scale=1.0)
-        pB = utils.dirichlet_like(B, scale=1.0)
-        D = random_factorized_categorical(d_key, num_states)
+        pA = utils.list_array_scaled(jtu.tree_map(lambda x: x.shape, A), scale=1.0)
+        pB = utils.list_array_scaled(jtu.tree_map(lambda x: x.shape, B), scale=1.0)
+        D = utils.random_factorized_categorical(d_key, num_states)
 
         def _broadcast(arr_list):
             return [
@@ -587,15 +586,15 @@ class TestAgentJax(unittest.TestCase):
 
         a_key, b_key, d_key = jr.split(jr.PRNGKey(123), 3)
 
-        A = random_A_array(
+        A = utils.random_A_array(
             a_key, num_obs, num_states, A_dependencies=A_dependencies
         )
-        B = utils.random_B_matrix(
-            num_states, num_controls, B_factor_list=B_dependencies
+        B = utils.random_B_array(
+            b_key, num_states, num_controls, B_dependencies=B_dependencies
         )
-        pA = list_array_scaled(jtu.tree_map(lambda x: x.shape, A), scale=1.0)
-        pB = utils.dirichlet_like(B, scale=1.0)
-        D = random_factorized_categorical(d_key, num_states)
+        pA = utils.list_array_scaled(jtu.tree_map(lambda x: x.shape, A), scale=1.0)
+        pB = utils.list_array_scaled(jtu.tree_map(lambda x: x.shape, B), scale=1.0)
+        D = utils.random_factorized_categorical(d_key, num_states)
 
         def _broadcast(arr_list):
             return [

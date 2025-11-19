@@ -10,11 +10,10 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
 
-from pymdp.legacy import utils
 from pymdp.agent import Agent
 from pymdp.envs.env import Env
 from pymdp.envs.rollout import rollout, default_policy_search
-from pymdp.utils import random_factorized_categorical, random_A_array, list_array_scaled
+from pymdp import utils
 
 class TestRolloutFunction(unittest.TestCase):
     def setUp(self):
@@ -38,13 +37,13 @@ class TestRolloutFunction(unittest.TestCase):
         
         A_key, B_key, D_key = jr.split(jr.PRNGKey(seed), 3)
 
-        A = random_A_array(A_key, self.num_obs, self.num_states, A_dependencies=self.A_dependencies)
-        B = utils.random_B_matrix(
-            self.num_states, self.num_controls, B_factor_list=self.B_dependencies
+        A = utils.random_A_array(A_key, self.num_obs, self.num_states, A_dependencies=self.A_dependencies)
+        B = utils.random_B_array(B_key,
+            self.num_states, self.num_controls, B_dependencies=self.B_dependencies
         )
-        pA = list_array_scaled([a.shape for a in A], scale=1.0)
-        pB = utils.dirichlet_like(B, scale=1.0)
-        D = random_factorized_categorical(D_key, self.num_states)
+        pA = utils.list_array_scaled([a.shape for a in A], scale=1.0)
+        pB = utils.list_array_scaled([b.shape for b in B], scale=1.0)
+        D = utils.random_factorized_categorical(D_key, self.num_states)
 
         def _broadcast(arr_list):
             return [

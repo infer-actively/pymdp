@@ -89,6 +89,66 @@ def random_A_array(key, num_obs, num_states, A_dependencies=None) -> List[jax.Ar
         A.append(jnp.moveaxis(A_m, -1, 0))
     return A
 
+def random_B_array(key, num_states, num_controls, B_dependencies=None, B_action_dependencies=None):
+    """"
+    Creates a list of jax arrays representing state transition likelihoods (B tensors or B matrices) with shapes
+    determined by num_states and num_controls, and factorized according to B_dependencies and B_action_dependencies.
+    
+    The storage of each B tensor in a separate list element represents the factorized assumption over hidden state factors, namely:
+    P(s^{1:F} | s^{1:F}, a^{1:A}) = \prod_{f=1}^{F} P(s^f | s^{factors for s^f}, a^{controls for s^f})
+    """
+
+    num_states = [num_states] if isinstance(num_states, int) else num_states
+    num_controls = [num_controls] if isinstance(num_controls, int) else num_controls
+    num_factors = len(num_states)
+
+    if B_dependencies is None:
+        B_dependencies = [[f] for f in range(num_factors)]
+
+    if B_action_dependencies is None:
+        assert len(num_controls) == len(num_states)
+        B_action_dependencies = [[f] for f in range(num_factors)]
+    else:
+        unique_controls = list(set(sum(B_action_dependencies, [])))        
+        assert unique_controls == list(range(len(num_controls)))
+
+    keys = jr.split(key, num_factors)
+    B = []
+    for f, ns in enumerate(num_states):
+        lagging_shape = [ns_f for i, ns_f in enumerate(num_states) if i in B_dependencies[f]]
+        control_shape = [na_f for i, na_f in enumerate(num_controls) if i in B_action_dependencies[f]]
+        # Sample Dirichlet with batch_shape=lagging_shape+control_shape; returns shape = lagging_shape + control_shape + (ns,)
+        B_f = jr.dirichlet(keys[f], alpha=jnp.ones(ns), shape=lagging_shape+control_shape)
+        # Move event/state dim to the front -> (ns, *lagging_shape, *control_shape)
+        B.append(jnp.moveaxis(B_f, -1, 0))
+    return B
+
+
+def create_controllable_B(num_states, num_controls) -> Vector:
+    """
+    JAX equivalent of ``pymdp.legacy.utils.construct_controllable_B``.
+    
+    Generates a fully controllable transition likelihood array, where each 
+    action (control state) corresponds to a move to the n-th state from any 
+    other state, for each control factor
+    """
+
+    num_states = [num_states] if isinstance(num_states, int) else list(num_states)
+    num_controls = [num_controls] if isinstance(num_controls, int) else list(num_controls)
+
+    if len(num_states) != len(num_controls):
+        raise ValueError("`num_states` and `num_controls` must have the same length")
+
+    B = []
+    for ns, nc in zip(num_states, num_controls):
+        # Deterministic tensor with shape (ns, 1, nc) encoding next-state selection per action
+        state_axis = jnp.arange(ns, dtype=jnp.int32).reshape(ns, 1, 1)
+        action_axis = jnp.arange(nc, dtype=jnp.int32).reshape(1, 1, nc)
+        deterministic = (state_axis == action_axis).astype(jnp.float32)
+        B.append(jnp.broadcast_to(deterministic, (ns, ns, nc)))
+
+    return B
+
 def list_array_uniform(shape_list: ShapeList) -> Vector:
     """
     Creates a list of jax arrays representing uniform Categorical
