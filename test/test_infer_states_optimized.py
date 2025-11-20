@@ -10,8 +10,6 @@ This module tests that the following methods produce identical results:
 """
 
 import unittest
-import json
-import os
 import numpy as np
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -20,7 +18,7 @@ from jax.experimental import sparse as jsparse
 from functools import partial
 
 # Import helpers from pymdp
-from pymdp.utils import init_agent_from_spec, get_sample_obs
+from pymdp.utils import init_A_and_D_from_spec, get_sample_obs, generate_agent_specs_from_parameter_sets
 
 # Import utils functions for different methods
 from pymdp.utils import (
@@ -55,22 +53,30 @@ class TestInferStatesComparison(unittest.TestCase):
     NUM_ITER = 8
     ATOL = 1e-5
 
-    # Default path to agent specs file
-    DEFAULT_SPEC_FILE = "examples/infer_states_optimization/random_agent_specs/agent_specs_latest_lighter_deps_filtered.json"
-
-    # Agent specs will be loaded from JSON file
+    # Agent specs will be generated from parameter sets
     AGENT_SPECS = None
 
     @classmethod
     def setUpClass(cls):
-        """Load agent specs from JSON file once before all tests."""
+        """Generate agent specs from parameter sets once before all tests."""
 
-        spec_file = os.environ.get('AGENT_SPEC_FILE', cls.DEFAULT_SPEC_FILE)
+        # Define coordinated parameter sets
+        # (num_factors, num_modalities, state_dim_upper_limit, obs_dim_upper_limit, dim_sampling_type, label)
+        parameter_sets = [
+            (5, 5, 5, 5, 'uniform', 'low'),
+            (10, 10, 10, 10, 'uniform', 'medium'),
+            (25, 25, 25, 25, 'uniform', 'high'),
+            # (125, 125, 125, 125, 'uniform', 'extreme'),  # Uncomment to include extreme cases
+        ]
 
-        with open(spec_file, 'r') as f:
-            spec_data = json.load(f)
+        # Generate agent specs without dumping to file
+        spec_data = generate_agent_specs_from_parameter_sets(
+            parameter_sets,
+            num_agents_per_set=1,
+            output_file=None  # Don't save to file
+        )
 
-        # Load only 'arbitrary dependencies' category specs
+        # Load 'arbitrary dependencies' category specs
         cls.AGENT_SPECS = []
         category = 'arbitrary dependencies'
         if category in spec_data:
@@ -80,9 +86,9 @@ class TestInferStatesComparison(unittest.TestCase):
                 spec['name'] = f"{category}_{i}"
                 spec['category'] = category
                 cls.AGENT_SPECS.append(spec)
-            print(f"Loaded {len(cls.AGENT_SPECS)} agent specs from '{category}' category in {spec_file}", flush=True)
+            print(f"Generated {len(cls.AGENT_SPECS)} agent specs from parameter sets", flush=True)
         else:
-            raise ValueError(f"Category '{category}' not found in {spec_file}")
+            raise ValueError(f"Category '{category}' not found in generated specs")
 
     @classmethod
     def should_skip_spec(cls, spec):
@@ -189,7 +195,7 @@ class TestInferStatesComparison(unittest.TestCase):
         A_dependencies = spec["A_dependencies"]
 
         # Initialize agent from spec
-        A, D = init_agent_from_spec(
+        A, D = init_A_and_D_from_spec(
             spec["num_obs"],
             spec["num_states"],
             spec["A_dependencies"],
@@ -344,6 +350,31 @@ class TestInferStatesComparison(unittest.TestCase):
         self._test_single_spec_with_batch(spec, batch_size=batch_size, A_sparsity_level=A_sparsity_level, use_sparsity=True)
 
         print("✓ Sparse matrix operations completed successfully")
+
+    def test_all_agents_with_batch(self):
+        """Test all agent specs with batch size."""
+        specs = self.AGENT_SPECS
+        batch_size = 4
+        skipped_count = 0
+        tested_count = 0
+
+        print(f"\nTesting all {len(specs)} agent specs with batch size {batch_size}")
+
+        for spec in specs:
+            print(f"Testing spec '{spec['name']}' [BS={batch_size}]")
+
+            should_skip_extreme = self.should_skip_spec(spec)
+
+            if should_skip_extreme:
+                skipped_count += 1
+                print("  ⏭️  Skipped due to extreme dimensions")
+                continue
+
+            with self.subTest(spec=spec['name']):
+                tested_count += 1
+                self._test_single_spec_with_batch(spec, batch_size=batch_size)
+
+        print(f"\n✓ Tested {tested_count} specs, skipped {skipped_count} specs")
 
 if __name__ == '__main__':
     unittest.main()

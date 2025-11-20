@@ -274,6 +274,302 @@ def fig2img(fig):
 
 # Infer states optimized methods
 
+
+# Generate random agent specs
+
+def A_dep_factors_dist(num_states, A_dep_len):
+    '''
+    Probability distribution over hidden states to sample from when randomly
+    generating A_dependencies. Ensures a negative correlation between lengths
+    of A dependency lists and dimensionalities (numbers of levels) of hidden
+    states (e.g. the longer a list is, the more we favor lower dimensional
+    hidden states).
+
+    num_states: np.array of integers, representing dimensionalities of
+                hidden states
+    A_dep_len:  int, representing the desired length of an A dependency
+                list
+
+    returns:    np.array of probabilities, with the same shape as num_states
+    '''
+    if A_dep_len == 1:
+        # in the shortest possible case, use a uniform distribution
+        return np.ones_like(num_states) / len(num_states)
+    else:
+        # otherwise, use something similar to a softmax distribution
+        tmp = np.exp(-num_states /
+                     (np.max(num_states) / (A_dep_len - 1)))
+        return tmp / np.sum(tmp)
+
+
+def A_dep_len_dist(choices, curr_sf_dim, max_sf_dim):
+    '''
+    In case a hidden state has already been assigned to an A dependency list,
+    getting a probability distribution over potential lengths of that list.
+    Again ensuring a negative correlation, the higher the dimensionality of
+    the already assigned hidden state, the higher the probabilities of choosing
+    a small length of the list.
+
+    choices:     np.array of integers, representing the possibilities for the
+                 length of an A dependency list
+    curr_sf_dim: int, representing the number of levels of the hidden state that
+                 has already been assigned to an A dependency list.
+    max_sf_dim:  int, representing the largest possible number of levels of any
+                 hidden state
+
+    returns:     np.array of probabilities, with the same shape as choices
+    '''
+    tmp = np.exp(-choices * curr_sf_dim / max_sf_dim)
+    return tmp / np.sum(tmp)
+
+
+def A_dep_len_dist_unconditional(choices):
+    '''
+    An unconditional exponential distribution over possible lengths of A
+    dependency lists, to favor shorter lists and only occasionally sample
+    longer ones.
+
+    choices:     np.array of integers, representing the possibilities for the
+                 length of an A dependency list
+
+    returns:     np.array of probabilities, with the same shape as choices
+    '''
+    tmp = np.exp(-choices / 3)
+    return tmp / np.sum(tmp)
+
+
+def generate_agent_spec(num_factors,
+                        num_modalities,
+                        state_dim_limits,
+                        obs_dim_limits,
+                        A_dep_len_limits,
+                        dim_sampling_type,
+                        A_dep_len_prior='uniform'):
+
+    '''
+    The main function - generating an agent specification given some basic information.
+
+    num_factors:       int, representing the total number of hidden state factors
+    num_modalities:    int, representing the total number of observation modalities
+    state_dim_limits:  (int, int), the lower and upper limits on the numbers of
+                       levels for each hidden state factor
+    obs_dim_limits:    (int, int), the lower and upper limits on the numbers of
+                       levels for each observation modality
+    A_dep_len_limits:  (int, int), the lower and upper limits on the lengths of
+                       A dependency lists
+    dim_sampling_type: 'uniform' | 'with_gap_uniform' | 'with_gap_skewed' |
+                       'with_large_gap_uniform' | 'with_large_gap_skewed' - which
+                       kind of sampling to use for dimensionalities of hidden
+                       states and observation modalities (described further below)
+    A_dep_len_prior:   'uniform'| 'exponential' - whether to sample lengths of A
+                       dependency lists uniformly or to favor shorter ones, in cases
+                       where no hidden states have already been assigned to a list
+    '''
+    
+    if dim_sampling_type == 'uniform':
+
+        # when using uniform dimensionality sampling, no constraints are enforced
+        num_states = [np.random.randint(*state_dim_limits) for i in range(num_factors)]
+        num_obs = [np.random.randint(*obs_dim_limits) for i in range(num_modalities)]
+
+    else:
+
+        if dim_sampling_type == 'with_gap_uniform':
+            # half the hidden states / observation modalities will have their dimensions
+            # sampled from the top 30% of the entire interval [a, b] of possibilities,
+            # and the remaining half will be sampled from the bottom 30%
+            m = 0.3
+            h = 0.5
+            
+        elif dim_sampling_type == 'with_gap_skewed':
+            # only one fifth of hidden states / observation modalities will have their
+            # dimensions sampled from the top 30% of the entire interval [a, b] of
+            # possibilities, and the rest will be sampled from the bottom 30%
+            m = 0.3
+            h = 0.2
+            
+        elif dim_sampling_type == 'with_large_gap_uniform':
+            # half the hidden states / observation modalities will have their dimensions
+            # sampled from the top 10% of the entire interval [a, b] of possibilities,
+            # and the remaining half will be sampled from the bottom 10%
+            m = 0.1
+            h = 0.5
+            
+        elif dim_sampling_type == 'with_large_gap_skewed':
+            # only one fifth of hidden states / observation modalities will have their
+            # dimensions sampled from the top 10% of the entire interval [a, b] of
+            # possibilities, and the rest will be sampled from the bottom 10%
+            m = 0.1
+            h = 0.2
+            
+        else:
+            raise ValueError(f'Unsupported dim_sampling_type: {dim_sampling_type}')
+
+        # upon establishing the dimensionality sampling type, consider the interval
+        # of possible dimensionalities of hidden states and generate random values
+        
+        s_lower, s_upper = state_dim_limits
+        s_range = s_upper - s_lower
+        
+        num_states = [
+            np.random.randint(s_lower, int(np.ceil(s_lower + m*s_range)))
+            for i in range(num_factors - int(h * num_factors))
+        ] + [
+            np.random.randint(int(np.floor(s_upper - m*s_range)), s_upper)
+            for i in range(int(h * num_factors))
+        ]
+
+        # doing the same for observation modalities
+        
+        o_lower, o_upper = obs_dim_limits
+        o_range = o_upper - o_lower
+        
+        num_obs = [
+            np.random.randint(o_lower, int(np.ceil(o_lower + m*o_range)))
+            for i in range(num_modalities - int(h * num_modalities))
+        ] + [
+            np.random.randint(int(np.floor(o_upper - m*o_range)), o_upper)
+            for i in range(int(h * num_modalities))
+        ]
+
+    # ensure that each hidden state factor influences at least one observation
+    # modality (i.e. is used in at least one A dependency list)
+    tmp = np.random.choice(num_modalities, num_factors, replace=False)
+    A_dependencies = [[] for m in range(num_modalities)]
+    for sf, om in enumerate(tmp):
+        A_dependencies[om].append(sf)
+        
+    # generating the full graph of dependencies between observation modalities
+    # and hidden state factors
+    for om in range(num_modalities):
+
+        # determine the possibile choices for the length of a dependency list
+        A_dep_len_min, A_dep_len_max = A_dep_len_limits
+        if A_dep_len_max > num_factors:
+            A_dep_len_max = num_factors
+        A_dep_len_choices = np.arange(A_dep_len_min, A_dep_len_max)
+        
+        if len(A_dependencies[om]) == 0:
+
+            # if no hidden states have already been assigned to an A dependency list,
+            # sample its length from an a-priori distribution (either uniform or exponential)
+            A_dep_len = np.random.choice(
+                A_dep_len_choices,
+                p=A_dep_len_dist_unconditional(A_dep_len_choices) if A_dep_len_prior == 'exponential' else None
+            )
+
+            # after sampling the length of a list, randomly choose that many hidden states
+            # as its elements (without repetition), and ensure a negative correlation
+            # between the hidden state dimensions and the length of the list
+            A_dependencies[om] = np.random.choice(
+                num_factors,
+                A_dep_len,
+                replace=False,
+                p=A_dep_factors_dist(np.array(num_states), A_dep_len)
+            ).tolist()
+            
+        else:
+
+            # if a hidden state has already been assigned to an A dependency list, choose
+            # its final length so that it is negatively correlated with the dimensionality
+            # of the hidden state (additionally, scale the probabilities according to the
+            # prior distribution of lengths to avoid awkward edge cases that would skew
+            # the statistics)
+            p = np.ones_like(A_dep_len_choices, dtype=np.float64)
+            if A_dep_len_prior == 'exponential':
+                p = A_dep_len_dist_unconditional(A_dep_len_choices)
+            p *= A_dep_len_dist(A_dep_len_choices, A_dependencies[om][0], state_dim_limits[1])
+            p /= np.sum(p)
+            A_dep_len = np.random.choice(A_dep_len_choices, p=p)
+
+            # fill out the rest of the A dependency lists with hidden states other than
+            # the one that is already there, and ensure a negative correlation between
+            # the hidden state dimensions and the length of the list
+            A_dependencies[om] += np.random.choice(
+                [sf for sf in range(num_factors) if sf != A_dependencies[om][0]],
+                A_dep_len - 1,
+                replace=False,
+                p=A_dep_factors_dist(
+                    np.array([ns for sf, ns in enumerate(num_states) if sf != A_dependencies[om][0]]),
+                    A_dep_len
+                )
+            ).tolist()
+    
+    A_dependencies = [sorted(A_dep) for A_dep in A_dependencies]
+
+    return num_states, num_obs, A_dependencies
+
+
+def generate_agent_specs_from_parameter_sets(parameter_sets, num_agents_per_set=1, output_file='agent_specs.json'):
+    '''
+    Generate agent specifications from coordinated parameter sets.
+    
+    parameter_sets:       list of tuples, where each tuple contains
+                         (num_factors, num_modalities, state_dim_upper_limit, 
+                          obs_dim_upper_limit, dim_sampling_type, label)
+    num_agents_per_set:   int, number of random agents to generate per parameter set
+    output_file:          str, path to save the JSON file with agent specifications
+    
+    returns:              dict with agent specifications
+    '''
+    
+    agent_specs = {
+        'arbitrary dependencies': []
+        # it might make sense to sometimes constrain the A dependencies additionally
+        # e.g. '2 dependencies per modality': [],
+    }
+
+    # iterate over the coordinated parameter sets
+    for num_factors, num_modalities, state_dim_upper_limit, obs_dim_upper_limit, dim_sampling_type, label in parameter_sets:
+        
+        # it usually makes sense to have num_factors <= num_modalities, so we skip all other
+        # cases (they would require a different random generation scheme and constraints)
+        if num_factors > num_modalities:
+            continue
+
+        # sample random agent specifications from each parameter set
+        for _ in range(num_agents_per_set):
+        
+            num_states, num_obs, A_dependencies = generate_agent_spec(
+                num_factors,
+                num_modalities,
+                (2, state_dim_upper_limit),
+                (2, obs_dim_upper_limit),
+                (1, 11), # allow A dependency lists of lengths 1 to 10
+                dim_sampling_type,
+                A_dep_len_prior='exponential' # favoring shorter dependency lists in general
+            )
+        
+            agent_specs['arbitrary dependencies'].append({
+                'num_factors': int(num_factors),
+                'num_modalities': int(num_modalities),
+                'num_states': [int(n) for n in num_states],
+                'num_obs': [int(n) for n in num_obs],
+                'A_dependencies': [[int(dep) for dep in deps] for deps in A_dependencies],
+                # having descriptive metadata can be useful for querying agent specifications
+                # (e.g. selecting agents with a low number of hidden states and a high number
+                # of observation modalities etc.)
+                'metadata': {
+                    'num_factors': label,
+                    'num_modalities': label,
+                    'state_dim_upper_limit': label,
+                    'obs_dim_upper_limit': label,
+                    'dim_sampling_type': dim_sampling_type
+                }
+            })
+
+    # save to file if output_file is specified
+    if output_file is not None:
+        with open(output_file, 'w') as f:
+            json.dump(agent_specs, f)
+    
+    return agent_specs
+
+
+
+
+
+
 def apply_padding_batched(xs):
     '''xs: list of arrays'''
     
@@ -299,7 +595,7 @@ def get_sample_obs(num_obs, batch_size=1):
     obs = [np.random.randint(0, obs_dim, (batch_size, 1)) for obs_dim in num_obs]
     return [jnp.array(o) for o in obs]
 
-def init_agent_from_spec(num_obs, num_states, A_dependencies, A_sparsity_level=None, batch_size=1):
+def init_A_and_D_from_spec(num_obs, num_states, A_dependencies, A_sparsity_level=None, batch_size=1):
 
     A = []
     
