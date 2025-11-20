@@ -14,6 +14,7 @@ import numpy as np
 import equinox as eqx
 import math
 import itertools
+import json
 
 import io
 import matplotlib.pyplot as plt
