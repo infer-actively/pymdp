@@ -1,9 +1,11 @@
 from typing import List
 
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
 import jax.lax
+
 
 from pymdp.agent import Agent
 from pymdp.envs.env import Env
@@ -95,6 +97,7 @@ def rollout(
     rng_key: jr.PRNGKey,
     initial_carry=None,
     policy_search=None,
+    env_params=None,
 ):
     """
     Rollout an agent in an environment for a number of timesteps.
@@ -130,7 +133,7 @@ def rollout(
         action = carry["action"]
         observation = carry["observation"]
         qs_prev = carry["qs"]
-        env = carry["env"]
+        env_state = carry["env_state"]
         agent = carry["agent"]
         rng_key = carry["rng_key"]
 
@@ -144,8 +147,8 @@ def rollout(
         )
 
         # step the environment forward with the chosen action
-        observation_next, env_next = env.step(
-            rng_key=keys[2:], actions=action_next
+        observation_next, env_state_next = jax.vmap(env.step)(
+            keys[2:], env_state, action_next, env_params=env_params
         )  # step environment forward with chosen action
 
         # carrying the next timestep's action, observation, beliefs, empirical prior, environment state, and random key
@@ -153,13 +156,13 @@ def rollout(
             "action": action_next,
             "observation": observation_next,
             "qs": jtu.tree_map(lambda x: x[:, -1:, ...], qs),  # keep only latest belief
-            "env": env_next,
+            "env_state": env_state_next,
             "agent": updated_agent,
             "rng_key": rng_key,
         }
         info = {
             "qs": jtu.tree_map(lambda x: x[:, 0, ...], qs),
-            "env": env,
+            "env_state": env_state,
             "observation": observation,
             "action": action_next,
         }
@@ -179,7 +182,7 @@ def rollout(
         # initialise first observation from environment
         keys = jr.split(rng_key, batch_size + 1)
         rng_key = keys[0]
-        observation_0, env = env.reset(keys[1:])
+        observation_0, env_state = jax.vmap(env.reset)(keys[1:], env_params=env_params)
 
         # specify initial beliefs using D
         qs_0 = jtu.tree_map(lambda x: jnp.expand_dims(x, -2), agent.D)
@@ -192,7 +195,7 @@ def rollout(
             "qs": qs_0,
             "action": action_0,
             "observation": observation_0,
-            "env": env,
+            "env_state": env_state,
             "agent": agent,
             "rng_key": rng_key,
         }
@@ -208,4 +211,4 @@ def rollout(
         outcomes = jtu.tree_map(lambda x: x.squeeze(-1), info['observation']) if num_timesteps > 1 else info['observation']
         last["agent"] = last["agent"].infer_parameters(info['qs'], outcomes, info['action'])
 
-    return last, info, env
+    return last, info
