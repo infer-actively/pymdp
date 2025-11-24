@@ -348,7 +348,7 @@ def run_online_filtering(A, B, obs, prior, A_dependencies, num_iter=1, tau=1.):
     return qs 
 
 
-# Infer states hybrid & hybdrid block
+# Infer states hybrid & hybrid block
 
 def run_factorized_fpi_hybrid(log_likelihoods, prior, A_dependencies, num_iter):
     
