@@ -377,7 +377,7 @@ class TestAgentJax(unittest.TestCase):
         num_states = [2, 3, 1]
         num_controls = [2, 3, 2]
 
-        a_key, b_key = jr.split(jr.PRNGKey(5), 2)
+        a_key, b_key, action_key, obs_key = jr.split(jr.PRNGKey(5), 4)
 
         A_dependencies = [[0], [0, 1], [0, 1, 2]]
         B_dependencies = [[0], [0, 1], [1, 2]]
@@ -395,8 +395,8 @@ class TestAgentJax(unittest.TestCase):
         )
 
         # dummy history
-        action = agent.policies[np.random.randint(0, len(agent.policies))]
-        observation = [np.random.randint(0, d, size=(1, 1)) for d in agent.num_obs]
+        action = agent.policies[jr.randint(action_key, shape=(), minval=0, maxval=len(agent.policies))]
+        observation = [jr.randint(obs_key, shape=(1, 1), minval=0, maxval=d) for d in agent.num_obs]
         qs_hist = jtu.tree_map(lambda x: jnp.expand_dims(x, 0), agent.D)
 
         prior, _ = agent.update_empirical_prior(action, qs_hist)
@@ -408,6 +408,45 @@ class TestAgentJax(unittest.TestCase):
         action_reconstruct = agent.encode_multi_actions(action_multi)
         
         self.assertTrue(action_multi.shape[-1] == len(agent.num_controls))
+        self.assertTrue(jnp.allclose(action, action_reconstruct))
+
+        @jit
+        def construct_and_run_agent(a_key, b_key, obs_key, action_key):
+            """
+            Test that an instance of the `Agent` class can be initialized and run with complex action dependency
+            num_obs = [5, 4, 4]
+            num_states = [2, 3, 1]
+            num_controls = [2, 3, 2]
+            """
+
+            A = utils.random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
+            B = utils.random_B_array(b_key, num_states, num_controls, B_dependencies=B_dependencies, B_action_dependencies=B_action_dependencies)
+
+            agent = Agent(
+                A, B,
+                A_dependencies=A_dependencies,
+                B_dependencies=B_dependencies,
+                B_action_dependencies=B_action_dependencies,
+                num_controls=num_controls,
+                sampling_mode="full",
+            )
+
+            # dummy history
+            action = agent.policies[jr.randint(action_key, shape=(), minval=0, maxval=len(agent.policies))]
+            observation = [jr.randint(obs_key, shape=(1, 1), minval=0, maxval=d) for d in agent.num_obs]
+            qs_hist = jtu.tree_map(lambda x: jnp.expand_dims(x, 0), agent.D)
+
+            prior, _ = agent.update_empirical_prior(action, qs_hist)
+            qs = agent.infer_states(observation, prior)
+
+            q_pi, G = agent.infer_policies(qs)
+            action = agent.sample_action(q_pi)
+            action_multi = agent.decode_multi_actions(action)
+            action_reconstruct = agent.encode_multi_actions(action_multi)
+
+            return action, action_multi, action_reconstruct, agent
+
+        action, action_multi, action_reconstruct, agent = construct_and_run_agent(a_key, b_key, obs_key, action_key)
         self.assertTrue(jnp.allclose(action, action_reconstruct))
     
     def test_agent_validate_normalization_ok(self):

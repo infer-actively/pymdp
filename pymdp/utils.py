@@ -234,7 +234,7 @@ def index_to_combination(index, dims):
         x.append(index % base)
         index = index // base
 
-    x = np.flip(np.stack(x, axis=-1), axis=-1)
+    x = jnp.flip(jnp.stack(x, axis=-1), axis=-1)
     return x
 
 def make_A_full(A_reduced: List[jax.Array], A_dependencies: List[List[int]], num_obs: List[int], num_states: List[int]) -> List[jax.Array]:
