@@ -12,9 +12,27 @@ from jax import lax, vmap, nn
 from jax import random as jr
 from jaxtyping import Array
 
+import equinox as eqx
+
 from pymdp.maths import factor_dot, log_stable, stable_entropy, stable_xlogx, spm_wnorm
 
+class Policies(eqx.Module):
+    """ 
+    A class for storing an array of policies and its properties
+    
+    """
+    policy_arr: Array
+    horizon: int = eqx.field(static=True)
+    num_policies: int = eqx.field(static=True)
 
+    def __init__(self, policy_arr: Array):
+        self.num_policies = policy_arr.shape[0]
+        self.horizon = policy_arr.shape[1]
+        self.policy_arr = policy_arr
+    
+    def __get_item__(self, idx):
+        return self.policy_arr[idx]
+    
 def get_marginals(q_pi, policies, num_controls):
     """
     Computes the marginal posterior(s) over actions by integrating their posterior probability under the policies that they appear within.
