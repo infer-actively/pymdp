@@ -47,16 +47,16 @@ def make(A, B, D, C=None, A_dependencies=None, B_dependencies=None, **kwargs):
 
 class Env:
 
-    def reset(key, env_params=None):
-        pass
+    def reset(self, key, env_params=None):
+        raise NotImplementedError
 
-    def step(key, state, action, env_params=None):
-        pass
+    def step(self, key, state, action, env_params=None):
+        raise NotImplementedError
 
-    def generate_env_params(key, batch_size):
+    def generate_env_params(self, key, batch_size):
         return None
 
-class PymdpEnv:
+class PymdpEnv(Env):
 
     def __init__(self, A=None, B=None, C=None, D=None, A_dependencies=None, B_dependencies=None, **kwargs):
         if A_dependencies is not None:
