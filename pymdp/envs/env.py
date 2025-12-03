@@ -29,7 +29,7 @@ def cat_sample(key, p):
     return jr.choice(key, a, p=p)
 
 
-def make(A, B, D, C=None, A_dependencies=None, B_dependencies=None, **kwargs):
+def make(A, B, D, A_dependencies=None, B_dependencies=None, **kwargs):
     if not isinstance(D[0], Distribution):
         # we are providing raw arrays, check if there is a batch dimension
         if D[0].ndim == 2:
@@ -38,12 +38,11 @@ def make(A, B, D, C=None, A_dependencies=None, B_dependencies=None, **kwargs):
                 "A": A,
                 "B": B,
                 "D": D,
-                "C": C,
             }
             return PymdpEnv(A_dependencies=A_dependencies, B_dependencies=B_dependencies, **kwargs), env_params
 
     # by default, if the tensors are unbatched, just store them as part of the environment
-    return PymdpEnv(A=A, B=B, C=C, D=D, A_dependencies=A_dependencies, B_dependencies=B_dependencies, **kwargs), None
+    return PymdpEnv(A=A, B=B, D=D, A_dependencies=A_dependencies, B_dependencies=B_dependencies, **kwargs), None
 
 class Env:
 
@@ -58,7 +57,7 @@ class Env:
 
 class PymdpEnv(Env):
 
-    def __init__(self, A=None, B=None, C=None, D=None, A_dependencies=None, B_dependencies=None, **kwargs):
+    def __init__(self, A=None, B=None, D=None, A_dependencies=None, B_dependencies=None, **kwargs):
         if A_dependencies is not None:
             self.A_dependencies = A_dependencies
         elif A is not None and B is not None:
@@ -89,16 +88,10 @@ class PymdpEnv(Env):
         else:
             self.B = None
 
-        if C is not None:
-            self.C = [jnp.array(c.data) if isinstance(c, Distribution) else c for c in C]
-        else:
-            self.C = None
-
         if D is not None:
             self.D = [jnp.array(d.data) if isinstance(d, Distribution) else d for d in D]
         else:
             self.D = None
-
         
     @partial(jit, static_argnums=(0,))
     def reset(self, key, env_params=None):
