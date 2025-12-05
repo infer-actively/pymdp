@@ -29,20 +29,41 @@ def cat_sample(key, p):
     return jr.choice(key, a, p=p)
 
 
-def make(A, B, D, A_dependencies=None, B_dependencies=None, **kwargs):
-    if not isinstance(D[0], Distribution):
-        # we are providing raw arrays, check if there is a batch dimension
-        if D[0].ndim == 2:
-            # we have a batch dimension, use env_params
-            env_params = {
-                "A": A,
-                "B": B,
-                "D": D,
-            }
-            return PymdpEnv(A_dependencies=A_dependencies, B_dependencies=B_dependencies, **kwargs), env_params
+def make(A, B, D, A_dependencies=None, B_dependencies=None, make_env_params=False, **kwargs):
+    """
+    Convenience factory to construct a `PymdpEnv`.
 
-    # by default, if the tensors are unbatched, just store them as part of the environment
-    return PymdpEnv(A=A, B=B, D=D, A_dependencies=A_dependencies, B_dependencies=B_dependencies, **kwargs), None
+    Parameters
+    ----------
+    A, B, D: sequence of arrays or Distribution
+        Likelihoods, transitions, and priors describing the POMDP. Each entry
+        corresponds to a modality (A) or state factor (B, D). Entries may be
+        raw arrays or `Distribution` instances.
+    A_dependencies, B_dependencies: list, optional
+        Explicit dependency structures. If omitted, they are inferred.
+    make_env_params: bool
+        If True, also return a dict of env_params (with Distribution instances
+        converted to their `.data`). Otherwise, env_params is None.
+    kwargs: dict
+        Passed through to `PymdpEnv`.
+
+    Returns
+    -------
+    env: PymdpEnv
+    env_params: dict | None
+    """
+    env = PymdpEnv(A=A, B=B, D=D, A_dependencies=A_dependencies, B_dependencies=B_dependencies, **kwargs)
+    if not make_env_params:
+        return env, None
+
+    def _to_arrays(params):
+        if params is None:
+            return None
+        return [jnp.array(p.data) if isinstance(p, Distribution) else p for p in params]
+
+    env_params = {"A": _to_arrays(A), "B": _to_arrays(B), "D": _to_arrays(D)}
+
+    return env, env_params
 
 class Env:
 
