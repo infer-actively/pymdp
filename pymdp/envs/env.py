@@ -52,7 +52,7 @@ class Env:
     def step(self, key, state, action, env_params=None):
         raise NotImplementedError
 
-    def generate_env_params(self, key, batch_size):
+    def generate_env_params(self, key=None, batch_size=None):
         return None
 
 class PymdpEnv(Env):
@@ -92,7 +92,15 @@ class PymdpEnv(Env):
             self.D = [jnp.array(d.data) if isinstance(d, Distribution) else d for d in D]
         else:
             self.D = None
-        
+
+    def generate_env_params(self, key=None, batch_size=None):
+        env_params = {"A": self.A, "B": self.B, "D": self.D}
+        if batch_size is None:
+            return env_params
+
+        expand_to_batch = lambda x: jnp.broadcast_to(jnp.asarray(x), (batch_size,) + x.shape)
+        return jtu.tree_map(expand_to_batch, {"A": self.A, "B": self.B, "D": self.D})
+    
     @partial(jit, static_argnums=(0,))
     def reset(self, key, env_params=None):
         probs = env_params["D"] if env_params is not None else self.D
@@ -129,4 +137,3 @@ class PymdpEnv(Env):
         new_obs = jtu.tree_map(cat_sample, keys, obs_probs)
         new_obs = jtu.tree_map(lambda x: jnp.expand_dims(x, -1), new_obs)
         return new_obs
-
