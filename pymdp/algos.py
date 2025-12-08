@@ -133,7 +133,7 @@ def update_marginals(get_messages, obs, A, B, prior, A_dependencies, B_dependenc
         ln_qs = jtu.tree_map(log_stable, qs)
         # messages from future $m_+(s_t)$ and past $m_-(s_t)$ for all time steps and factors. For t = T we have that $m_+(s_T) = 0$
         
-        lnB_past, lnB_future = get_messages(ln_B, B, qs, ln_prior, B_dependencies)
+        lnB_future, lnB_past = get_messages(ln_B, B, qs, ln_prior, B_dependencies)
 
         mgds = jtu.Partial(mirror_gradient_descent_step, tau)
 
