@@ -97,7 +97,6 @@ def rollout(
     initial_carry=None,
     policy_search=None,
     env_params=None,
-    env_params_batched=False,
 ):
     """
     Rollout an agent in an environment for a number of timesteps.
@@ -110,8 +109,7 @@ def rollout(
     rng_key: random key for sampling
     initial_carry: optional initial carry state to start the rollout from, if None it will be initialized from an environment reset
     policy_search: optional custom policy inference function such as sophisticated inference
-    env_params: optional pytree of environment parameters
-    env_params_batched: optional Boolean flag to indicate whether env_params carries a leading batch dim equal to agent.batch_size
+    env_params: optional pytree of environment parameters (assume batched along first dimension and matches batch size of `agent`)
 
     Returns
     ----------
@@ -129,18 +127,6 @@ def rollout(
     # default policy search just uses standard active inference policy selection
     if policy_search is None:
         policy_search = default_policy_search
-
-    if env_params_batched and env_params is None:
-        raise ValueError("env_params_batched=True requires env_params to be provided")
-
-    if env_params is None:
-        env_reset = vmap(env.reset)
-        env_step = vmap(env.step)
-    else:
-        reset_in_axes = (0, 0) if env_params_batched else (0, None)
-        step_in_axes = (0, 0, 0, 0) if env_params_batched else (0, 0, 0, None)
-        env_reset = vmap(lambda k, ep: env.reset(k, env_params=ep), in_axes=reset_in_axes)
-        env_step = vmap(lambda k, s, a, ep: env.step(k, s, a, env_params=ep), in_axes=step_in_axes)
 
     def step_fn(carry, t):
         # carrying the current timestep's action, observation, beliefs, empirical prior, environment state, and random key
@@ -161,7 +147,7 @@ def rollout(
         )
 
         # step the environment forward with the chosen action
-        observation_next, env_state_next = env_step(keys[2:], env_state, action_next, env_params)
+        observation_next, env_state_next = vmap(env.step)(keys[2:], env_state, action_next, env_params=env_params)
 
         # carrying the next timestep's action, observation, beliefs, empirical prior, environment state, and random key
         carry = {
@@ -194,7 +180,7 @@ def rollout(
         # initialise first observation from environment
         keys = jr.split(rng_key, batch_size + 1)
         rng_key = keys[0]
-        observation_0, env_state = env_reset(keys[1:], env_params)
+        observation_0, env_state = vmap(env.reset)(keys[1:], env_params=env_params)
 
         # specify initial beliefs using D
         qs_0 = jtu.tree_map(lambda x: jnp.expand_dims(x, -2), agent.D)
