@@ -42,6 +42,7 @@ test = [
     "nbval>=0.11.0",
     "pybefit",
     "pygraphviz>=1.14",
+    "pytest-cov>=7.0.0",
     "pytest>=8.4.2",
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.5.0",
@@ -98,6 +99,18 @@ filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::FutureWarning",
 ]
+
+[tool.coverage.run]
+source = ["pymdp"]
+omit = [
+    "*/test/*",
+    "pymdp/legacy/*",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
 
 [tool.uv.sources]
 pybefit = { git = "https://github.com/conorheins/pybefit.git", rev = "fix/pymdp-compat" }
