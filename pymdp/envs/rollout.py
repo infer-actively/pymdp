@@ -107,7 +107,7 @@ def rollout(
     env: environment that can step forward and return observations
     num_timesteps: how many timesteps to simulate
     rng_key: random key for sampling
-    initial_carry: optional initial carry state to start the rollout from, if None it will be initialized from an environment reset
+    initial_carry: optional dict to overwrite parts of the auto-constructed carry (e.g., just "env_state" and "observation")
     policy_search: optional custom policy inference function such as sophisticated inference
     env_params: optional pytree of environment parameters (assume batched along first dimension and matches batch size of `agent`)
 
@@ -176,28 +176,32 @@ def rollout(
 
         return carry, info
 
-    if initial_carry is None:
-        # initialise first observation from environment
-        keys = jr.split(rng_key, batch_size + 1)
-        rng_key = keys[0]
-        observation_0, env_state = vmap(env.reset)(keys[1:], env_params=env_params)
+    # initialise first observation from environment
+    keys = jr.split(rng_key, batch_size + 1)
+    rng_key = keys[0]
+    observation_0, env_state = vmap(env.reset)(keys[1:], env_params=env_params)
 
-        # specify initial beliefs using D
-        qs_0 = jtu.tree_map(lambda x: jnp.expand_dims(x, -2), agent.D)
+    # specify initial beliefs using D
+    qs_0 = jtu.tree_map(lambda x: jnp.expand_dims(x, -2), agent.D)
 
-        # put action to -1 to indicate no action taken yet
-        action_0 = -jnp.ones((agent.batch_size, agent.policies.shape[-1]), dtype=jnp.int32)
+    # put action to -1 to indicate no action taken yet
+    action_0 = -jnp.ones((agent.batch_size, agent.policies.shape[-1]), dtype=jnp.int32)
 
-        # set up initial state to carry through timesteps
-        initial_carry = {
-            "qs": qs_0,
-            "action": action_0,
-            "observation": observation_0,
-            "env_state": env_state,
-            "agent": agent,
-            "rng_key": rng_key,
-        }
+    # set up initial state to carry through timesteps
+    built_carry = {
+        "qs": qs_0,
+        "action": action_0,
+        "observation": observation_0,
+        "env_state": env_state,
+        "agent": agent,
+        "rng_key": rng_key,
+    }
 
+    if initial_carry is not None:
+        built_carry = {**built_carry, **initial_carry}
+
+    initial_carry = built_carry
+    
     # run the active inference loop for num_timesteps using lax.scan
     last, info = lax.scan(step_fn, initial_carry, jnp.arange(num_timesteps + 1))
 
