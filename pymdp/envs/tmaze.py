@@ -7,7 +7,7 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import scipy.ndimage as ndimage
 from pymdp.utils import fig2img
 from equinox import field
-from .env import Env
+from .env import PymdpEnv
 
 
 # load assets
@@ -20,7 +20,7 @@ cheese_img = plt.imread(os.path.join(assets_dir, "cheese.png"))
 shock_img = plt.imread(os.path.join(assets_dir, "shock.png"))
 
 
-class TMaze(Env):
+class TMaze(PymdpEnv):
     """
     Implementation of the T-Maze environment, a type of contextual 2-arm bandit.
     A T-shaped maze where an agent must navigate to find a reward, with:
@@ -35,7 +35,7 @@ class TMaze(Env):
     reward_condition: float = field(static=True)
     dependent_outcomes: bool = field(static=True)
 
-    def __init__(self, batch_size=1, reward_probability=1.0, punishment_probability=1.0, cue_validity=0.95, reward_condition=None, dependent_outcomes=False):
+    def __init__(self, reward_probability=1.0, punishment_probability=1.0, cue_validity=0.95, reward_condition=None, dependent_outcomes=False):
         """
         Initialize T-Maze environment. A is the observation likelihood matrix, B is the transition matrix, D is the initial state distribution.
         Args:
@@ -54,24 +54,10 @@ class TMaze(Env):
 
         # Generate and broadcast observation likelihood(A), transition (B), and initial state (D) tensors to the batch size
         A, A_dependencies = self.generate_A()
-        A = [jnp.broadcast_to(a, (batch_size,) + a.shape) for a in A]
         B, B_dependencies = self.generate_B()
-        B = [jnp.broadcast_to(b, (batch_size,) + b.shape) for b in B]
         D = self.generate_D()
-        D = [jnp.broadcast_to(d, (batch_size,) + d.shape) for d in D]
 
-        params = {
-            "A": A,
-            "B": B,
-            "D": D,
-        }
-
-        dependencies = { # specifying which matrix is dependent on which state factors allows you to not have to specify all combinations of state factors in the matrix
-            "A": A_dependencies, 
-            "B": B_dependencies,
-        }
-
-        super().__init__(params, dependencies)
+        super().__init__(A=A, B=B, D=D, A_dependencies=A_dependencies, B_dependencies=B_dependencies)
 
     def generate_A(self):
         """
@@ -213,16 +199,10 @@ class TMaze(Env):
         D.append(D_reward)
         return D
 
-    def render(self, mode="human", observations=None):
-        if observations is not None:
-            current_obs = observations
-            batch_size = observations[0].shape[0]
-        else:
-            current_obs = self.current_obs
-            batch_size = self.params["A"][0].shape[0]
-
+    def render(self, observations, mode="human"):
+        batch_size = observations[0].shape[0]
+     
         plt.clf()  # Clear the current figure
-        
 
         # create n x n subplots for the batch_size
         n = math.ceil(math.sqrt(batch_size))
@@ -289,7 +269,7 @@ class TMaze(Env):
             )
 
             # show the cue
-            cue = current_obs[2][i, 0]
+            cue = observations[2][i, 0]
             if cue == 0:
                 cue_color = "tab:gray"
                 edge_color = "tab:gray"
@@ -313,8 +293,8 @@ class TMaze(Env):
             )
 
             # show the reward
-            loc = current_obs[0][i, 0]
-            reward = current_obs[1][i, 0]
+            loc = observations[0][i, 0]
+            reward = observations[1][i, 0]
             if loc == 1:
                 coords = (0.5, 0.5)
             elif loc == 2:
