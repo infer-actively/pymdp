@@ -67,7 +67,7 @@ def make(A, B, D, A_dependencies=None, B_dependencies=None, make_env_params=Fals
 
 class Env:
 
-    def reset(self, key, env_params=None):
+    def reset(self, key, state=None, env_params=None):
         raise NotImplementedError
 
     def step(self, key, state, action, env_params=None):
@@ -123,11 +123,12 @@ class PymdpEnv(Env):
         return jtu.tree_map(expand_to_batch, {"A": self.A, "B": self.B, "D": self.D})
     
     @partial(jit, static_argnums=(0,))
-    def reset(self, key, env_params=None):
-        probs = env_params["D"] if env_params is not None else self.D
-        keys = list(jr.split(key, len(probs) + 1))
-        key = keys[0]
-        state = jtu.tree_map(cat_sample, keys[1:], probs)
+    def reset(self, key, state=None, env_params=None):
+        if state is None:
+            probs = env_params["D"] if env_params is not None else self.D
+            keys = list(jr.split(key, len(probs) + 1))
+            key = keys[0]
+            state = jtu.tree_map(cat_sample, keys[1:], probs)
         obs = self._sample_obs(key, state, env_params)
         return obs, state
 
