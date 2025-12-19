@@ -109,6 +109,74 @@ class TestRolloutFunction(unittest.TestCase):
 
         self.assertEqual(last["action"].shape[0], agent.batch_size)
 
+    def test_rollout_env_state_matches_manual_steps(self):
+        num_obs = [2]
+        num_states = [2]
+        num_controls = [2]
+        A_dependencies = [[0]]
+        B_dependencies = [[0]]
+        batch_size = 2
+
+        A = [jnp.eye(num_obs[0], dtype=jnp.float32)]
+        b = jnp.zeros((num_states[0], num_states[0], num_controls[0]), dtype=jnp.float32)
+        b = b.at[:, :, 0].set(jnp.eye(num_states[0], dtype=jnp.float32))
+        b = b.at[:, :, 1].set(jnp.array([[0.0, 1.0], [1.0, 0.0]], dtype=jnp.float32))
+        B = [b]
+        D = [jnp.array([1.0, 0.0], dtype=jnp.float32)]
+
+        def _broadcast(arr_list):
+            return [
+                jnp.broadcast_to(jnp.array(arr), (batch_size,) + arr.shape)
+                for arr in arr_list
+            ]
+
+        A_batched = _broadcast(A)
+        B_batched = _broadcast(B)
+        D_batched = _broadcast(D)
+
+        agent = Agent(
+            A_batched,
+            B_batched,
+            A_dependencies=A_dependencies,
+            B_dependencies=B_dependencies,
+            num_controls=num_controls,
+            batch_size=batch_size,
+            D=D_batched,
+        )
+
+        env_params = {"A": A_batched, "B": B_batched, "D": D_batched}
+        env = PymdpEnv(A_dependencies=A_dependencies, B_dependencies=B_dependencies)
+
+        num_steps = 3
+        key = jr.PRNGKey(9)
+
+        last, info = rollout(agent, env, num_steps, key, env_params=env_params)
+
+        env_state_series = info["env_state"][0]
+        action_series = info["action"]
+
+        current_state = [env_state_series[:, 0]]
+        step_fn = lambda k, st, act, params: env.step(k, st, act, env_params=params)
+
+        key = jr.PRNGKey(10)
+        for t in range(num_steps + 1):
+            key, step_key = jr.split(key)
+            step_keys = jr.split(step_key, batch_size)
+            _, next_state = vmap(step_fn, in_axes=(0, 0, 0, 0))(
+                step_keys, current_state, action_series[:, t, :], env_params
+            )
+
+            if t < num_steps:
+                np.testing.assert_array_equal(
+                    np.asarray(next_state[0]), np.asarray(env_state_series[:, t + 1])
+                )
+            else:
+                np.testing.assert_array_equal(
+                    np.asarray(next_state[0]), np.asarray(last["env_state"][0])
+                )
+
+            current_state = next_state
+
     def test_online_learning_updates_A_during_scan(self):
         agent, env, env_params, initial = self.build_agent_env(learn_A=True, learning_mode="online")
         key = jr.PRNGKey(1)
