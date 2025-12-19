@@ -407,8 +407,6 @@ class GeneralizedTMazeEnv(PymdpEnv):
 
         cmap = plt.get_cmap("tab10")
 
-        true_set_idx = num_cues - 1
-
         for (i, ax) in enumerate(axes_flat[:batch_size]):
             
             current_position = states[0][i]
