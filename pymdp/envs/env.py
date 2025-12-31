@@ -1,4 +1,5 @@
 from functools import partial
+from abc import ABC, abstractmethod
 
 import jax.numpy as jnp
 from jax import vmap, jit, random as jr, tree_util as jtu
@@ -68,11 +69,13 @@ def make(A, B, D, A_dependencies=None, B_dependencies=None, make_env_params=Fals
 
     return env, env_params
 
-class Env:
+class Env(ABC):
 
+    @abstractmethod
     def reset(self, key, state=None, env_params=None):
         raise NotImplementedError
 
+    @abstractmethod
     def step(self, key, state, action, env_params=None):
         raise NotImplementedError
 
