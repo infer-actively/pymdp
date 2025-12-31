@@ -43,7 +43,10 @@ def make(A, B, D, A_dependencies=None, B_dependencies=None, make_env_params=Fals
         Explicit dependency structures. If omitted, they are inferred.
     make_env_params: bool
         If True, also return a dict of env_params (with Distribution instances
-        converted to their `.data`). Otherwise, env_params is None.
+        converted to their `.data`). Otherwise, env_params is None. Returned
+        env_params match the input shapes (shapes of `A`, `B`, and `D`) and are 
+        not broadcast; for broadcasting single-batch environmental parameters to a larger batch size,
+        call `env.generate_env_params(batch_size=...)`  on the `env` that is returned by this function.
     kwargs: dict
         Passed through to `PymdpEnv`.
 
