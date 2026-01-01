@@ -1,9 +1,10 @@
 from typing import List
 
+import jax
+from jax import lax, vmap
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
-import jax.lax
 
 from pymdp.agent import Agent
 from pymdp.envs.env import Env
@@ -95,6 +96,7 @@ def rollout(
     rng_key: jr.PRNGKey,
     initial_carry=None,
     policy_search=None,
+    env_params=None,
 ):
     """
     Rollout an agent in an environment for a number of timesteps.
@@ -105,8 +107,9 @@ def rollout(
     env: environment that can step forward and return observations
     num_timesteps: how many timesteps to simulate
     rng_key: random key for sampling
-    initial_carry: optional initial carry state to start the rollout from, if None it will be initialized from an environment reset
+    initial_carry: optional dict to overwrite parts of the auto-constructed carry (e.g., just "env_state" and "observation")
     policy_search: optional custom policy inference function such as sophisticated inference
+    env_params: optional pytree of environment parameters (assume batched along first dimension and matches batch size of `agent`)
 
     Returns
     ----------
@@ -130,7 +133,7 @@ def rollout(
         action = carry["action"]
         observation = carry["observation"]
         qs_prev = carry["qs"]
-        env = carry["env"]
+        env_state = carry["env_state"]
         agent = carry["agent"]
         rng_key = carry["rng_key"]
 
@@ -144,22 +147,20 @@ def rollout(
         )
 
         # step the environment forward with the chosen action
-        observation_next, env_next = env.step(
-            rng_key=keys[2:], actions=action_next
-        )  # step environment forward with chosen action
+        observation_next, env_state_next = vmap(env.step)(keys[2:], env_state, action_next, env_params=env_params)
 
         # carrying the next timestep's action, observation, beliefs, empirical prior, environment state, and random key
         carry = {
             "action": action_next,
             "observation": observation_next,
             "qs": jtu.tree_map(lambda x: x[:, -1:, ...], qs),  # keep only latest belief
-            "env": env_next,
+            "env_state": env_state_next,
             "agent": updated_agent,
             "rng_key": rng_key,
         }
         info = {
             "qs": jtu.tree_map(lambda x: x[:, 0, ...], qs),
-            "env": env,
+            "env_state": env_state,
             "observation": observation,
             "action": action_next,
         }
@@ -175,30 +176,34 @@ def rollout(
 
         return carry, info
 
-    if initial_carry is None:
-        # initialise first observation from environment
-        keys = jr.split(rng_key, batch_size + 1)
-        rng_key = keys[0]
-        observation_0, env = env.reset(keys[1:])
+    # initialise first observation from environment
+    keys = jr.split(rng_key, batch_size + 1)
+    rng_key = keys[0]
+    observation_0, env_state = vmap(env.reset)(keys[1:], env_params=env_params)
 
-        # specify initial beliefs using D
-        qs_0 = jtu.tree_map(lambda x: jnp.expand_dims(x, -2), agent.D)
+    # specify initial beliefs using D
+    qs_0 = jtu.tree_map(lambda x: jnp.expand_dims(x, -2), agent.D)
 
-        # put action to -1 to indicate no action taken yet
-        action_0 = -jnp.ones((agent.batch_size, agent.policies.shape[-1]), dtype=jnp.int32)
+    # put action to -1 to indicate no action taken yet
+    action_0 = -jnp.ones((agent.batch_size, agent.policies.shape[-1]), dtype=jnp.int32)
 
-        # set up initial state to carry through timesteps
-        initial_carry = {
-            "qs": qs_0,
-            "action": action_0,
-            "observation": observation_0,
-            "env": env,
-            "agent": agent,
-            "rng_key": rng_key,
-        }
+    # set up initial state to carry through timesteps
+    built_carry = {
+        "qs": qs_0,
+        "action": action_0,
+        "observation": observation_0,
+        "env_state": env_state,
+        "agent": agent,
+        "rng_key": rng_key,
+    }
 
-    # run the active inference loop for num_timesteps using jax.lax.scan
-    last, info = jax.lax.scan(step_fn, initial_carry, jnp.arange(num_timesteps + 1))
+    if initial_carry is not None:
+        built_carry = {**built_carry, **initial_carry}
+
+    initial_carry = built_carry
+    
+    # run the active inference loop for num_timesteps using lax.scan
+    last, info = lax.scan(step_fn, initial_carry, jnp.arange(num_timesteps + 1))
 
     info = jtu.tree_map(
         lambda x: x.transpose((1, 0) + tuple(range(2, x.ndim))), info
@@ -208,4 +213,4 @@ def rollout(
         outcomes = jtu.tree_map(lambda x: x.squeeze(-1), info['observation']) if num_timesteps > 1 else info['observation']
         last["agent"] = last["agent"].infer_parameters(info['qs'], outcomes, info['action'])
 
-    return last, info, env
+    return last, info

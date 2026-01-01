@@ -6,12 +6,12 @@ import jax.numpy as jnp
 import numpy as np
 import jax.tree_util as jtu
 
-from .env import Env
+from .env import PymdpEnv
 
 
-class GridWorld(Env):
+class GridWorld(PymdpEnv):
     """
-    Classic 2D grid world as a JAX-compatible Env.
+    Classic 2D grid world as a JAX-compatible PymdpEnv.
 
     Hidden state factors
     --------------------
@@ -53,11 +53,11 @@ class GridWorld(Env):
     Notes
     -----
     - Shapes follow the JAX Env API:
-        A[0].shape == (batch, num_obs, num_states)
-        B[0].shape == (batch, num_states, num_states, num_actions)
-        D[0].shape == (batch, num_states)
-        dependencies["A"] == [[0]]
-        dependencies["B"] == [[0]]
+        A[0].shape == (num_obs, num_states)
+        B[0].shape == (num_states, num_states, num_actions)
+        D[0].shape == (num_states,)
+        A_dependencies == [[0]]
+        B_dependencies == [[0]]
     - Works directly with `pymdp.envs.rollout.rollout` and the JAX `Agent`.
     """
 
@@ -75,7 +75,6 @@ class GridWorld(Env):
         initial_position: Optional[Tuple[int, int] | int] = None,
         include_stay: bool = True,
         success_prob: float = 1.0,
-        batch_size: int = 1,
     ):
         rows, cols = shape
         assert rows >= 1 and cols >= 1, "Grid shape must be positive."
@@ -86,20 +85,18 @@ class GridWorld(Env):
         n_states = rows * cols
 
         # --- Build A (likelihood), B (transitions), D (initial state) ---
-        A, A_deps = _generate_A(n_states)
-        B, B_deps = _generate_B(shape, walls_flat, include_stay, success_prob)
+        A, A_dependencies = _generate_A(n_states)
+        B, B_dependencies = _generate_B(shape, walls_flat, include_stay, success_prob)
         D = _generate_D(shape, walls_flat, initial_position)
 
-        # Broadcast all arrays to batch dimension like other JAX envs
-        expand = lambda x: jnp.broadcast_to(jnp.array(x), (batch_size,) + x.shape)
-        params = {
-            "A": jtu.tree_map(expand, [A]),
-            "B": jtu.tree_map(expand, [B]),
-            "D": jtu.tree_map(expand, [D]),
-        }
-        dependencies = {"A": A_deps, "B": B_deps}
-
-        super().__init__(params, dependencies)
+        # Wrap in single-element lists to align with the `PymdpEnv` API
+        super().__init__(
+            A=[A],
+            B=[B],
+            D=[D],
+            A_dependencies=A_dependencies,
+            B_dependencies=B_dependencies,
+        )
 
     # ---------------------------------------------------------------------
     # Optional convenience accessors (not required by the API)

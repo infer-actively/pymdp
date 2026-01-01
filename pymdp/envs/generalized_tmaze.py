@@ -1,12 +1,11 @@
-from .env import Env
+from .env import PymdpEnv
 import numpy as np
+import math
 import jax.numpy as jnp
 
 import matplotlib.pyplot as plt
-import io
-import PIL.Image
+from pymdp.utils import fig2img
 
-import jax.tree_util as jtu
 from jax import random as jr
 from jaxtyping import PRNGKeyArray
 from matplotlib.lines import Line2D
@@ -192,25 +191,25 @@ def generate_A(maze_info):
     reward_2_positions = maze_info["reward_2_positions"]
 
     num_states = rows * cols
-    position_likelihood = np.zeros((num_states, num_states))
+    position_likelihood = jnp.zeros((num_states, num_states))
     for i in range(num_states):
         # Agent can be certain about its position regardless of reward state
-        position_likelihood[i, i] = 1
+        position_likelihood = position_likelihood.at[i, i].set(1)
 
     cue_likelihoods = []
     for i in range(num_cues):
         # Cue observation likelihood, cue_position = (11, 5)
         # obs (nothing, left location, right location)
         # state: (current position, reward i position)
-        cue_likelihood = np.zeros((3, num_states, 2))
-        cue_likelihood[0, :, :] = 1  # Default: no info about reward
+        cue_likelihood = jnp.zeros((3, num_states, 2))
+        cue_likelihood = cue_likelihood.at[0, :, :].set(1)  # Default: no info about reward
 
         cue_state_idx = jnp.ravel_multi_index(jnp.array(cue_positions[i]), maze.shape)
         reward_1_state_idx = jnp.ravel_multi_index(jnp.array(reward_1_positions[i]), maze.shape)
         reward_2_state_idx = jnp.ravel_multi_index(jnp.array(reward_2_positions[i]), maze.shape)
 
-        cue_likelihood[:, cue_state_idx, 0] = [0, 1, 0]  # Reward in r1
-        cue_likelihood[:, cue_state_idx, 1] = [0, 0, 1]  # Reward in r2
+        cue_likelihood = cue_likelihood.at[:, cue_state_idx, 0].set(jnp.array([0, 1, 0]))  # Reward in r1
+        cue_likelihood = cue_likelihood.at[:, cue_state_idx, 1].set(jnp.array([0, 0, 1]))  # Reward in r2
         cue_likelihoods.append(cue_likelihood)
 
     # Reward observation likelihood, r1 = (4, 7), r2 = (8, 7)
@@ -218,28 +217,28 @@ def generate_A(maze_info):
 
     for i in range(num_cues):
         # observation (nothing, no reward, reward)
-        reward_likelihood = np.zeros((3, num_states, 2))
-        reward_likelihood[0, :, :] = 1  # Default: no reward
+        reward_likelihood = jnp.zeros((3, num_states, 2))
+        reward_likelihood = reward_likelihood.at[0, :, :].set(1)  # Default: no reward
 
         reward_1_state_idx = jnp.ravel_multi_index(jnp.array(reward_1_positions[i]), maze.shape)
         reward_2_state_idx = jnp.ravel_multi_index(jnp.array(reward_2_positions[i]), maze.shape)
 
         # Reward in (8,4) if reward state is 0
-        reward_likelihood[:, reward_1_state_idx, 0] = [0, 1, 0]
+        reward_likelihood = reward_likelihood.at[:, reward_1_state_idx, 0].set(jnp.array([0, 1, 0]))
         # Reward in (8,8) if reward state is 0
-        reward_likelihood[:, reward_2_state_idx, 0] = [0, 0, 1]
+        reward_likelihood = reward_likelihood.at[:, reward_2_state_idx, 0].set(jnp.array([0, 0, 1]))
         # Reward in (8,4) if reward state is 0
-        reward_likelihood[:, reward_1_state_idx, 1] = [0, 0, 1]
+        reward_likelihood = reward_likelihood.at[:, reward_1_state_idx, 1].set(jnp.array([0, 0, 1]))
         # Reward in (8,8) if reward state is 0
-        reward_likelihood[:, reward_2_state_idx, 1] = [0, 1, 0]
+        reward_likelihood = reward_likelihood.at[:, reward_2_state_idx, 1].set(jnp.array([0, 1, 0]))
         reward_likelihoods.append(reward_likelihood)
 
-    combined_likelihood = np.empty(1 + 2 * num_cues, dtype=object)
-    combined_likelihood[0] = position_likelihood
-    for j, cue_likelihood in enumerate(cue_likelihoods):
-        combined_likelihood[1 + j] = cue_likelihood
-    for j, reward_likelihood in enumerate(reward_likelihoods):
-        combined_likelihood[1 + num_cues + j] = reward_likelihood
+    combined_likelihood = []
+    combined_likelihood.append(position_likelihood)
+    for cue_likelihood in cue_likelihoods:
+        combined_likelihood.append(cue_likelihood)
+    for reward_likelihood in reward_likelihoods:
+        combined_likelihood.append(reward_likelihood)
 
     likelihood_dependencies = (
         [[0]]
@@ -275,7 +274,7 @@ def generate_B(maze_info):
     num_states = rows * cols
     num_actions = len(actions)
 
-    P = np.zeros((num_states, num_actions), dtype=int)
+    P = jnp.zeros((num_states, num_actions), dtype=int)
 
     for s in range(num_states):
         row, col = divmod(s, cols)
@@ -290,31 +289,30 @@ def generate_B(maze_info):
                 or ns_col >= cols
                 or maze[ns_row, ns_col] == 2
             ):
-                P[s, a] = s
+                P = P.at[s, a].set(s)
             else:
-                P[s, a] = jnp.ravel_multi_index(jnp.array((ns_row, ns_col)), maze.shape)
+                P = P.at[s, a].set(jnp.ravel_multi_index(jnp.array((ns_row, ns_col)), maze.shape))
 
-    B = np.zeros((num_states, num_states, num_actions))
+    B = jnp.zeros((num_states, num_states, num_actions))
     for s in range(num_states):
         for a in range(num_actions):
             ns = P[s, a]
-            B[ns, s, a] = 1
-
+            B = B.at[ns, s, a].set(1)
     # add do nothing action 
-    B = np.concatenate([B, np.eye(num_states)[..., None]], -1)
+    B = jnp.concatenate([B, jnp.eye(num_states)[..., None]], -1)
 
-    assert np.all(np.logical_or(B == 0, B == 1))
-    assert np.allclose(B.sum(axis=0), 1)
+    assert jnp.all(jnp.logical_or(B == 0, B == 1))
+    assert jnp.allclose(B.sum(axis=0), 1)
 
     reward_transitions = []
     for i in range(num_cues):
-        reward_transition = np.eye(2).reshape(2, 2, 1)
+        reward_transition = jnp.eye(2).reshape(2, 2, 1)
         reward_transitions.append(reward_transition)
 
-    combined_transition = np.empty(1 + num_cues, dtype=object)
-    combined_transition[0] = B
-    for i, reward_transition in enumerate(reward_transitions):
-        combined_transition[1 + i] = reward_transition
+    combined_transition = []
+    combined_transition.append(B)
+    for reward_transition in reward_transitions:
+        combined_transition.append(reward_transition)
 
     transition_dependencies = [[0]] + [[i + 1] for i in range(num_cues)]
 
@@ -342,187 +340,37 @@ def generate_D(maze_info):
 
     D = [None for _ in range(1 + num_cues)]
 
-    D[0] = np.zeros(cols * rows)
+    D[0] = jnp.zeros(cols * rows)
     # Position of the agent when starting the environment
-    D[0][jnp.ravel_multi_index(jnp.array(initial_position), maze.shape)] = 1
+    D[0] = D[0].at[jnp.ravel_multi_index(jnp.array(initial_position), maze.shape)].set(1)
 
     # Cue state i.e. where is the reward
     for i in range(num_cues):
         r1 = reward_locations[i]
-        D[1 + i] = np.zeros(2)
-        D[1 + i][r1] = 1
+        D[1 + i] = jnp.zeros(2)
+        D[1 + i] = D[1 + i].at[r1].set(1)
 
     return D
-
-
-def render(maze_info, env_state, show_img=True):
-    """
-    Plots and returns the rendered environment.
-    Parameters
-    ----------
-    maze_info:
-        info dict returned from `parse_maze` which contains the information
-        about the reward locations, initial positions, etc.
-    env_state:
-        The environment state as a GeneralizedTMazeEnv instance
-    Returns
-    ----------
-    image:
-        A render of the environment.
-    """
-    maze = maze_info["maze"].copy()
-    num_cues = maze_info["num_cues"]
-    cue_positions = maze_info["cue_positions"]
-    reward_1_positions = maze_info["reward_1_positions"]
-    reward_2_positions = maze_info["reward_2_positions"]
-
-    current_position = env_state.state[0]
-    current_position = jnp.unravel_index(current_position, maze.shape)
-
-    # Set all states not in [1] to be 0 (accessible state)
-    mask = np.isin(maze, [2], invert=True)
-    maze[mask] = 0
-
-    plt.figure()
-    plt.imshow(maze, cmap="gray_r", origin="lower")
-
-    cmap = plt.get_cmap("tab10")
-    plt.scatter(
-        [ci[1] for ci in cue_positions],
-        [ci[0] for ci in cue_positions],
-        color=[cmap(i) for i in range(len(cue_positions))],
-        s=200,
-        alpha=0.5,
-    )
-    plt.scatter(
-        [ci[1] for ci in cue_positions],
-        [ci[0] for ci in cue_positions],
-        color="black",
-        s=50,
-        label="Cue",
-        marker="x",
-    )
-
-    plt.scatter(
-        [ri[1] for ri in reward_1_positions],
-        [ri[0] for ri in reward_1_positions],
-        color=[cmap(i) for i in range(len(cue_positions))],
-        s=200,
-        alpha=0.5,
-    )
-
-    plt.scatter(
-        [ri[1] for ri in reward_2_positions],
-        [ri[0] for ri in reward_2_positions],
-        color=[cmap(i) for i in range(len(cue_positions))],
-        s=200,
-        alpha=0.5,
-    )
-
-    for i, (r1, r2) in enumerate(zip(reward_1_positions, reward_2_positions)):
-        if i == maze_info["num_cues"] - 1:  # Only for the true reward set
-            if maze_info["reward_locations"][i] == 0:
-                # First location is reward
-                plt.scatter(r1[1], r1[0], color='red', s=100, marker='o', zorder=4, label = "Reward")  # Red dot
-                plt.scatter(r2[1], r2[0], color='blue', s=100, marker='o', zorder=4, label = "Punishment")  # Blue dot
-            else:
-                # Second location is reward
-                plt.scatter(r2[1], r2[0], color='red', s=100, marker='o', zorder=4, label = "Reward")  # Red dot
-                plt.scatter(r1[1], r1[0], color='blue', s=100, marker='o', zorder=4, label = "Punishment")  # Blue dot
-
-
-    # plt.scatter(
-    #     [ri[1] for ri in reward_1_positions[-1:]],
-    #     [ri[0] for ri in reward_1_positions[-1:]],
-    #     marker="o",
-    #     color="red",
-    #     s=50,
-    #     label="Reward",
-    # )
-
-    # plt.scatter(
-    #     [ri[1] for ri in reward_2_positions[-1:]],
-    #     [ri[0] for ri in reward_2_positions[-1:]],
-    #     marker="o",
-    #     color="blue",
-    #     s=50,
-    #     label="Punishment",
-    # )
-
-    plt.scatter(
-        current_position[1],
-        current_position[0],
-        c="tab:green",
-        marker="s",
-        s=100,
-        label="Agent",
-    )
-
-    plt.title("Generalized T-Maze Environment")
-
-    handles, labels = plt.gca().get_legend_handles_labels()
-    for i in range(num_cues):
-        if i == num_cues - 1:
-            label = "True Reward Set"
-        else:
-            label = f"Distractor Set {i + 1}"
-        patch = Line2D(
-            [0],
-            [0],
-            marker="o",
-            markersize=10,
-            markerfacecolor=cmap(i),
-            markeredgecolor=cmap(i),
-            label=label,
-            alpha=0.5,
-            linestyle="",
-        )
-        handles.append(patch)
-
-    plt.legend(
-        handles=handles, loc="upper left", bbox_to_anchor=(1, 1), fancybox=True
-    )
-    #plt.axis("off")
-    plt.tight_layout()
-
-    # Capture the current figure as an image
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png")
-    buf.seek(0)
-    image = PIL.Image.open(buf)
-
-    if show_img:
-        plt.show()
-
-    plt.close()
-    return image
-
-
-class GeneralizedTMazeEnv(Env):
+class GeneralizedTMazeEnv(PymdpEnv):
     """
     Extended version of the T-Maze in which there are multiple cues and reward pairs
     similar to the original T-maze.
     """
 
-    def __init__(self, env_info, batch_size=1):
+    def __init__(self, env_info):
         A, A_dependencies = generate_A(env_info)
         B, B_dependencies = generate_B(env_info)
         D = generate_D(env_info)
-        expand_to_batch = lambda x: jnp.broadcast_to(jnp.array(x), (batch_size,) + x.shape)
-        params = {
-            "A": jtu.tree_map(expand_to_batch, list(A)),
-            "B": jtu.tree_map(expand_to_batch, list(B)),
-            "D": jtu.tree_map(expand_to_batch, list(D)),
-        }
-        dependencies = {"A": A_dependencies, "B": B_dependencies}
+        super().__init__(A, B, D, A_dependencies, B_dependencies)
+        self.env_info = env_info
 
-        Env.__init__(self, params, dependencies)
-
-    def render(self, mode="human"):
+    def render(self, states, mode="human"):
         """
         Renders the environment
         Parameters
         ----------
+        states:
+            The environment states to render
         mode: str, optional
             The mode to render with ("human" or "rgb_array")
         Returns
@@ -532,120 +380,132 @@ class GeneralizedTMazeEnv(Env):
         elif mode == "rgb_array":
             A (H, W, 3) jax.numpy array that can act as input to functions like plt.imshow, with values between 0 and 255
         """
-        pass
-        # maze = maze_info["maze"]
-        # num_cues = maze_info["num_cues"]
-        # cue_positions = maze_info["cue_positions"]
-        # reward_1_positions = maze_info["reward_1_positions"]
-        # reward_2_positions = maze_info["reward_2_positions"]
 
-        # current_position = env_state.state[0]
-        # current_position = jnp.unravel_index(current_position, maze.shape)
+        if (states[0].ndim == 0):
+            states = [jnp.expand_dims(s,0) for s in states]  # add batch dimension
 
-        # # Set all states not in [1] to be 0 (accessible state)
-        # mask = np.isin(maze, [2], invert=True)
-        # maze[mask] = 0
+        batch_size = states[0].shape[0]
 
-        # plt.figure()
-        # plt.imshow(maze, cmap="gray_r", origin="lower")
+        plt.clf()  # Clear the current figure
 
-        # cmap = plt.get_cmap("tab10")
-        # plt.scatter(
-        #     [ci[1] for ci in cue_positions],
-        #     [ci[0] for ci in cue_positions],
-        #     color=[cmap(i) for i in range(len(cue_positions))],
-        #     s=200,
-        #     alpha=0.5,
-        # )
-        # plt.scatter(
-        #     [ci[1] for ci in cue_positions],
-        #     [ci[0] for ci in cue_positions],
-        #     color="black",
-        #     s=50,
-        #     label="Cue",
-        #     marker="x",
-        # )
+        maze = self.env_info["maze"].copy()
+        num_cues = self.env_info["num_cues"]
+        cue_positions = self.env_info["cue_positions"]
+        reward_1_positions = self.env_info["reward_1_positions"]
+        reward_2_positions = self.env_info["reward_2_positions"]
 
-        # plt.scatter(
-        #     [ri[1] for ri in reward_1_positions],
-        #     [ri[0] for ri in reward_1_positions],
-        #     color=[cmap(i) for i in range(len(cue_positions))],
-        #     s=200,
-        #     alpha=0.5,
-        # )
+        # Set all states not in [1] to be 0 (accessible state)
+        mask = np.isin(maze, [2], invert=True)
+        maze[mask] = 0
 
-        # plt.scatter(
-        #     [ri[1] for ri in reward_2_positions],
-        #     [ri[0] for ri in reward_2_positions],
-        #     color=[cmap(i) for i in range(len(cue_positions))],
-        #     s=200,
-        #     alpha=0.5,
-        # )
+        # create n x n subplots for the batch_size
+        n = math.ceil(math.sqrt(batch_size))
 
-        # plt.scatter(
-        #     [ri[1] for ri in reward_1_positions[-1:]],
-        #     [ri[0] for ri in reward_1_positions[-1:]],
-        #     marker="o",
-        #     color="red",
-        #     s=50,
-        #     label="Positive",
-        # )
+        # create the subplots
+        fig, axes = plt.subplots(n, n, figsize=(8,8),squeeze=False)
+        axes_flat = axes.ravel()
 
-        # plt.scatter(
-        #     [ri[1] for ri in reward_2_positions[-1:]],
-        #     [ri[0] for ri in reward_2_positions[-1:]],
-        #     marker="o",
-        #     color="blue",
-        #     s=50,
-        #     label="Negative",
-        # )
+        cmap = plt.get_cmap("tab10")
 
-        # plt.scatter(
-        #     current_position[1],
-        #     current_position[0],
-        #     c="tab:green",
-        #     marker="s",
-        #     s=100,
-        #     label="Agent",
-        # )
+        for (i, ax) in enumerate(axes_flat[:batch_size]):
+            
+            current_position = states[0][i]
+            current_position = jnp.unravel_index(current_position, maze.shape) # (row, col)
 
-        # plt.title("Generalized T-Maze Environment")
+            ax.imshow(maze, cmap="gray_r", origin="lower")
 
-        # handles, labels = plt.gca().get_legend_handles_labels()
-        # for i in range(num_cues):
-        #     if i == num_cues - 1:
-        #         label = "Reward set"
-        #     else:
-        #         label = f"Distractor {i + 1} set"
-        #     patch = Line2D(
-        #         [0],
-        #         [0],
-        #         marker="o",
-        #         markersize=10,
-        #         markerfacecolor=cmap(i),
-        #         markeredgecolor=cmap(i),
-        #         label=label,
-        #         alpha=0.5,
-        #         linestyle="",
-        #     )
-        #     handles.append(patch)
+            # cues
+            ax.scatter(
+                [ci[1] for ci in cue_positions],
+                [ci[0] for ci in cue_positions],
+                color=[cmap(i) for i in range(len(cue_positions))],
+                s=200,
+                alpha=0.5,
+            )
+            ax.scatter(
+                [ci[1] for ci in cue_positions],
+                [ci[0] for ci in cue_positions],
+                color="black",
+                s=50,
+                label="Cue",
+                marker="x",
+            )
 
-        # plt.legend(
-        #     handles=handles, loc="upper left", bbox_to_anchor=(1, 1), fancybox=True
-        # )
-        # #plt.axis("off")
-        # plt.tight_layout()
+            # reward candidates
+            ax.scatter(
+                [ri[1] for ri in reward_1_positions],
+                [ri[0] for ri in reward_1_positions],
+                color=[cmap(i) for i in range(len(cue_positions))],
+                s=200,
+                alpha=0.5,
+            )
 
-        # # Capture the current figure as an image
-        # buf = io.BytesIO()
-        # plt.savefig(buf, format="png")
-        # buf.seek(0)
-        # image = PIL.Image.open(buf)
+            ax.scatter(
+                [ri[1] for ri in reward_2_positions],
+                [ri[0] for ri in reward_2_positions],
+                color=[cmap(i) for i in range(len(cue_positions))],
+                s=200,
+                alpha=0.5,
+            )
 
-        # if show_img:
-        #     plt.show()
+            for j, (r1, r2) in enumerate(zip(reward_1_positions, reward_2_positions)):
+                if j == self.env_info["num_cues"] - 1:  # Only for the true reward set
+                    if self.env_info["reward_locations"][j] == 0:
+                        # First location is reward
+                        ax.scatter(r1[1], r1[0], color='red', s=100, marker='o', zorder=4, label = "Reward")  # Red dot
+                        ax.scatter(r2[1], r2[0], color='blue', s=100, marker='o', zorder=4, label = "Punishment")  # Blue dot
+                    else:
+                        # Second location is reward
+                        ax.scatter(r2[1], r2[0], color='red', s=100, marker='o', zorder=4, label = "Reward")  # Red dot
+                        ax.scatter(r1[1], r1[0], color='blue', s=100, marker='o', zorder=4, label = "Punishment")  # Blue dot
 
-        # return image
 
+            ax.scatter(
+                current_position[1],
+                current_position[0],
+                c="tab:green",
+                marker="s",
+                s=100,
+                label="Agent",
+            )
+
+        # hide unused axes
+        for k in range(batch_size, n * n):
+            axes_flat[k].axis("off")
+
+        plt.suptitle("Generalized T-Maze Environment")
+
+        base_ax = axes_flat[next(i for i in range(len(axes_flat)) if axes_flat[i].has_data())]  # get  
+        handles, labels = base_ax.get_legend_handles_labels()
+        for i in range(num_cues):
+            if i == num_cues - 1:
+                label = "True Reward Set"
+            else:
+                label = f"Distractor Set {i + 1}"
+            patch = Line2D(
+                [0],
+                [0],
+                marker="o",
+                markersize=10,
+                markerfacecolor=cmap(i),
+                markeredgecolor=cmap(i),
+                label=label,
+                alpha=0.5,
+                linestyle="",
+            )
+            handles.append(patch)
+
+        plt.legend(
+            handles=handles, loc="upper left", bbox_to_anchor=(1, 1), fancybox=True
+        )
+        plt.tight_layout()
+
+        if mode == "human":
+            plt.show()
+        elif mode == "rgb_array":
+            img = fig2img(fig)
+            plt.close(fig) 
+            return img
+    
 
 

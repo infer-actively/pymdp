@@ -192,6 +192,12 @@ class Agent(Module):
         if H is not None:
             H = [jnp.array(h.data) if isinstance(h, Distribution) else h for h in H]
 
+        if pA is not None:
+            pA = [jnp.array(pa) for pa in pA]
+
+        if pB is not None:
+            pB = [jnp.array(pb) for pb in pB]
+
         self.batch_size = batch_size
 
         # flatten B action dims for multiple action dependencies

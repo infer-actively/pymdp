@@ -1,8 +1,9 @@
 import networkx as nx
-import jax.numpy as jnp
-
-from .env import Env
-
+from jax import numpy as jnp, random as jr, tree_util as jtu
+from typing import Optional, List, Tuple
+from jaxtyping import PRNGKeyArray
+from .env import PymdpEnv
+import warnings
 
 def generate_connected_clusters(cluster_size=2, connections=2):
     edges = []
@@ -19,34 +20,29 @@ def generate_connected_clusters(cluster_size=2, connections=2):
         ]
     }
 
-
-class GraphEnv(Env):
+class GraphEnv(PymdpEnv):
     """
     A simple environment where an agent can move around a graph and search an object.
     The agent observes its own location, as well as whether the object is at its location.
     """
 
-    def __init__(self, graph: nx.Graph, object_locations: list[int], agent_locations: list[int]):
-        batch_size = len(object_locations)
+    def __init__(self, graph: nx.Graph, object_location: Optional[int] = None, agent_location: Optional[int] = None, key: Optional[PRNGKeyArray] = None):
 
         A, A_dependencies = self.generate_A(graph)
-        A = [jnp.broadcast_to(a, (batch_size,) + a.shape) for a in A]
         B, B_dependencies = self.generate_B(graph)
-        B = [jnp.broadcast_to(b, (batch_size,) + b.shape) for b in B]
-        D = self.generate_D(graph, object_locations, agent_locations)
 
-        params = {
-            "A": A,
-            "B": B,
-            "D": D,
-        }
+        if object_location is None:
+            key = jr.PRNGKey(0) if key is None else key
+            _, _key = jr.split(key)
+            object_location = jr.randint(_key, shape=(), minval=0, maxval=len(graph.nodes) + 1)  # +1 for "not here"
+        if agent_location is None:
+            key = jr.PRNGKey(1) if key is None else key
+            _, _key = jr.split(key)
+            agent_location = jr.randint(_key, shape=(), minval=0, maxval=len(graph.nodes))
 
-        dependencies = {
-            "A": A_dependencies,
-            "B": B_dependencies,
-        }
+        D = self.generate_D(graph, object_location, agent_location)
 
-        super().__init__(params, dependencies)
+        super().__init__(A=A, B=B, D=D, A_dependencies=A_dependencies, B_dependencies=B_dependencies)
 
     def generate_A(self, graph: nx.Graph):
         A = []
@@ -107,20 +103,63 @@ class GraphEnv(Env):
         B_dependencies.append([1])
 
         return B, B_dependencies
+    
+    def generate_D(self, graph: nx.Graph, object_location: int, agent_location: int):
 
-    def generate_D(self, graph: nx.Graph, object_locations: list[int], agent_locations: list[int]):
-        batch_size = len(object_locations)
         num_locations = len(graph.nodes)
         num_object_locations = num_locations + 1
 
         states = [num_locations, num_object_locations]
-        D = []
-        for s in states:
-            D.append(jnp.zeros((batch_size, s)))
+        D = [jnp.zeros(s) for s in states]
 
         # set the start locations
-        for i in range(batch_size):
-            D[0] = D[0].at[i, agent_locations[i]].set(1.0)
-            D[1] = D[1].at[i, object_locations[i]].set(1.0)
+        D[0] = D[0].at[agent_location].set(1.0)
+        D[1] = D[1].at[object_location].set(1.0)
 
         return D
+    
+    def generate_env_params(self,  graph: nx.Graph, key=None, object_locations: Optional[List[int]]=None, agent_locations: Optional[List[int]]=None, batch_size: Optional[int]=None):
+        """
+        Override of `generate_env_params` from `Env` class that returns batched environmental parameters, with
+        the option to randomize initial object and agent locations (lists of integers) which, if provided, should be of length `batch_size`
+        and are used to set the initial locations in the D vector for each batch element.
+        
+        If batch size is provided but object_locations and agent_locations are not, then random locations will be sampled for each batch element.
+        args:
+            graph: networkx Graph object representing the environment
+            key: JAX random key (used to sample random initial locations if object_locations and agent_locations are not provided)
+            object_locations: list of integers specifying initial object locations for each batch element
+            agent_locations: list of integers specifying initial agent locations for each batch element
+            batch_size: integer specifying the number of batch elements. If None but object_locations and agent_locations are provided, batch_size is inferred from their length.
+        returns:
+            env_params: dictionary containing batched environmental parameters
+        """
+        if batch_size is None:
+            if object_locations is not None and agent_locations is not None:
+                batch_size = len(object_locations)
+            else:
+                warnings.warn("Neither `batch_size` nor `object_locations` nor `agent_locations` are provided, so just returning the unbatched env params")
+                return super().generate_env_params(key=key, batch_size=batch_size)
+
+        num_locations = len(graph.nodes)
+        num_object_locations = num_locations + 1
+
+        if object_locations is None or agent_locations is None:
+            if key is None:
+                raise ValueError("A random key must be provided to sample random initial locations.")
+            keys = jr.split(key, 2)
+            if object_locations is None:
+                object_locations = jr.randint(keys[0], shape=(batch_size,), minval=0, maxval=num_object_locations)
+            if agent_locations is None:
+                agent_locations = jr.randint(keys[1], shape=(batch_size,), minval=0, maxval=num_locations)
+
+        D = [jnp.zeros((batch_size, s)) for s in [num_locations, num_object_locations]]
+
+        D[0] = D[0].at[jnp.arange(batch_size), agent_locations].set(1.0)
+        D[1] = D[1].at[jnp.arange(batch_size), object_locations].set(1.0)
+
+        expand_to_batch = lambda x: jnp.broadcast_to(jnp.asarray(x), (batch_size,) + x.shape)
+
+        env_params ={**jtu.tree_map(expand_to_batch, {"A": self.A, "B": self.B}), **{"D": D}}
+        
+        return env_params

@@ -9,9 +9,10 @@ import numpy as np
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
+from jax import vmap
 
 from pymdp.agent import Agent
-from pymdp.envs.env import Env
+from pymdp.envs.env import PymdpEnv
 from pymdp.envs.rollout import rollout, default_policy_search
 from pymdp import utils
 
@@ -73,23 +74,22 @@ class TestRolloutFunction(unittest.TestCase):
             policy_len=policy_len,
         )
 
-        params = {"A": A_batched, "B": B_batched, "D": D_batched}
-        dependencies = {"A": self.A_dependencies, "B": self.B_dependencies}
-        env = Env(params, dependencies)
+        env_params = {"A": A_batched, "B": B_batched, "D": D_batched}
+        env = PymdpEnv(A_dependencies=self.A_dependencies, B_dependencies=self.B_dependencies)
 
         initial = {
             "pA": [np.array(val) for val in (agent.pA if learn_A else [])],
             "pB": [np.array(val) for val in (agent.pB if learn_B else [])],
         }
 
-        return agent, env, initial
+        return agent, env, env_params, initial
 
     def test_rollout_collects_time_series(self):
-        agent, env, _ = self.build_agent_env()
+        agent, env, env_params, _ = self.build_agent_env()
         key = jr.PRNGKey(0)
         num_steps = 3
 
-        last, info, _ = rollout(agent, env, num_steps, key)
+        last, info = rollout(agent, env, num_steps, key, env_params=env_params)
 
         self.assertIn("observation", info)
         self.assertIn("action", info)
@@ -109,12 +109,80 @@ class TestRolloutFunction(unittest.TestCase):
 
         self.assertEqual(last["action"].shape[0], agent.batch_size)
 
+    def test_rollout_env_state_matches_manual_steps(self):
+        num_obs = [2]
+        num_states = [2]
+        num_controls = [2]
+        A_dependencies = [[0]]
+        B_dependencies = [[0]]
+        batch_size = 2
+
+        A = [jnp.eye(num_obs[0], dtype=jnp.float32)]
+        b = jnp.zeros((num_states[0], num_states[0], num_controls[0]), dtype=jnp.float32)
+        b = b.at[:, :, 0].set(jnp.eye(num_states[0], dtype=jnp.float32))
+        b = b.at[:, :, 1].set(jnp.array([[0.0, 1.0], [1.0, 0.0]], dtype=jnp.float32))
+        B = [b]
+        D = [jnp.array([1.0, 0.0], dtype=jnp.float32)]
+
+        def _broadcast(arr_list):
+            return [
+                jnp.broadcast_to(jnp.array(arr), (batch_size,) + arr.shape)
+                for arr in arr_list
+            ]
+
+        A_batched = _broadcast(A)
+        B_batched = _broadcast(B)
+        D_batched = _broadcast(D)
+
+        agent = Agent(
+            A_batched,
+            B_batched,
+            A_dependencies=A_dependencies,
+            B_dependencies=B_dependencies,
+            num_controls=num_controls,
+            batch_size=batch_size,
+            D=D_batched,
+        )
+
+        env_params = {"A": A_batched, "B": B_batched, "D": D_batched}
+        env = PymdpEnv(A_dependencies=A_dependencies, B_dependencies=B_dependencies)
+
+        num_steps = 3
+        key = jr.PRNGKey(9)
+
+        last, info = rollout(agent, env, num_steps, key, env_params=env_params)
+
+        env_state_series = info["env_state"][0]
+        action_series = info["action"]
+
+        current_state = [env_state_series[:, 0]]
+        step_fn = lambda k, st, act, params: env.step(k, st, act, env_params=params)
+
+        key = jr.PRNGKey(10)
+        for t in range(num_steps + 1):
+            key, step_key = jr.split(key)
+            step_keys = jr.split(step_key, batch_size)
+            _, next_state = vmap(step_fn, in_axes=(0, 0, 0, 0))(
+                step_keys, current_state, action_series[:, t, :], env_params
+            )
+
+            if t < num_steps:
+                np.testing.assert_array_equal(
+                    np.asarray(next_state[0]), np.asarray(env_state_series[:, t + 1])
+                )
+            else:
+                np.testing.assert_array_equal(
+                    np.asarray(next_state[0]), np.asarray(last["env_state"][0])
+                )
+
+            current_state = next_state
+
     def test_online_learning_updates_A_during_scan(self):
-        agent, env, initial = self.build_agent_env(learn_A=True, learning_mode="online")
+        agent, env, env_params, initial = self.build_agent_env(learn_A=True, learning_mode="online")
         key = jr.PRNGKey(1)
         num_steps = 3
 
-        last, info, _ = rollout(agent, env, num_steps, key)
+        last, info = rollout(agent, env, num_steps, key, env_params=env_params)
 
         pA_series = np.asarray(info["pA"][0])
         self.assertEqual(pA_series.shape[0], agent.batch_size)
@@ -127,12 +195,11 @@ class TestRolloutFunction(unittest.TestCase):
         self.assertFalse(np.allclose(final_pA, initial["pA"][0]))
 
     def test_offline_learning_defers_A_update(self):
-        agent, env, initial = self.build_agent_env(learn_A=True, learning_mode="offline")
+        agent, env, env_params, initial = self.build_agent_env(learn_A=True, learning_mode="offline")
         key = jr.PRNGKey(2)
         num_steps = 3
 
-        last, info, _ = rollout(agent, env, num_steps, key)
-
+        last, info = rollout(agent, env, num_steps, key, env_params=env_params)
         pA_series = np.asarray(info["pA"][0])
         self.assertEqual(pA_series.shape[0], agent.batch_size)
         self.assertEqual(pA_series.shape[1], num_steps + 1)
@@ -144,13 +211,13 @@ class TestRolloutFunction(unittest.TestCase):
         self.assertFalse(np.allclose(final_pA, initial["pA"][0]))
 
     def test_online_learning_updates_B(self):
-        agent, env, initial = self.build_agent_env(
+        agent, env, env_params, initial = self.build_agent_env(
             learn_B=True, learning_mode="online", policy_len=2
         )
         key = jr.PRNGKey(3)
         num_steps = 4
 
-        last, info, _ = rollout(agent, env, num_steps, key)
+        last, info = rollout(agent, env, num_steps, key, env_params=env_params)
 
         pB_series = np.asarray(info["pB"][0])
         self.assertEqual(pB_series.shape[0], agent.batch_size)
@@ -165,13 +232,13 @@ class TestRolloutFunction(unittest.TestCase):
     def test_rollout_supports_multiple_inference_algorithms(self):
         for algo, seed in (("vmp", 4), ("ovf", 5)):
             policy_len = 2 if algo == "ovf" else 1
-            agent, env, _ = self.build_agent_env(
+            agent, env, env_params, _ = self.build_agent_env(
                 inference_algo=algo, policy_len=policy_len, seed=seed
             )
             key = jr.PRNGKey(seed)
             num_steps = 2
 
-            _, info, _ = rollout(agent, env, num_steps, key)
+            _, info = rollout(agent, env, num_steps, key, env_params=env_params)
 
             actions = np.asarray(info["action"])
             self.assertEqual(actions.shape[0], agent.batch_size)
@@ -182,10 +249,10 @@ class TestRolloutFunction(unittest.TestCase):
             self.assertEqual(G.shape[1], num_steps + 1)
 
     def test_rollout_with_custom_policy_search_and_initial_carry(self):
-        agent, env, _ = self.build_agent_env(learn_A=True, policy_len=2)
+        agent, env, env_params, _ = self.build_agent_env(learn_A=True, policy_len=2)
         init_key = jr.PRNGKey(6)
         keys = jr.split(init_key, agent.batch_size + 1)
-        init_obs, seeded_env = env.reset(keys[1:])
+        init_obs, initial_state = vmap(env.reset)(keys[1:], env_params=env_params)
         qs0 = jtu.tree_map(lambda x: jnp.expand_dims(x, -2), agent.D)
 
         initial_carry = {
@@ -194,7 +261,7 @@ class TestRolloutFunction(unittest.TestCase):
                 (agent.batch_size, agent.policies.shape[-1]), dtype=jnp.int32
             ),
             "observation": init_obs,
-            "env": seeded_env,
+            "env_state": initial_state,
             "agent": agent,
             "rng_key": keys[0],
         }
@@ -205,13 +272,14 @@ class TestRolloutFunction(unittest.TestCase):
             return qpi, extras
 
         num_steps = 2
-        _, info, _ = rollout(
+        _, info = rollout(
             agent,
-            seeded_env,
+            env,
             num_steps,
             keys[0],
             initial_carry=initial_carry,
             policy_search=custom_policy_search,
+            env_params=env_params,
         )
 
         obs_series = np.asarray(info["observation"][0])
@@ -260,14 +328,13 @@ class TestRolloutFunction(unittest.TestCase):
             pB=pB_batched,
         )
 
-        params = {"A": A_batched, "B": B_batched, "D": D_batched}
-        dependencies = {"A": A_dependencies, "B": B_dependencies}
-        env = Env(params, dependencies)
+        env_params = {"A": A_batched, "B": B_batched, "D": D_batched}
+        env = PymdpEnv(A_dependencies=A_dependencies, B_dependencies=B_dependencies)
 
         num_steps = 4
         rng_key = jr.PRNGKey(8)
 
-        last, info, _ = rollout(agent, env, num_steps, rng_key)
+        last, info = rollout(agent, env, num_steps, rng_key, env_params=env_params)
 
         qs = info["qs"][0]
         self.assertEqual(qs.shape[0], self.batch_size)
