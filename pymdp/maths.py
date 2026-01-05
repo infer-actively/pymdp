@@ -101,19 +101,14 @@ def factor_dot_flex(M, xs, dims: List[Tuple[int]], keep_dims: Optional[Tuple[int
     return contract(*args, backend="jax")
 
 
-def get_likelihood_single_modality(o_m, A_m, distr_obs=True):
-    """Return observation likelihood for a single observation modality m"""
-    if distr_obs:
-        expanded_obs = jnp.expand_dims(o_m, tuple(range(1, A_m.ndim)))
-        likelihood = (expanded_obs * A_m).sum(axis=0)
-    else:
-        likelihood = A_m[o_m]
-
-    return likelihood
-
 def compute_log_likelihood_single_modality(o_m, A_m, distr_obs=True):
     """Compute observation log-likelihood for a single modality"""
-    return log_stable(get_likelihood_single_modality(o_m, A_m, distr_obs=distr_obs))
+    if distr_obs:
+        expanded_obs = jnp.expand_dims(o_m, tuple(range(1, A_m.ndim)))
+        log_likelihood = jnp.sum(expanded_obs * jnp.log(A_m + MINVAL), axis=0)
+    else:
+        log_likelihood = log_stable(A_m[o_m])
+    return log_likelihood
 
 
 def compute_log_likelihood(obs, A, distr_obs=True):

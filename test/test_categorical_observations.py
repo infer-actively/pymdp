@@ -31,7 +31,7 @@ class TestCategoricalObservationsCore(unittest.TestCase):
         qs_uncertain = algos.run_vanilla_fpi(A, obs_uncertain, prior, num_iter=16)
 
         # Should spread belief between states 0 and 1
-        self.assertTrue(jnp.allclose(jnp.array([0.4834835 , 0.4834835 , 0.03303303]),qs_uncertain[0], atol=1e-3))
+        self.assertTrue(jnp.allclose(jnp.array([0.4570241, 0.4570241, 0.08595184]),qs_uncertain[0], atol=1e-3))
 
         # Uniform uncertain observation
         obs_uniform = [jnp.ones(3) / 3]
