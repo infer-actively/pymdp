@@ -507,7 +507,8 @@ def generate_agent_spec(
 
 def generate_agent_specs_from_parameter_sets(
         parameter_sets, 
-        num_agents_per_set=1, 
+        num_agents_per_set=1,
+        max_A_dependency_list_size=10, 
         output_file='agent_specs.json', 
         seed=None,
     ):
@@ -549,7 +550,7 @@ def generate_agent_specs_from_parameter_sets(
                 num_modalities,
                 (2, state_dim_upper_limit),
                 (2, obs_dim_upper_limit),
-                (1, 11), # allow A dependency lists of lengths 1 to 10
+                (1, max_A_dependency_list_size+1), # allow A dependency lists of lengths 1 to max_A_dependency_list_size
                 dim_sampling_type,
                 A_dep_len_prior='exponential', # favoring shorter dependency lists in general
                 rng=rng,

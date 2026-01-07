@@ -61,8 +61,8 @@ class TestInferStatesComparison(unittest.TestCase):
         """Generate agent specs from parameter sets once before all tests."""
 
         # Use explicit seed for reproducible tests
-        # This seed generates a diverse set of specs without triggering OOM conditions (see issue #335)
-        test_seed = 42
+        # This keeps memory complexity low: (see issue #335)
+        test_seed = 17
 
         # Define coordinated parameter sets
         # (num_factors, num_modalities, state_dim_upper_limit, obs_dim_upper_limit, dim_sampling_type, label)
@@ -77,6 +77,7 @@ class TestInferStatesComparison(unittest.TestCase):
         spec_data = generate_agent_specs_from_parameter_sets(
             parameter_sets,
             num_agents_per_set=1,
+            max_A_dependency_list_size=3,
             output_file=None,  # Don't save to file
             seed=test_seed
         )
