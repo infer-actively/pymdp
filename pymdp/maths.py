@@ -105,7 +105,7 @@ def compute_log_likelihood_single_modality(o_m, A_m, distr_obs=True):
     """Compute observation log-likelihood for a single modality"""
     if distr_obs:
         expanded_obs = jnp.expand_dims(o_m, tuple(range(1, A_m.ndim)))
-        log_likelihood = jnp.sum(expanded_obs * jnp.log(A_m + MINVAL), axis=0)
+        log_likelihood = xlogy(expanded_obs, jnp.clip(A_m, min=MINVAL)).sum(axis=0)
     else:
         log_likelihood = log_stable(A_m[o_m])
     return log_likelihood
