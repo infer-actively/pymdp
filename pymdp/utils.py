@@ -339,13 +339,16 @@ def A_dep_len_dist_unconditional(choices):
     return tmp / np.sum(tmp)
 
 
-def generate_agent_spec(num_factors,
-                        num_modalities,
-                        state_dim_limits,
-                        obs_dim_limits,
-                        A_dep_len_limits,
-                        dim_sampling_type,
-                        A_dep_len_prior='uniform'):
+def generate_agent_spec(
+        num_factors,
+        num_modalities,
+        state_dim_limits,
+        obs_dim_limits,
+        A_dep_len_limits,
+        dim_sampling_type,
+        A_dep_len_prior='uniform',
+        key=None,
+    ):
 
     '''
     The main function - generating an agent specification given some basic information.
@@ -365,13 +368,20 @@ def generate_agent_spec(num_factors,
     A_dep_len_prior:   'uniform'| 'exponential' - whether to sample lengths of A
                        dependency lists uniformly or to favor shorter ones, in cases
                        where no hidden states have already been assigned to a list
+    key:               JAX PRNGKey for reproducible random number generation.
+                       If None, uses PRNGKey(0)
     '''
+
+    if key is None:
+        key = jr.PRNGKey(0)
     
     if dim_sampling_type == 'uniform':
 
         # when using uniform dimensionality sampling, no constraints are enforced
-        num_states = [np.random.randint(*state_dim_limits) for i in range(num_factors)]
-        num_obs = [np.random.randint(*obs_dim_limits) for i in range(num_modalities)]
+        keys = jr.split(key, num_factors + num_modalities + 1)
+        key = keys[0]
+        num_states = [int(jr.randint(keys[i+1], (), *state_dim_limits)) for i in range(num_factors)]
+        num_obs = [int(jr.randint(keys[num_factors+i+1], (), *obs_dim_limits)) for i in range(num_modalities)]
 
     else:
 
@@ -408,37 +418,41 @@ def generate_agent_spec(num_factors,
 
         # upon establishing the dimensionality sampling type, consider the interval
         # of possible dimensionalities of hidden states and generate random values
-        
         s_lower, s_upper = state_dim_limits
         s_range = s_upper - s_lower
-        
+
+        # Split keys for sampling num_states and num_obs
+        keys = jr.split(key, num_factors + num_modalities + 1)
+        key = keys[0]
+
         num_states = [
-            np.random.randint(s_lower, int(np.ceil(s_lower + m*s_range)))
+            int(jr.randint(keys[i+1], (), s_lower, int(np.ceil(s_lower + m*s_range))))
             for i in range(num_factors - int(h * num_factors))
         ] + [
-            np.random.randint(int(np.floor(s_upper - m*s_range)), s_upper)
+            int(jr.randint(keys[num_factors - int(h * num_factors) + i + 1], (),
+                          int(np.floor(s_upper - m*s_range)), s_upper))
             for i in range(int(h * num_factors))
         ]
 
         # doing the same for observation modalities
-        
         o_lower, o_upper = obs_dim_limits
         o_range = o_upper - o_lower
-        
         num_obs = [
-            np.random.randint(o_lower, int(np.ceil(o_lower + m*o_range)))
+            int(jr.randint(keys[num_factors + i + 1], (), o_lower, int(np.ceil(o_lower + m*o_range))))
             for i in range(num_modalities - int(h * num_modalities))
         ] + [
-            np.random.randint(int(np.floor(o_upper - m*o_range)), o_upper)
+            int(jr.randint(keys[num_factors + num_modalities - int(h * num_modalities) + i + 1], (),
+                          int(np.floor(o_upper - m*o_range)), o_upper))
             for i in range(int(h * num_modalities))
         ]
 
     # ensure that each hidden state factor influences at least one observation
     # modality (i.e. is used in at least one A dependency list)
-    tmp = np.random.choice(num_modalities, num_factors, replace=False)
+    key, subkey = jr.split(key)
+    tmp = jr.choice(subkey, num_modalities, shape=(num_factors,), replace=False)
     A_dependencies = [[] for m in range(num_modalities)]
     for sf, om in enumerate(tmp):
-        A_dependencies[om].append(sf)
+        A_dependencies[om].append(int(sf))
         
     # generating the full graph of dependencies between observation modalities
     # and hidden state factors
@@ -449,26 +463,27 @@ def generate_agent_spec(num_factors,
         if A_dep_len_max > num_factors:
             A_dep_len_max = num_factors
         A_dep_len_choices = np.arange(A_dep_len_min, A_dep_len_max)
-        
+
         if len(A_dependencies[om]) == 0:
 
             # if no hidden states have already been assigned to an A dependency list,
             # sample its length from an a-priori distribution (either uniform or exponential)
-            A_dep_len = np.random.choice(
-                A_dep_len_choices,
-                p=A_dep_len_dist_unconditional(A_dep_len_choices) if A_dep_len_prior == 'exponential' else None
-            )
+            key, subkey = jr.split(key)
+            probs = A_dep_len_dist_unconditional(A_dep_len_choices) if A_dep_len_prior == 'exponential' else None
+            A_dep_len = int(jr.choice(subkey, A_dep_len_choices, p=probs))
 
             # after sampling the length of a list, randomly choose that many hidden states
             # as its elements (without repetition), and ensure a negative correlation
             # between the hidden state dimensions and the length of the list
-            A_dependencies[om] = np.random.choice(
+            key, subkey = jr.split(key)
+            A_dependencies[om] = jr.choice(
+                subkey,
                 num_factors,
-                A_dep_len,
+                shape=(A_dep_len,),
                 replace=False,
                 p=A_dep_factors_dist(np.array(num_states), A_dep_len)
             ).tolist()
-            
+
         else:
 
             # if a hidden state has already been assigned to an A dependency list, choose
@@ -481,39 +496,54 @@ def generate_agent_spec(num_factors,
                 p = A_dep_len_dist_unconditional(A_dep_len_choices)
             p *= A_dep_len_dist(A_dep_len_choices, A_dependencies[om][0], state_dim_limits[1])
             p /= np.sum(p)
-            A_dep_len = np.random.choice(A_dep_len_choices, p=p)
+            key, subkey = jr.split(key)
+            A_dep_len = int(jr.choice(subkey, A_dep_len_choices, p=p))
 
             # fill out the rest of the A dependency lists with hidden states other than
             # the one that is already there, and ensure a negative correlation between
             # the hidden state dimensions and the length of the list
-            A_dependencies[om] += np.random.choice(
-                [sf for sf in range(num_factors) if sf != A_dependencies[om][0]],
-                A_dep_len - 1,
+            remaining_factors = jnp.array([sf for sf in range(num_factors) if sf != A_dependencies[om][0]])
+            key, subkey = jr.split(key)
+            additional_deps = jr.choice(
+                subkey,
+                remaining_factors,
+                shape=(A_dep_len - 1,),
                 replace=False,
                 p=A_dep_factors_dist(
                     np.array([ns for sf, ns in enumerate(num_states) if sf != A_dependencies[om][0]]),
                     A_dep_len
                 )
             ).tolist()
+            A_dependencies[om] += additional_deps
     
     A_dependencies = [sorted(A_dep) for A_dep in A_dependencies]
 
     return num_states, num_obs, A_dependencies
 
 
-def generate_agent_specs_from_parameter_sets(parameter_sets, num_agents_per_set=1, output_file='agent_specs.json'):
+def generate_agent_specs_from_parameter_sets(
+        parameter_sets,
+        num_agents_per_set=1,
+        max_A_dependency_list_size=10,
+        output_file='agent_specs.json',
+        seed=None,
+    ):
     '''
     Generate agent specifications from coordinated parameter sets.
-    
+
     parameter_sets:       list of tuples, where each tuple contains
-                         (num_factors, num_modalities, state_dim_upper_limit, 
+                         (num_factors, num_modalities, state_dim_upper_limit,
                           obs_dim_upper_limit, dim_sampling_type, label)
     num_agents_per_set:   int, number of random agents to generate per parameter set
     output_file:          str, path to save the JSON file with agent specifications
-    
+    seed:                 int or None, seed for reproducible random number generation
+
     returns:              dict with agent specifications
     '''
-    
+
+    # Create JAX PRNGKey with seed for reproducibility
+    key = jr.PRNGKey(seed if seed is not None else 0)
+
     agent_specs = {
         'arbitrary dependencies': []
         # it might make sense to sometimes constrain the A dependencies additionally
@@ -522,7 +552,7 @@ def generate_agent_specs_from_parameter_sets(parameter_sets, num_agents_per_set=
 
     # iterate over the coordinated parameter sets
     for num_factors, num_modalities, state_dim_upper_limit, obs_dim_upper_limit, dim_sampling_type, label in parameter_sets:
-        
+
         # it usually makes sense to have num_factors <= num_modalities, so we skip all other
         # cases (they would require a different random generation scheme and constraints)
         if num_factors > num_modalities:
@@ -530,15 +560,17 @@ def generate_agent_specs_from_parameter_sets(parameter_sets, num_agents_per_set=
 
         # sample random agent specifications from each parameter set
         for _ in range(num_agents_per_set):
-        
+
+            key, subkey = jr.split(key)
             num_states, num_obs, A_dependencies = generate_agent_spec(
                 num_factors,
                 num_modalities,
                 (2, state_dim_upper_limit),
                 (2, obs_dim_upper_limit),
-                (1, 11), # allow A dependency lists of lengths 1 to 10
+                (1, max_A_dependency_list_size+1), # allow A dependency lists of lengths 1 to max_A_dependency_list_size
                 dim_sampling_type,
-                A_dep_len_prior='exponential' # favoring shorter dependency lists in general
+                A_dep_len_prior='exponential', # favoring shorter dependency lists in general
+                key=subkey,
             )
         
             agent_specs['arbitrary dependencies'].append({
