@@ -28,7 +28,7 @@ def si_policy_search(
     observation_prune_threshold=1 / 16,
     entropy_stop_threshold=0.5,
     efe_stop_threshold=1e10,
-    kl_threshold=1e-3,
+    kl_threshold=-1,
     prune_penalty=512,
     gamma=1,
     topk_obsspace=10000,
@@ -497,7 +497,7 @@ def optimized_tree_search(
     observation_prune_threshold=1 / 16,
     entropy_stop_threshold=0.5,
     efe_stop_threshold=1e10,
-    kl_threshold=1e-3,
+    kl_threshold=-1,
     prune_penalty=512,
     gamma=1,
     topk_obsspace=10000,
@@ -518,7 +518,7 @@ def optimized_tree_search(
         observation_prune_threshold: Threshold for pruning observations.
         entropy_stop_threshold: Entropy threshold to stop expanding.
         efe_stop_threshold: Expected free energy threshold to stop expanding.
-        kl_threshold: KL divergence threshold for reusing nodes.
+        kl_threshold: KL divergence threshold for reusing nodes if in same state space.
         prune_penalty: Penalty for pruning a node.
         gamma: Precison of q_pi.
 
