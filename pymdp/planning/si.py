@@ -863,6 +863,14 @@ def optimized_tree_search(
         prune_mask = q_pi < policy_prune_threshold
         children_indices = (1-prune_mask) * tree.children_indices[idx] + prune_mask * -1
 
+        # NOTE: We don't renormalise q_pi after pruning because it interferes with the 
+        # weighting of gamma in the softmax calculation. The q_pis are still valid 
+        # probability distributions for decision making. You can choose to add 
+        # normalisation here if desired for your specific use case. Uncomment the 
+        # following lines if you want to renormalise after pruning:
+        # remaining_qpis = jnp.sum(q_pi * (1 - prune_mask))
+        # q_pi = jnp.where(prune_mask, 0.0, q_pi / remaining_qpis)
+
         tree = _update_node(tree, idx, G=G_recursive, children_indices=children_indices, children_probs=q_pi)
         return tree
 
