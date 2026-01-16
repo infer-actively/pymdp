@@ -646,10 +646,6 @@ def optimized_tree_search(
                     )
 
                 def no_op(t):
-                    new_idx = jnp.where(
-                            ~t.used[:, 0], jnp.arange(t.size), t.size
-                        ).min()
-                    
                     return t, -1
 
                 tree, obs_idx = lax.cond(

@@ -78,7 +78,7 @@ def formatting_jax(value, format_str=".2f"):
                 )
         else:
             return f"{float(value):{format_str}}"
-    except:
+    except Exception:
         return str(value)[:10]
 
 
@@ -191,7 +191,7 @@ def plot_plan_tree(
         node_id += 1
 
         if nodes_processed > 1000:
-            print(f"Warning: visualisation is limited to first 1000 nodes")
+            print("Warning: visualisation is limited to first 1000 nodes")
             break
 
     if ax is None:
@@ -306,7 +306,7 @@ def visualize_plan_tree(
 
     """
     # Extract tree from info structure
-    if time_idx == None:
+    if time_idx is None:
         tree = jtu.tree_map(lambda x: x[agent_idx], info["tree"])
     else:
         tree = jtu.tree_map(lambda x: x[agent_idx, time_idx], info["tree"])
@@ -379,7 +379,7 @@ def visualize_env(
 ):
     try:
         batch_size = info["env"].num_agents
-    except:
+    except (AttributeError, KeyError):
         batch_size = 1
     num_timesteps = info["qs"][0].shape[1]
     

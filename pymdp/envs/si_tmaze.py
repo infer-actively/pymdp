@@ -264,7 +264,7 @@ class TMaze(PymdpEnv):
                 cue_color = "tab:gray"
                 edge_color = "tab:gray"
 
-            cue = ax.add_patch(
+            ax.add_patch(
                 patches.Circle(
                     (1.5, 2.5),
                     0.3,
