@@ -513,14 +513,15 @@ def optimized_tree_search(
     Args:
         agent: The agent to use for planning.
         tree: The initial planning tree.
-        horizon: The maximum horizon to expand the tree.
-        policy_prune_threshold: Threshold for pruning policies.
-        observation_prune_threshold: Threshold for pruning observations.
-        entropy_stop_threshold: Entropy threshold to stop expanding.
-        efe_stop_threshold: Expected free energy threshold to stop expanding.
-        kl_threshold: KL divergence threshold for reusing nodes if in same state space.
-        prune_penalty: Penalty for pruning a node.
-        gamma: Precison of q_pi.
+        horizon: The maximum number of timesteps in the future to expand the tree.
+        policy_prune_threshold: Minimum probability threshold (default 1/16) below which policy branches are not expanded.
+        observation_prune_threshold: Minimum probability threshold (default 1/16) below which observation branches are not expanded.
+        entropy_stop_threshold: Entropy threshold below which to stop expanding (default 0.5). Lower values require more certainty; 0.0 means only stop with perfect certainty.
+        efe_stop_threshold: Expected free energy threshold below which to stop expanding (default 1e10). High values like default effectively disable this condition. 
+        kl_threshold: KL divergence threshold for reusing existing nodes instead of creating new ones when states (qs) are similar (default -1 disables reuse).
+        prune_penalty: Negative reward (default 512) assigned to pruned nodes to discourage exploration of unpromising branches.
+        gamma: Temperature parameter (default 1) for weighting policy probabilities. Higher values increase precision of probability distribution.
+        topk_obsspace: Maximum number of top observation combinations to consider (default 10000).
 
     Returns:
         tree: The expanded planning tree.
