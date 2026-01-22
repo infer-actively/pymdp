@@ -1,4 +1,5 @@
 import os
+import warnings
 
 def pytest_configure(config):
     """
@@ -24,3 +25,9 @@ def pytest_configure(config):
     # Enable JAX compilation cache for faster repeated runs
     if 'JAX_COMPILATION_CACHE_DIR' not in os.environ:
         os.environ['JAX_COMPILATION_CACHE_DIR'] = '.jax_cache'
+
+    warnings.filterwarnings(
+        "ignore",
+        message=r"A JAX array is being set as static!.*",
+        category=UserWarning,
+    )
