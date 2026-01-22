@@ -292,6 +292,7 @@ def _update_node(
             children_indices = tree.children_indices
         else:
             # pad with -1
+            children_indices = jnp.asarray(children_indices, dtype=jnp.int32)
             children_indices = jnp.pad(
                 children_indices,
                 (0, tree.children_indices.shape[-1] - children_indices.shape[0]),
@@ -303,6 +304,7 @@ def _update_node(
             children_probs = tree.children_probs
         else:
             # pad with 0
+            children_probs = jnp.asarray(children_probs, dtype=jnp.float32)
             children_probs = jnp.pad(
                 children_probs,
                 (0, tree.children_probs.shape[-1] - children_probs.shape[0]),
@@ -388,7 +390,7 @@ def _remove_orphans(tree):
         flat_children = safe_children.flatten()
         flat_valid_mask = valid_mask.flatten()
         counts = (
-            jnp.zeros(tree.size, dtype=bool)
+            jnp.zeros(tree.size, dtype=jnp.int32)
             .at[flat_children]
             .add(flat_valid_mask.astype(jnp.int32))
         )
@@ -623,8 +625,8 @@ def optimized_tree_search(
                             observation=observation,
                             horizon=t.horizon[policy_node_idx, 0],
                             G=0,
-                            children_indices=jnp.empty((0,)),
-                            children_probs=jnp.empty((0,)),
+                            children_indices=jnp.empty((0,), dtype=jnp.int32),
+                            children_probs=jnp.empty((0,), dtype=jnp.float32),
                         )
                         return t, new_idx
 
@@ -667,7 +669,9 @@ def optimized_tree_search(
                 size=tree.children_indices.shape[-1],
                 fill_value=-1,
             )[0]
-            obs_indices = jnp.concatenate([obs_indices, -jnp.ones(1)])
+            obs_indices = jnp.concatenate(
+                [obs_indices, jnp.full((1,), -1, dtype=jnp.int32)]
+            )
             obs_indices = obs_indices[indices]
 
             obs_probabilities = jnp.concatenate([probabilities, jnp.zeros(1)])
@@ -733,8 +737,8 @@ def optimized_tree_search(
                     policy=policy,
                     G=G,
                     horizon=tree.horizon[idx, 0] + 1,
-                    children_indices=jnp.empty((0,)),
-                    children_probs=jnp.empty((0,)),
+                    children_indices=jnp.empty((0,), dtype=jnp.int32),
+                    children_probs=jnp.empty((0,), dtype=jnp.float32),
                 )
                 return tree, new_idx
 
