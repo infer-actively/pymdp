@@ -1,3 +1,4 @@
+import itertools
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -1080,7 +1081,7 @@ def expand_node(
 
     stacked_observations = stack_leaves(observations)
     stacked_qs_priors = stack_leaves(qs_priors)
-    qs_next = vmap(agent.infer_states)(stacked_observations, stacked_qs_priors)
+    qs_next = jax.vmap(agent.infer_states)(stacked_observations, stacked_qs_priors)
 
     for idx, observation in enumerate(observations):
         observation_node = {
@@ -1129,7 +1130,7 @@ def tree_backward(node, prune_penalty=512, gamma=1):
 
 
 def policy_entropy(node):
-    return stable_entropy(node["q_pi"])
+    return pymdp.maths.stable_entropy(node["q_pi"])
 
 
 def stack_leaves(data):
