@@ -1,4 +1,4 @@
-from .tmaze import TMaze
+from .tmaze import TMaze, SimplifiedTMaze
 from .rollout import rollout
 from .env import Env, PymdpEnv, make
 from .graph_worlds import GraphEnv
