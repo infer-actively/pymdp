@@ -30,8 +30,11 @@ class Policies(eqx.Module):
         self.horizon = policy_arr.shape[1]
         self.policy_arr = policy_arr
     
-    def __get_item__(self, idx):
+    def __getitem__(self, idx):
         return self.policy_arr[idx]
+    
+    def __len__(self):
+        return self.num_policies
     
 def get_marginals(q_pi, policies, num_controls):
     """
