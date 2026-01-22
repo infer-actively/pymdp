@@ -20,13 +20,13 @@ cheese_img = plt.imread(os.path.join(assets_dir, "cheese.png"))
 shock_img = plt.imread(os.path.join(assets_dir, "shock.png"))
 
 
-class TMaze(PymdpEnv):
+class BaseTMaze(PymdpEnv):
     """
-    Implementation of the T-Maze environment, a type of contextual 2-arm bandit.
-    A T-shaped maze where an agent must navigate to find a reward, with:
-    - 4 locations: centre, left arm, right arm, and cue position (bottom) 
+    Shared T-Maze implementation with configurable layout and observation structure.
+    Description: A T-shaped maze where an agent must navigate to find a reward, with:
+    - 4 (or 5) locations: centre, left arm, right arm, cue position (bottom), and optionally a middle location
     - 2 reward conditions: reward in left or right arm
-    - Cues that indicate which arm contains the reward
+    - 2 possible cues at the bottom arm that indicate which arm contains the reward
     """
 
     reward_probability: float = field(static=True)
@@ -34,32 +34,104 @@ class TMaze(PymdpEnv):
     cue_validity: float = field(static=True)
     reward_condition: float = field(static=True)
     dependent_outcomes: bool = field(static=True)
+    cue_mode: str = field(static=True)
+    connectivity: str = field(static=True)
+    has_middle: bool = field(static=True)
+    num_locations: int = field(static=True)
+    location_obs_size: int = field(static=True)
 
-    def __init__(self, reward_probability=1.0, punishment_probability=1.0, cue_validity=0.95, reward_condition=None, dependent_outcomes=False):
+    def __init__(
+        self,
+        reward_probability=1.0,
+        punishment_probability=1.0,
+        cue_validity=0.95,
+        reward_condition=None,
+        dependent_outcomes=False,
+        *,
+        num_locations,
+        cue_mode,
+        connectivity,
+        has_middle,
+        location_obs_size=None,
+    ):
         """
-        Initialize T-Maze environment. A is the observation likelihood matrix, B is the transition matrix, D is the initial state distribution.
+        Initialize a configurable T-Maze environment.
         Args:
-            batch_size: Number of parallel environments
-            reward_probability: Probability of getting reward in correct arm
-            punishment_probability: Probability of getting punishment in incorrect arm
-            cue_validity: Probability of cue correctly indicating reward location
-            reward_condition: If specified, fixes reward to left (0) or right (1) arm, otherwise reward is randomly assigned
+            reward_probability: Probability of receiving reward when choosing the correct arm
+            punishment_probability: Probability of receiving punishment when choosing the incorrect arm
+            cue_validity: Probability that the cue correctly indicates the reward location
+            reward_condition: If specified, fixes reward to left (0) or right (1) arm, otherwise random
             dependent_outcomes: If True, punishment occurs as a function of reward probability (i.e., if reward probability is 0.8, then 20% punishment). If False, punishment occurs with set probability (i.e., 20% no outcome and punishment will only occur in the other (non-rewarding) arm)
+            num_locations: Number of locations in the maze (4 or 5)
+            cue_mode: 'separate' for separate cue modality, 'embedded' for embedded cue observations
+            connectivity: 'fully_connected' or 'adjacent' for location transitions
+            has_middle: If True, includes a middle location between arms
+            location_obs_size: Size of location observation modality (required for embedded cue mode)
         """
         self.reward_probability = reward_probability
         self.punishment_probability = punishment_probability
         self.cue_validity = cue_validity
         self.reward_condition = reward_condition
         self.dependent_outcomes = dependent_outcomes
+        self.cue_mode = cue_mode
+        self.connectivity = connectivity
+        self.has_middle = has_middle
+        self.num_locations = num_locations
 
-        # Generate and broadcast observation likelihood(A), transition (B), and initial state (D) tensors to the batch size
+        self._location_indices = {"centre": 0, "left": 1, "right": 2, "cue": 3}
+        if self.has_middle:
+            self._location_indices["middle"] = 4
+
+        if self.cue_mode == "embedded":
+            self._loc_obs_cued_left = self._location_indices["cue"]
+            self._loc_obs_cued_right = self._location_indices["cue"] + 1
+            if location_obs_size is None:
+                location_obs_size = self._loc_obs_cued_right + 1
+        else:
+            if location_obs_size is None:
+                location_obs_size = self.num_locations
+        self.location_obs_size = location_obs_size
+
+        if self.cue_mode == "embedded":
+            self._loc_obs_to_location = list(range(self._location_indices["cue"] + 1))
+            self._loc_obs_to_location.append(self._location_indices["cue"])
+            self._cue_obs_from_loc_obs = [0] * self.location_obs_size
+            self._cue_obs_from_loc_obs[self._loc_obs_cued_left] = 1
+            self._cue_obs_from_loc_obs[self._loc_obs_cued_right] = 2
+        else:
+            self._loc_obs_to_location = list(range(self.location_obs_size))
+            self._cue_obs_from_loc_obs = None
+
         A, A_dependencies = self.generate_A()
         B, B_dependencies = self.generate_B()
         D = self.generate_D()
 
         super().__init__(A=A, B=B, D=D, A_dependencies=A_dependencies, B_dependencies=B_dependencies)
 
+    def _set_reward_outcome(self, A_reward, loc, reward_condition):
+        if loc == (reward_condition + 1):
+            A_reward = A_reward.at[1, loc, reward_condition].set(self.reward_probability)
+            if self.dependent_outcomes:
+                A_reward = A_reward.at[2, loc, reward_condition].set(1 - self.reward_probability)
+            else:
+                A_reward = A_reward.at[0, loc, reward_condition].set(1 - self.reward_probability)
+        else:
+            if self.dependent_outcomes:
+                A_reward = A_reward.at[2, loc, reward_condition].set(self.reward_probability)
+                A_reward = A_reward.at[1, loc, reward_condition].set(1 - self.reward_probability)
+            else:
+                A_reward = A_reward.at[2, loc, reward_condition].set(self.punishment_probability)
+                A_reward = A_reward.at[0, loc, reward_condition].set(1 - self.punishment_probability)
+        return A_reward
+
     def generate_A(self):
+        if self.cue_mode == "separate":
+            return self._generate_A_separate()
+        if self.cue_mode == "embedded":
+            return self._generate_A_embedded()
+        raise ValueError(f"Unsupported cue_mode: {self.cue_mode}")
+
+    def _generate_A_separate(self):
         """
         Generate observation likelihood tensors.
         
@@ -73,102 +145,128 @@ class TMaze(PymdpEnv):
             - [no cue, cued left arm, cued right arm] x [5 locations] x [2 reward conditions]
         """
         A = []
-        A.append(jnp.eye(5))
-        A.append(jnp.zeros([3, 5, 2]))
-        A.append(jnp.zeros([3, 5, 2]))
+        A.append(jnp.eye(self.num_locations))
+        A.append(jnp.zeros([3, self.num_locations, 2]))
+        A.append(jnp.zeros([3, self.num_locations, 2]))
 
         A_dependencies = [[0], [0, 1], [0, 1]]
+        middle_idx = self._location_indices.get("middle")
 
-        
-        for loc in range(5): # for each location: [centre, left, right, cue, middle]
-            for reward_condition in range(2): # for each reward condition: [left, right]
-                if loc == 0: # when at starting location (centre), there is no reward and no cue
+        for loc in range(self.num_locations):
+            for reward_condition in range(2):
+                if loc == self._location_indices["centre"]:
                     A[1] = A[1].at[0, loc, reward_condition].set(1.0)
                     A[2] = A[2].at[0, loc, reward_condition].set(1.0)
-
-                elif loc == 3: # when at cue location
-                    A[1] = A[1].at[0, loc, reward_condition].set(1.0)  # still no reward at cue location
-                    
-                    # set probability for correct cue based on cue_validity
+                elif loc == self._location_indices["cue"]:
+                    A[1] = A[1].at[0, loc, reward_condition].set(1.0)
                     A[2] = A[2].at[reward_condition + 1, loc, reward_condition].set(self.cue_validity)
-                    # set probability for incorrect cue
-                    wrong_cue = (1 - reward_condition) + 1  # if reward_condition is 0 (left), wrong_cue is 2 (right); if reward_condition is 1 (right), wrong_cue is 1 (left)
+                    wrong_cue = (1 - reward_condition) + 1
                     A[2] = A[2].at[wrong_cue, loc, reward_condition].set(1 - self.cue_validity)
-
-                elif loc == 4: # when at middle location
-                    A[1] = A[1].at[0, loc, reward_condition].set(1.0) # there are no outcomes at the middle
-                    A[2] = A[2].at[0, loc, reward_condition].set(1.0) # there are no cues at the middle
-
-                else: # when at one of the outcome (reward or punishment) arms
-                    if loc == (reward_condition + 1):  # if at correct reward location
-                        # probability of reward, otherwise no outcome or punishment depending on dependent_outcomes
-                        A[1] = A[1].at[1, loc, reward_condition].set(self.reward_probability)
-                        if self.dependent_outcomes:
-                            # if dependent, remaining probability goes to punishment
-                            A[1] = A[1].at[2, loc, reward_condition].set(1 - self.reward_probability)
-                        else:
-                            # if independent, remaining probability goes to no outcome
-                            A[1] = A[1].at[0, loc, reward_condition].set(1 - self.reward_probability)
-                    else: # if at incorrect reward location
-                        if self.dependent_outcomes:
-                            # if dependent, probabilities are flipped from correct location
-                            A[1] = A[1].at[2, loc, reward_condition].set(self.reward_probability)
-                            A[1] = A[1].at[1, loc, reward_condition].set(1 - self.reward_probability)
-                        else:
-                            # if independent, punishment occurs with set probability
-                            A[1] = A[1].at[2, loc, reward_condition].set(self.punishment_probability)
-                            A[1] = A[1].at[0, loc, reward_condition].set(1 - self.punishment_probability)
-
-                    A[2] = A[2].at[0, loc, reward_condition].set(1.0) # there are no cues in the outcome arms
+                elif middle_idx is not None and loc == middle_idx:
+                    A[1] = A[1].at[0, loc, reward_condition].set(1.0)
+                    A[2] = A[2].at[0, loc, reward_condition].set(1.0)
+                else:
+                    A[1] = self._set_reward_outcome(A[1], loc, reward_condition)
+                    A[2] = A[2].at[0, loc, reward_condition].set(1.0)
 
         return A, A_dependencies
+
+    def _generate_A_embedded(self):
+        """
+        Generate observation likelihood tensors.
+        
+        Returns two observation matrices:
+        A[0]: Location observations with embedded cues (location_obs_size x5x2 matrix)
+            - Maps true location to observed location with embedded cue information
+            - [centre, left, right, cued left, cued right] x [centre, left, right, cue, middle] x [2 reward conditions]
+        A[1]: Reward observations (3x5x2 matrix)
+            - [no outcome, reward, punishment] x [5 locations] x [2 reward conditions]
+        """
+        A = []
+        A.append(jnp.zeros([self.location_obs_size, self.num_locations, 2]))
+        A.append(jnp.zeros([3, self.num_locations, 2]))
+
+        A_dependencies = [[0, 1], [0, 1]]
+
+        for loc in range(self.num_locations):
+            for reward_condition in range(2):
+                if loc == self._location_indices["centre"]:
+                    A[0] = A[0].at[0, loc, reward_condition].set(1.0)
+                    A[1] = A[1].at[0, loc, reward_condition].set(1.0)
+                elif loc == self._location_indices["cue"]:
+                    if reward_condition == 0:
+                        A[0] = A[0].at[self._loc_obs_cued_left, loc, reward_condition].set(self.cue_validity)
+                        A[0] = A[0].at[self._loc_obs_cued_right, loc, reward_condition].set(1 - self.cue_validity)
+                    else:
+                        A[0] = A[0].at[self._loc_obs_cued_right, loc, reward_condition].set(self.cue_validity)
+                        A[0] = A[0].at[self._loc_obs_cued_left, loc, reward_condition].set(1 - self.cue_validity)
+                    A[1] = A[1].at[0, loc, reward_condition].set(1.0)
+                else:
+                    A[0] = A[0].at[loc, loc, reward_condition].set(1.0)
+                    A[1] = self._set_reward_outcome(A[1], loc, reward_condition)
+
+        return A, A_dependencies
+
+    def _valid_connections(self):
+        centre = self._location_indices["centre"]
+        left = self._location_indices["left"]
+        right = self._location_indices["right"]
+        cue = self._location_indices["cue"]
+
+        if self.has_middle:
+            middle = self._location_indices["middle"]
+            return [
+                (centre, cue),
+                (cue, centre),
+                (centre, middle),
+                (middle, centre),
+                (middle, left),
+                (left, middle),
+                (middle, right),
+                (right, middle),
+            ]
+        return [
+            (centre, cue),
+            (cue, centre),
+            (centre, left),
+            (left, centre),
+            (centre, right),
+            (right, centre),
+        ]
 
     def generate_B(self):
         """
         Generate transition model matrices.
         
         Returns two transition matrices:
-        B[0]: Location transitions (5x5x5)
-            - Agent can move between adjacent locations in the T-maze
+        B[0]: Location transitions (num_locations x num_locations x num_locations)
+            - Agent can move between either
+             all locations in the T-Maze (fully-connected) or adjacent locations, including a middle location between the two arms, in the T-Maze (adjacent)
         B[1]: Reward condition transitions (2x2x1)
             - Reward location stays fixed
         """
         B = []
+        B_loc = jnp.zeros((self.num_locations, self.num_locations, self.num_locations))
 
-        
-        num_locations = 5  # 0: centre, 1: left, 2: right, 3: cue, 4: middle
-        B_loc = jnp.zeros((num_locations, num_locations, num_locations))
-        
-        # defining valid (adjacent) connections in the T-maze
-        valid_connections = [ # (from_location, to_location)
-            (0, 3),  # centre <-> cue
-            (3, 0),
-            (0, 4),  # centre <-> middle
-            (4, 0),
-            (4, 1),  # middle <-> left arm
-            (1, 4),
-            (4, 2),  # middle <-> right arm
-            (2, 4),
-        ]
-        
-        # filling in the transition matrix
-        for _from in range(num_locations):
-            for _to in range(num_locations):
-                for action in range(num_locations):
-                    if action == _to:  # trying to move to location '_to'
-                        if (_from, _to) in valid_connections:  # if movement is valid
-                            B_loc = B_loc.at[_to, _from, action].set(1.0)
-                        else:  # if movement is invalid, stay in current location
-                            B_loc = B_loc.at[_from, _from, action].set(1.0)
-        
+        if self.connectivity == "fully_connected":
+            for action in range(self.num_locations):
+                B_loc = B_loc.at[action, :, action].set(1.0)
+        elif self.connectivity == "adjacent":
+            valid_connections = set(self._valid_connections())
+            for _from in range(self.num_locations):
+                for action in range(self.num_locations):
+                    _to = action
+                    if (_from, _to) in valid_connections:
+                        B_loc = B_loc.at[_to, _from, action].set(1.0)
+                    else:
+                        B_loc = B_loc.at[_from, _from, action].set(1.0)
+        else:
+            raise ValueError(f"Unsupported connectivity: {self.connectivity}")
+
         B.append(B_loc)
-
-        # reward condition stays fixed
         B_reward = jnp.eye(2).reshape(2, 2, 1)
         B.append(B_reward)
-
         B_dependencies = [[0], [1]]
-
         return B, B_dependencies
 
     def generate_D(self):
@@ -185,30 +283,28 @@ class TMaze(PymdpEnv):
             reward_condition: If specified, fixes reward to left (0) or right (1) arm, otherwise random
         """
         D = []
-        D_loc = jnp.zeros([5])
-        D_loc = D_loc.at[0].set(1.0) # the agent always starts at the centre
+        D_loc = jnp.zeros([self.num_locations])
+        D_loc = D_loc.at[self._location_indices["centre"]].set(1.0)
         D.append(D_loc)
 
         if self.reward_condition is None:
-            # 50/50 chance of reward in left/right arm
             D_reward = jnp.ones(2) * 0.5
         else:
-            # reward is fixed in the left/right arm
             D_reward = jnp.zeros(2)
             D_reward = D_reward.at[self.reward_condition].set(1.0)
         D.append(D_reward)
         return D
 
-    def render(self, observations, mode="human"):
+    def render(self, observations, mode="human", title=None):
         batch_size = observations[0].shape[0]
-     
-        plt.clf()  # Clear the current figure
 
-        # create n x n subplots for the batch_size
+        plt.clf()
+
+       # create n x n subplots for the batch_size
         n = math.ceil(math.sqrt(batch_size))
-
-        # create the subplots
         fig, axes = plt.subplots(n, n, figsize=(6, 6))
+        if title:
+            fig.suptitle(title, fontsize=9)
 
         # loop through the batch_size and plot on each subplot
         for i in range(batch_size):
@@ -268,21 +364,26 @@ class TMaze(PymdpEnv):
                 )
             )
 
-            # show the cue
-            cue = observations[2][i, 0]
-            if cue == 0:
+            loc_obs = int(observations[0][i, 0])
+            reward_obs = int(observations[1][i, 0])
+            if self.cue_mode == "embedded":
+                cue_obs = self._cue_obs_from_loc_obs[loc_obs]
+                loc = self._loc_obs_to_location[loc_obs]
+            else:
+                cue_obs = int(observations[2][i, 0])
+                loc = loc_obs
+
+            if cue_obs == 0:
                 cue_color = "tab:gray"
                 edge_color = "tab:gray"
-            elif cue == 1:
-                # left
+            elif cue_obs == 1:
                 cue_color = "tab:orange"
                 edge_color = "tab:gray"
-            elif cue == 2:
-                # right
+            else:
                 cue_color = "tab:purple"
                 edge_color = "tab:gray"
 
-            cue = ax.add_patch(
+            ax.add_patch(
                 patches.Circle(
                     (1.5, 2.5),
                     0.3,
@@ -292,69 +393,114 @@ class TMaze(PymdpEnv):
                 )
             )
 
-            # show the reward
-            loc = observations[0][i, 0]
-            reward = observations[1][i, 0]
+            coords = None
             if loc == 1:
                 coords = (0.5, 0.5)
             elif loc == 2:
                 coords = (2.5, 0.5)
 
-            if reward == 1:
-                # cheese
-                cheese_im = OffsetImage(cheese_img, zoom=0.025 / n)
-                ab_cheese = AnnotationBbox(cheese_im, coords, xycoords="data", frameon=False)
-                an_cheese = ax.add_artist(ab_cheese)
-                an_cheese.set_zorder(2)
+            if coords is not None:
+                if reward_obs == 1:
+                    cheese_im = OffsetImage(cheese_img, zoom=0.025 / n)
+                    ab_cheese = AnnotationBbox(cheese_im, coords, xycoords="data", frameon=False)
+                    an_cheese = ax.add_artist(ab_cheese)
+                    an_cheese.set_zorder(2)
+                elif reward_obs == 2:
+                    shock_im = OffsetImage(shock_img, zoom=0.1 / n)
+                    ab_shock = AnnotationBbox(shock_im, coords, xycoords="data", frameon=False)
+                    ab_shock = ax.add_artist(ab_shock)
+                    ab_shock.set_zorder(2)
 
-            elif reward == 2:
-                # shock
-                shock_im = OffsetImage(shock_img, zoom=0.1 / n)
-                ab_shock = AnnotationBbox(shock_im, coords, xycoords="data", frameon=False)
-                ab_shock = ax.add_artist(ab_shock)
-                ab_shock.set_zorder(2)
-
-            # show the mouse
             if loc == 0:
-                # centre
                 up_mouse_im = OffsetImage(up_mouse_img, zoom=0.04 / n)
                 ab_mouse = AnnotationBbox(up_mouse_im, (1.5, 1.5), xycoords="data", frameon=False)
                 ab_mouse = ax.add_artist(ab_mouse)
                 ab_mouse.set_zorder(3)
             elif loc == 1:
-                # left
                 left_mouse_im = OffsetImage(left_mouse_img, zoom=0.04 / n)
                 ab_mouse = AnnotationBbox(left_mouse_im, (0.75, 0.5), xycoords="data", frameon=False)
                 ab_mouse = ax.add_artist(ab_mouse)
                 ab_mouse.set_zorder(3)
             elif loc == 2:
-                # right
                 right_mouse_im = OffsetImage(right_mouse_img, zoom=0.04 / n)
                 ab_mouse = AnnotationBbox(right_mouse_im, (2.25, 0.5), xycoords="data", frameon=False)
                 ab_mouse = ax.add_artist(ab_mouse)
                 ab_mouse.set_zorder(3)
             elif loc == 3:
-                # bottom
                 down_mouse_im = OffsetImage(mouse_img, zoom=0.04 / n)
                 ab_mouse = AnnotationBbox(down_mouse_im, (1.5, 2.25), xycoords="data", frameon=False)
                 ab_mouse = ax.add_artist(ab_mouse)
                 ab_mouse.set_zorder(3)
             elif loc == 4:
-                # middle
                 middle_mouse_im = OffsetImage(up_mouse_img, zoom=0.04 / n)
                 ab_mouse = AnnotationBbox(middle_mouse_im, (1.5, 0.5), xycoords="data", frameon=False)
                 ab_mouse = ax.add_artist(ab_mouse)
                 ab_mouse.set_zorder(3)
 
-        # hide any extra subplots if batch_size isn't a perfect square
         for i in range(batch_size, n * n):
             fig.delaxes(axes.flatten()[i])
 
-        plt.tight_layout()
+        if title:
+            fig.tight_layout(rect=[0, 0, 1, 0.93])
+        else:
+            plt.tight_layout()
 
         if mode == "human":
             plt.show()
         elif mode == "rgb_array":
             img = fig2img(fig)
-            plt.close(fig) 
+            plt.close(fig)
             return img
+
+
+class TMaze(BaseTMaze):
+    """
+    Classic T-Maze with a middle connector, adjacent transitions, and a separate cue modality.
+    """
+
+    def __init__(
+        self,
+        reward_probability=1.0,
+        punishment_probability=1.0,
+        cue_validity=0.95,
+        reward_condition=None,
+        dependent_outcomes=False,
+    ):
+        super().__init__(
+            reward_probability=reward_probability,
+            punishment_probability=punishment_probability,
+            cue_validity=cue_validity,
+            reward_condition=reward_condition,
+            dependent_outcomes=dependent_outcomes,
+            num_locations=5,
+            cue_mode="separate",
+            connectivity="adjacent",
+            has_middle=True,
+        )
+
+
+class SimplifiedTMaze(BaseTMaze):
+    """
+    Fully connected T-Maze with embedded cues and no middle connector.
+    """
+
+    def __init__(
+        self,
+        reward_condition=None,
+        cue_validity=0.95,
+        reward_probability=1.0,
+        dependent_outcomes=False,
+        punishment_probability=1.0,
+    ):
+        super().__init__(
+            reward_probability=reward_probability,
+            punishment_probability=punishment_probability,
+            cue_validity=cue_validity,
+            reward_condition=reward_condition,
+            dependent_outcomes=dependent_outcomes,
+            num_locations=4,
+            cue_mode="embedded",
+            connectivity="fully_connected",
+            has_middle=False,
+            location_obs_size=5,
+        )
