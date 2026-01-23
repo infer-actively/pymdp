@@ -258,7 +258,7 @@ class TestRolloutFunction(unittest.TestCase):
         initial_carry = {
             "qs": qs0,
             "action": -jnp.ones(
-                (agent.batch_size, agent.policies.shape[-1]), dtype=jnp.int32
+                (agent.batch_size, agent.policies.policy_arr.shape[-1]), dtype=jnp.int32
             ),
             "observation": init_obs,
             "env_state": initial_state,

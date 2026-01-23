@@ -395,7 +395,7 @@ class TestAgentJax(unittest.TestCase):
         )
 
         # dummy history
-        action = agent.policies[jr.randint(action_key, shape=(), minval=0, maxval=len(agent.policies))]
+        action = agent.policies[jr.randint(action_key, shape=(), minval=0, maxval=agent.policies.num_policies)]
         observation = [jr.randint(obs_key, shape=(1, 1), minval=0, maxval=d) for d in agent.num_obs]
         qs_hist = jtu.tree_map(lambda x: jnp.expand_dims(x, 0), agent.D)
 
@@ -432,7 +432,7 @@ class TestAgentJax(unittest.TestCase):
             )
 
             # dummy history
-            action = agent.policies[jr.randint(action_key, shape=(), minval=0, maxval=len(agent.policies))]
+            action = agent.policies.policy_arr[jr.randint(action_key, shape=(), minval=0, maxval=agent.policies.num_policies)]
             observation = [jr.randint(obs_key, shape=(1, 1), minval=0, maxval=d) for d in agent.num_obs]
             qs_hist = jtu.tree_map(lambda x: jnp.expand_dims(x, 0), agent.D)
 

@@ -67,7 +67,7 @@ class Agent(Module):
     alpha: Array
 
     # matrix of all possible policies (each row is a policy of shape (num_controls[0], num_controls[1], ..., num_controls[num_control_factors-1])
-    policies: Array
+    policies: control.Policies = field(static=True)
 
     # threshold for inductive inference (the threshold for pruning transitions that are below a certain probability)
     inductive_threshold: Array
@@ -295,14 +295,18 @@ class Agent(Module):
 
         # construct policies
         if policies is None:
-            self.policies = control.construct_policies(
+            policies_array = control.construct_policies(
                 self.num_states,
                 self.num_controls,
                 self.policy_len,
                 self.control_fac_idx,
             )
+            self.policies = control.Policies(policies_array)
         else:
-            self.policies = policies
+            if not isinstance(policies, control.Policies):
+                self.policies = control.Policies(jnp.array(policies))
+            else:
+                self.policies = policies
 
         if C is None:
             C = [jnp.ones((self.batch_size, self.num_obs[m])) / self.num_obs[m] for m in range(self.num_modalities)]
@@ -311,7 +315,7 @@ class Agent(Module):
             D = [jnp.ones((self.batch_size, self.num_states[f])) / self.num_states[f] for f in range(self.num_factors)]
 
         if E is None:
-            E = jnp.ones((self.batch_size, len(self.policies))) / len(self.policies)
+            E = jnp.ones((self.batch_size, self.policies.num_policies)) / self.policies.num_policies
         else:
             if E.ndim > 1:
                 if E.shape[0] == 1 and batch_size > 1:
@@ -371,7 +375,7 @@ class Agent(Module):
     @property
     def unique_multiactions(self):
         size = pymath.prod(self.num_controls)
-        return jnp.unique(self.policies[:, 0], axis=0, size=size, fill_value=-1)
+        return jnp.unique(self.policies.policy_arr[:, 0], axis=0, size=size, fill_value=-1)
 
     def _get_num_states_from_B(self, B, B_dependencies):
         """ Use the shapes of B and the B_dependencies to determine the number of states for each factor."""
@@ -625,7 +629,7 @@ class Agent(Module):
         latest_belief = jtu.tree_map(lambda x: x[:, -1], qs) # only get the posterior belief held at the current timepoint
         infer_policies = partial(
             control.update_posterior_policies_inductive,
-            self.policies,
+            self.policies.policy_arr,
             A_dependencies=self.A_dependencies,
             B_dependencies=self.B_dependencies,
             use_utility=self.use_utility,
@@ -665,14 +669,14 @@ class Agent(Module):
         """
 
         if self.sampling_mode == "marginal":
-            get_marginals = partial(control.get_marginals, policies=self.policies, num_controls=self.num_controls)
+            get_marginals = partial(control.get_marginals, policies=self.policies.policy_arr, num_controls=self.num_controls)
             marginals = get_marginals(q_pi)
             outer = lambda a, b: jnp.outer(a, b).reshape(-1)
             marginals = jtu.tree_reduce(outer, marginals)
 
         elif self.sampling_mode == "full":
             locs = jnp.all(
-                self.policies[:, 0] == jnp.expand_dims(self.unique_multiactions, -2),
+                self.policies.policy_arr[:, 0] == jnp.expand_dims(self.unique_multiactions, -2),
                 -1,
             )
             get_marginals = lambda x: jnp.where(locs, x, 0.).sum(-1)
@@ -695,10 +699,10 @@ class Agent(Module):
             raise ValueError("Please provide a random number generator key to sample actions stochastically")
 
         if self.sampling_mode == "marginal":
-            sample_action = partial(control.sample_action, self.policies, self.num_controls, action_selection=self.action_selection)
+            sample_action = partial(control.sample_action, self.policies.policy_arr, self.num_controls, action_selection=self.action_selection)
             action = vmap(sample_action)(q_pi, alpha=self.alpha, rng_key=rng_key)
         elif self.sampling_mode == "full":
-            sample_policy = partial(control.sample_policy, self.policies, action_selection=self.action_selection)
+            sample_policy = partial(control.sample_policy, self.policies.policy_arr, action_selection=self.action_selection)
             action = vmap(sample_policy)(q_pi, alpha=self.alpha, rng_key=rng_key)
 
         return action
@@ -745,7 +749,7 @@ class Agent(Module):
             "num_controls": self.num_controls,
             "num_modalities": self.num_modalities,
             "num_factors": self.num_factors,
-            "num_policies": len(self.policies),
+            "num_policies": self.policies.num_policies,
             "policy_len": self.policy_len,
             "A_dependencies": self.A_dependencies,
             "B_dependencies": self.B_dependencies,

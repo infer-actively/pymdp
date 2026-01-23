@@ -76,22 +76,18 @@ def si_policy_search(
         #     agent,
         #     tree,
         # )
-        policies = agent.policies
-        # filter out non-batchsized field (policies)
-        agent_filtered, _ = eqx.partition(agent, filter_spec=lambda leaf: leaf.shape[0] == batch_size)
-        
         def scan_tree_search(carry, data):
             agent, tree = data
-            tree = partial_tree_search(agent, policies, tree)
+            tree = partial_tree_search(agent, tree)
             return None, (agent, tree)
 
         if not reset: # reset flag just to create an initial tree structure
-            _, data = lax.scan(scan_tree_search, None, (agent_filtered, tree))
+            _, data = lax.scan(scan_tree_search, None, (agent, tree))
             _, tree = data
 
         # calculate q_pi from the root in a way that is jittable
         q_pi = tree.children_probs[jnp.arange(batch_size), jax.vmap(root_idx)(tree)]
-        q_pi = q_pi[:, : agent.policies.shape[-3]]
+        q_pi = q_pi[:, : agent.policies.num_policies]
         return q_pi, { "tree": tree }
 
     return search_fn
@@ -219,10 +215,11 @@ def root_idx(tree):
     return root_idx
 
 
-def step(agent, qs, policies):
+def step(agent, qs):
     """
     For a given agent, calculate next qs, qo and G given the current qs and policies.
     """
+    policies = agent.policies.policy_arr
 
     def _step(q, policy):
         qs = compute_expected_state(q, agent.B, policy, agent.B_dependencies)
@@ -492,7 +489,6 @@ def _generate_observations(shapes, return_size, topk_indices):
 
 def optimized_tree_search(
     agent,
-    policies,
     tree,
     horizon,
     policy_prune_threshold=1 / 16,
@@ -528,6 +524,7 @@ def optimized_tree_search(
     Returns:
         tree: The expanded planning tree.
     """
+    policies = agent.policies.policy_arr
 
     def _expand_observation_nodes(tree, data):
         """
@@ -715,7 +712,7 @@ def optimized_tree_search(
         # jax.debug.print("Expand policies of node {idx} at horizon {h}", idx=idx, h=t.horizon[idx, 0])
         # calculate expected states, outcomes and free energy for all policies
         qs_current = jtu.tree_map(lambda x: x[idx], t.qs)
-        qs_next, qo, G = step(agent, qs_current, policies)
+        qs_next, qo, G = step(agent, qs_current)
         q_pi = nn.softmax(G * gamma, axis=0)
 
         # expand policy nodes
