@@ -20,6 +20,39 @@ from pymdp.control import (
 )
 
 
+def predict_fn(agent, qs):
+    """
+    For a given agent, calculate next qs, qo and G given the current qs and policies.
+    """
+    policies = agent.policies.policy_arr
+
+    def _step(q, policy):
+        qs = compute_expected_state(q, agent.B, policy, agent.B_dependencies)
+        qo = compute_expected_obs(qs, agent.A, agent.A_dependencies)
+        u = compute_expected_utility(qo, agent.C)
+        ig = compute_info_gain(qs, qo, agent.A, agent.A_dependencies)
+        return qs, qo, u, ig
+
+    qs, qo, u, ig = jax.vmap(
+        lambda policy: jax.vmap(_step)(qs, policy)
+    )(policies)
+    G = u + ig
+    # jax.debug.print("qs: {qs}", qs=qs)
+    # jax.debug.print("qo: {qo}", qo=qo)
+    # jax.debug.print("u: {u}", u=u)
+    # jax.debug.print("ig: {ig}", ig=ig)
+    # jax.debug.print("G from step fn: {G}", G=G)
+    return qs, qo, G
+
+
+def infer_fn(agent, obs, qs):
+    agent_expanded = jtu.tree_map(lambda x: x[None, ...], agent)
+    qs_post = agent_expanded.infer_states(obs, qs)
+    # remove time dim from qs_post
+    qs_post = jtu.tree_map(lambda x: x[:, 0, :], qs_post)
+    return qs_post
+
+
 def si_policy_search(
     horizon=5,
     max_nodes=5000,
@@ -32,6 +65,8 @@ def si_policy_search(
     prune_penalty=512,
     gamma=1,
     topk_obsspace=10000,
+    infer_fn=infer_fn,
+    predict_fn=predict_fn,
 ):
     """
     Create a search function that can be used in the pymdp `rollout` function.
@@ -66,6 +101,8 @@ def si_policy_search(
             prune_penalty=prune_penalty,
             gamma=gamma,
             topk_obsspace=topk_obsspace,
+            infer_fn=infer_fn,
+            predict_fn=predict_fn
         )
 
         # vmapping a jax.lax.cond() turns it into a jax.lax.select(),
@@ -213,31 +250,6 @@ def root_idx(tree):
         fill_value=-1,
     )[0, 0]
     return root_idx
-
-
-def step(agent, qs):
-    """
-    For a given agent, calculate next qs, qo and G given the current qs and policies.
-    """
-    policies = agent.policies.policy_arr
-
-    def _step(q, policy):
-        qs = compute_expected_state(q, agent.B, policy, agent.B_dependencies)
-        qo = compute_expected_obs(qs, agent.A, agent.A_dependencies)
-        u = compute_expected_utility(qo, agent.C)
-        ig = compute_info_gain(qs, qo, agent.A, agent.A_dependencies)
-        return qs, qo, u, ig
-
-    qs, qo, u, ig = jax.vmap(
-        lambda policy: jax.vmap(_step)(qs, policy)
-    )(policies)
-    G = u + ig
-    # jax.debug.print("qs: {qs}", qs=qs)
-    # jax.debug.print("qo: {qo}", qo=qo)
-    # jax.debug.print("u: {u}", u=u)
-    # jax.debug.print("ig: {ig}", ig=ig)
-    # jax.debug.print("G from step fn: {G}", G=G)
-    return qs, qo, G
 
 
 def _do_nothing(tree, idx):
@@ -499,6 +511,8 @@ def optimized_tree_search(
     prune_penalty=512,
     gamma=1,
     topk_obsspace=10000,
+    infer_fn=infer_fn,
+    predict_fn=predict_fn,
 ):
     """
     Perform a sophisticated inference tree search given an agent and planning tree.
@@ -572,10 +586,7 @@ def optimized_tree_search(
 
                     # convert to correct dimensions for infer_states
                     obs = [o[None, None, ...] for o in observation]
-                    agent_expanded = jtu.tree_map(lambda x: x[None, ...], agent)
-                    qs_post = agent_expanded.infer_states(obs, qs)
-                    # remove time dim from qs_post
-                    qs_post = jtu.tree_map(lambda x: x[:, 0, :], qs_post)
+                    qs_post = infer_fn(agent, obs, qs)
 
                     # check if we already have a node with this belief (or close enough)
                     def diff_kl(qs_orig, qs_post):
@@ -712,7 +723,7 @@ def optimized_tree_search(
         # jax.debug.print("Expand policies of node {idx} at horizon {h}", idx=idx, h=t.horizon[idx, 0])
         # calculate expected states, outcomes and free energy for all policies
         qs_current = jtu.tree_map(lambda x: x[idx], t.qs)
-        qs_next, qo, G = step(agent, qs_current)
+        qs_next, qo, G = predict_fn(agent, qs_current)
         q_pi = nn.softmax(G * gamma, axis=0)
 
         # expand policy nodes
