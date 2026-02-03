@@ -275,7 +275,7 @@ class TestCategoricalObservationsAgent(unittest.TestCase):
         self.assertTrue(jnp.allclose(qs[0].sum(), 1.0, atol=1e-5))
 
     def test_agent_categorical_override(self):
-        """Test that categorical_obs parameter can override agent default"""
+        """Test that preprocess_fn parameter can override agent default"""
 
         num_states = [3]
         num_obs = [4]
@@ -293,7 +293,7 @@ class TestCategoricalObservationsAgent(unittest.TestCase):
 
         # Override to use categorical observation for this call (shape: batch, time, num_obs)
         obs_categorical = [jnp.array([[[0.5, 0.3, 0.15, 0.05]]])]
-        qs = agent.infer_states(obs_categorical, agent.D, categorical_obs=True)
+        qs = agent.infer_states(obs_categorical, agent.D, preprocess_fn=lambda obs: obs)
 
         self.assertTrue(jnp.allclose(qs[0].sum(), 1.0, atol=1e-5))
 
