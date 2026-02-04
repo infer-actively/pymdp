@@ -7,6 +7,7 @@ __author__: Conor Heins, Dimitrije Markovic, Alexander Tschantz, Daphne Demekas,
 
 """
 import math as pymath
+import warnings
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from jax import nn, vmap
@@ -379,6 +380,14 @@ class Agent(Module):
 
         self.categorical_obs = categorical_obs
         self.preprocess_fn = preprocess_fn
+        if (self.preprocess_fn is not None) and (self.categorical_obs is False):
+            warnings.warn(
+                "preprocess_fn is set while categorical_obs=False. If your preprocess_fn returns "
+                "categorical distributions, set categorical_obs=True so learning/planning "
+                "interpret observations correctly.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         # validate model
         self._validate()
