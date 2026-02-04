@@ -59,6 +59,9 @@ class Agent(Module):
     ----------------------
     You can override the default preprocessing by passing ``preprocess_fn`` at
     agent construction or on individual ``infer_states`` calls.
+
+    Note: If ``preprocess_fn`` is set, it takes precedence over the
+    ``categorical_obs`` flag for determining preprocessing behavior.
     """
 
     A: List[Array]
