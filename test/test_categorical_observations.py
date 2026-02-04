@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import unittest
+import warnings
 from jax import numpy as jnp, random as jr, nn
 import jax.tree_util as jtu
 
@@ -295,6 +296,45 @@ class TestCategoricalObservationsAgent(unittest.TestCase):
         obs_categorical = [jnp.array([[[0.5, 0.3, 0.15, 0.05]]])]
         qs = agent.infer_states(obs_categorical, agent.D, preprocess_fn=lambda obs: obs)
 
+        self.assertTrue(jnp.allclose(qs[0].sum(), 1.0, atol=1e-5))
+
+    def test_agent_preprocess_fn_default_and_warning(self):
+        """Test agent-level preprocess_fn default usage and warning when categorical_obs=False"""
+
+        num_states = [3]
+        num_obs = [4]
+        num_controls = [3]
+
+        A = utils.random_A_array(jr.PRNGKey(230), num_obs, num_states)
+        B = utils.random_B_array(jr.PRNGKey(231), num_states, num_controls)
+
+        called = {"count": 0}
+
+        def preprocess_fn(obs):
+            called["count"] += 1
+            return obs
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            agent = Agent(
+                A=A,
+                B=B,
+                policy_len=2,
+                categorical_obs=False,
+                preprocess_fn=preprocess_fn,
+            )
+
+        self.assertTrue(
+            any(
+                "preprocess_fn is set while categorical_obs=False" in str(warning.message)
+                for warning in w
+            )
+        )
+
+        obs_categorical = [jnp.array([[[0.5, 0.3, 0.15, 0.05]]])]
+        qs = agent.infer_states(obs_categorical, agent.D)
+
+        self.assertEqual(called["count"], 1)
         self.assertTrue(jnp.allclose(qs[0].sum(), 1.0, atol=1e-5))
 
     def test_agent_full_loop_categorical(self):

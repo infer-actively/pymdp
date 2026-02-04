@@ -546,10 +546,10 @@ class Agent(Module):
         -----
         If ``self.preprocess_fn`` is set on the agent, it takes precedence over the default
         categorical/discrete handling and will be used instead of the logic based on
-        ``self.categorical_obs``. In this case, the value of ``self.categorical_obs`` is
-        effectively ignored for preprocessing. Likewise, any per-call ``preprocess_fn``
-        passed to higher-level methods (such as ``infer_states``) is intended to override
-        the default categorical/discrete handling in the same way.
+        ``self.categorical_obs``. This override only affects preprocessing; ``self.categorical_obs``
+        is still used by learning and planning code paths that consume raw observations.
+        Ensure ``self.categorical_obs`` matches the output format of your preprocessing
+        (or per-call ``preprocess_fn``) to keep those paths consistent.
         """
         if self.preprocess_fn is not None:
             return self.preprocess_fn(observations)
@@ -575,7 +575,7 @@ class Agent(Module):
         """
         return [nn.one_hot(o, self.num_obs[m]) for m, o in enumerate(observations)]
 
-    def infer_states(self, observations, empirical_prior, *, past_actions=None, qs_hist=None, mask=None, preprocess_fn=None):
+    def infer_states(self, observations, empirical_prior, *, past_actions=None, qs_hist=None, mask=None, preprocess_fn=None, **kwargs):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
@@ -612,6 +612,13 @@ class Agent(Module):
             If None, defaults to ``self.process_obs``. The callable should accept
             ``observations`` and return distributional observations.
 
+        Notes
+        -----
+        ``categorical_obs`` is no longer an argument to ``infer_states``. Set it when
+        constructing the agent or supply a ``preprocess_fn``. If you provide a custom
+        preprocessing function, ensure ``self.categorical_obs`` matches the output format,
+        since it is still used by learning and planning code paths that consume raw observations.
+
         Returns
         -------
         qs: ``list`` of ``jax.numpy.ndarray``
@@ -638,6 +645,15 @@ class Agent(Module):
         >>> agent_cat = Agent(..., categorical_obs=True)
         >>> qs = agent_cat.infer_states(obs, prior)
         """
+
+        if kwargs:
+            if "categorical_obs" in kwargs:
+                raise TypeError(
+                    "infer_states() no longer accepts categorical_obs. Set categorical_obs on the Agent "
+                    "or provide preprocess_fn instead."
+                )
+            unexpected = ", ".join(sorted(kwargs.keys()))
+            raise TypeError(f"infer_states() got unexpected keyword argument(s): {unexpected}")
 
         if preprocess_fn is None:
             o_vec = self.process_obs(observations)
