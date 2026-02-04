@@ -7,6 +7,7 @@ __author__: Conor Heins, Dimitrije Markovic, Alexander Tschantz, Daphne Demekas,
 
 """
 import math as pymath
+import warnings
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from jax import nn, vmap
@@ -14,7 +15,7 @@ from pymdp import inference, control, learning, utils
 from pymdp.distribution import Distribution, get_dependencies
 from equinox import Module, field, tree_at
 
-from typing import List, Optional, Union
+from typing import Callable, List, Optional, Union
 from jaxtyping import Array
 from functools import partial
 from jax import lax
@@ -54,6 +55,14 @@ class Agent(Module):
        Each observation must be a valid probability distribution:
        - All elements non-negative
        - Sums to 1.0 along the observation dimension
+
+    Advanced preprocessing
+    ----------------------
+    You can override the default preprocessing by passing ``preprocess_fn`` at
+    agent construction or on individual ``infer_states`` calls.
+
+    Note: If ``preprocess_fn`` is set, it takes precedence over the
+    ``categorical_obs`` flag for determining preprocessing behavior.
     """
 
     A: List[Array]
@@ -106,6 +115,7 @@ class Agent(Module):
     # flag for whether to use inductive inference ("intentional inference") when computing expected free energy
     use_inductive: bool = field(static=True)
     categorical_obs: bool = field(static=True)
+    preprocess_fn: Optional[Callable] = field(static=True)
     # determinstic or stochastic action selection
     action_selection: str = field(static=True)
     # whether to sample from full posterior over policies ("full") or from marginal posterior over actions ("marginal")
@@ -149,6 +159,7 @@ class Agent(Module):
         use_param_info_gain=False,
         use_inductive=False,
         categorical_obs=False,
+        preprocess_fn=None,
         action_selection="deterministic",
         sampling_mode="full",
         inference_algo="fpi",
@@ -368,6 +379,15 @@ class Agent(Module):
         self.I = I
 
         self.categorical_obs = categorical_obs
+        self.preprocess_fn = preprocess_fn
+        if (self.preprocess_fn is not None) and (self.categorical_obs is False):
+            warnings.warn(
+                "preprocess_fn is set while categorical_obs=False. If your preprocess_fn returns "
+                "categorical distributions, set categorical_obs=True so that learning/planning can "
+                "interpret observations correctly.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         # validate model
         self._validate()
@@ -502,19 +522,74 @@ class Agent(Module):
 
         return agent
 
-    def infer_states(self, observations, empirical_prior, *, past_actions=None, qs_hist=None, mask=None, categorical_obs=False):
+    def process_obs(self, observations):
+        """
+        Preprocess observations into the distributional format expected by the inference routines.
+
+        Parameters
+        ----------
+        observations: ``list`` or ``tuple``
+            The observation input. Format depends on the default preprocessing:
+
+            - If ``self.categorical_obs=False`` (default): Each entry ``observations[m]`` is an integer
+              index representing the discrete observation for modality ``m``.
+
+            - If ``self.categorical_obs=True``: Each entry ``observations[m]`` is a 1D array representing
+              a probability distribution over observations for modality ``m``.
+
+        Returns
+        -------
+        o_vec: ``list`` or ``tuple``
+            Observations in distributional form (one-hot vectors or categorical distributions).
+
+        Notes
+        -----
+        If ``self.preprocess_fn`` is set on the agent, it takes precedence over the default
+        categorical/discrete handling and will be used instead of the logic based on
+        ``self.categorical_obs``. This override only affects preprocessing; ``self.categorical_obs``
+        is still used by learning and planning code paths that consume raw observations.
+        Ensure ``self.categorical_obs`` matches the output format of your preprocessing
+        (or per-call ``preprocess_fn``) to keep those paths consistent.
+        """
+        if self.preprocess_fn is not None:
+            return self.preprocess_fn(observations)
+
+        if self.categorical_obs:
+            return observations
+
+        return self.make_categorical(observations)
+
+    def make_categorical(self, observations):
+        """
+        Convert discrete index observations into one-hot categorical distributions.
+
+        Parameters
+        ----------
+        observations: ``list`` or ``tuple``
+            Each entry ``observations[m]`` is an integer index for modality ``m``.
+
+        Returns
+        -------
+        o_vec: ``list``
+            One-hot categorical distributions for each modality.
+        """
+        return [nn.one_hot(o, self.num_obs[m]) for m, o in enumerate(observations)]
+
+    def infer_states(self, observations, empirical_prior, *, past_actions=None, qs_hist=None, mask=None, preprocess_fn=None):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
         Parameters
         ----------
         observations: ``list`` or ``tuple``
-            The observation input. Format depends on categorical_obs flag:
+            The observation input. Format depends on the preprocessing function used:
 
-            - If categorical_obs=False (default): Each entry ``observations[m]`` is an integer
+            - If using the default preprocessing with ``self.categorical_obs=False``:
+              Each entry ``observations[m]`` is an integer
               index representing the discrete observation for modality ``m``.
 
-            - If categorical_obs=True: Each entry ``observations[m]`` is a 1D array representing
+            - If using the default preprocessing with ``self.categorical_obs=True``:
+              Each entry ``observations[m]`` is a 1D array representing
               a probability distribution over observations for modality ``m``. Must sum to 1.0.
 
         empirical_prior: ``list`` or ``tuple`` of ``jax.numpy.ndarray``
@@ -532,9 +607,17 @@ class Agent(Module):
         mask: ``list`` or ``tuple``, optional
             Mask for observations.
 
-        categorical_obs: bool, default False
-            If True, treat observations as probability distributions rather than discrete indices.
-            Overrides self.categorical_obs for this call.
+        preprocess_fn: callable, optional
+            Optional preprocessing function to convert observations into distributional form.
+            If None, defaults to ``self.process_obs``. The callable should accept
+            ``observations`` and return distributional observations.
+
+        Notes
+        -----
+        ``categorical_obs`` is no longer an argument to ``infer_states``. Set it when
+        constructing the agent or supply a ``preprocess_fn``. If you provide a custom
+        preprocessing function, ensure ``self.categorical_obs`` matches the output format,
+        since it is still used by learning and planning code paths that consume raw observations.
 
         Returns
         -------
@@ -563,13 +646,10 @@ class Agent(Module):
         >>> qs = agent_cat.infer_states(obs, prior)
         """
 
-        use_categorical = categorical_obs or self.categorical_obs
-
-        # TODO: infer this from shapes
-        if not use_categorical:
-            o_vec = [nn.one_hot(o, self.num_obs[m]) for m, o in enumerate(observations)]
+        if preprocess_fn is None:
+            o_vec = self.process_obs(observations)
         else:
-            o_vec = observations
+            o_vec = preprocess_fn(observations)
 
         A = self.A
         if mask is not None:
@@ -583,7 +663,7 @@ class Agent(Module):
             B_dependencies=self.B_dependencies,
             num_iter=self.num_iter,
             method=self.inference_algo,
-            distr_obs=True,  # Always True because o_vec is always distributional after one-hot conversion
+            distr_obs=True,  # Always True because o_vec is expected to be distributional
         )
         
         output = vmap(infer_states)(
