@@ -575,7 +575,7 @@ class Agent(Module):
         """
         return [nn.one_hot(o, self.num_obs[m]) for m, o in enumerate(observations)]
 
-    def infer_states(self, observations, empirical_prior, *, past_actions=None, qs_hist=None, mask=None, preprocess_fn=None, **kwargs):
+    def infer_states(self, observations, empirical_prior, *, past_actions=None, qs_hist=None, mask=None, preprocess_fn=None):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
@@ -645,15 +645,6 @@ class Agent(Module):
         >>> agent_cat = Agent(..., categorical_obs=True)
         >>> qs = agent_cat.infer_states(obs, prior)
         """
-
-        if kwargs:
-            if "categorical_obs" in kwargs:
-                raise TypeError(
-                    "infer_states() no longer accepts categorical_obs. Set categorical_obs on the Agent "
-                    "or provide preprocess_fn instead."
-                )
-            unexpected = ", ".join(sorted(kwargs.keys()))
-            raise TypeError(f"infer_states() got unexpected keyword argument(s): {unexpected}")
 
         if preprocess_fn is None:
             o_vec = self.process_obs(observations)
