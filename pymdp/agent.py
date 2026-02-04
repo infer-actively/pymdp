@@ -383,7 +383,7 @@ class Agent(Module):
         if (self.preprocess_fn is not None) and (self.categorical_obs is False):
             warnings.warn(
                 "preprocess_fn is set while categorical_obs=False. If your preprocess_fn returns "
-                "categorical distributions, set categorical_obs=True so learning/planning "
+                "categorical distributions, set categorical_obs=True so that learning/planning can "
                 "interpret observations correctly.",
                 UserWarning,
                 stacklevel=2,
