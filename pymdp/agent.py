@@ -535,8 +535,12 @@ class Agent(Module):
 
         Notes
         -----
-        If ``self.preprocess_fn`` is set, it will be used instead of the default
-        categorical/discrete handling.
+        If ``self.preprocess_fn`` is set on the agent, it takes precedence over the default
+        categorical/discrete handling and will be used instead of the logic based on
+        ``self.categorical_obs``. In this case, the value of ``self.categorical_obs`` is
+        effectively ignored for preprocessing. Likewise, any per-call ``preprocess_fn``
+        passed to higher-level methods (such as ``infer_states``) is intended to override
+        the default categorical/discrete handling in the same way.
         """
         if self.preprocess_fn is not None:
             return self.preprocess_fn(observations)
