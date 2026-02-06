@@ -8,7 +8,7 @@ __author__: Dimitrije Markovic, Conor Heins
 import unittest
 
 import numpy as np
-from jax import numpy as jnp, random as jr
+from jax import numpy as jnp, random as jr, nn
 import jax.tree_util as jtu
 
 from pymdp import utils
@@ -385,6 +385,42 @@ class TestLearningJax(unittest.TestCase):
         for pB_np, pB_jax in zip(pB_updated_numpy, pB_updated_jax):
             self.assertTrue(pB_np.shape == pB_jax.shape)
             self.assertTrue(np.allclose(pB_np, pB_jax))
+
+    def test_update_state_likelihood_single_factor_sequence_joints(self):
+        """
+        Ensure B-learning accepts sequence-form pairwise joints, as produced by exact smoothing
+        (shape `(T-1, K_next, K_curr)` for a single factor).
+        """
+        num_states = [4]
+        num_controls = [3]
+        T = 6  # number of state timepoints, so transitions are T-1
+        l_rate = 0.75
+
+        key_b, key_joint, key_action = jr.split(jr.PRNGKey(1234), 3)
+        B_jax = utils.random_B_array(key_b, num_states, num_controls)
+        pB_jax = utils.list_array_scaled([B_f.shape for B_f in B_jax], scale=1.0)
+
+        # Sequence of pairwise joints: (T-1, K_next, K_curr), normalized per timestep.
+        joint_seq = jr.uniform(key_joint, (T - 1, num_states[0], num_states[0])) + 1e-6
+        joint_seq = joint_seq / joint_seq.sum(axis=(1, 2), keepdims=True)
+        joint_beliefs = [joint_seq]
+
+        actions = jr.randint(key_action, (T - 1, 1), 0, num_controls[0])
+
+        qB_jax, _ = update_pB_jax(
+            pB_jax,
+            B_jax,
+            joint_beliefs,
+            actions,
+            num_controls=num_controls,
+            lr=l_rate,
+        )
+
+        actions_oh = nn.one_hot(actions[:, 0], num_controls[0])
+        expected_dfdb = jnp.einsum("tij,tu->iju", joint_seq, actions_oh)
+        expected_qB = pB_jax[0] + l_rate * expected_dfdb
+
+        self.assertTrue(np.allclose(np.array(qB_jax[0]), np.array(expected_qB), atol=1e-6))
 
 
 if __name__ == "__main__":

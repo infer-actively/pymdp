@@ -104,6 +104,8 @@ class Agent(Module):
     control_fac_idx: Optional[List[int]] = field(static=True)
     # depth of planning during roll-outs (i.e. number of timesteps to look ahead when computing expected free energy of policies)
     policy_len: int = field(static=True)
+    # number of past timesteps (including current) to use for sequence inference (mmp, vmp, exact)
+    inference_horizon: Optional[int] = field(static=True)
     # depth of inductive inference (i.e. number of future timesteps to use when computing inductive `I` matrix)
     inductive_depth: int = field(static=True)
     # flag for whether to use expected utility ("reward" or "preference satisfaction") when computing expected free energy
@@ -120,7 +122,7 @@ class Agent(Module):
     action_selection: str = field(static=True)
     # whether to sample from full posterior over policies ("full") or from marginal posterior over actions ("marginal")
     sampling_mode: str = field(static=True)
-    # fpi, vmp, mmp, ovf
+    # fpi, vmp, mmp, ovf, exact
     inference_algo: str = field(static=True)
     # whether to perform learning online or offline (options: "online", "offline")
     learning_mode: str = field(static=True, default="online")
@@ -163,6 +165,7 @@ class Agent(Module):
         action_selection="deterministic",
         sampling_mode="full",
         inference_algo="fpi",
+        inference_horizon=None,
         num_iter=16,
         batch_size=1,
         learning_mode="online", # TODO: or should this be an argument to `self.infer_parameters()` or even `env/rollout.py:rollout()`
@@ -276,8 +279,12 @@ class Agent(Module):
 
         # static parameters
         self.num_iter = num_iter
-        self.inference_algo = inference_algo
+        self.inference_algo = inference_algo.lower() if isinstance(inference_algo, str) else inference_algo
+        self.inference_horizon = inference_horizon
         self.inductive_depth = inductive_depth
+
+        if self.inference_horizon is not None and self.inference_horizon < 1:
+            raise ValueError("`inference_horizon` must be >= 1 when provided")
 
         # policy parameters
         self.policy_len = policy_len
@@ -436,52 +443,96 @@ class Agent(Module):
             actions_Tm1 = actions[:, :max(T - 1, 0), :]    # (B, max(T-1, 0), Nu)
         else:
             actions_Tm1 = actions  # None or already time-matched
+
+        if actions_Tm1 is not None:
+            valid_transition_mask = jnp.all(actions_Tm1 >= 0, axis=-1)
+        else:
+            valid_transition_mask = None
         
-        # A handy predicate: can we (meaningfully) update B now?
-        # We need at least one transition and all actions to be non-negative (sentinel -1 = invalid).
-        can_update_B = (
-            self.learn_B
-            and actions_Tm1 is not None
+        # A handy predicate: can we (meaningfully) apply sequence-based smoothing or
+        # B-joint construction for this update window?
+        # We need at least one valid transition.
+        can_update_Beliefs = (
+            actions_Tm1 is not None
             and (T > 1)
             and (actions_Tm1.shape[1] == (T - 1))
-            and jnp.all(actions_Tm1 >= 0)
+            and jnp.any(valid_transition_mask)
         )
 
-        if self.inference_algo == 'ovf':
+        # Full B-parameter update additionally requires `self.learn_B`.
+        can_update_B = (
+            self.learn_B
+            and can_update_Beliefs
+        )
+
+        def _apply_transition_mask(joint_beliefs):
+            if valid_transition_mask is None:
+                return joint_beliefs
+
+            def _mask_joint(x):
+                mask = valid_transition_mask.astype(x.dtype).reshape(
+                    valid_transition_mask.shape + (1,) * (x.ndim - 2)
+                )
+                return x * mask
+
+            return jtu.tree_map(_mask_joint, joint_beliefs)
+
+        def _empty_joint_beliefs():
+            return [
+                jnp.zeros(
+                    (
+                        self.batch_size,
+                        seq_beliefs[0].shape[1] - 1,
+                        self.num_states[f],
+                        *[self.num_states[dep] for dep in self.B_dependencies[f]],
+                    )
+                )
+                for f in range(self.num_factors)
+            ]
+
+        def _build_outer_product_joints():
+            return [
+                [seq_beliefs[f][:, 1:]] + [seq_beliefs[f_idx][:, :-1] for f_idx in self.B_dependencies[f]]
+                for f in range(self.num_factors)
+            ]
+
+        def _smooth_or_fallback(smoothing_fn):
             def update_with_smoothing(_):
                 # Use the *sequence* of filtered beliefs (seq_beliefs) for smoothing
                 #   vmap runs over batch: each call sees (T, Ns_f) and (T-1, Nu)
-                smoothed_marginals_and_joints = vmap(inference.smoothing_ovf)(
+                smoothed_marginals_and_joints = vmap(smoothing_fn)(
                     seq_beliefs, self.B, actions_Tm1
                 )
                 marginal_beliefs = smoothed_marginals_and_joints[0]  # list[f] -> (B, T, Ns_f)
-                joint_beliefs = smoothed_marginals_and_joints[1]  # list[f] -> (B, T-1, Ns_f, Ns_parents_f)
+                joint_beliefs = _apply_transition_mask(smoothed_marginals_and_joints[1])  # list[f] -> (B, T-1, ...)
                 return marginal_beliefs, joint_beliefs
-            
+
             def use_filtered_beliefs(_):
                 # No valid transition yet (or sentinel action found):
                 # - Use filtered beliefs for A-learning,
                 # - and either skip B-learning or fall back to the two-frame outer-product joint.
                 marginal_beliefs = seq_beliefs
                 # Create empty joint_beliefs with same structure as the true branch would return
-                joint_beliefs = [jnp.empty((self.batch_size, seq_beliefs[0].shape[1]-1, self.num_states[f], *[self.num_states[dep] for dep in self.B_dependencies[f]])) for f in range(self.num_factors)]
+                joint_beliefs = _apply_transition_mask(_empty_joint_beliefs())
                 return marginal_beliefs, joint_beliefs
-            
-            marginal_beliefs, joint_beliefs = lax.cond(
-                can_update_B,
+
+            return lax.cond(
+                can_update_Beliefs,
                 update_with_smoothing,
                 use_filtered_beliefs,
                 operand=None
             )
+
+        if self.inference_algo in inference.SMOOTHING_METHODS:
+            smoothing_fn = inference.smoothing_ovf
+            if self.inference_algo == inference.EXACT_METHOD:
+                # Exact backward smoothing from online filtering history for single-factor HMMs.
+                smoothing_fn = inference.smoothing_exact
+            marginal_beliefs, joint_beliefs = _smooth_or_fallback(smoothing_fn)
         else:
             # Non-OVF: keep existing behavior (use filtered marginals and build joints from t and t-1)
             marginal_beliefs = beliefs_A
-            if self.learn_B:
-                nf = len(seq_beliefs)
-                joint_fn = lambda f: [seq_beliefs[f][:, 1:]] + [seq_beliefs[f_idx][:, :-1] for f_idx in self.B_dependencies[f]]
-                joint_beliefs = jtu.tree_map(joint_fn, list(range(nf)))
-            else:
-                joint_beliefs = None
+            joint_beliefs = _apply_transition_mask(_build_outer_product_joints()) if self.learn_B else None
 
         if self.learn_A:
             update_A = partial(
@@ -505,20 +556,34 @@ class Agent(Module):
         if self.learn_B:
             update_B = partial(learning.update_state_transition_dirichlet, num_controls=self.num_controls)
             lrB = jnp.broadcast_to(lr_pB, (self.batch_size,))
-            qB, E_qB = vmap(update_B)(
-                self.pB,
-                self.B,
-                joint_beliefs,
-                actions_Tm1,   # time-aligned actions
-                lr=lrB
-            )
-            # if you have updated your beliefs about transitions, you need to re-compute the I matrix used for inductive inferenece
+
+            def update_B_step(_):
+                qB, E_qB = vmap(update_B)(
+                    self.pB,
+                    self.B,
+                    joint_beliefs,
+                    actions_Tm1,   # time-aligned actions
+                    lr=lrB
+                )
+                return qB, E_qB
+
+            def skip_B_step(_):
+                return self.pB, self.B
+
+            qB, E_qB = lax.cond(can_update_B, update_B_step, skip_B_step, operand=None)
+
             if self.use_inductive and self.H is not None:
-                I_updated = vmap(partial(control.generate_I_matrix, depth=self.inductive_depth))(self.H, E_qB, self.inductive_threshold)
+                I_updated = lax.cond(
+                    can_update_B,
+                    lambda _: vmap(partial(control.generate_I_matrix, depth=self.inductive_depth))(
+                        self.H, E_qB, self.inductive_threshold
+                    ),
+                    lambda _: self.I,
+                    operand=None,
+                )
                 agent = tree_at(lambda x: (x.B, x.pB, x.I), agent, (E_qB, qB, I_updated))
             else:
                 agent = tree_at(lambda x: (x.B, x.pB), agent, (E_qB, qB))
-            # else: silently skip B-update at t=0 or if actions were invalid
 
         return agent
 
@@ -575,7 +640,17 @@ class Agent(Module):
         """
         return [nn.one_hot(o, self.num_obs[m]) for m, o in enumerate(observations)]
 
-    def infer_states(self, observations, empirical_prior, *, past_actions=None, qs_hist=None, mask=None, preprocess_fn=None):
+    def infer_states(
+        self,
+        observations,
+        empirical_prior,
+        *,
+        past_actions=None,
+        qs_hist=None,
+        valid_steps=None,
+        mask=None,
+        preprocess_fn=None,
+    ):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
@@ -603,6 +678,11 @@ class Agent(Module):
 
         qs_hist: ``list`` or ``tuple`` of ``jax.numpy.ndarray``, optional
             History of posterior beliefs over hidden states.
+
+        valid_steps: ``jax.numpy.ndarray`` or ``int``, optional
+            Number of valid (unpadded) timesteps when using fixed-size sequence windows.
+            If provided, sequence inference methods (`mmp`, `vmp`) ignore padded prefix
+            timesteps and transitions.
 
         mask: ``list`` or ``tuple``, optional
             Mask for observations.
@@ -651,6 +731,15 @@ class Agent(Module):
         else:
             o_vec = preprocess_fn(observations)
 
+        if not isinstance(empirical_prior, (list, tuple)):
+            raise ValueError(
+                "`empirical_prior` must be a list/tuple with one entry per hidden-state factor."
+            )
+        if len(empirical_prior) != self.num_factors:
+            raise ValueError(
+                f"`empirical_prior` has {len(empirical_prior)} factor(s), expected {self.num_factors}"
+            )
+
         A = self.A
         if mask is not None:
             for i, m in enumerate(mask):
@@ -664,7 +753,17 @@ class Agent(Module):
             num_iter=self.num_iter,
             method=self.inference_algo,
             distr_obs=True,  # Always True because o_vec is expected to be distributional
+            inference_horizon=self.inference_horizon,
         )
+
+        if valid_steps is not None:
+            valid_steps = jnp.asarray(valid_steps, dtype=jnp.int32)
+            if valid_steps.ndim == 0:
+                valid_steps = jnp.broadcast_to(valid_steps, (self.batch_size,))
+            elif valid_steps.ndim != 1 or valid_steps.shape[0] != self.batch_size:
+                raise ValueError(
+                    "`valid_steps` must be a scalar or have shape `(batch_size,)`"
+                )
         
         output = vmap(infer_states)(
             A,
@@ -672,16 +771,31 @@ class Agent(Module):
             o_vec,
             past_actions,
             prior=empirical_prior,
-            qs_hist=qs_hist
+            qs_hist=qs_hist,
+            valid_steps=valid_steps,
         )
 
         return output
 
     def update_empirical_prior(self, action, qs):
-        # return empirical_prior, and the history of posterior beliefs (filtering distributions) held about hidden states at times 1, 2 ... t
+        """
+        Compute the empirical prior used for the next state-inference step.
 
+        Parameters
+        ----------
+        action: ``jax.numpy.ndarray``
+            Action sampled at the current timestep for each control factor.
+        qs: ``list`` of ``jax.numpy.ndarray``
+            Posterior beliefs over hidden states for the current timestep/history.
+
+        Returns
+        -------
+        pred: ``list`` of ``jax.numpy.ndarray``
+            Predicted prior over hidden states for the next inference step.
+            For sequence methods (``mmp``, ``vmp``), this returns ``self.D`` to preserve sequence-inference semantics.
+        """
         # this computation of the predictive prior is correct only for fully factorised Bs.
-        if self.inference_algo in ['mmp', 'vmp']:
+        if self.inference_algo in inference.SEQUENCE_METHODS:
             # in the case of the 'mmp' or 'vmp' we have to use D as prior parameter for infer states
             pred = self.D
         else:
@@ -689,7 +803,7 @@ class Agent(Module):
             propagate_beliefs = partial(control.compute_expected_state, B_dependencies=self.B_dependencies)
             pred = vmap(propagate_beliefs)(qs_last, self.B, action)
         
-        return (pred, qs)
+        return pred
 
     def infer_policies(self, qs: List):
         """
@@ -831,6 +945,7 @@ class Agent(Module):
             "num_factors": self.num_factors,
             "num_policies": self.policies.num_policies,
             "policy_len": self.policy_len,
+            "inference_horizon": self.inference_horizon,
             "A_dependencies": self.A_dependencies,
             "B_dependencies": self.B_dependencies,
         }
@@ -964,3 +1079,17 @@ class Agent(Module):
             assert (
                 self.num_controls[factor_idx] > 1
             ), "Control factor (and B matrix) dimensions are not consistent with user-given control_fac_idx"
+
+        if self.inference_algo == inference.EXACT_METHOD:
+            if self.num_factors != 1:
+                raise ValueError("`exact` inference currently supports only a single hidden-state factor")
+            if len(self.B_dependencies) != 1 or list(self.B_dependencies[0]) != [0]:
+                raise ValueError(
+                    "Exact inference requires single-factor self-dynamics only "
+                    "(i.e. B_dependencies == [[0]])"
+                )
+            if any(list(deps) != [0] for deps in self.A_dependencies):
+                raise ValueError(
+                    "Exact inference requires each observation modality to depend only on factor 0 "
+                    "(i.e. A_dependencies[m] == [0])"
+                )

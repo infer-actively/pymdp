@@ -4,16 +4,24 @@
 """Unit tests for the jittable rollout loop."""
 
 import unittest
+import warnings
 
 import numpy as np
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
-from jax import vmap
+from jax import lax, vmap
 
 from pymdp.agent import Agent
 from pymdp.envs.env import PymdpEnv
-from pymdp.envs.rollout import rollout, default_policy_search
+from pymdp.envs.rollout import (
+    rollout,
+    default_policy_search,
+    infer_and_plan,
+    _append_to_window,
+    MAX_WINDOWED_HISTORY_WITHOUT_HORIZON,
+)
+from pymdp import control
 from pymdp import utils
 
 class TestRolloutFunction(unittest.TestCase):
@@ -32,6 +40,7 @@ class TestRolloutFunction(unittest.TestCase):
         learn_B=False,
         learning_mode="online",
         inference_algo="fpi",
+        inference_horizon=None,
         policy_len=1,
         seed=0,
     ):
@@ -71,6 +80,7 @@ class TestRolloutFunction(unittest.TestCase):
             pB=pB_batched if learn_B else None,
             learning_mode=learning_mode,
             inference_algo=inference_algo,
+            inference_horizon=inference_horizon,
             policy_len=policy_len,
         )
 
@@ -83,6 +93,155 @@ class TestRolloutFunction(unittest.TestCase):
         }
 
         return agent, env, env_params, initial
+
+    def manual_windowed_rollout_reference(self, agent, env, num_steps, rng_key, env_params=None):
+        batch_size = agent.batch_size
+        is_sequence_method = agent.inference_algo in {"mmp", "vmp"}
+        use_smoothing_online_windows = (
+            (agent.inference_algo in {"ovf", "exact"})
+            and (agent.learning_mode == "online")
+            and (agent.learn_A or agent.learn_B)
+        )
+        self.assertTrue(is_sequence_method or use_smoothing_online_windows)
+
+        history_len = (
+            agent.inference_horizon
+            if agent.inference_horizon is not None
+            else min(num_steps + 1, MAX_WINDOWED_HISTORY_WITHOUT_HORIZON)
+        )
+        action_history_len = max(history_len - 1, 0)
+
+        keys = jr.split(rng_key, batch_size + 1)
+        rng_key = keys[0]
+        observation, env_state = vmap(env.reset)(keys[1:], env_params=env_params)
+        action = -jnp.ones((batch_size, agent.policies.policy_arr.shape[-1]), dtype=jnp.int32)
+
+        qs = jtu.tree_map(
+            lambda x: jnp.broadcast_to(jnp.expand_dims(x, axis=1), (x.shape[0], history_len, x.shape[-1])),
+            agent.D,
+        )
+
+        def _init_observation_history(obs):
+            if obs.ndim == 1:
+                obs = jnp.expand_dims(obs, axis=1)
+            history_shape = (obs.shape[0], history_len) + obs.shape[2:]
+            if agent.categorical_obs and obs.shape[-1] > 0:
+                hist = jnp.zeros(history_shape, dtype=obs.dtype)
+            else:
+                hist = jnp.full(history_shape, -1, dtype=obs.dtype)
+            start_idx = (0, history_len - 1) + (0,) * (hist.ndim - 2)
+            return lax.dynamic_update_slice(hist, obs[:, :1, ...], start_idx)
+
+        observation_hist = jtu.tree_map(_init_observation_history, observation)
+        action_hist = -jnp.ones(
+            (batch_size, action_history_len, agent.policies.policy_arr.shape[-1]),
+            dtype=jnp.int32,
+        )
+        valid_steps = jnp.array(1, dtype=jnp.int32)
+        empirical_prior = agent.D if is_sequence_method else None
+
+        info_steps = []
+        for _ in range(num_steps + 1):
+            keys = jr.split(rng_key, batch_size + 2)
+            rng_key = keys[0]
+
+            k = int(valid_steps)
+            obs_k = jtu.tree_map(lambda x: x[:, history_len - k :, ...], observation_hist)
+            qs_prev_k = jtu.tree_map(lambda x: x[:, history_len - k :, ...], qs)
+            actions_k = action_hist[:, history_len - k : history_len - 1, :]
+
+            if is_sequence_method:
+                past_actions_k = actions_k if k > 1 else None
+                updated_agent, action_next, qs_k, xtra = infer_and_plan(
+                    agent,
+                    qs_prev_k,
+                    obs_k,
+                    action,
+                    keys[1],
+                    policy_search=default_policy_search,
+                    past_actions=past_actions_k,
+                    empirical_prior=empirical_prior,
+                    learning_observations=obs_k,
+                    learning_actions=past_actions_k,
+                )
+                qs = jtu.tree_map(
+                    lambda prev, new: prev.at[:, history_len - k :, ...].set(new),
+                    qs,
+                    qs_k,
+                )
+                qs_latest = jtu.tree_map(lambda x: x[:, -1, ...], qs_k)
+                if (k == history_len) and (history_len > 1):
+                    qs_window_start = jtu.tree_map(lambda x: x[:, 0, ...], qs_k)
+                    action_window_start = actions_k[:, 0, :]
+                    propagate = lambda beliefs, B, act: control.compute_expected_state(
+                        beliefs,
+                        B,
+                        act,
+                        B_dependencies=updated_agent.B_dependencies,
+                    )
+                    empirical_prior = vmap(propagate)(
+                        qs_window_start,
+                        updated_agent.B,
+                        action_window_start,
+                    )
+            else:
+                updated_agent, action_next, qs_k, xtra = infer_and_plan(
+                    agent,
+                    qs_prev_k,
+                    observation,
+                    action,
+                    keys[1],
+                    policy_search=default_policy_search,
+                    learning_observations=obs_k,
+                    learning_actions=actions_k,
+                    learning_beliefs=qs_prev_k,
+                )
+                qs_latest = jtu.tree_map(lambda x: x[:, -1, ...], qs_k)
+                qs = jtu.tree_map(_append_to_window, qs, qs_k)
+
+            observation_next, env_state_next = vmap(env.step)(
+                keys[2:], env_state, action_next, env_params=env_params
+            )
+            observation_hist = jtu.tree_map(_append_to_window, observation_hist, observation_next)
+            action_hist = _append_to_window(action_hist, action_next)
+            valid_steps = jnp.minimum(valid_steps + 1, history_len)
+
+            if updated_agent.learn_A:
+                xtra["A"] = updated_agent.A
+                xtra["pA"] = updated_agent.pA
+            if updated_agent.learn_B:
+                xtra["B"] = updated_agent.B
+                xtra["pB"] = updated_agent.pB
+
+            info_t = {
+                "qs": qs_latest,
+                "env_state": env_state,
+                "observation": observation,
+                "action": action_next,
+            }
+            info_t.update(xtra)
+            info_steps.append(info_t)
+
+            agent = updated_agent
+            action = action_next
+            observation = observation_next
+            env_state = env_state_next
+
+        info = jtu.tree_map(lambda *xs: jnp.stack(xs, axis=1), *info_steps)
+        last = {
+            "action": action,
+            "observation": observation,
+            "observation_hist": observation_hist,
+            "action_hist": action_hist,
+            "valid_steps": valid_steps,
+            "qs": qs,
+            "env_state": env_state,
+            "agent": agent,
+            "rng_key": rng_key,
+        }
+        if is_sequence_method:
+            last["empirical_prior"] = empirical_prior
+        return last, info
 
     def test_rollout_collects_time_series(self):
         agent, env, env_params, _ = self.build_agent_env()
@@ -229,11 +388,184 @@ class TestRolloutFunction(unittest.TestCase):
         final_pB = np.asarray(last["agent"].pB[0])
         self.assertFalse(np.allclose(final_pB, initial["pB"][0]))
 
+    def test_online_learning_updates_B_for_sequence_inference(self):
+        num_steps = 4
+        for algo, seed in (("mmp", 31), ("vmp", 32)):
+            with self.subTest(inference_algo=algo):
+                agent, env, env_params, initial = self.build_agent_env(
+                    learn_B=True,
+                    learning_mode="online",
+                    inference_algo=algo,
+                    inference_horizon=3,
+                    policy_len=2,
+                    seed=seed,
+                )
+                key = jr.PRNGKey(seed)
+
+                last, info = rollout(agent, env, num_steps, key, env_params=env_params)
+
+                self.assertIn("pB", info)
+                pB_series = np.asarray(info["pB"][0])
+                self.assertEqual(pB_series.shape[0], agent.batch_size)
+                self.assertEqual(pB_series.shape[1], num_steps + 1)
+                self.assertFalse(
+                    np.allclose(pB_series[:, 0, ...], pB_series[:, -1, ...])
+                )
+
+                final_pB = np.asarray(last["agent"].pB[0])
+                self.assertFalse(np.allclose(final_pB, initial["pB"][0]))
+
+    def test_online_learning_updates_for_smoothing_inference_with_horizon(self):
+        num_steps = 5
+        for algo, seed in (("ovf", 33), ("exact", 34)):
+            with self.subTest(inference_algo=algo, learn="B"):
+                agent, env, env_params, initial = self.build_agent_env(
+                    learn_B=True,
+                    learning_mode="online",
+                    inference_algo=algo,
+                    inference_horizon=3,
+                    policy_len=2,
+                    seed=seed,
+                )
+                key = jr.PRNGKey(seed)
+
+                last, info = rollout(agent, env, num_steps, key, env_params=env_params)
+
+                self.assertIn("pB", info)
+                pB_series = np.asarray(info["pB"][0])
+                self.assertEqual(pB_series.shape[0], agent.batch_size)
+                self.assertEqual(pB_series.shape[1], num_steps + 1)
+                self.assertFalse(
+                    np.allclose(pB_series[:, 0, ...], pB_series[:, -1, ...])
+                )
+
+                final_pB = np.asarray(last["agent"].pB[0])
+                self.assertFalse(np.allclose(final_pB, initial["pB"][0]))
+
+            with self.subTest(inference_algo=algo, learn="A"):
+                agent, env, env_params, initial = self.build_agent_env(
+                    learn_A=True,
+                    learning_mode="online",
+                    inference_algo=algo,
+                    inference_horizon=3,
+                    policy_len=2,
+                    seed=seed + 100,
+                )
+                key = jr.PRNGKey(seed + 100)
+
+                last, info = rollout(agent, env, num_steps, key, env_params=env_params)
+
+                self.assertIn("pA", info)
+                pA_series = np.asarray(info["pA"][0])
+                self.assertEqual(pA_series.shape[0], agent.batch_size)
+                self.assertEqual(pA_series.shape[1], num_steps + 1)
+                self.assertFalse(
+                    np.allclose(pA_series[:, 0, ...], pA_series[:, -1, ...])
+                )
+
+                final_pA = np.asarray(last["agent"].pA[0])
+                self.assertFalse(np.allclose(final_pA, initial["pA"][0]))
+
+    def test_online_learning_updates_A_only_for_sequence_inference(self):
+        num_steps = 5
+        for algo, seed in (("mmp", 111), ("vmp", 112)):
+            with self.subTest(inference_algo=algo):
+                agent, env, env_params, initial = self.build_agent_env(
+                    learn_A=True,
+                    learn_B=False,
+                    learning_mode="online",
+                    inference_algo=algo,
+                    inference_horizon=4,
+                    policy_len=2,
+                    seed=seed,
+                )
+                key = jr.PRNGKey(seed)
+
+                last, info = rollout(agent, env, num_steps, key, env_params=env_params)
+
+                self.assertIn("pA", info)
+                self.assertNotIn("pB", info)
+                pA_series = np.asarray(info["pA"][0])
+                self.assertEqual(pA_series.shape[0], agent.batch_size)
+                self.assertEqual(pA_series.shape[1], num_steps + 1)
+                self.assertFalse(
+                    np.allclose(pA_series[:, 0, ...], pA_series[:, -1, ...])
+                )
+
+                final_pA = np.asarray(last["agent"].pA[0])
+                self.assertFalse(np.allclose(final_pA, initial["pA"][0]))
+
+    def test_sequence_rollout_updates_empirical_prior_with_finite_horizon(self):
+        num_steps = 4
+        for algo, seed in (("mmp", 41), ("vmp", 42)):
+            with self.subTest(inference_algo=algo):
+                agent, env, env_params, _ = self.build_agent_env(
+                    inference_algo=algo,
+                    inference_horizon=3,
+                    policy_len=2,
+                    seed=seed,
+                )
+                key = jr.PRNGKey(seed)
+
+                _, info = rollout(agent, env, num_steps, key, env_params=env_params)
+
+                prior_series = np.asarray(info["empirical_prior"][0])
+                self.assertEqual(prior_series.shape[0], agent.batch_size)
+                self.assertEqual(prior_series.shape[1], num_steps + 1)
+                self.assertFalse(
+                    np.allclose(prior_series[:, 0, ...], prior_series[:, -1, ...])
+                )
+
+    def test_sequence_rollout_keeps_empirical_prior_fixed_during_warmup(self):
+        horizon = 3
+        num_steps = 5
+        for algo, seed in (("mmp", 51), ("vmp", 52)):
+            with self.subTest(inference_algo=algo):
+                agent, env, env_params, _ = self.build_agent_env(
+                    inference_algo=algo,
+                    inference_horizon=horizon,
+                    policy_len=2,
+                    seed=seed,
+                )
+                key = jr.PRNGKey(seed)
+
+                _, info = rollout(agent, env, num_steps, key, env_params=env_params)
+                prior_series = np.asarray(info["empirical_prior"][0])[0]  # (T, Ns)
+                initial_prior = np.asarray(agent.D[0])[0]
+
+                self.assertTrue(
+                    np.allclose(
+                        prior_series[:horizon],
+                        np.broadcast_to(initial_prior, (horizon, initial_prior.shape[-1])),
+                    )
+                )
+
+    def test_rollout_caps_history_without_inference_horizon(self):
+        num_steps = MAX_WINDOWED_HISTORY_WITHOUT_HORIZON + 2
+        agent, env, env_params, _ = self.build_agent_env(
+            inference_algo="mmp",
+            inference_horizon=None,
+            policy_len=2,
+            seed=61,
+        )
+        key = jr.PRNGKey(61)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            last, _ = rollout(agent, env, num_steps, key, env_params=env_params)
+
+        self.assertTrue(
+            any("capping rollout history" in str(w.message).lower() for w in caught)
+        )
+        self.assertEqual(last["qs"][0].shape[1], MAX_WINDOWED_HISTORY_WITHOUT_HORIZON)
+
     def test_rollout_supports_multiple_inference_algorithms(self):
-        for algo, seed in (("vmp", 4), ("ovf", 5)):
-            policy_len = 2 if algo == "ovf" else 1
+        for algo, seed in (("mmp", 3), ("vmp", 4), ("ovf", 5), ("exact", 6)):
             agent, env, env_params, _ = self.build_agent_env(
-                inference_algo=algo, policy_len=policy_len, seed=seed
+                inference_algo=algo,
+                inference_horizon=2 if algo in ("mmp", "vmp") else None,
+                policy_len=2,
+                seed=seed,
             )
             key = jr.PRNGKey(seed)
             num_steps = 2
@@ -247,6 +579,108 @@ class TestRolloutFunction(unittest.TestCase):
             G = np.asarray(info["G"])
             self.assertEqual(G.shape[0], agent.batch_size)
             self.assertEqual(G.shape[1], num_steps + 1)
+
+    def test_rollout_modes_for_ovf_and_exact(self):
+        modes = (
+            {
+                "name": "planning_only",
+                "learn_A": False,
+                "learn_B": False,
+                "learning_mode": "online",
+            },
+            {
+                "name": "online_learning",
+                "learn_A": False,
+                "learn_B": True,
+                "learning_mode": "online",
+            },
+            {
+                "name": "offline_learning",
+                "learn_A": False,
+                "learn_B": True,
+                "learning_mode": "offline",
+            },
+        )
+
+        num_steps = 4
+        for algo, seed_base in (("ovf", 40), ("exact", 80)):
+            for mode_idx, mode in enumerate(modes):
+                with self.subTest(algo=algo, mode=mode["name"]):
+                    agent, env, env_params, initial = self.build_agent_env(
+                        learn_A=mode["learn_A"],
+                        learn_B=mode["learn_B"],
+                        learning_mode=mode["learning_mode"],
+                        inference_algo=algo,
+                        policy_len=2,
+                        seed=seed_base + mode_idx,
+                    )
+                    key = jr.PRNGKey(seed_base + 100 + mode_idx)
+                    last, info = rollout(agent, env, num_steps, key, env_params=env_params)
+
+                    if mode["name"] == "planning_only":
+                        self.assertNotIn("pA", info)
+                        self.assertNotIn("pB", info)
+                        continue
+
+                    self.assertNotIn("pA", info)
+                    self.assertIn("pB", info)
+                    pB_series = np.asarray(info["pB"][0])
+
+                    if mode["name"] == "online_learning":
+                        self.assertFalse(
+                            np.allclose(pB_series[:, 0, ...], pB_series[:, -1, ...])
+                        )
+                    else:
+                        self.assertTrue(
+                            np.allclose(pB_series[:, 0, ...], pB_series[:, -1, ...])
+                        )
+
+                    final_pB = np.asarray(last["agent"].pB[0])
+                    self.assertFalse(np.allclose(final_pB, initial["pB"][0]))
+
+    def _assert_rollout_matches_manual_reference(self, algo, seed, include_empirical_prior=False):
+        num_steps = 5
+        kwargs = dict(
+            learn_A=True,
+            learn_B=True,
+            learning_mode="online",
+            inference_algo=algo,
+            inference_horizon=4,
+            policy_len=2,
+            seed=seed,
+        )
+        agent, env, env_params, _ = self.build_agent_env(**kwargs)
+        ref_agent, ref_env, ref_env_params, _ = self.build_agent_env(**kwargs)
+        key = jr.PRNGKey(seed + 10_000)
+
+        last, info = rollout(agent, env, num_steps, key, env_params=env_params)
+        ref_last, ref_info = self.manual_windowed_rollout_reference(
+            ref_agent, ref_env, num_steps, key, env_params=ref_env_params
+        )
+
+        np.testing.assert_allclose(np.asarray(info["action"]), np.asarray(ref_info["action"]), atol=1e-5)
+        np.testing.assert_allclose(np.asarray(info["qs"][0]), np.asarray(ref_info["qs"][0]), atol=1e-5)
+        if include_empirical_prior:
+            np.testing.assert_allclose(
+                np.asarray(info["empirical_prior"][0]),
+                np.asarray(ref_info["empirical_prior"][0]),
+                atol=1e-5,
+            )
+        np.testing.assert_allclose(np.asarray(info["pA"][0]), np.asarray(ref_info["pA"][0]), atol=1e-5)
+        np.testing.assert_allclose(np.asarray(info["pB"][0]), np.asarray(ref_info["pB"][0]), atol=1e-5)
+        np.testing.assert_allclose(np.asarray(last["agent"].pA[0]), np.asarray(ref_last["agent"].pA[0]), atol=1e-5)
+        np.testing.assert_allclose(np.asarray(last["agent"].pB[0]), np.asarray(ref_last["agent"].pB[0]), atol=1e-5)
+
+    def test_sequence_rollout_matches_manual_window_branch_reference(self):
+        for algo, seed in (("mmp", 501), ("vmp", 502)):
+            with self.subTest(inference_algo=algo):
+                self._assert_rollout_matches_manual_reference(algo, seed, include_empirical_prior=True)
+
+    def test_smoothing_rollout_matches_manual_window_branch_reference(self):
+        for algo, seed in (("ovf", 601), ("exact", 602)):
+            with self.subTest(inference_algo=algo):
+                self._assert_rollout_matches_manual_reference(algo, seed)
+
 
     def test_rollout_with_custom_policy_search_and_initial_carry(self):
         agent, env, env_params, _ = self.build_agent_env(learn_A=True, policy_len=2)

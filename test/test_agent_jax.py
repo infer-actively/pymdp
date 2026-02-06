@@ -15,7 +15,7 @@ import jax.tree_util as jtu
 import math as pymath
 
 from pymdp import utils
-from pymdp import control
+from pymdp import control, inference, learning
 from pymdp.agent import Agent
 from pymdp.maths import compute_log_likelihood_single_modality, log_stable
 from equinox import Module, EquinoxRuntimeError
@@ -399,7 +399,7 @@ class TestAgentJax(unittest.TestCase):
         observation = [jr.randint(obs_key, shape=(1, 1), minval=0, maxval=d) for d in agent.num_obs]
         qs_hist = jtu.tree_map(lambda x: jnp.expand_dims(x, 0), agent.D)
 
-        prior, _ = agent.update_empirical_prior(action, qs_hist)
+        prior = agent.update_empirical_prior(action, qs_hist)
         qs = agent.infer_states(observation, prior)
 
         q_pi, G = agent.infer_policies(qs)
@@ -436,7 +436,7 @@ class TestAgentJax(unittest.TestCase):
             observation = [jr.randint(obs_key, shape=(1, 1), minval=0, maxval=d) for d in agent.num_obs]
             qs_hist = jtu.tree_map(lambda x: jnp.expand_dims(x, 0), agent.D)
 
-            prior, _ = agent.update_empirical_prior(action, qs_hist)
+            prior = agent.update_empirical_prior(action, qs_hist)
             qs = agent.infer_states(observation, prior)
 
             q_pi, G = agent.infer_policies(qs)
@@ -805,6 +805,84 @@ class TestAgentJax(unittest.TestCase):
             A_batched, B_batched, pA_batched, pB_batched, D_batched, inference_algo="vmp"
         )
         self.assertTrue(all(jtu.tree_map(lambda x: ~jnp.any(jnp.isnan(x)), gradients_wrt_params)))
+
+    def test_smoothing_ovf_updates_A_when_learn_B_false(self):
+        """
+        Ensure that OVF-style A-learning uses smoothed beliefs when B-learning is disabled,
+        so temporally smoothed sequence evidence still updates A.
+        """
+        num_obs = [2]
+        num_states = [3]
+        num_controls = [2]
+        A_dependencies = [[0]]
+        B_dependencies = [[0]]
+
+        a_key, b_key, d_key = jr.split(jr.PRNGKey(314), 3)
+        A = utils.random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
+        B = utils.random_B_array(b_key, num_states, num_controls, B_dependencies=B_dependencies)
+        pA = utils.list_array_scaled(jtu.tree_map(lambda x: x.shape, A), scale=1.0)
+        D = utils.random_factorized_categorical(d_key, num_states)
+
+        agent = Agent(
+            A,
+            B,
+            D=D,
+            A_dependencies=A_dependencies,
+            B_dependencies=B_dependencies,
+            num_controls=num_controls,
+            batch_size=1,
+            learn_A=True,
+            learn_B=False,
+            pA=pA,
+            inference_algo="ovf",
+        )
+
+        beliefs = [jnp.array([[[0.85, 0.10, 0.05], [0.10, 0.75, 0.15], [0.05, 0.15, 0.80]]])]
+        actions = jnp.array([[[0], [1]]]).reshape((1, 2, 1))
+        outcomes = [jnp.array([[0, 1, 0]])]
+
+        # Build expected A-updates from smoothed versus unsmoothed marginals.
+        A_unbatched = jtu.tree_map(lambda x: x[0], agent.A)
+        pA_unbatched = jtu.tree_map(lambda x: x[0], agent.pA)
+        B_unbatched = jtu.tree_map(lambda x: x[0], agent.B)
+
+        smoothed_marginals, _ = inference.smoothing_ovf(
+            [beliefs[0][0]],
+            [B_unbatched[0]],
+            actions[0, :, 0],
+        )
+        _, E_A_smoothed = learning.update_obs_likelihood_dirichlet(
+            [pA_unbatched[0]],
+            [A_unbatched[0]],
+            [outcomes[0][0]],
+            smoothed_marginals,
+            A_dependencies=A_dependencies,
+            categorical_obs=False,
+            num_obs=num_obs,
+            lr=1.0,
+        )
+
+        _, E_A_filtered = learning.update_obs_likelihood_dirichlet(
+            [pA_unbatched[0]],
+            [A_unbatched[0]],
+            [outcomes[0][0]],
+            [beliefs[0][0]],
+            A_dependencies=A_dependencies,
+            categorical_obs=False,
+            num_obs=num_obs,
+            lr=1.0,
+        )
+
+        self.assertFalse(jnp.allclose(smoothed_marginals[0], beliefs[0][0]))
+
+        agent = agent.infer_parameters(
+            beliefs,
+            outcomes,
+            actions,
+        )
+
+        self.assertTrue(jnp.allclose(agent.A[0][0], E_A_smoothed[0], atol=1e-6))
+        self.assertFalse(jnp.allclose(agent.A[0][0], E_A_filtered[0], atol=1e-6))
 
 
         
