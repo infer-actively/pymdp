@@ -16,6 +16,7 @@ from jax import random as jr
 from pymdp.inference import smoothing_ovf
 from pymdp import utils
 from pymdp.legacy.control import construct_policies
+from jax.experimental.sparse._base import JAXSparse
 
 from jax.experimental import sparse
 
@@ -138,8 +139,69 @@ class TestJaxSparseOperations(unittest.TestCase):
                 for f, (dense_out, sparse_out) in enumerate(zip(dense_joints, sparse_joints)):
 
                     # Densify
-                    qs_joint_sparse = jnp.array([i.todense() for i in sparse_out])
+                    qs_joint_sparse = jnp.array(
+                        [j.todense() if isinstance(j, JAXSparse) else j for j in sparse_out]
+                    )
 
+                    self.assertTrue(np.allclose(dense_out, qs_joint_sparse))
+
+    def test_sparse_smoothing_with_invalid_actions(self):
+        cfg = {"source_seed": 2, "num_models": 3}
+        gm_params = make_model_configs(**cfg)
+        num_states_list = gm_params["ns_list"]
+        num_controls_list = gm_params["nc_list"]
+
+        n_time = 8
+        n_batch = 1
+        n_invalid = 3
+
+        b_keys = jr.split(jr.PRNGKey(24), cfg["num_models"])
+        for b_key, num_states, num_controls in zip(b_keys, num_states_list, num_controls_list):
+
+            # Randomly create a B matrix with zeros so sparse conversion is meaningful.
+            B = utils.random_B_array(b_key, num_states, num_controls)
+            B = jtu.tree_map(
+                lambda x: jnp.array(utils.norm_dist(jnp.clip((x - x.mean()), 0, 1))),
+                B,
+            )
+            sparse_B = jtu.tree_map(lambda b: sparse.BCOO.fromdense(b), B)
+
+            # Construct valid random actions, then pad the first `n_invalid` steps
+            # with the window sentinel used by rollout (-1). These should map to
+            # identity/no-transition dynamics, not to the last action slice.
+            policies = construct_policies(num_states, num_controls, policy_len=1)
+            acs = [None for _ in range(n_time - 1)]
+            for t in range(n_time - 1):
+                pol = policies[np.random.randint(len(policies))]
+                pol = jnp.expand_dims(pol[0], 0)
+                pol = jnp.broadcast_to(pol, (n_batch, 1, len(num_controls)))
+                acs[t] = pol
+            action_hist = jnp.concatenate(acs, axis=1)
+            if n_invalid > 0:
+                action_hist = action_hist.at[:, :n_invalid, :].set(-1)
+
+            beliefs = [None for _ in range(len(num_states))]
+            for m, ns in enumerate(num_states):
+                leaf = np.random.uniform(0, 1, size=(n_batch, n_time, ns))
+                leaf /= leaf.sum(axis=-1, keepdims=True)
+                beliefs[m] = jnp.array(leaf)
+
+            take_i = lambda pytree, i: jtu.tree_map(lambda leaf: leaf[i], pytree)
+
+            for i in range(n_batch):
+                smoothed_beliefs_dense = smoothing_ovf(take_i(beliefs, i), B, action_hist[i])
+                dense_marginals, dense_joints = smoothed_beliefs_dense
+
+                smoothed_beliefs_sparse = smoothing_ovf(take_i(beliefs, i), sparse_B, action_hist[i])
+                sparse_marginals, sparse_joints = smoothed_beliefs_sparse
+
+                for f, (dense_out, sparse_out) in enumerate(zip(dense_marginals, sparse_marginals)):
+                    self.assertTrue(np.allclose(dense_out, sparse_out))
+
+                for f, (dense_out, sparse_out) in enumerate(zip(dense_joints, sparse_joints)):
+                    qs_joint_sparse = jnp.array(
+                        [j.todense() if isinstance(j, JAXSparse) else j for j in sparse_out]
+                    )
                     self.assertTrue(np.allclose(dense_out, qs_joint_sparse))
 
 

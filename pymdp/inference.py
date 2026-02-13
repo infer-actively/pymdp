@@ -3,13 +3,143 @@
 # pylint: disable=no-member
 
 import jax.numpy as jnp
-from pymdp.algos import run_factorized_fpi, run_mmp, run_vmp
+from pymdp.algos import (
+    run_factorized_fpi,
+    run_mmp,
+    run_vmp,
+    hmm_smoother_from_filtered_colstoch,
+)
 from jax import tree_util as jtu, lax
 from jax.experimental.sparse._base import JAXSparse
 from jax.experimental import sparse
 from jaxtyping import Array, ArrayLike
 
 eps = jnp.finfo('float').eps
+
+EXACT_METHOD = "exact"
+ONE_STEP_METHODS = {"fpi", "ovf", EXACT_METHOD}
+SEQUENCE_METHODS = {"mmp", "vmp"}
+SMOOTHING_METHODS = {"ovf", EXACT_METHOD}
+
+
+def _select_current_obs(obs, distr_obs):
+    def _select_leaf(x):
+        if x.ndim == 0:
+            return x
+        if distr_obs:
+            # Distributional observations use the last axis for outcomes, so
+            # 1D leaves are already a single-time-step observation.
+            return x if x.ndim == 1 else x[-1]
+        return x[-1]
+
+    return jtu.tree_map(_select_leaf, obs)
+
+
+def _truncate_for_horizon(obs, past_actions, inference_horizon):
+    if inference_horizon is None:
+        return obs, past_actions
+
+    if inference_horizon < 1:
+        raise ValueError("`inference_horizon` must be >= 1 when provided")
+
+    obs = jtu.tree_map(lambda x: x[-inference_horizon:], obs)
+    if past_actions is None:
+        return obs, None
+
+    action_horizon = max(inference_horizon - 1, 0)
+    if action_horizon == 0:
+        return obs, past_actions[:0]
+
+    return obs, past_actions[-action_horizon:]
+
+
+def _ensure_action_history_shape(past_actions, num_factors):
+    if past_actions is None:
+        return None
+
+    if past_actions.ndim == 1:
+        if num_factors == 1:
+            return jnp.expand_dims(past_actions, -1)
+        if past_actions.shape[0] == num_factors:
+            return jnp.expand_dims(past_actions, 0)
+        raise ValueError(
+            "1D `past_actions` must either represent a single-factor action history "
+            "or a single timestep over all factors"
+        )
+
+    if past_actions.ndim != 2:
+        raise ValueError("`past_actions` must have shape (T-1, num_factors) per batch sample")
+
+    if past_actions.shape[1] != num_factors:
+        raise ValueError(
+            f"`past_actions` has second dimension {past_actions.shape[1]}, expected {num_factors}"
+        )
+
+    return past_actions
+
+
+def _build_sequence_validity_masks(obs, past_actions, valid_steps):
+    T = obs[0].shape[0]
+
+    if valid_steps is None:
+        obs_valid = jnp.ones((T,), dtype=bool)
+    else:
+        valid_steps = jnp.asarray(valid_steps, dtype=jnp.int32)
+        k = jnp.clip(valid_steps, 1, T)
+        obs_valid = jnp.arange(T) >= (T - k)
+
+    if T <= 1:
+        trans_valid = jnp.zeros((0,), dtype=bool)
+    else:
+        trans_valid = obs_valid[:-1] & obs_valid[1:]
+        if past_actions is not None:
+            action_valid = jnp.all(past_actions >= 0, axis=-1)
+            trans_valid = trans_valid & action_valid
+
+    return obs_valid, trans_valid
+
+
+def _condition_transitions_on_actions(B, past_actions, invalid_action_mode="neutral"):
+    nf = len(B)
+    past_actions = _ensure_action_history_shape(past_actions, nf)
+    actions_tree = [past_actions[:, i] for i in range(nf)]
+
+    def _select_transitions_for_actions(b, action_idx):
+        if isinstance(b, JAXSparse):
+            b = sparse.todense(b)
+
+        action_idx = action_idx.astype(jnp.int32)
+        safe_idx = jnp.where(action_idx < 0, 0, action_idx)
+        selected = jnp.moveaxis(jnp.take(b, safe_idx, axis=-1), -1, 0)
+
+        if invalid_action_mode == "neutral":
+            invalid_transition = jnp.ones_like(b[..., 0], dtype=b.dtype)
+            invalid_transition = invalid_transition / jnp.clip(
+                invalid_transition.sum(axis=0, keepdims=True), min=eps
+            )
+        elif invalid_action_mode == "identity":
+            transition = b[..., 0]
+            if transition.ndim != 2 or transition.shape[0] != transition.shape[1]:
+                raise ValueError(
+                    "`invalid_action_mode='identity'` requires square 2D transitions "
+                    "after action selection"
+                )
+            invalid_transition = jnp.eye(transition.shape[0], dtype=transition.dtype)
+        else:
+            raise ValueError(
+                f"Unsupported invalid_action_mode `{invalid_action_mode}`. "
+                "Expected one of {'neutral', 'identity'}."
+            )
+
+        invalid_transition = jnp.broadcast_to(invalid_transition, selected.shape)
+
+        invalid = (action_idx < 0).reshape((action_idx.shape[0],) + (1,) * (selected.ndim - 1))
+        return jnp.where(invalid, invalid_transition, selected)
+
+    return [
+        _select_transitions_for_actions(b, action_idx)
+        for b, action_idx in zip(B, actions_tree)
+    ]
 
 def update_posterior_states(
     A,
@@ -23,26 +153,42 @@ def update_posterior_states(
     num_iter=16,
     method="fpi",
     distr_obs=True,
+    inference_horizon=None,
+    valid_steps=None,
 ):
+    if method in SEQUENCE_METHODS:
+        obs, past_actions = _truncate_for_horizon(obs, past_actions, inference_horizon)
 
-    if method == "fpi" or method == "ovf":
+    if method in ONE_STEP_METHODS:
         # format obs to select only last observation
-        curr_obs = jtu.tree_map(lambda x: x[-1], obs)
-        qs = run_factorized_fpi(A, curr_obs, prior, A_dependencies, num_iter=num_iter, distr_obs=distr_obs)
-    else:
+        curr_obs = _select_current_obs(obs, distr_obs)
+        fpi_num_iter = 1 if method == EXACT_METHOD else num_iter
+        qs = run_factorized_fpi(
+            A,
+            curr_obs,
+            prior,
+            A_dependencies,
+            num_iter=fpi_num_iter,
+            distr_obs=distr_obs,
+        )
+    elif method in SEQUENCE_METHODS:
+        obs_valid_mask = None
+        transition_valid_mask = None
+
+        if past_actions is not None:
+            past_actions = _ensure_action_history_shape(past_actions, len(B))
+
+        if valid_steps is not None:
+            obs_valid_mask, transition_valid_mask = _build_sequence_validity_masks(
+                obs, past_actions, valid_steps
+            )
+
         # format B matrices using action sequences here
         # TODO: past_actions can be None
         if past_actions is not None:
-            nf = len(B)
-            actions_tree = [past_actions[:, i] for i in range(nf)]
-
             # move time steps to the leading axis (leftmost)
             # this assumes that a policy is always specified as the rightmost axis of Bs
-            B = jtu.tree_map(
-                lambda b, a_idx: jnp.moveaxis(b[..., a_idx], -1, 0),
-                B,
-                actions_tree,
-            )
+            B = _condition_transitions_on_actions(B, past_actions)
         else:
             B = None
 
@@ -57,6 +203,8 @@ def update_posterior_states(
                 B_dependencies,
                 num_iter=num_iter,
                 distr_obs=distr_obs,
+                obs_valid_mask=obs_valid_mask,
+                transition_valid_mask=transition_valid_mask,
             )
         if method == "mmp":
             qs = run_mmp(
@@ -68,33 +216,42 @@ def update_posterior_states(
                 B_dependencies,
                 num_iter=num_iter,
                 distr_obs=distr_obs,
+                obs_valid_mask=obs_valid_mask,
+                transition_valid_mask=transition_valid_mask,
             )
+    else:
+        raise ValueError(
+            f"Unsupported inference method `{method}`. "
+            "Expected one of {'fpi', 'ovf', 'mmp', 'vmp', 'exact'}."
+        )
 
     if qs_hist is not None:
-        if method == "fpi" or method == "ovf":
+        if method in ONE_STEP_METHODS:
             qs_hist = jtu.tree_map(
                 lambda x, y: jnp.concatenate([x, jnp.expand_dims(y, 0)], 0),
                 qs_hist,
                 qs,
             )
+            if inference_horizon is not None:
+                qs_hist = jtu.tree_map(lambda x: x[-inference_horizon:], qs_hist)
         else:
             # TODO: return entire history of beliefs
             qs_hist = qs
     else:
-        if method == "fpi" or method == "ovf":
+        if method in ONE_STEP_METHODS:
             qs_hist = jtu.tree_map(lambda x: jnp.expand_dims(x, 0), qs)
         else:
             qs_hist = qs
 
     return qs_hist
 
-def joint_dist_factor(b: ArrayLike, filtered_qs: list[Array], actions: Array):
+def _joint_dist_factor(conditioned_transitions: ArrayLike, filtered_qs: list[Array]):
     qs_last = filtered_qs[-1]
     qs_filter = filtered_qs[:-1]
+    n_transitions = conditioned_transitions.shape[0]
 
     def step_fn(qs_smooth, xs):
-        qs_f, action = xs
-        time_b = b[..., action]
+        qs_f, time_b = xs
         qs_j = time_b * qs_f
         norm = qs_j.sum(-1, keepdims=True)
         if isinstance(norm, JAXSparse):
@@ -105,41 +262,108 @@ def joint_dist_factor(b: ArrayLike, filtered_qs: list[Array], actions: Array):
         qs_smooth = qs_joint.sum(-2)
         if isinstance(qs_smooth, JAXSparse):
             qs_smooth = sparse.todense(qs_smooth)
-        
-        # returns q(s_t), (q(s_t), q(s_t, s_t+1))
+
         return qs_smooth, (qs_smooth, qs_joint)
 
-    # seq_qs will contain a sequence of smoothed marginals and joints
     _, seq_qs = lax.scan(
         step_fn,
         qs_last,
-        (qs_filter, actions),
+        (qs_filter, conditioned_transitions),
         reverse=True,
         unroll=2
     )
 
-    # we add the last filtered belief to smoothed beliefs
-
     qs_smooth_all = jnp.concatenate([seq_qs[0], jnp.expand_dims(qs_last, 0)], 0)
     qs_joint_all = seq_qs[1]
     if isinstance(qs_joint_all, JAXSparse):
-        qs_joint_all.shape = (len(actions),) + qs_joint_all.shape
+        qs_joint_all.shape = (n_transitions,) + qs_joint_all.shape
     return qs_smooth_all, qs_joint_all
+
+
+def joint_dist_factor(
+    b: ArrayLike,
+    filtered_qs: list[Array],
+    actions: ArrayLike = None,
+):
+    """
+    Compute backward-smoothed marginals and pairwise joints for single-step
+    transition conditioning.
+
+    Parameters
+    ----------
+    b:
+        Either an action-conditioned transition stack ``(T-1, K_next, K_curr)`` or the
+        raw transition tensor with action dimension ``(..., K_next, K_curr, N_actions)``.
+    filtered_qs:
+        Filtered posterior sequence with shape ``(T, batch, K)` for each factor.
+    actions:
+        Optional action sequence used to condition ``b``. When ``None``, ``b`` is
+        treated as already conditioned.
+    """
+    if actions is None:
+        conditioned_transitions = b
+    else:
+        action_idx = jnp.asarray(actions).astype(jnp.int32)
+        conditioned_transitions = jnp.moveaxis(
+            jnp.take(b, action_idx, axis=-1), -1, 0
+        )
+    return _joint_dist_factor(conditioned_transitions, filtered_qs)
 
 
 def smoothing_ovf(filtered_post, B, past_actions):
     assert len(filtered_post) == len(B)
     nf = len(B)  # number of factors
 
-    joint = lambda b, qs, f: joint_dist_factor(b, qs, past_actions[..., f])
+    if past_actions is not None:
+        past_actions = _ensure_action_history_shape(past_actions, nf)
+    B_seq = _condition_transitions_on_actions(B, past_actions, invalid_action_mode="identity")
 
     marginals_and_joints = ([], [])
-    for b, qs, f in zip(B, filtered_post, list(range(nf))):
-        marginals, joints = joint(b, qs, f)
+    for b_seq, qs in zip(B_seq, filtered_post):
+        marginals, joints = joint_dist_factor(b_seq, qs, actions=None)
         marginals_and_joints[0].append(marginals)
         marginals_and_joints[1].append(joints)
 
     return marginals_and_joints
+
+
+def smoothing_exact(filtered_post, B, past_actions):
+    """
+    Exact single-factor HMM backward smoothing from online filtering history.
+
+    Parameters
+    ----------
+    filtered_post:
+        List containing one `(T, K)` array of filtering marginals.
+    B:
+        List containing one transition tensor in pymdp column-stochastic orientation.
+    past_actions:
+        `(T-1, 1)` or `(T-1,)` action history used to select transitions.
+
+    Returns
+    -------
+    (marginals, joints):
+        marginals: list with one `(T, K)` smoothed marginal array.
+        joints: list with one `(T-1, K_next, K_curr)` pairwise posterior array.
+    """
+    if len(filtered_post) != 1 or len(B) != 1:
+        raise ValueError("smoothing_exact currently supports only one hidden-state factor")
+
+    filtered = filtered_post[0]
+    B_seq = _condition_transitions_on_actions(
+        B,
+        past_actions,
+        invalid_action_mode="identity",
+    )[0]
+    
+
+    smoothed, joint_next_curr, _ = hmm_smoother_from_filtered_colstoch(
+        filtered,
+        B_seq,
+        return_trans_probs=False,
+    )
+
+    return [smoothed], [joint_next_curr]
 
 
     
