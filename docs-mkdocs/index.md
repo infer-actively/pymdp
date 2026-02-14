@@ -6,10 +6,12 @@ motivation, see the companion JOSS paper:
 [`pymdp: A Python library for active inference in discrete state spaces`](https://joss.theoj.org/papers/10.21105/joss.04098).
 
 This documentation focuses on the modern JAX backend, which supports:
-- accelerator-friendly execution (CPU/GPU) and JIT compilation,
-- differentiable workflows via autodiff,
-- scalable batched simulations and model-fitting workflows (for example,
-  with NumPyro or pybefit).
+
+<ul>
+  <li>accelerator-friendly execution (CPU/GPU) and JIT compilation</li>
+  <li>differentiable workflows via autodiff</li>
+  <li>scalable batched simulations and model-fitting workflows (for example, with NumPyro or pybefit)</li>
+</ul>
 
 ## Start here
 - [Installation](getting-started/installation.md)

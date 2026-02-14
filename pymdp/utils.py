@@ -19,6 +19,8 @@ import json
 import io
 import matplotlib.pyplot as plt
 
+from jaxtyping import Array
+
 from typing import (
     Any,
     List,
@@ -54,7 +56,7 @@ def validate_normalization(tensor: Tensor, axis: int = 1, tensor_name: str = "te
     # check for unnormalized distributions (non-zero but not summing to 1)
     eqx.error_if(sums, jnp.any(~jnp.isclose(sums,1.0)), f"Please ensure that all distributions along {tensor_name}'s {axis}-th axis are properly normalised and sum to 1...")
 
-def random_factorized_categorical(key, dims_per_var: Sequence[int]) -> List[jax.Array]:
+def random_factorized_categorical(key: Array, dims_per_var: Sequence[int]) -> list[Array]:
     """
     Creates a list of jax arrays representing random Categorical distributions with dimensions
     given by dims_per_var[i]. In the context of observations or hidden state posteriors,
@@ -67,7 +69,12 @@ def random_factorized_categorical(key, dims_per_var: Sequence[int]) -> List[jax.
 
     return jtu.tree_map(lambda dim, i: jr.dirichlet(keys[i], alpha=jnp.ones(dim)), dims_per_var, list(range(num_vars)))
 
-def random_A_array(key, num_obs, num_states, A_dependencies=None) -> List[jax.Array]:
+def random_A_array(
+    key: Array,
+    num_obs: int | Sequence[int],
+    num_states: int | Sequence[int],
+    A_dependencies: list[list[int]] | None = None,
+) -> list[Array]:
     """
     Creates a list of jax arrays representing observation likelihoods (A tensors or A matrices) with shapes
     determined by num_obs and num_states, and factorized according to A_factor_list.
@@ -93,7 +100,13 @@ def random_A_array(key, num_obs, num_states, A_dependencies=None) -> List[jax.Ar
         A.append(jnp.moveaxis(A_m, -1, 0))
     return A
 
-def random_B_array(key, num_states, num_controls, B_dependencies=None, B_action_dependencies=None):
+def random_B_array(
+    key: Array,
+    num_states: int | Sequence[int],
+    num_controls: int | Sequence[int],
+    B_dependencies: list[list[int]] | None = None,
+    B_action_dependencies: list[list[int]] | None = None,
+) -> list[Array]:
     """
     Creates a list of jax arrays representing state transition likelihoods (B tensors or B matrices) with shapes
     determined by num_states and num_controls, and factorized according to B_dependencies and B_action_dependencies.
@@ -128,9 +141,11 @@ def random_B_array(key, num_states, num_controls, B_dependencies=None, B_action_
     return B
 
 
-def create_controllable_B(num_states, num_controls) -> Vector:
+def create_controllable_B(
+    num_states: int | Sequence[int], num_controls: int | Sequence[int]
+) -> Vector:
     """
-    JAX equivalent of ``pymdp.legacy.utils.construct_controllable_B``.
+    JAX equivalent of `pymdp.legacy.utils.construct_controllable_B`.
     
     Generates a fully controllable transition likelihood array, where each 
     action (control state) corresponds to a move to the n-th state from any 
@@ -186,21 +201,21 @@ def list_array_scaled(shape_list: ShapeList, scale: float = 1.0) -> Vector:
     return arr
 
 
-def get_combination_index(x, dims):
+def get_combination_index(x: jax.Array | np.ndarray, dims: Sequence[int]) -> jax.Array | np.ndarray:
     """
     Find the index of an array of categorical values in an array of categorical dimensions
 
     Parameters
     ----------
-    x: ``numpy.ndarray`` or ``jax.Array`` of shape `(batch_size, act_dims)`
-        ``numpy.ndarray`` or ``jax.Array`` of categorical values to be converted into combination index
-    dims: ``list`` of ``int``
-        ``list`` of ``int`` of categorical dimensions used for conversion
+    x: `numpy.ndarray` or `jax.Array` of shape `(batch_size, act_dims)`
+        Categorical values to be converted into combination index.
+    dims: `Sequence[int]`
+        Categorical dimensions used for conversion.
 
     Returns
     ----------
-    index: ``np.ndarray`` or `jax.Array` of shape `(batch_size)`
-        ``np.ndarray`` or `jax.Array` index of the combination
+    index: `np.ndarray` or `jax.Array` of shape `(batch_size)`
+        Index of the combination.
     """
     assert isinstance(x, jax.Array) or isinstance(x, np.ndarray)
     assert x.shape[-1] == len(dims)
@@ -213,21 +228,21 @@ def get_combination_index(x, dims):
     return index
 
 
-def index_to_combination(index, dims):
+def index_to_combination(index: jax.Array | np.ndarray, dims: Sequence[int]) -> jax.Array:
     """
     Convert the combination index according to an array of categorical dimensions back to an array of categorical values
 
     Parameters
     ----------
-    index: ``np.ndarray`` or `jax.Array` of shape `(batch_size)`
-        ``np.ndarray`` or `jax.Array` index of the combination
-    dims: ``list`` of ``int``
-        ``list`` of ``int`` of categorical dimensions used for conversion
+    index: `np.ndarray` or `jax.Array` of shape `(batch_size)`
+        Index of the combination.
+    dims: `Sequence[int]`
+        Categorical dimensions used for conversion.
 
     Returns
     ----------
-    x: ``numpy.ndarray`` or ``jax.Array`` of shape `(batch_size, act_dims)`
-        ``numpy.ndarray`` or ``jax.Array`` of categorical values to be converted into combination index
+    x: `numpy.ndarray` or `jax.Array` of shape `(batch_size, act_dims)`
+        Categorical values corresponding to each factor.
     """
     x = []
     for base in reversed(dims):
@@ -237,7 +252,12 @@ def index_to_combination(index, dims):
     x = jnp.flip(jnp.stack(x, axis=-1), axis=-1)
     return x
 
-def make_A_full(A_reduced: List[jax.Array], A_dependencies: List[List[int]], num_obs: List[int], num_states: List[int]) -> List[jax.Array]:
+def make_A_full(
+    A_reduced: list[Array],
+    A_dependencies: list[list[int]],
+    num_obs: list[int],
+    num_states: list[int],
+) -> list[Array]:
     """ 
     Given a reduced A matrix, `A_reduced`, and a list of dependencies between hidden state factors and observation modalities, `A_dependencies`,
     return a full A matrix, `A_full`, where `A_full[m]` is the full A matrix for modality `m`. This means all redundant conditional independencies
@@ -259,7 +279,7 @@ def make_A_full(A_reduced: List[jax.Array], A_dependencies: List[List[int]], num
     return A_full
 
 
-def fig2img(fig):
+def fig2img(fig: Any) -> np.ndarray:
     """
     Utility function that converts a matplotlib figure to a numpy array
     """
@@ -278,7 +298,7 @@ def fig2img(fig):
 
 # Generate random agent specs
 
-def A_dep_factors_dist(num_states, A_dep_len):
+def A_dep_factors_dist(num_states: np.ndarray, A_dep_len: int) -> np.ndarray:
     '''
     Probability distribution over hidden states to sample from when randomly
     generating A_dependencies. Ensures a negative correlation between lengths
@@ -303,7 +323,7 @@ def A_dep_factors_dist(num_states, A_dep_len):
         return tmp / np.sum(tmp)
 
 
-def A_dep_len_dist(choices, curr_sf_dim, max_sf_dim):
+def A_dep_len_dist(choices: np.ndarray, curr_sf_dim: int, max_sf_dim: int) -> np.ndarray:
     '''
     In case a hidden state has already been assigned to an A dependency list,
     getting a probability distribution over potential lengths of that list.
@@ -324,7 +344,7 @@ def A_dep_len_dist(choices, curr_sf_dim, max_sf_dim):
     return tmp / np.sum(tmp)
 
 
-def A_dep_len_dist_unconditional(choices):
+def A_dep_len_dist_unconditional(choices: np.ndarray) -> np.ndarray:
     '''
     An unconditional exponential distribution over possible lengths of A
     dependency lists, to favor shorter lists and only occasionally sample
@@ -340,15 +360,15 @@ def A_dep_len_dist_unconditional(choices):
 
 
 def generate_agent_spec(
-        num_factors,
-        num_modalities,
-        state_dim_limits,
-        obs_dim_limits,
-        A_dep_len_limits,
-        dim_sampling_type,
-        A_dep_len_prior='uniform',
-        key=None,
-    ):
+        num_factors: int,
+        num_modalities: int,
+        state_dim_limits: tuple[int, int],
+        obs_dim_limits: tuple[int, int],
+        A_dep_len_limits: tuple[int, int],
+        dim_sampling_type: str,
+        A_dep_len_prior: str = 'uniform',
+        key: Array | None = None,
+    ) -> tuple[list[int], list[int], list[list[int]]]:
 
     '''
     The main function - generating an agent specification given some basic information.
@@ -522,12 +542,12 @@ def generate_agent_spec(
 
 
 def generate_agent_specs_from_parameter_sets(
-        parameter_sets,
-        num_agents_per_set=1,
-        max_A_dependency_list_size=10,
-        output_file='agent_specs.json',
-        seed=None,
-    ):
+        parameter_sets: Sequence[tuple[int, int, int, int, str, str]],
+        num_agents_per_set: int = 1,
+        max_A_dependency_list_size: int = 10,
+        output_file: str | None = 'agent_specs.json',
+        seed: int | None = None,
+    ) -> dict[str, list[dict[str, Any]]]:
     '''
     Generate agent specifications from coordinated parameter sets.
 
@@ -603,7 +623,7 @@ def generate_agent_specs_from_parameter_sets(
 
 
 
-def apply_padding_batched(xs):
+def apply_padding_batched(xs: list[Array]) -> Array:
     '''xs: list of arrays'''
     
     max_rank = max(x.ndim for x in xs)
@@ -624,11 +644,17 @@ def apply_padding_batched(xs):
         
     return xs_padded
 
-def get_sample_obs(num_obs, batch_size=1):
+def get_sample_obs(num_obs: Sequence[int], batch_size: int = 1) -> list[Array]:
     obs = [np.random.randint(0, obs_dim, (batch_size, 1)) for obs_dim in num_obs]
     return [jnp.array(o) for o in obs]
 
-def init_A_and_D_from_spec(num_obs, num_states, A_dependencies, A_sparsity_level=None, batch_size=1):
+def init_A_and_D_from_spec(
+    num_obs: Sequence[int],
+    num_states: Sequence[int],
+    A_dependencies: list[list[int]],
+    A_sparsity_level: float | None = None,
+    batch_size: int = 1,
+) -> tuple[list[Array], list[Array]]:
 
     A = []
     
@@ -673,7 +699,9 @@ def init_A_and_D_from_spec(num_obs, num_states, A_dependencies, A_sparsity_level
     return A, D    
 
 # Block diagonal approach functions
-def build_block_diag_A(A_list: List[jnp.ndarray]):
+def build_block_diag_A(
+    A_list: list[Array],
+) -> tuple[Array, tuple[tuple[int, ...], ...], tuple[int, ...]]:
     """Return block‑diagonal matrix and per‑modality state shapes."""
     A_flat = [a.reshape(a.shape[0], -1, a.shape[-1]) for a in A_list]
     state_shapes = tuple(tuple(int(d) for d in a.shape[1:-1]) for a in A_list)  # hashable tuples
@@ -693,23 +721,25 @@ def build_block_diag_A(A_list: List[jnp.ndarray]):
     return A_big, state_shapes, cuts
 
 # Preprocessing functions for block diagonal approach
-def preprocess_A_for_block_diag(A):
+def preprocess_A_for_block_diag(
+    A: list[Array],
+) -> tuple[Array, tuple[tuple[int, ...], ...], tuple[int, ...]]:
     """Preprocess A matrices for block diagonal approach."""
     A_big, state_shapes, cuts = build_block_diag_A(A)
     return A_big, state_shapes, cuts
 
-def prepare_obs_for_block_diag(obs, num_obs):
+def prepare_obs_for_block_diag(obs: list[Array], num_obs: Sequence[int]) -> list[Array]:
     """Prepare observation vectors for block diagonal approach."""
     # Convert to one-hot if needed
     o_vec = [nn.one_hot(o, num_obs[m]) for m, o in enumerate(obs)]
     obs_tmp = jtu.tree_map(lambda x: x[-1], o_vec)
     return obs_tmp
 
-def concatenate_observations_block_diag(obs_list: List[jnp.ndarray]):
+def concatenate_observations_block_diag(obs_list: list[Array]) -> Array:
     """Step 0: Concatenate observations for block diagonal approach."""
     return jnp.concatenate(obs_list, axis=1)
 
-def apply_A_end2end_padding_batched(A):
+def apply_A_end2end_padding_batched(A: list[Array]) -> Array:
     
     max_rank = max(a.ndim for a in A)
     max_dims = [len(A), A[0].shape[0], max(a.shape[1] for a in A)] + [max(max(a.shape[2:]) for a in A)]*(max_rank - 2)
@@ -727,7 +757,7 @@ def apply_A_end2end_padding_batched(A):
         
     return A_padded
 
-def apply_obs_end2end_padding_batched(obs, max_obs_dim):
+def apply_obs_end2end_padding_batched(obs: list[Array], max_obs_dim: int) -> Array:
     
     full_shape = [len(obs), obs[0].shape[0], max_obs_dim]
     

@@ -75,7 +75,7 @@ class GridWorld(PymdpEnv):
         initial_position: Optional[Tuple[int, int] | int] = None,
         include_stay: bool = True,
         success_prob: float = 1.0,
-    ):
+    ) -> None:
         rows, cols = shape
         assert rows >= 1 and cols >= 1, "Grid shape must be positive."
         assert 0.0 <= success_prob <= 1.0, "`success_prob` must be in [0, 1]."
@@ -128,7 +128,7 @@ def _flatten_walls(shape: Tuple[int, int], walls: Optional[Iterable[Tuple[int, i
     return walls_flat
 
 
-def _generate_A(n_states: int):
+def _generate_A(n_states: int) -> tuple[jnp.ndarray, list[list[int]]]:
     """
     Identity observation over location.
     Returns:
@@ -160,7 +160,7 @@ def _generate_B(
     walls_flat: set[int],
     include_stay: bool,
     success_prob: float,
-):
+) -> tuple[jnp.ndarray, list[list[int]]]:
     """
     Build transition tensor B with shape (num_states, num_states, num_actions):
         B[next_state, current_state, action]
@@ -211,7 +211,7 @@ def _generate_D(
     shape: Tuple[int, int],
     walls_flat: set[int],
     initial_position: Optional[Tuple[int, int] | int],
-):
+) -> jnp.ndarray:
     """
     Initial state distribution over location.
       - If initial_position is given (r,c) or linear index -> one-hot at that state.

@@ -7,21 +7,24 @@ sequences, and exact single-factor scan-based HMM smoothing.
 
 import jax.numpy as jnp
 import jax.tree_util as jtu
-from typing import NamedTuple, Tuple, List
+from typing import Any, Callable, NamedTuple, Tuple, List
 from jax import jit, vmap, grad, lax, nn
+from jaxtyping import Array
 # from jax.config import config
 # config.update("jax_enable_x64", True)
 
 from pymdp.maths import compute_log_likelihood, compute_log_likelihood_per_modality, log_stable, factor_dot, factor_dot_flex, MINVAL
 
-def add(x, y):
+def add(x: Array, y: Array) -> Array:
     return x + y
 
-def marginal_log_likelihood(qs, log_likelihood, i):
+def marginal_log_likelihood(qs: list[Array], log_likelihood: Array, i: int) -> Array:
     xs = [q for j, q in enumerate(qs) if j != i]
     return factor_dot(log_likelihood, xs, keep_dims=(i,))
 
-def all_marginal_log_likelihood(qs, log_likelihoods, all_factor_lists):
+def all_marginal_log_likelihood(
+    qs: list[Array], log_likelihoods: list[Array], all_factor_lists: list[list[int]]
+) -> list[Array]:
     qL_marginals = jtu.tree_map(lambda ll_m, factor_list_m: mll_factors(qs, ll_m, factor_list_m), log_likelihoods, all_factor_lists)
     
     num_factors = len(qs)
@@ -35,14 +38,20 @@ def all_marginal_log_likelihood(qs, log_likelihoods, all_factor_lists):
 
     return qL_all
 
-def mll_factors(qs, ll_m, factor_list_m) -> List:
+def mll_factors(qs: list[Array], ll_m: Array, factor_list_m: list[int]) -> list[Array]:
     relevant_factors = [qs[f] for f in factor_list_m]
     marginal_ll_f = jtu.Partial(marginal_log_likelihood, relevant_factors, ll_m)
     loc_nf = len(factor_list_m)
     loc_factors = list(range(loc_nf))
     return jtu.tree_map(marginal_ll_f, loc_factors)
 
-def run_vanilla_fpi(A, obs, prior, num_iter=1, distr_obs=True):
+def run_vanilla_fpi(
+    A: list[Array],
+    obs: list[Array],
+    prior: list[Array],
+    num_iter: int = 1,
+    distr_obs: bool = True,
+) -> list[Array]:
     """ Vanilla fixed point iteration (jaxified) """
 
     nf = len(prior)
@@ -56,7 +65,7 @@ def run_vanilla_fpi(A, obs, prior, num_iter=1, distr_obs=True):
     log_q = jtu.tree_map(jnp.zeros_like, prior)
 
     # Step 3: Iterate until convergence
-    def scan_fn(carry, t):
+    def scan_fn(carry: list[Array], t: Array) -> tuple[list[Array], None]:
         log_q = carry
         q = jtu.tree_map(nn.softmax, log_q)
         mll = jtu.Partial(marginal_log_likelihood, q, ll)
@@ -71,7 +80,14 @@ def run_vanilla_fpi(A, obs, prior, num_iter=1, distr_obs=True):
     qs = jtu.tree_map(nn.softmax, res)
     return qs
 
-def run_factorized_fpi(A, obs, prior, A_dependencies, num_iter=1, distr_obs=True):
+def run_factorized_fpi(
+    A: list[Array],
+    obs: list[Array],
+    prior: list[Array],
+    A_dependencies: list[list[int]],
+    num_iter: int = 1,
+    distr_obs: bool = True,
+) -> list[Array]:
     """
     Run the fixed point iteration algorithm with sparse dependencies between factors and outcomes (stored in `A_dependencies`)
     """
@@ -90,7 +106,7 @@ def run_factorized_fpi(A, obs, prior, A_dependencies, num_iter=1, distr_obs=True
     log_q = jtu.tree_map(jnp.zeros_like, prior)
 
     # Step 3: Iterate until convergence
-    def scan_fn(carry, t):
+    def scan_fn(carry: list[Array], t: Array) -> tuple[list[Array], None]:
         log_q = carry
         q = jtu.tree_map(nn.softmax, log_q)
         marginal_ll = all_marginal_log_likelihood(q, log_likelihoods, A_dependencies)
@@ -104,7 +120,9 @@ def run_factorized_fpi(A, obs, prior, A_dependencies, num_iter=1, distr_obs=True
     qs = jtu.tree_map(nn.softmax, res)
     return qs
 
-def mirror_gradient_descent_step(tau, ln_A, lnB_past, lnB_future, ln_qs):
+def mirror_gradient_descent_step(
+    tau: float, ln_A: Array, lnB_past: Array, lnB_future: Array, ln_qs: Array
+) -> Array:
     """
     u_{k+1} = u_{k} - \nabla_p F_k
     p_k = softmax(u_k)
@@ -116,19 +134,19 @@ def mirror_gradient_descent_step(tau, ln_A, lnB_past, lnB_future, ln_qs):
     return qs
 
 def update_marginals(
-    get_messages,
-    obs,
-    A,
-    B,
-    prior,
-    A_dependencies,
-    B_dependencies,
-    num_iter=1,
-    tau=1.,
-    distr_obs=True,
-    obs_valid_mask=None,
-    transition_valid_mask=None,
-):
+    get_messages: Callable[..., tuple[list[Array], list[Array]]],
+    obs: list[Array],
+    A: list[Array],
+    B: list[Array] | None,
+    prior: list[Array],
+    A_dependencies: list[list[int]],
+    B_dependencies: list[list[int]],
+    num_iter: int = 1,
+    tau: float = 1.0,
+    distr_obs: bool = True,
+    obs_valid_mask: Array | None = None,
+    transition_valid_mask: Array | None = None,
+) -> list[Array]:
     """ Version of marginal update that uses a sparse dependency matrix for A """
 
     T = obs[0].shape[0]
@@ -136,7 +154,7 @@ def update_marginals(
     # log likelihoods -> $\ln(A)$ for all time steps
     # for $k > t$ we have $\ln(A) = 0$
 
-    def get_log_likelihood(obs_t, A):
+    def get_log_likelihood(obs_t: list[Array], A: list[Array]) -> list[Array]:
        # # mapping over batch dimension
        # return vmap(compute_log_likelihood_per_modality)(obs_t, A)
        return compute_log_likelihood_per_modality(obs_t, A, distr_obs=distr_obs)
@@ -159,7 +177,7 @@ def update_marginals(
 
     qs = jtu.tree_map(nn.softmax, ln_qs)
 
-    def scan_fn(carry, iter):
+    def scan_fn(carry: list[Array], iter: Array) -> tuple[list[Array], None]:
         qs = carry
 
         ln_qs = jtu.tree_map(log_stable, qs)
@@ -186,7 +204,9 @@ def update_marginals(
 
     return qs
 
-def variational_filtering_step(prior, Bs, ln_As, A_dependencies):
+def variational_filtering_step(
+    prior: list[Array], Bs: list[Array], ln_As: list[Array], A_dependencies: list[list[int]]
+) -> tuple[list[Array], list[Array], list[Array]]:
 
     ln_prior = jtu.tree_map(log_stable, prior)
     
@@ -215,25 +235,32 @@ def variational_filtering_step(prior, Bs, ln_As, A_dependencies):
 
     return post, pred, cond
 
-def update_variational_filtering(obs, A, B, prior, A_dependencies, **kwargs):
+def update_variational_filtering(
+    obs: list[Array],
+    A: list[Array],
+    B: list[Array],
+    prior: list[Array],
+    A_dependencies: list[list[int]],
+    **kwargs: Any,
+) -> tuple[list[Array], list[Array], list[Array]]:
     """Online variational filtering belief update that uses a sparse dependency matrix for A"""
 
     obs[0].shape[0]
-    def pad(x):
+    def pad(x: Array) -> Array:
         npad = [(0, 0)] * jnp.ndim(x)
         npad[0] = (0, 1)
         return jnp.pad(x, npad, constant_values=1.)
     
     B = jtu.tree_map(pad, B)
  
-    def get_log_likelihood(obs_t, A):
+    def get_log_likelihood(obs_t: list[Array], A: list[Array]) -> list[Array]:
         # mapping over batch dimension
         return vmap(compute_log_likelihood_per_modality)(obs_t, A)
 
     # mapping over time dimension of obs array
     log_likelihoods = vmap(get_log_likelihood, (0, None))(obs, A) # this gives a sequence of log-likelihoods (one for each `t`)
     
-    def scan_fn(carry, iter):
+    def scan_fn(carry: tuple[list[Array], list[Array]], iter: tuple[list[Array], list[Array]]) -> tuple[tuple[list[Array], list[Array]], list[Array]]:
         _, prior = carry
         Bs, ln_As = iter
 
@@ -248,7 +275,14 @@ def update_variational_filtering(obs, A, B, prior, A_dependencies, **kwargs):
 
     return qs, ps, qss
 
-def get_vmp_messages(ln_B, B, qs, ln_prior, B_dependencies, transition_valid_mask=None):
+def get_vmp_messages(
+    ln_B: list[Array] | None,
+    B: list[Array] | None,
+    qs: list[Array],
+    ln_prior: list[Array],
+    B_dependencies: list[list[int]],
+    transition_valid_mask: Array | None = None,
+) -> tuple[list[Array], list[Array]]:
     
     num_factors = len(qs)
     factors = list(range(num_factors))
@@ -284,7 +318,7 @@ def get_vmp_messages(ln_B, B, qs, ln_prior, B_dependencies, transition_valid_mas
         axis=0,
     )
 
-    def forward(ln_b, q, ln_prior):
+    def forward(ln_b: Array, q: Array, ln_prior: Array) -> Array:
         msg = vmap(lambda x, y: y @ x)(q[:-1], ln_b) # ln_b has shape (num_states, num_states) qs[:-1] has shape (T-1, num_states)
         msg = jnp.where(transition_valid_mask[:, None], msg, 0.0)
         # Append the prior as the t=0 forward message so the result has length T.
@@ -293,7 +327,7 @@ def get_vmp_messages(ln_B, B, qs, ln_prior, B_dependencies, transition_valid_mas
         prior_msg = jnp.broadcast_to(jnp.expand_dims(ln_prior, 0), msg.shape)
         return jnp.where(start_mask[:, None], prior_msg, msg)
     
-    def backward(ln_b, q):
+    def backward(ln_b: Array, q: Array) -> Array:
         # q_i B_ij
         msg = vmap(lambda x, y: x @ y)(q[1:], ln_b)
         msg = jnp.where(transition_valid_mask[:, None], msg, 0.0)
@@ -309,18 +343,18 @@ def get_vmp_messages(ln_B, B, qs, ln_prior, B_dependencies, transition_valid_mas
     return lnB_future, lnB_past 
 
 def run_vmp(
-    A,
-    B,
-    obs,
-    prior,
-    A_dependencies,
-    B_dependencies,
-    num_iter=1,
-    tau=1.,
-    distr_obs=True,
-    obs_valid_mask=None,
-    transition_valid_mask=None,
-):
+    A: list[Array],
+    B: list[Array] | None,
+    obs: list[Array],
+    prior: list[Array],
+    A_dependencies: list[list[int]],
+    B_dependencies: list[list[int]],
+    num_iter: int = 1,
+    tau: float = 1.0,
+    distr_obs: bool = True,
+    obs_valid_mask: Array | None = None,
+    transition_valid_mask: Array | None = None,
+) -> list[Array]:
     """Run variational message passing over a sequence window.
 
     Parameters
@@ -335,14 +369,14 @@ def run_vmp(
         Mirror-descent step size.
     distr_obs : bool, default=True
         Whether observations are already distributional.
-    obs_valid_mask : jax.Array | None, optional
+    obs_valid_mask : Array | None, optional
         Optional validity mask for padded observation windows.
-    transition_valid_mask : jax.Array | None, optional
+    transition_valid_mask : Array | None, optional
         Optional validity mask for transitions in padded windows.
 
     Returns
     -------
-    list[jax.Array]
+    list[Array]
         Sequence posterior beliefs per hidden-state factor.
     """
 
@@ -362,7 +396,14 @@ def run_vmp(
     )
     return qs
 
-def get_mmp_messages(ln_B, B, qs, ln_prior, B_deps, transition_valid_mask=None):
+def get_mmp_messages(
+    ln_B: list[Array] | None,
+    B: list[Array] | None,
+    qs: list[Array],
+    ln_prior: list[Array],
+    B_deps: list[list[int]],
+    transition_valid_mask: Array | None = None,
+) -> tuple[list[Array], list[Array]]:
     
     num_factors = len(qs)
     factors = list(range(num_factors))
@@ -383,7 +424,7 @@ def get_mmp_messages(ln_B, B, qs, ln_prior, B_deps, transition_valid_mask=None):
         axis=0,
     )
 
-    def forward(b, ln_prior, f):
+    def forward(b: Array, ln_prior: Array, f: int) -> Array:
         xs = get_deps_forw(qs, B_deps[f])
         dims = tuple((0, 2 + i) for i in range(len(B_deps[f])))
         msg = log_stable(factor_dot_flex(b, xs, dims, keep_dims=(0, 1) ))
@@ -398,7 +439,7 @@ def get_mmp_messages(ln_B, B, qs, ln_prior, B_deps, transition_valid_mask=None):
         msg = msg * jnp.where(outgoing_valid[:, None], 0.5, 1.0)
         return msg
     
-    def backward(Bs, xs):
+    def backward(Bs: list[Array], xs: list[Array]) -> Array:
         msg = 0.
         for i, b in enumerate(Bs):
             b_norm = b / jnp.clip(b.sum(-1, keepdims=True), min=MINVAL)
@@ -408,7 +449,7 @@ def get_mmp_messages(ln_B, B, qs, ln_prior, B_deps, transition_valid_mask=None):
         msg = jnp.where(transition_valid_mask[:, None], msg, 0.0)
         return jnp.pad(msg, ((0, 1), (0, 0)))
 
-    def marg(inv_deps, f):
+    def marg(inv_deps: list[int], f: int) -> list[Array]:
         B_marg = []
         for i in inv_deps:
             b = B[i]
@@ -436,25 +477,25 @@ def get_mmp_messages(ln_B, B, qs, ln_prior, B_deps, transition_valid_mask=None):
     return lnB_future, lnB_past
 
 def run_mmp(
-    A,
-    B,
-    obs,
-    prior,
-    A_dependencies,
-    B_dependencies,
-    num_iter=1,
-    tau=1.,
-    distr_obs=True,
-    obs_valid_mask=None,
-    transition_valid_mask=None,
-):
+    A: list[Array],
+    B: list[Array] | None,
+    obs: list[Array],
+    prior: list[Array],
+    A_dependencies: list[list[int]],
+    B_dependencies: list[list[int]],
+    num_iter: int = 1,
+    tau: float = 1.0,
+    distr_obs: bool = True,
+    obs_valid_mask: Array | None = None,
+    transition_valid_mask: Array | None = None,
+) -> list[Array]:
     """Run marginal message passing over a sequence window.
 
     Parameters are identical to :func:`run_vmp`.
 
     Returns
     -------
-    list[jax.Array]
+    list[Array]
         Sequence posterior beliefs per hidden-state factor.
     """
     qs = update_marginals(
@@ -473,7 +514,15 @@ def run_mmp(
     )
     return qs
 
-def run_online_filtering(A, B, obs, prior, A_dependencies, num_iter=1, tau=1.):
+def run_online_filtering(
+    A: list[Array],
+    B: list[Array],
+    obs: list[Array],
+    prior: list[Array],
+    A_dependencies: list[list[int]],
+    num_iter: int = 1,
+    tau: float = 1.0,
+) -> list[Array]:
     """Runs online filtering (HAVE TO REPLACE WITH OVF CODE)"""
     qs = update_marginals(get_mmp_messages, obs, A, B, prior, A_dependencies, num_iter=num_iter, tau=tau)
     return qs 
@@ -481,12 +530,17 @@ def run_online_filtering(A, B, obs, prior, A_dependencies, num_iter=1, tau=1.):
 
 # Infer states hybrid & hybrid block
 
-def run_factorized_fpi_hybrid(log_likelihoods, prior, A_dependencies, num_iter):
+def run_factorized_fpi_hybrid(
+    log_likelihoods: list[Array],
+    prior: list[Array],
+    A_dependencies: list[list[int]],
+    num_iter: int,
+) -> list[Array]:
     
     log_prior = jtu.tree_map(log_stable, prior)
     log_q = jtu.tree_map(jnp.zeros_like, prior)
 
-    def scan_fn(carry, t):
+    def scan_fn(carry: list[Array], t: Array) -> tuple[list[Array], None]:
         log_q = carry
         q = jtu.tree_map(nn.softmax, log_q)
         marginal_ll = all_marginal_log_likelihood(q, log_likelihoods, A_dependencies)
@@ -500,13 +554,15 @@ def run_factorized_fpi_hybrid(log_likelihoods, prior, A_dependencies, num_iter):
 
 # Infer states end2end padded
 
-def get_qs_padded(qs, max_state_dim):
+def get_qs_padded(qs: list[Array], max_state_dim: int) -> list[Array]:
     qs_padded = []
     for q in qs:
         qs_padded.append(jnp.zeros((q.shape[0], max_state_dim)).at[:, 0:q.shape[1]].set(q))
     return qs_padded
 
-def compute_qL_marginals(lls_padded, qs_padded, A_dependencies, max_state_dim):
+def compute_qL_marginals(
+    lls_padded: Array, qs_padded: list[Array], A_dependencies: list[list[int]], max_state_dim: int
+) -> list[list[Array]]:
 
     dp_dict = {}
     qL_marginals_padded = [[] for i in range(len(A_dependencies))]
@@ -549,7 +605,7 @@ def compute_qL_marginals(lls_padded, qs_padded, A_dependencies, max_state_dim):
 
     return qL_marginals_padded
 
-def qL_flatten(qL_marginals_padded):
+def qL_flatten(qL_marginals_padded: list[list[Array]]) -> list[list[Array]]:
     
     qL_marginals = []
     for _qs in qL_marginals_padded:
@@ -560,7 +616,9 @@ def qL_flatten(qL_marginals_padded):
             
     return qL_marginals
 
-def compute_qL_all(qL_marginals, A_dependencies, num_factors):
+def compute_qL_all(
+    qL_marginals: list[list[Array]], A_dependencies: list[list[int]], num_factors: int
+) -> list[Array]:
 
     qL_all = [jnp.zeros_like(qL_marginals[0][0])] * num_factors
     
@@ -570,12 +628,19 @@ def compute_qL_all(qL_marginals, A_dependencies, num_factors):
 
     return qL_all
 
-def run_factorized_fpi_end2end_padded(lls_padded, prior, A_dependencies, max_obs_dim, max_state_dim, num_iter):
+def run_factorized_fpi_end2end_padded(
+    lls_padded: Array,
+    prior: list[Array],
+    A_dependencies: list[list[int]],
+    max_obs_dim: int,
+    max_state_dim: int,
+    num_iter: int,
+) -> list[Array]:
     
     log_prior = jtu.tree_map(log_stable, prior)
     log_q = jtu.tree_map(jnp.zeros_like, prior)
 
-    def scan_fn(carry, t):
+    def scan_fn(carry: list[Array], t: Array) -> tuple[list[Array], None]:
         
         log_q = carry
         q = jtu.tree_map(nn.softmax, log_q)
@@ -658,29 +723,29 @@ def _hmm_filter_scan_row_oriented(
     initial_probs: jnp.ndarray,
     transition_mats: jnp.ndarray,
     log_likelihoods: jnp.ndarray,
-):
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Core row-oriented HMM filtering via associative scan.
 
     Parameters
     ----------
     initial_probs:
-        Initial state distribution ``p(s_0)`` with shape ``(K,)``.
+        Initial state distribution `p(s_0)` with shape `(K,)`.
     transition_mats:
-        Transition tensors with row orientation ``p(s_{t+1}=j | s_t=i)``.
-        Can be ``(K, K)`` or ``(T-1, K, K)``.
+        Transition tensors with row orientation `p(s_{t+1}=j | s_t=i)`.
+        Can be `(K, K)` or `(T-1, K, K)`.
     log_likelihoods:
-        Log likelihoods ``log p(o_t | s_t)`` with shape ``(T, K)``.
+        Log likelihoods `log p(o_t | s_t)` with shape `(T, K)`.
 
     Returns
     -------
     marginal_loglik:
-        Scalar ``log p(o_{1:T})``.
+        Scalar `log p(o_{1:T})`.
     filtered_probs:
-        ``(T, K)`` filtered beliefs ``p(s_t | o_{1:t})``.
+        `(T, K)` filtered beliefs `p(s_t | o_{1:t})`.
     predicted_probs:
-        ``(T, K)`` one-step-ahead predictive prior
-        ``p(s_t | o_{1:t-1})`` with ``predicted_probs[0] = initial_probs``.
+        `(T, K)` one-step-ahead predictive prior
+        `p(s_t | o_{1:t-1})` with `predicted_probs[0] = initial_probs`.
     """
     T, K = log_likelihoods.shape
     if transition_mats.ndim == 2:
@@ -726,22 +791,22 @@ def hmm_filter_scan_rowstoch(
     initial_probs: jnp.ndarray,
     transition_mats: jnp.ndarray,
     log_likelihoods: jnp.ndarray,
-):
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Exact HMM filtering via `lax.associative_scan` for row-stochastic transitions.
 
     This variant uses the standard row-stochastic convention
-    ``transition_mats[t, i, j] = p(z_{t+1}=j | z_t=i)``.
+    `transition_mats[t, i, j] = p(z_{t+1}=j | z_t=i)`.
 
     Parameters
     ------
     initial_probs:
-        Initial state distribution ``p(s_0)``.
+        Initial state distribution `p(s_0)`.
     transition_mats:
-        Row-stochastic transitions, stationary ``(K, K)`` or time-varying
-        ``(T-1, K, K)``.
+        Row-stochastic transitions, stationary `(K, K)` or time-varying
+        `(T-1, K, K)`.
     log_likelihoods:
-        Sequence log likelihoods with shape ``(T, K)``.
+        Sequence log likelihoods with shape `(T, K)`.
 
     Returns
     -------
@@ -754,15 +819,15 @@ def _hmm_smoother_scan_row_oriented(
     initial_probs: jnp.ndarray,
     transition_mats: jnp.ndarray,
     log_likelihoods: jnp.ndarray,
-):
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Core row-oriented HMM filtering + smoothing via associative scans.
 
     Computes:
     - filtered marginals using the forward scan
     - smoothed marginals with a suffix scan
-    - pairwise transition posteriors ``p(s_t, s_{t+1} | o_{1:T})``
-    - ``p(s_t | s_{t+1}, o_{1:T})`` in pymdp-style conditional orientation
+    - pairwise transition posteriors `p(s_t, s_{t+1} | o_{1:T})`
+    - `p(s_t | s_{t+1}, o_{1:T})` in pymdp-style conditional orientation
     """
     T, K = log_likelihoods.shape
     marginal_loglik, filtered, predicted = _hmm_filter_scan_row_oriented(
@@ -779,7 +844,7 @@ def _hmm_smoother_scan_row_oriented(
         col_scale = jnp.exp(log_likelihoods[1:] - log_c[1:][:, None])
         M = transition_mats * col_scale[:, None, :]
 
-        def op(x, y):
+        def op(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
             # batched matmul works; associative_scan may call this with leading batch dims
             return y @ x
 
@@ -813,18 +878,18 @@ def hmm_smoother_scan_rowstoch(
     initial_probs: jnp.ndarray,
     transition_mats: jnp.ndarray,
     log_likelihoods: jnp.ndarray,
-):
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Exact HMM filtering + smoothing via associative scans for row-stochastic transitions.
 
     Parameters
     ------
     initial_probs:
-        Initial distribution ``p(s_0)``.
+        Initial distribution `p(s_0)`.
     transition_mats:
-        Row-stochastic transitions, stationary ``(K, K)`` or time-varying ``(T-1, K, K)``.
+        Row-stochastic transitions, stationary `(K, K)` or time-varying `(T-1, K, K)`.
     log_likelihoods:
-        ``(T, K)`` log-likelihood matrix.
+        `(T, K)` log-likelihood matrix.
 
     Returns
     -------
@@ -839,7 +904,7 @@ def hmm_filter_scan_colstoch(
     initial_probs: jnp.ndarray,
     B_mats: jnp.ndarray,
     log_likelihoods: jnp.ndarray,
-):
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Exact HMM filtering via `lax.associative_scan` for column-stochastic transitions.
 
@@ -849,11 +914,11 @@ def hmm_filter_scan_colstoch(
     Parameters
     ------
     initial_probs:
-        Initial distribution ``p(s_0)``.
+        Initial distribution `p(s_0)`.
     B_mats:
-        Column-stochastic transitions, stationary ``(K, K)`` or time-varying ``(T-1, K, K)``.
+        Column-stochastic transitions, stationary `(K, K)` or time-varying `(T-1, K, K)`.
     log_likelihoods:
-        ``(T, K)`` log-likelihood matrix.
+        `(T, K)` log-likelihood matrix.
 
     Returns
     -------
@@ -871,30 +936,30 @@ def hmm_smoother_scan_colstoch(
     B_mats: jnp.ndarray,
     log_likelihoods: jnp.ndarray,
     return_trans_probs: bool = False,
-):
+) -> tuple[Any, ...]:
     """
     Exact HMM filtering + smoothing via associative scans for column-stochastic transitions.
 
     Parameters
     ------
     initial_probs:
-        Initial distribution ``p(s_0)``.
+        Initial distribution `p(s_0)`.
     B_mats:
-        Column-stochastic transitions, stationary ``(K, K)`` or time-varying ``(T-1, K, K)``.
-        In this orientation ``B_mats[t, j, i] = p(s_{t+1}=j | s_t=i)``.
+        Column-stochastic transitions, stationary `(K, K)` or time-varying `(T-1, K, K)`.
+        In this orientation `B_mats[t, j, i] = p(s_{t+1}=j | s_t=i)`.
     log_likelihoods:
-        ``(T, K)`` log-likelihood matrix.
+        `(T, K)` log-likelihood matrix.
     return_trans_probs:
-        If ``True``, includes pairwise transition posterior
-        ``p(s_t, s_{t+1} | o_{1:T})``.
+        If `True`, includes pairwise transition posterior
+        `p(s_t, s_{t+1} | o_{1:T})`.
 
     Returns
     -------
     tuple
-        If ``return_trans_probs=False``, returns
-        ``(marginal_loglik, filtered_probs, predicted_probs, smoothed_probs, cond_probs)``.
-        If ``True``, returns
-        ``(marginal_loglik, filtered_probs, predicted_probs, smoothed_probs, trans_probs, cond_probs)``.
+        If `return_trans_probs=False`, returns
+        `(marginal_loglik, filtered_probs, predicted_probs, smoothed_probs, cond_probs)`.
+        If `True`, returns
+        `(marginal_loglik, filtered_probs, predicted_probs, smoothed_probs, trans_probs, cond_probs)`.
     """
     smoothed = _hmm_smoother_scan_row_oriented(
         initial_probs,
@@ -917,7 +982,7 @@ def hmm_smoother_from_filtered_colstoch(
     filtered_probs: jnp.ndarray,
     B_mats: jnp.ndarray,
     return_trans_probs: bool = False,
-):
+) -> tuple[Any, ...]:
     """
     Exact HMM smoothing from precomputed filtering marginals for column-stochastic transitions.
 
@@ -978,7 +1043,7 @@ def hmm_smoother_from_filtered_colstoch(
     M = cond_probs.transpose(0, 2, 1)  # (T-1, K_curr, K_next)
     R = M[::-1]
 
-    def op(x, y):
+    def op(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
         return y @ x
 
     P_rev = lax.associative_scan(op, R)  # cumulative products from the end
@@ -996,7 +1061,14 @@ def hmm_smoother_from_filtered_colstoch(
         return smoothed, joint_next_curr, cond_probs, trans_probs
     return smoothed, joint_next_curr, cond_probs
 
-def run_exact_single_factor_hmm_scan(obs, A, B, prior, actions=None, distr_obs=True):
+def run_exact_single_factor_hmm_scan(
+    obs: list[Array],
+    A: list[Array],
+    B: list[Array],
+    prior: list[Array],
+    actions: Array | None = None,
+    distr_obs: bool = True,
+) -> tuple[Array, list[Array], list[Array], list[Array]]:
     """
     pymdp-style single-factor wrapper around the column-stochastic scan smoother.
 
@@ -1069,7 +1141,7 @@ if __name__ == "__main__":
 
     # test if differentiable
 
-    def sum_prod(prior):
+    def sum_prod(prior: list[Array]) -> Array:
         qs = jnp.concatenate(run_vanilla_fpi(A, obs, prior))
         return (qs * log_stable(qs)).sum()
 

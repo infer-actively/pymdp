@@ -7,12 +7,13 @@ The two primary public entry points are:
 
 import warnings
 from functools import partial
-from typing import List
+from typing import Any, Callable
 
 from jax import lax, vmap
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
+from jaxtyping import Array
 
 from pymdp import control
 from pymdp.agent import Agent
@@ -23,7 +24,7 @@ from pymdp.inference import SEQUENCE_METHODS, SMOOTHING_METHODS
 MAX_WINDOWED_HISTORY_WITHOUT_HORIZON = 32
 
 
-def _append_to_window(window, value):
+def _append_to_window(window: Array, value: Array) -> Array:
     if window.shape[1] == 0:
         return window
 
@@ -34,7 +35,7 @@ def _append_to_window(window, value):
     return jnp.concatenate([window[:, 1:, ...], value], axis=1)
 
 
-def _resolve_history_len(agent, num_timesteps, use_windowing):
+def _resolve_history_len(agent: Agent, num_timesteps: int, use_windowing: bool) -> int:
     if not use_windowing:
         return 1
 
@@ -54,14 +55,19 @@ def _resolve_history_len(agent, num_timesteps, use_windowing):
     return min(uncapped_history_len, MAX_WINDOWED_HISTORY_WITHOUT_HORIZON)
 
 
-def default_policy_search(agent, qs, rng_key):
+def default_policy_search(agent: Agent, qs: list[Array], rng_key: Array) -> tuple[Array, dict[str, Array]]:
     qpi, G = agent.infer_policies(
         qs
     )  # infer_policies computes posterior over policies using EFE
     return qpi, {"G": G}
 
 
-def _resolve_empirical_prior(agent, qs_prev, action_prev, empirical_prior):
+def _resolve_empirical_prior(
+    agent: Agent,
+    qs_prev: list[Array],
+    action_prev: Array | None,
+    empirical_prior: list[Array] | None,
+) -> list[Array]:
     if empirical_prior is not None:
         return empirical_prior
 
@@ -77,16 +83,16 @@ def _resolve_empirical_prior(agent, qs_prev, action_prev, empirical_prior):
 
 
 def update_parameters_online(
-    agent,
-    qs_prev,
-    qs,
-    observation,
-    action_prev,
+    agent: Agent,
+    qs_prev: list[Array],
+    qs: list[Array],
+    observation: list[Array] | Array,
+    action_prev: Array,
     *,
-    learning_observations=None,
-    learning_actions=None,
-    learning_beliefs=None,
-):
+    learning_observations: list[Array] | Array | None = None,
+    learning_actions: Array | None = None,
+    learning_beliefs: list[Array] | None = None,
+) -> Agent:
     # `qs_prev` must remain available here: we need it to construct temporal
     # belief pairs for transition learning and smoothing windows.
     if agent.inference_algo in SEQUENCE_METHODS:
@@ -162,14 +168,14 @@ def update_parameters_online(
 
 
 def _compute_sequence_empirical_prior_next(
-    updated_agent,
-    qs_window,
-    action_hist,
-    empirical_prior,
-    valid_steps,
-    history_len,
-):
-    def _shift_empirical_prior(_):
+    updated_agent: Agent,
+    qs_window: list[Array],
+    action_hist: Array,
+    empirical_prior: list[Array],
+    valid_steps: Array,
+    history_len: int,
+) -> list[Array]:
+    def _shift_empirical_prior(_: Any) -> list[Array]:
         qs_window_start = jtu.tree_map(lambda x: x[:, 0, ...], qs_window)
         action_window_start = action_hist[:, 0, :]
         propagate = partial(
@@ -187,17 +193,17 @@ def _compute_sequence_empirical_prior_next(
 
 
 def _run_sequence_fixed_window_step(
-    agent,
-    qs_prev,
-    observation_hist,
-    action_hist,
-    action_prev,
-    empirical_prior,
-    valid_steps,
-    history_len,
-    rng_key,
-    policy_search,
-):
+    agent: Agent,
+    qs_prev: list[Array],
+    observation_hist: list[Array],
+    action_hist: Array,
+    action_prev: Array,
+    empirical_prior: list[Array],
+    valid_steps: Array,
+    history_len: int,
+    rng_key: Array,
+    policy_search: Callable[[Agent, list[Array], Array], tuple[Array, dict[str, Array]]],
+) -> tuple[Agent, Array, list[Array], dict[str, Any], list[Array], list[Array], list[Array]]:
     updated_agent, action_next, qs, xtra = infer_and_plan(
         agent,
         qs_prev,
@@ -225,15 +231,15 @@ def _run_sequence_fixed_window_step(
 
 
 def _run_smoothing_fixed_window_step(
-    agent,
-    qs_prev,
-    observation,
-    observation_hist,
-    action_hist,
-    action_prev,
-    rng_key,
-    policy_search,
-):
+    agent: Agent,
+    qs_prev: list[Array],
+    observation: list[Array] | Array,
+    observation_hist: list[Array],
+    action_hist: Array,
+    action_prev: Array,
+    rng_key: Array,
+    policy_search: Callable[[Agent, list[Array], Array], tuple[Array, dict[str, Array]]],
+) -> tuple[Agent, Array, list[Array], dict[str, Any], list[Array], list[Array]]:
     updated_agent, action_next, qs, xtra = infer_and_plan(
         agent,
         qs_prev,
@@ -250,7 +256,14 @@ def _run_smoothing_fixed_window_step(
     return updated_agent, action_next, qs, xtra, qs_carry, qs_latest
 
 
-def _run_non_window_step(agent, qs_prev, observation, action_prev, rng_key, policy_search):
+def _run_non_window_step(
+    agent: Agent,
+    qs_prev: list[Array],
+    observation: list[Array] | Array,
+    action_prev: Array,
+    rng_key: Array,
+    policy_search: Callable[[Agent, list[Array], Array], tuple[Array, dict[str, Array]]],
+) -> tuple[Agent, Array, list[Array], dict[str, Any], list[Array], list[Array]]:
     updated_agent, action_next, qs, xtra = infer_and_plan(
         agent,
         qs_prev,
@@ -265,20 +278,20 @@ def _run_non_window_step(agent, qs_prev, observation, action_prev, rng_key, poli
 
 
 def _update_window_buffers(
-    observation_hist,
-    action_hist,
-    valid_steps,
-    observation_next,
-    action_next,
-    history_len,
-):
+    observation_hist: list[Array],
+    action_hist: Array,
+    valid_steps: Array,
+    observation_next: list[Array],
+    action_next: Array,
+    history_len: int,
+) -> tuple[list[Array], Array, Array]:
     observation_hist_next = jtu.tree_map(_append_to_window, observation_hist, observation_next)
     action_hist_next = _append_to_window(action_hist, action_next)
     valid_steps_next = jnp.minimum(valid_steps + 1, history_len)
     return observation_hist_next, action_hist_next, valid_steps_next
 
 
-def _init_observation_history(obs, history_len, categorical_obs):
+def _init_observation_history(obs: Array, history_len: int, categorical_obs: bool) -> Array:
     if obs.ndim == 1:
         obs = jnp.expand_dims(obs, axis=1)
     history_shape = (obs.shape[0], history_len) + obs.shape[2:]
@@ -291,7 +304,15 @@ def _init_observation_history(obs, history_len, categorical_obs):
     return lax.dynamic_update_slice(hist, obs[:, :1, ...], start_idx)
 
 
-def _init_windowed_carry(agent, observation_0, env_state, rng_key, history_len, action_history_len, is_sequence_method):
+def _init_windowed_carry(
+    agent: Agent,
+    observation_0: list[Array],
+    env_state: Any,
+    rng_key: Array,
+    history_len: int,
+    action_history_len: int,
+    is_sequence_method: bool,
+) -> dict[str, Any]:
     action_0 = -jnp.ones((agent.batch_size, agent.policies.policy_arr.shape[-1]), dtype=jnp.int32)
 
     # Initialize windowed beliefs with D across all slots. Left padded slots are
@@ -331,7 +352,9 @@ def _init_windowed_carry(agent, observation_0, env_state, rng_key, history_len, 
     return carry
 
 
-def _init_non_windowed_carry(agent, observation_0, env_state, rng_key):
+def _init_non_windowed_carry(
+    agent: Agent, observation_0: list[Array], env_state: Any, rng_key: Array
+) -> dict[str, Any]:
     action_0 = -jnp.ones((agent.batch_size, agent.policies.policy_arr.shape[-1]), dtype=jnp.int32)
     qs_0 = jtu.tree_map(lambda x: jnp.expand_dims(x, -2), agent.D)
     return {
@@ -346,38 +369,38 @@ def _init_non_windowed_carry(agent, observation_0, env_state, rng_key):
 
 def infer_and_plan(
     agent: Agent,
-    qs_prev: List,
-    observation: List,
-    action_prev: jnp.array = None,
-    rng_key: jr.PRNGKey = None,
-    policy_search=None,
-    past_actions=None,
-    empirical_prior=None,
-    learning_observations=None,
-    learning_actions=None,
-    learning_beliefs=None,
-    valid_steps=None,
-):
+    qs_prev: list[Array],
+    observation: list[Array] | list[int],
+    action_prev: Array | None = None,
+    rng_key: Array | None = None,
+    policy_search: Callable[[Agent, list[Array], Array], tuple[Array, dict[str, Array]]] | None = None,
+    past_actions: Array | None = None,
+    empirical_prior: list[Array] | None = None,
+    learning_observations: list[Array] | Array | None = None,
+    learning_actions: Array | None = None,
+    learning_beliefs: list[Array] | None = None,
+    valid_steps: int | Array | None = None,
+) -> tuple[Agent, Array, list[Array], dict[str, Any]]:
     """Run one active-inference step (state update, policy inference, action sample).
 
     Parameters
     ----------
     agent : Agent
         Active inference agent instance.
-    qs_prev : list[jax.Array]
+    qs_prev : list[Array]
         Previous posterior beliefs over hidden states.
-    observation : list[jax.Array] | list[int]
+    observation : list[Array] | list[int]
         Current environment observation.
-    action_prev : jax.Array | None, optional
-        Previous action. If ``None``, ``agent.D`` is used as empirical prior.
-    rng_key : jax.Array
+    action_prev : Array | None, optional
+        Previous action. If `None`, `agent.D` is used as empirical prior.
+    rng_key : Array
         PRNG key used by policy search and action sampling.
     policy_search : callable | None, optional
         Optional custom policy-search function. Defaults to expected-free-energy
         policy inference.
-    past_actions : jax.Array | None, optional
+    past_actions : Array | None, optional
         Optional action history for sequence inference methods.
-    empirical_prior : list[jax.Array] | None, optional
+    empirical_prior : list[Array] | None, optional
         Optional override for the empirical prior.
     learning_observations : optional
         Optional learning observation buffer; defaults to current observation.
@@ -385,13 +408,13 @@ def infer_and_plan(
         Optional learning action buffer.
     learning_beliefs : optional
         Optional learning belief buffer for smoothing-based updates.
-    valid_steps : int | jax.Array | None, optional
+    valid_steps : int | Array | None, optional
         Number of valid timesteps in padded fixed windows.
 
     Returns
     -------
     tuple
-        ``(updated_agent, action, qs, info)`` where ``info`` contains policy
+        `(updated_agent, action, qs, info)` where `info` contains policy
         posterior and additional policy-search diagnostics.
     """
     if policy_search is None:
@@ -446,22 +469,22 @@ def rollout(
     agent: Agent,
     env: Env,
     num_timesteps: int,
-    rng_key: jr.PRNGKey,
-    initial_carry=None,
-    policy_search=None,
-    env_params=None,
-):
-    """Roll out an active-inference agent/environment loop for ``num_timesteps``.
+    rng_key: Array,
+    initial_carry: dict[str, Any] | None = None,
+    policy_search: Callable[[Agent, list[Array], Array], tuple[Array, dict[str, Array]]] | None = None,
+    env_params: Any = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Roll out an active-inference agent/environment loop for `num_timesteps`.
 
     Parameters
     ----------
     agent : Agent
         Active inference agent.
     env : Env
-        Environment implementing ``reset`` and ``step``.
+        Environment implementing `reset` and `step`.
     num_timesteps : int
         Number of timesteps to simulate.
-    rng_key : jax.Array
+    rng_key : Array
         Root PRNG key; internally split per-step and per-batch.
     initial_carry : dict | None, optional
         Optional carry overrides for warm-starting from existing state.
@@ -494,7 +517,7 @@ def rollout(
     if policy_search is None:
         policy_search = default_policy_search
 
-    def step_fn(carry, t):
+    def step_fn(carry: dict[str, Any], t: Array) -> tuple[dict[str, Any], dict[str, Any]]:
         # Carry current action/observation/beliefs/state and RNG through scan.
         # We keep `qs_prev` explicitly because smoothing and transition learning
         # require temporal belief context beyond the empirical prior alone.
@@ -655,7 +678,7 @@ def rollout(
     )  # transpose to have timesteps as first dimension
 
     if agent.learning_mode == "offline":
-        def _format_offline_observations(x):
+        def _format_offline_observations(x: Array) -> Array:
             # Handle env wrappers that emit either (B, T, 1, O) or (B, T, O)
             # for categorical observations, and either (B, T, 1) or (B, T) for
             # discrete observations.

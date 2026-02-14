@@ -1,17 +1,24 @@
 from functools import partial
 from abc import ABC, abstractmethod
+from typing import Any, Sequence
 
 import jax.numpy as jnp
 from jax import vmap, jit, random as jr, tree_util as jtu
+from jaxtyping import Array
 
 from pymdp.distribution import Distribution, get_dependencies
 
 
-def _float_to_int_index(x):
+def _float_to_int_index(x: Array) -> Array:
     # converting float to integer for array indexing while preserving the og data structure for gradient computation    
     return jnp.asarray(x, jnp.int32)
 
-def select_probs(positions, matrix, dependency_list, actions=None):
+def select_probs(
+    positions: Sequence[Array],
+    matrix: Array,
+    dependency_list: Sequence[int],
+    actions: Array | None = None,
+) -> Array:
     # creating integer indices from float state positions for the positions specified in dependency_list
     index_args = tuple(_float_to_int_index(positions[i]) for i in dependency_list)
     if actions is not None:
@@ -19,7 +26,7 @@ def select_probs(positions, matrix, dependency_list, actions=None):
     return matrix[(..., *index_args)]
 
 
-def cat_sample(key, p):
+def cat_sample(key: Array, p: Array) -> Array:
     a = jnp.arange(p.shape[-1], dtype=jnp.float32)
     if p.ndim > 1:
         choice = lambda key, p: jr.choice(key, a, p=p)
@@ -30,7 +37,15 @@ def cat_sample(key, p):
     return jr.choice(key, a, p=p)
 
 
-def make(A, B, D, A_dependencies=None, B_dependencies=None, make_env_params=False, **kwargs):
+def make(
+    A: Sequence[Array] | Sequence[Distribution],
+    B: Sequence[Array] | Sequence[Distribution],
+    D: Sequence[Array] | Sequence[Distribution],
+    A_dependencies: list[list[int]] | None = None,
+    B_dependencies: list[list[int]] | None = None,
+    make_env_params: bool = False,
+    **kwargs: Any,
+) -> tuple["PymdpEnv", dict[str, list[Array]] | None]:
     """
     Convenience factory to construct a `PymdpEnv`.
 
@@ -60,7 +75,7 @@ def make(A, B, D, A_dependencies=None, B_dependencies=None, make_env_params=Fals
     if not make_env_params:
         return env, None
 
-    def _to_arrays(params):
+    def _to_arrays(params: Sequence[Array] | Sequence[Distribution] | None) -> list[Array] | None:
         if params is None:
             return None
         return [jnp.array(p.data) if isinstance(p, Distribution) else p for p in params]
@@ -72,19 +87,40 @@ def make(A, B, D, A_dependencies=None, B_dependencies=None, make_env_params=Fals
 class Env(ABC):
 
     @abstractmethod
-    def reset(self, key, state=None, env_params=None):
+    def reset(
+        self,
+        key: Array,
+        state: list[Array] | None = None,
+        env_params: dict[str, list[Array]] | None = None,
+    ) -> tuple[list[Array], list[Array]]:
         raise NotImplementedError
 
     @abstractmethod
-    def step(self, key, state, action, env_params=None):
+    def step(
+        self,
+        key: Array,
+        state: list[Array],
+        action: Array | None,
+        env_params: dict[str, list[Array]] | None = None,
+    ) -> tuple[list[Array], list[Array]]:
         raise NotImplementedError
 
-    def generate_env_params(self, key=None, batch_size=None):
+    def generate_env_params(
+        self, key: Array | None = None, batch_size: int | None = None
+    ) -> dict[str, list[Array]] | None:
         return None
 
 class PymdpEnv(Env):
 
-    def __init__(self, A=None, B=None, D=None, A_dependencies=None, B_dependencies=None, **kwargs):
+    def __init__(
+        self,
+        A: Sequence[Array] | Sequence[Distribution] | None = None,
+        B: Sequence[Array] | Sequence[Distribution] | None = None,
+        D: Sequence[Array] | Sequence[Distribution] | None = None,
+        A_dependencies: list[list[int]] | None = None,
+        B_dependencies: list[list[int]] | None = None,
+        **kwargs: Any,
+    ) -> None:
         if A_dependencies is not None:
             self.A_dependencies = A_dependencies
         elif A is not None and B is not None:
@@ -120,7 +156,9 @@ class PymdpEnv(Env):
         else:
             self.D = None
 
-    def generate_env_params(self, key=None, batch_size=None):
+    def generate_env_params(
+        self, key: Array | None = None, batch_size: int | None = None
+    ) -> dict[str, list[Array]]:
         env_params = {"A": self.A, "B": self.B, "D": self.D}
         if batch_size is None:
             return env_params
@@ -129,7 +167,12 @@ class PymdpEnv(Env):
         return jtu.tree_map(expand_to_batch, {"A": self.A, "B": self.B, "D": self.D})
     
     @partial(jit, static_argnums=(0,))
-    def reset(self, key, state=None, env_params=None):
+    def reset(
+        self,
+        key: Array,
+        state: list[Array] | None = None,
+        env_params: dict[str, list[Array]] | None = None,
+    ) -> tuple[list[Array], list[Array]]:
         if state is None:
             probs = env_params["D"] if env_params is not None else self.D
             keys = list(jr.split(key, len(probs) + 1))
@@ -139,7 +182,13 @@ class PymdpEnv(Env):
         return obs, state
 
     @partial(jit, static_argnums=(0,))
-    def step(self, key, state, action, env_params=None):
+    def step(
+        self,
+        key: Array,
+        state: list[Array],
+        action: Array | None,
+        env_params: dict[str, list[Array]] | None = None,
+    ) -> tuple[list[Array], list[Array]]:
         key_state, key_obs = jr.split(key)
         if action is not None:
             action = list(action)
@@ -156,7 +205,9 @@ class PymdpEnv(Env):
 
         return new_obs, new_state
 
-    def _sample_obs(self, key, state, env_params):
+    def _sample_obs(
+        self, key: Array, state: list[Array], env_params: dict[str, list[Array]] | None
+    ) -> list[Array]:
         _select_probs = partial(select_probs, state)
         A = env_params["A"] if env_params is not None else self.A
         obs_probs = jtu.tree_map(_select_probs, A, self.A_dependencies)

@@ -1,5 +1,6 @@
 import os
 import math
+from typing import Optional
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -42,18 +43,18 @@ class BaseTMaze(PymdpEnv):
 
     def __init__(
         self,
-        reward_probability=1.0,
-        punishment_probability=1.0,
-        cue_validity=0.95,
-        reward_condition=None,
-        dependent_outcomes=False,
+        reward_probability: float = 1.0,
+        punishment_probability: float = 1.0,
+        cue_validity: float = 0.95,
+        reward_condition: Optional[int] = None,
+        dependent_outcomes: bool = False,
         *,
-        num_locations,
-        cue_mode,
-        connectivity,
-        has_middle,
-        location_obs_size=None,
-    ):
+        num_locations: int,
+        cue_mode: str,
+        connectivity: str,
+        has_middle: bool,
+        location_obs_size: Optional[int] = None,
+    ) -> None:
         """
         Initialize a configurable T-Maze environment.
         Args:
@@ -108,7 +109,7 @@ class BaseTMaze(PymdpEnv):
 
         super().__init__(A=A, B=B, D=D, A_dependencies=A_dependencies, B_dependencies=B_dependencies)
 
-    def _set_reward_outcome(self, A_reward, loc, reward_condition):
+    def _set_reward_outcome(self, A_reward: jnp.ndarray, loc: int, reward_condition: int) -> jnp.ndarray:
         if loc == (reward_condition + 1):
             A_reward = A_reward.at[1, loc, reward_condition].set(self.reward_probability)
             if self.dependent_outcomes:
@@ -124,14 +125,14 @@ class BaseTMaze(PymdpEnv):
                 A_reward = A_reward.at[0, loc, reward_condition].set(1 - self.punishment_probability)
         return A_reward
 
-    def generate_A(self):
+    def generate_A(self) -> tuple[list[jnp.ndarray], list[list[int]]]:
         if self.cue_mode == "separate":
             return self._generate_A_separate()
         if self.cue_mode == "embedded":
             return self._generate_A_embedded()
         raise ValueError(f"Unsupported cue_mode: {self.cue_mode}")
 
-    def _generate_A_separate(self):
+    def _generate_A_separate(self) -> tuple[list[jnp.ndarray], list[list[int]]]:
         """
         Generate observation likelihood tensors.
         
@@ -171,7 +172,7 @@ class BaseTMaze(PymdpEnv):
 
         return A, A_dependencies
 
-    def _generate_A_embedded(self):
+    def _generate_A_embedded(self) -> tuple[list[jnp.ndarray], list[list[int]]]:
         """
         Generate observation likelihood tensors.
         
@@ -207,7 +208,7 @@ class BaseTMaze(PymdpEnv):
 
         return A, A_dependencies
 
-    def _valid_connections(self):
+    def _valid_connections(self) -> list[tuple[int, int]]:
         centre = self._location_indices["centre"]
         left = self._location_indices["left"]
         right = self._location_indices["right"]
@@ -234,7 +235,7 @@ class BaseTMaze(PymdpEnv):
             (right, centre),
         ]
 
-    def generate_B(self):
+    def generate_B(self) -> tuple[list[jnp.ndarray], list[list[int]]]:
         """
         Generate transition model matrices.
         
@@ -269,7 +270,7 @@ class BaseTMaze(PymdpEnv):
         B_dependencies = [[0], [1]]
         return B, B_dependencies
 
-    def generate_D(self):
+    def generate_D(self) -> list[jnp.ndarray]:
         """
         Generate initial state distribution.
         
@@ -295,7 +296,9 @@ class BaseTMaze(PymdpEnv):
         D.append(D_reward)
         return D
 
-    def render(self, observations, mode="human", title=None):
+    def render(
+        self, observations: list[jnp.ndarray], mode: str = "human", title: Optional[str] = None
+    ) -> jnp.ndarray | None:
         batch_size = observations[0].shape[0]
 
         plt.clf()
@@ -460,12 +463,12 @@ class TMaze(BaseTMaze):
 
     def __init__(
         self,
-        reward_probability=1.0,
-        punishment_probability=1.0,
-        cue_validity=0.95,
-        reward_condition=None,
-        dependent_outcomes=False,
-    ):
+        reward_probability: float = 1.0,
+        punishment_probability: float = 1.0,
+        cue_validity: float = 0.95,
+        reward_condition: Optional[int] = None,
+        dependent_outcomes: bool = False,
+    ) -> None:
         super().__init__(
             reward_probability=reward_probability,
             punishment_probability=punishment_probability,
@@ -486,12 +489,12 @@ class SimplifiedTMaze(BaseTMaze):
 
     def __init__(
         self,
-        reward_condition=None,
-        cue_validity=0.95,
-        reward_probability=1.0,
-        dependent_outcomes=False,
-        punishment_probability=1.0,
-    ):
+        reward_condition: Optional[int] = None,
+        cue_validity: float = 0.95,
+        reward_probability: float = 1.0,
+        dependent_outcomes: bool = False,
+        punishment_probability: float = 1.0,
+    ) -> None:
         super().__init__(
             reward_probability=reward_probability,
             punishment_probability=punishment_probability,
