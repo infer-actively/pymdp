@@ -1,6 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # pylint: disable=no-member
+"""State inference and smoothing utilities for modern JAX-based pymdp agents.
+
+This module provides:
+- one-step posterior updates (`fpi`, `exact`, `ovf`),
+- sequence-based inference (`mmp`, `vmp`),
+- backward smoothing utilities for transition/posterior learning.
+
+All public functions operate on JAX arrays and pytrees and are designed to
+work with batched agent execution (`vmap`) and fixed-window sequence buffers.
+"""
 
 import jax.numpy as jnp
 from pymdp.algos import (
@@ -22,8 +32,8 @@ SEQUENCE_METHODS = {"mmp", "vmp"}
 SMOOTHING_METHODS = {"ovf", EXACT_METHOD}
 
 
-def _select_current_obs(obs, distr_obs):
-    def _select_leaf(x):
+def _select_current_obs(obs: list[Array] | Array, distr_obs: bool) -> list[Array] | Array:
+    def _select_leaf(x: Array) -> Array:
         if x.ndim == 0:
             return x
         if distr_obs:
@@ -35,7 +45,9 @@ def _select_current_obs(obs, distr_obs):
     return jtu.tree_map(_select_leaf, obs)
 
 
-def _truncate_for_horizon(obs, past_actions, inference_horizon):
+def _truncate_for_horizon(
+    obs: list[Array], past_actions: Array | None, inference_horizon: int | None
+) -> tuple[list[Array], Array | None]:
     if inference_horizon is None:
         return obs, past_actions
 
@@ -53,7 +65,7 @@ def _truncate_for_horizon(obs, past_actions, inference_horizon):
     return obs, past_actions[-action_horizon:]
 
 
-def _ensure_action_history_shape(past_actions, num_factors):
+def _ensure_action_history_shape(past_actions: Array | None, num_factors: int) -> Array | None:
     if past_actions is None:
         return None
 
@@ -78,7 +90,9 @@ def _ensure_action_history_shape(past_actions, num_factors):
     return past_actions
 
 
-def _build_sequence_validity_masks(obs, past_actions, valid_steps):
+def _build_sequence_validity_masks(
+    obs: list[Array], past_actions: Array | None, valid_steps: int | Array | None
+) -> tuple[Array, Array]:
     T = obs[0].shape[0]
 
     if valid_steps is None:
@@ -99,12 +113,16 @@ def _build_sequence_validity_masks(obs, past_actions, valid_steps):
     return obs_valid, trans_valid
 
 
-def _condition_transitions_on_actions(B, past_actions, invalid_action_mode="neutral"):
+def _condition_transitions_on_actions(
+    B: list[ArrayLike],
+    past_actions: Array,
+    invalid_action_mode: str = "neutral",
+) -> list[Array]:
     nf = len(B)
     past_actions = _ensure_action_history_shape(past_actions, nf)
     actions_tree = [past_actions[:, i] for i in range(nf)]
 
-    def _select_transitions_for_actions(b, action_idx):
+    def _select_transitions_for_actions(b: ArrayLike, action_idx: Array) -> Array:
         if isinstance(b, JAXSparse):
             b = sparse.todense(b)
 
@@ -142,20 +160,63 @@ def _condition_transitions_on_actions(B, past_actions, invalid_action_mode="neut
     ]
 
 def update_posterior_states(
-    A,
-    B,
-    obs,
-    past_actions,
-    prior=None,
-    qs_hist=None,
-    A_dependencies=None,
-    B_dependencies=None,
-    num_iter=16,
-    method="fpi",
-    distr_obs=True,
-    inference_horizon=None,
-    valid_steps=None,
-):
+    A: list[Array],
+    B: list[Array] | None,
+    obs: list[Array],
+    past_actions: Array | None,
+    prior: list[Array] | None = None,
+    qs_hist: list[Array] | None = None,
+    A_dependencies: list[list[int]] | None = None,
+    B_dependencies: list[list[int]] | None = None,
+    num_iter: int = 16,
+    method: str = "fpi",
+    distr_obs: bool = True,
+    inference_horizon: int | None = None,
+    valid_steps: int | Array | None = None,
+) -> list[Array]:
+    """Infer posterior beliefs over hidden states from observations.
+
+    Parameters
+    ----------
+    A : list[Array]
+        Observation likelihood tensors per modality.
+    B : list[Array] | None
+        Transition model tensors per hidden-state factor. For one-step methods,
+        this can be provided unchanged. For sequence methods and non-`None`
+        `past_actions`, transitions are conditioned per timestep.
+    obs : pytree
+        Observation sequence or single-step observation in distributional form
+        (for example, one-hot vectors per modality).
+    past_actions : Array | None
+        Action history with shape `(T-1, num_factors)` for sequence methods.
+        Can be `None` when no valid history is available.
+    prior : list[Array], optional
+        Prior beliefs over hidden states.
+    qs_hist : list[Array], optional
+        Existing posterior history buffer. If provided, one-step updates append
+        to this history.
+    A_dependencies : list[list[int]], optional
+        Sparse modality-to-factor dependency mapping.
+    B_dependencies : list[list[int]], optional
+        Sparse transition-factor dependency mapping.
+    num_iter : int, default=16
+        Number of variational update iterations.
+    method : {"fpi", "ovf", "mmp", "vmp", "exact"}, default="fpi"
+        Inference routine to execute.
+    distr_obs : bool, default=True
+        Whether observations are already distributional.
+    inference_horizon : int | None, optional
+        Optional truncation horizon for sequence inference.
+    valid_steps : int | Array | None, optional
+        Number of valid (unpadded) timesteps for fixed-window sequence inputs.
+
+    Returns
+    -------
+    list[Array]
+        Posterior state beliefs, with shape semantics depending on `method`:
+        one-step methods return/append a time axis, sequence methods return full
+        sequence posteriors.
+    """
     if method in SEQUENCE_METHODS:
         obs, past_actions = _truncate_for_horizon(obs, past_actions, inference_horizon)
 
@@ -245,12 +306,14 @@ def update_posterior_states(
 
     return qs_hist
 
-def _joint_dist_factor(conditioned_transitions: ArrayLike, filtered_qs: list[Array]):
+def _joint_dist_factor(
+    conditioned_transitions: ArrayLike, filtered_qs: list[Array]
+) -> tuple[Array, Array]:
     qs_last = filtered_qs[-1]
     qs_filter = filtered_qs[:-1]
     n_transitions = conditioned_transitions.shape[0]
 
-    def step_fn(qs_smooth, xs):
+    def step_fn(qs_smooth: Array, xs: tuple[Array, Array]) -> tuple[Array, tuple[Array, Array]]:
         qs_f, time_b = xs
         qs_j = time_b * qs_f
         norm = qs_j.sum(-1, keepdims=True)
@@ -283,22 +346,27 @@ def _joint_dist_factor(conditioned_transitions: ArrayLike, filtered_qs: list[Arr
 def joint_dist_factor(
     b: ArrayLike,
     filtered_qs: list[Array],
-    actions: ArrayLike = None,
-):
-    """
-    Compute backward-smoothed marginals and pairwise joints for single-step
-    transition conditioning.
+    actions: ArrayLike | None = None,
+) -> tuple[Array, Array]:
+    """Compute smoothed marginals and pairwise joints for one factor.
 
     Parameters
     ----------
-    b:
-        Either an action-conditioned transition stack ``(T-1, K_next, K_curr)`` or the
-        raw transition tensor with action dimension ``(..., K_next, K_curr, N_actions)``.
-    filtered_qs:
-        Filtered posterior sequence with shape ``(T, batch, K)` for each factor.
-    actions:
-        Optional action sequence used to condition ``b``. When ``None``, ``b`` is
-        treated as already conditioned.
+    b : Array
+        Either an action-conditioned transition sequence
+        `(T-1, K_next, K_curr)` or a transition tensor with action axis
+        `(..., K_next, K_curr, n_actions)`.
+    filtered_qs : list[Array]
+        Filtered posterior sequence for this factor with leading time axis.
+    actions : Array | None, optional
+        Optional action sequence to select transitions from `b`.
+
+    Returns
+    -------
+    tuple[Array, Array]
+        `(smoothed_marginals, pairwise_joints)` where:
+        - smoothed marginals have shape `(T, K)`
+        - joints have shape `(T-1, K_next, K_curr)`
     """
     if actions is None:
         conditioned_transitions = b
@@ -310,7 +378,26 @@ def joint_dist_factor(
     return _joint_dist_factor(conditioned_transitions, filtered_qs)
 
 
-def smoothing_ovf(filtered_post, B, past_actions):
+def smoothing_ovf(
+    filtered_post: list[Array], B: list[Array], past_actions: Array | None
+) -> tuple[list[Array], list[Array]]:
+    """Run backward smoothing for factorized online variational filtering history.
+
+    Parameters
+    ----------
+    filtered_post : list[Array]
+        Filtering posteriors per factor, each with shape `(T, K_f)` (or
+        equivalent leading-time layout for a batch element).
+    B : list[Array]
+        Transition tensors per factor.
+    past_actions : Array
+        Action history with shape `(T-1, num_factors)`.
+
+    Returns
+    -------
+    tuple[list[Array], list[Array]]
+        `(marginals, joints)` per factor.
+    """
     assert len(filtered_post) == len(B)
     nf = len(B)  # number of factors
 
@@ -327,7 +414,9 @@ def smoothing_ovf(filtered_post, B, past_actions):
     return marginals_and_joints
 
 
-def smoothing_exact(filtered_post, B, past_actions):
+def smoothing_exact(
+    filtered_post: list[Array], B: list[Array], past_actions: Array | None
+) -> tuple[list[Array], list[Array]]:
     """
     Exact single-factor HMM backward smoothing from online filtering history.
 

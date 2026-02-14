@@ -16,7 +16,7 @@ Most of the low-level mathematical operations are [NumPy](https://github.com/num
 
 ![status](https://img.shields.io/badge/status-active-green)
 ![PyPI version](https://img.shields.io/pypi/v/inferactively-pymdp)
-[![Documentation Status](https://readthedocs.org/projects/pymdp-rtd/badge/?version=latest)](https://pymdp-rtd.readthedocs.io/en/latest/?badge=latest)
+[![Documentation Status](https://readthedocs.org/projects/pymdp-rtd/badge/?version=docs-rehaul)](https://pymdp-rtd.readthedocs.io/en/docs-rehaul/?badge=docs-rehaul)
 [![DOI](https://joss.theoj.org/papers/10.21105/joss.04098/status.svg)](https://doi.org/10.21105/joss.04098)
 
 
@@ -26,7 +26,7 @@ Here's a visualization of ``pymdp`` agents in action. One of the defining featur
 
 The simulation below (see associated notebook [here](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/cue_chaining_demo.html)) demonstrates what might be called "epistemic chaining," where an agent (here, analogized to a mouse seeking food) forages for a chain of cues, each of which discloses the location of the subsequent cue in the chain. The final cue (here, "Cue 2") reveals the location a hidden reward. This is similar in spirit to "behavior chaining" used in operant conditioning, except that here, each successive action in the behavioral sequence doesn't need to be learned through instrumental conditioning. Rather, active inference agents will naturally forage the sequence of cues based on an intrinsic desire to disclose information. This ultimately leads the agent to the hidden reward source in the fewest number of moves as possible.
 
-You can run the code behind simulating tasks like this one and others in the **Examples** section of the [official documentation](https://pymdp-rtd.readthedocs.io/en/stable/).
+You can run the code behind simulating tasks like this one and others in the **Examples** section of the [official documentation](https://pymdp-rtd.readthedocs.io/en/latest/).
 
 <!-- 
 <p align="center">
@@ -65,51 +65,43 @@ pip install inferactively-pymdp
 
 Once in Python, you can then directly import `pymdp`, its sub-packages, and functions.
 
-```bash
-
-import pymdp
+```python
+from jax import random as jr
 from pymdp import utils
 from pymdp.agent import Agent
 
-num_obs = [3, 5] # observation modality dimensions
-num_states = [3, 2, 2] # hidden state factor dimensions
-num_controls = [3, 1, 1] # control state factor dimensions
-A_matrix = utils.random_A_matrix(num_obs, num_states) # create sensory likelihood (A matrix)
-B_matrix = utils.random_B_matrix(num_states, num_controls) # create transition likelihood (B matrix)
+key = jr.PRNGKey(0)
+keys = jr.split(key, 3)
 
-C_vector = utils.obj_array_uniform(num_obs) # uniform preferences
+num_obs = [3, 5]
+num_states = [3, 2]
+num_controls = [3, 1]
 
-# instantiate a quick agent using your A, B and C arrays
-my_agent = Agent( A = A_matrix, B = B_matrix, C = C_vector)
+A = utils.random_A_array(keys[0], num_obs, num_states)
+B = utils.random_B_array(keys[1], num_states, num_controls)
+C = utils.list_array_uniform([[no] for no in num_obs])
 
-# give the agent a random observation and get the optimized posterior beliefs
+agent = Agent(A=A, B=B, C=C)
+observation = [1, 4]
 
-observation = [1, 4] # a list specifying the indices of the observation, for each observation modality
+qs = agent.infer_states(observation, empirical_prior=agent.D)
+q_pi, neg_efe = agent.infer_policies(qs)
 
-qs = my_agent.infer_states(observation) # get posterior over hidden states (a multi-factor belief)
-
-# Do active inference
-
-q_pi, neg_efe = my_agent.infer_policies() # return the policy posterior and return (negative) expected free energies of each policy as well
-
-action = my_agent.sample_action() # sample an action
-
-# ... and so on ...
+action_keys = jr.split(keys[2], agent.batch_size + 1)
+action = agent.sample_action(q_pi, rng_key=action_keys[1:])
 ```
 
 ## Getting started / introductory material
 
-We recommend starting with the Installation/Usage section of the [official documentation](https://pymdp-rtd.readthedocs.io/en/stable/) for the repository, which provides a series of useful pedagogical notebooks for introducing you to active inference and how to build agents in `pymdp`.
+We recommend starting with the JAX-first [official documentation](https://pymdp-rtd.readthedocs.io/en/latest/) for the repository, which provides practical guides, curated notebooks, and generated API references.
 
 For new users to `pymdp`, we specifically recommend stepping through following three Jupyter notebooks (can also be used on Google Colab):
 
-- [`Pymdp` fundamentals](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/pymdp_fundamentals.html)
-- [Active Inference from Scratch](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/active_inference_from_scratch.html)
-- [The `Agent` API](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/using_the_agent_class.html)
+- [Quickstart (JAX)](https://pymdp-rtd.readthedocs.io/en/latest/getting-started/quickstart-jax/)
+- [NumPy/legacy to JAX migration guide](https://pymdp-rtd.readthedocs.io/en/latest/migration/numpy-to-jax/)
+- [`rollout()` active inference loop guide](https://pymdp-rtd.readthedocs.io/en/latest/guides/rollout-active-inference-loop/)
 
-Special thanks to [Beren Millidge](https://github.com/BerenMillidge) and [Daphne Demekas](https://github.com/daphnedemekas) for their help in prototyping earlier versions of the [Active Inference from Scratch](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/active_inference_from_scratch.html) tutorial, which were originally based on a grid world POMDP environment create by [Alec Tschantz](https://github.com/alec-tschantz).
-
-We also have (and are continuing to build) a series of notebooks that walk through active inference agents performing different types of tasks, such as the classic [T-Maze environment](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/tmaze_demo.html) and the newer [Epistemic Chaining](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/cue_chaining_demo.html) demo.
+We also have (and are continuing to build) a series of notebooks that walk through active inference agents performing different types of tasks in the [Notebook Gallery](https://pymdp-rtd.readthedocs.io/en/latest/tutorials/notebooks/).
 
 ## Contributing
 

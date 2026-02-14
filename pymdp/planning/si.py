@@ -8,7 +8,7 @@ import jax.nn as nn
 import equinox as eqx
 
 from functools import partial
-from typing import List
+from typing import Any, Callable, List
 
 import pymdp
 import pymdp.maths
@@ -20,13 +20,15 @@ from pymdp.control import (
 )
 
 
-def predict_fn(agent, qs):
+def predict_fn(agent: Any, qs: list[jnp.ndarray]) -> tuple[list[jnp.ndarray], list[jnp.ndarray], jnp.ndarray]:
     """
     For a given agent, calculate next qs, qo and G given the current qs and policies.
     """
     policies = agent.policies.policy_arr
 
-    def _step(q, policy):
+    def _step(
+        q: list[jnp.ndarray], policy: jnp.ndarray
+    ) -> tuple[list[jnp.ndarray], list[jnp.ndarray], jnp.ndarray, jnp.ndarray]:
         qs = compute_expected_state(q, agent.B, policy, agent.B_dependencies)
         qo = compute_expected_obs(qs, agent.A, agent.A_dependencies)
         u = compute_expected_utility(qo, agent.C)
@@ -45,7 +47,7 @@ def predict_fn(agent, qs):
     return qs, qo, G
 
 
-def infer_fn(agent, obs, qs):
+def infer_fn(agent: Any, obs: list[jnp.ndarray], qs: list[jnp.ndarray]) -> list[jnp.ndarray]:
     agent_expanded = jtu.tree_map(lambda x: x[None, ...], agent)
     qs_post = agent_expanded.infer_states(obs, qs)
     # remove time dim from qs_post
@@ -54,26 +56,32 @@ def infer_fn(agent, obs, qs):
 
 
 def si_policy_search(
-    horizon=5,
-    max_nodes=5000,
-    max_branching=10,
-    policy_prune_threshold=1 / 16,
-    observation_prune_threshold=1 / 16,
-    entropy_stop_threshold=0.5,
-    efe_stop_threshold=1e10,
-    kl_threshold=-1,
-    prune_penalty=512,
-    gamma=1,
-    topk_obsspace=10000,
-    infer_fn=infer_fn,
-    predict_fn=predict_fn,
-):
+    horizon: int = 5,
+    max_nodes: int = 5000,
+    max_branching: int = 10,
+    policy_prune_threshold: float = 1 / 16,
+    observation_prune_threshold: float = 1 / 16,
+    entropy_stop_threshold: float = 0.5,
+    efe_stop_threshold: float = 1e10,
+    kl_threshold: float = -1,
+    prune_penalty: float = 512,
+    gamma: float = 1,
+    topk_obsspace: int = 10000,
+    infer_fn: Callable = infer_fn,
+    predict_fn: Callable = predict_fn,
+) -> Callable:
     """
     Create a search function that can be used in the pymdp `rollout` function.
     """
 
     @partial(jax.jit, static_argnames=["reset"])
-    def search_fn(agent, qs=None, rng_key=None, tree=None, reset=False):
+    def search_fn(
+        agent: Any,
+        qs: list[jnp.ndarray] | None = None,
+        rng_key: jnp.ndarray | None = None,
+        tree: Any = None,
+        reset: bool = False,
+    ) -> tuple[jnp.ndarray, dict[str, Any]]:
         """
         Infer the best policy given the agent and initial state, optionally provide
         the initial planning tree to continue searching from.
@@ -113,7 +121,9 @@ def si_policy_search(
         #     agent,
         #     tree,
         # )
-        def scan_tree_search(carry, data):
+        def scan_tree_search(
+            carry: Any, data: tuple[Any, "Tree"]
+        ) -> tuple[None, tuple[Any, "Tree"]]:
             agent, tree = data
             tree = partial_tree_search(agent, tree)
             return None, (agent, tree)
@@ -165,14 +175,14 @@ class Tree(eqx.Module):
 
     def __init__(
         self,
-        qs,
-        num_action_modalities,
-        num_observation_modalities,
-        max_nodes,
-        max_branching,
-        batch_size=1,
-        prune_penalty=512
-    ):
+        qs: list[jnp.ndarray],
+        num_action_modalities: int,
+        num_observation_modalities: int,
+        max_nodes: int,
+        max_branching: int,
+        batch_size: int = 1,
+        prune_penalty: float = 512,
+    ) -> None:
         self.size = max_nodes
 
         self.qs = [jnp.zeros((batch_size, max_nodes, 1, q.shape[-1])) for q in qs]
@@ -195,7 +205,7 @@ class Tree(eqx.Module):
         self.used = self.used.at[:, 0].set(True)
         self.observation = self.observation.at[:, 0].set(0)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int) -> dict[str, Any]:
         """
         Get the node at the given index as a dictionary.
 
@@ -231,7 +241,7 @@ class Tree(eqx.Module):
 
         return node
 
-    def root(self):
+    def root(self) -> dict[str, Any]:
         """
         Get the root nodes of the tree.
 
@@ -241,7 +251,7 @@ class Tree(eqx.Module):
         return root_node
 
 
-def root_idx(tree):
+def root_idx(tree: Tree) -> jnp.ndarray:
     root_idx = jnp.argwhere(
         (tree.used)[:, 0]
         & (tree.horizon == 0)[:, 0]
@@ -252,21 +262,21 @@ def root_idx(tree):
     return root_idx
 
 
-def _do_nothing(tree, idx):
+def _do_nothing(tree: Tree, idx: jnp.ndarray) -> Tree:
     return tree
 
 
 def _update_node(
-    tree,
-    idx,
-    qs=None,
-    policy=None,
-    observation=None,
-    G=None,
-    horizon=None,
-    children_indices=None,
-    children_probs=None,
-):
+    tree: Tree,
+    idx: jnp.ndarray,
+    qs: list[jnp.ndarray] | None = None,
+    policy: jnp.ndarray | None = None,
+    observation: jnp.ndarray | None = None,
+    G: jnp.ndarray | None = None,
+    horizon: int | None = None,
+    children_indices: jnp.ndarray | None = None,
+    children_probs: jnp.ndarray | None = None,
+) -> Tree:
     """
     Update a node in the planning tree with new data at index `idx`.
 
@@ -274,8 +284,16 @@ def _update_node(
     """
 
     def _do_update(
-        tree, idx, qs, policy, observation, G, horizon, children_indices, children_probs
-    ):
+        tree: Tree,
+        idx: jnp.ndarray,
+        qs: list[jnp.ndarray] | None,
+        policy: jnp.ndarray | None,
+        observation: jnp.ndarray | None,
+        G: jnp.ndarray | None,
+        horizon: int | None,
+        children_indices: jnp.ndarray | None,
+        children_probs: jnp.ndarray | None,
+    ) -> Tree:
         qs = (
             jtu.tree_map(lambda x, y: x.at[idx].set(y), tree.qs, qs)
             if qs is not None
@@ -349,8 +367,16 @@ def _update_node(
         return tree
 
     def _no_op(
-        tree, idx, qs, policy, observation, G, horizon, children_indices, children_probs
-    ):
+        tree: Tree,
+        idx: jnp.ndarray,
+        qs: list[jnp.ndarray] | None,
+        policy: jnp.ndarray | None,
+        observation: jnp.ndarray | None,
+        G: jnp.ndarray | None,
+        horizon: int | None,
+        children_indices: jnp.ndarray | None,
+        children_probs: jnp.ndarray | None,
+    ) -> Tree:
         jax.debug.print(
             "WARNING: Used up all {x} nodes in the plan tree...", x=tree.size
         )
@@ -373,7 +399,7 @@ def _update_node(
     )
 
 
-def _remove_orphans(tree):
+def _remove_orphans(tree: Tree) -> Tree:
     """
     Remove orphan nodes from the planning tree.
     An orphan node is a used node that is not referenced by any other node as a child.
@@ -382,7 +408,7 @@ def _remove_orphans(tree):
 
     root_index = root_idx(tree)
 
-    def _is_orphan(tree, idx):
+    def _is_orphan(tree: Tree, idx: jnp.ndarray) -> jnp.ndarray:
         return (
             (idx != root_index)
             & tree.used[idx, 0]
@@ -392,7 +418,7 @@ def _remove_orphans(tree):
             )
         )
 
-    def _has_orphans(tree):
+    def _has_orphans(tree: Tree) -> jnp.ndarray:
         # search for used nodes that never show up as a child
         valid_mask = tree.children_indices != -1
         safe_children = jnp.where(valid_mask, tree.children_indices, 0) * tree.used
@@ -408,11 +434,11 @@ def _remove_orphans(tree):
         orphans = orphans.at[root_index].set(False)  # root node is never an orphan
         return orphans.any()
 
-    def _remove_orphan(tree, idx):
-        def _noop(t, idx):
+    def _remove_orphan(tree: Tree, idx: jnp.ndarray) -> tuple[Tree, None]:
+        def _noop(t: Tree, idx: jnp.ndarray) -> Tree:
             return t
 
-        def _remove_orphan(t, idx):
+        def _remove_orphan(t: Tree, idx: jnp.ndarray) -> Tree:
             # jax.debug.print("remove orphan {idx}", idx=(idx, t.used[idx, 0], _is_orphan(t, idx), root_idx))
             t = eqx.tree_at(
                 lambda x: x.used,
@@ -431,7 +457,7 @@ def _remove_orphans(tree):
 
         return tree, None
 
-    def _scan_for_orphans(tree):
+    def _scan_for_orphans(tree: Tree) -> Tree:
         tree, _ = lax.scan(_remove_orphan, tree, jnp.arange(tree.size))
         return tree
 
@@ -440,7 +466,7 @@ def _remove_orphans(tree):
 
 
 @partial(jax.jit, static_argnums=(0))
-def _calculate_probabilities(return_size, topk_probs):
+def _calculate_probabilities(return_size: int, topk_probs: list[jnp.ndarray]) -> jnp.ndarray:
     """
     Calculate joint probabilities using stride-based indexing with top-k probabilities.
     
@@ -472,7 +498,9 @@ def _calculate_probabilities(return_size, topk_probs):
 
 
 @partial(jax.jit, static_argnums=(0, 1))
-def _generate_observations(shapes, return_size, topk_indices):
+def _generate_observations(
+    shapes: list[int], return_size: int, topk_indices: list[jnp.ndarray]
+) -> jnp.ndarray:
     """
     Generate observation combinations using stride-based indexing with top-k indices.
     
@@ -500,20 +528,20 @@ def _generate_observations(shapes, return_size, topk_indices):
 
 
 def optimized_tree_search(
-    agent,
-    tree,
-    horizon,
-    policy_prune_threshold=1 / 16,
-    observation_prune_threshold=1 / 16,
-    entropy_stop_threshold=0.5,
-    efe_stop_threshold=1e10,
-    kl_threshold=-1,
-    prune_penalty=512,
-    gamma=1,
-    topk_obsspace=10000,
-    infer_fn=infer_fn,
-    predict_fn=predict_fn,
-):
+    agent: Any,
+    tree: Tree,
+    horizon: int,
+    policy_prune_threshold: float = 1 / 16,
+    observation_prune_threshold: float = 1 / 16,
+    entropy_stop_threshold: float = 0.5,
+    efe_stop_threshold: float = 1e10,
+    kl_threshold: float = -1,
+    prune_penalty: float = 512,
+    gamma: float = 1,
+    topk_obsspace: int = 10000,
+    infer_fn: Callable = infer_fn,
+    predict_fn: Callable = predict_fn,
+) -> Tree:
     """
     Perform a sophisticated inference tree search given an agent and planning tree.
 
@@ -540,7 +568,9 @@ def optimized_tree_search(
     """
     policies = agent.policies.policy_arr
 
-    def _expand_observation_nodes(tree, data):
+    def _expand_observation_nodes(
+        tree: Tree, data: tuple[jnp.ndarray, list[jnp.ndarray], list[jnp.ndarray], jnp.ndarray]
+    ) -> tuple[Tree, None]:
         """
         Expand a policy node into new observation nodes.
 
@@ -548,13 +578,19 @@ def optimized_tree_search(
         """
         policy_node_idx, qs_next, qo, prob = data
 
-        def add_observation_nodes(tree, policy_node_idx, qs, qo, topk_obsspace):
+        def add_observation_nodes(
+            tree: Tree,
+            policy_node_idx: jnp.ndarray,
+            qs: list[jnp.ndarray],
+            qo: list[jnp.ndarray],
+            topk_obsspace: int,
+        ) -> Tree:
             """Generate observation combinations with top-k filtering."""
             shapes = [o.shape[-1] for o in qo]
             
             k = topk_obsspace
             
-            def get_topk_for_factor(factor_probs):
+            def get_topk_for_factor(factor_probs: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
                 # Use effective k to handle cases where k exceeds modality size bc default k is 10000
                 modality_size = factor_probs[0].shape[0]
                 k_effective = min(k, modality_size)
@@ -577,10 +613,12 @@ def optimized_tree_search(
             observations = _generate_observations(tuple(shapes), num_combinations, topk_indices)
             probabilities = _calculate_probabilities(num_combinations, topk_probs)
 
-            def add_observation_node(tree, data):
+            def add_observation_node(
+                tree: Tree, data: tuple[jnp.ndarray, jnp.ndarray]
+            ) -> tuple[Tree, jnp.ndarray]:
                 observation, prob = data
 
-                def consider_add(t):
+                def consider_add(t: Tree) -> tuple[Tree, jnp.ndarray]:
                     # calculate posterior state belief and check if
                     # we need to add a new observation node
 
@@ -589,7 +627,9 @@ def optimized_tree_search(
                     qs_post = infer_fn(agent, obs, qs)
 
                     # check if we already have a node with this belief (or close enough)
-                    def diff_kl(qs_orig, qs_post):
+                    def diff_kl(
+                        qs_orig: list[jnp.ndarray], qs_post: list[jnp.ndarray]
+                    ) -> jnp.ndarray:
                         d = jtu.tree_map(
                             lambda x, y: jnp.sum(
                                 x
@@ -619,7 +659,7 @@ def optimized_tree_search(
 
                     kl = diff_kl(t.qs, qs_post)
 
-                    def really_add(t, d):
+                    def really_add(t: Tree, d: tuple[jnp.ndarray, jnp.ndarray]) -> tuple[Tree, jnp.ndarray]:
                         new_idx = jnp.where(
                             ~t.used[:, 0], jnp.arange(t.size), t.size
                         ).min()
@@ -638,7 +678,7 @@ def optimized_tree_search(
                         )
                         return t, new_idx
 
-                    def skip_add(t, kl):
+                    def skip_add(t: Tree, kl: jnp.ndarray) -> tuple[Tree, jnp.ndarray]:
                         # new_idx = jnp.where(
                         #     ~t.used[:, 0], jnp.arange(t.size), t.size
                         # ).min()
@@ -655,7 +695,7 @@ def optimized_tree_search(
                         kl.min() <= kl_threshold, skip_add, really_add, t, kl
                     )
 
-                def no_op(t):
+                def no_op(t: Tree) -> tuple[Tree, jnp.ndarray]:
                     return t, -1
 
                 tree, obs_idx = lax.cond(
@@ -692,7 +732,12 @@ def optimized_tree_search(
             )
             return tree
 
-        def no_op(tree, policy_node_idx, qs, qo):
+        def no_op(
+            tree: Tree,
+            policy_node_idx: jnp.ndarray,
+            qs: list[jnp.ndarray],
+            qo: list[jnp.ndarray],
+        ) -> Tree:
             return tree
 
         # Create partial function that includes topk_obsspace parameter
@@ -709,7 +754,7 @@ def optimized_tree_search(
         )
         return tree, None
 
-    def _expand_policy_nodes(t, idx):
+    def _expand_policy_nodes(t: Tree, idx: jnp.ndarray) -> Tree:
         """
         Given an observation node at `idx`, expand into new policy nodes.
 
@@ -727,10 +772,14 @@ def optimized_tree_search(
         q_pi = nn.softmax(G * gamma, axis=0)
 
         # expand policy nodes
-        def add_policy_node(tree, data):
+        def add_policy_node(
+            tree: Tree, data: tuple[jnp.ndarray, list[jnp.ndarray], jnp.ndarray, jnp.ndarray]
+        ) -> tuple[Tree, jnp.ndarray]:
             policy, qs_next, prob, G = data
 
-            def really_add(tree, policy, qs_next, G):
+            def really_add(
+                tree: Tree, policy: jnp.ndarray, qs_next: list[jnp.ndarray], G: jnp.ndarray
+            ) -> tuple[Tree, jnp.ndarray]:
                 new_idx = jnp.where(
                     ~tree.used[:, 0], jnp.arange(tree.size), tree.size
                 ).min()
@@ -750,7 +799,9 @@ def optimized_tree_search(
                 )
                 return tree, new_idx
 
-            def skip_add(tree, policy, qs_next, G):
+            def skip_add(
+                tree: Tree, policy: jnp.ndarray, qs_next: list[jnp.ndarray], G: jnp.ndarray
+            ) -> tuple[Tree, jnp.ndarray]:
                 # jax.debug.print("skip add policy node {p} as the prob is {pr}", p=policy, pr=prob[0])
                 return tree, -1
 
@@ -780,7 +831,9 @@ def optimized_tree_search(
 
         return t
 
-    def _expand_node(carry, idx):
+    def _expand_node(
+        carry: tuple[Tree, Any, int], idx: jnp.ndarray
+    ) -> tuple[tuple[Tree, Any, int], None]:
         """
         Consider expansion for a node at `idx`. We call this function for every node in the tree,
         allowing us to efficiently jit and scan.
@@ -804,7 +857,7 @@ def optimized_tree_search(
 
         return (tree, agent, h), None
 
-    def _backward_node(tree, idx):
+    def _backward_node(tree: Tree, idx: jnp.ndarray) -> Tree:
         """
         Run a backward pass on an observation node at `idx`.
 
@@ -814,18 +867,18 @@ def optimized_tree_search(
         """
         # jax.debug.print("Backward node {idx}", idx=idx)
 
-        def recursive_G(t, policy_idx):
+        def recursive_G(t: Tree, policy_idx: jnp.ndarray) -> tuple[Tree, jnp.ndarray]:
             observation_nodes = t.children_indices[policy_idx]
             probabilities = t.children_probs[policy_idx]
 
-            def sum_over_obs(carry, obs_idx, p):
+            def sum_over_obs(carry: jnp.ndarray, obs_idx: jnp.ndarray, p: jnp.ndarray) -> jnp.ndarray:
                 carry += t.G[obs_idx, 0] * p
                 return carry
 
-            def zero(carry, obs_idx, p):
+            def zero(carry: jnp.ndarray, obs_idx: jnp.ndarray, p: jnp.ndarray) -> jnp.ndarray:
                 return carry
 
-            def accumulate_g(carry, data):
+            def accumulate_g(carry: jnp.ndarray, data: tuple[jnp.ndarray, jnp.ndarray]) -> tuple[jnp.ndarray, None]:
                 obs_idx, prob = data
                 return (
                     lax.cond(obs_idx >= 0, sum_over_obs, zero, carry, obs_idx, prob),
@@ -840,10 +893,10 @@ def optimized_tree_search(
 
             return t, G_acc
 
-        def add_prune_penalty(t, policy_idx):
+        def add_prune_penalty(t: Tree, policy_idx: jnp.ndarray) -> tuple[Tree, jnp.ndarray]:
             return t, jnp.asarray(-prune_penalty, dtype=jnp.float32)
 
-        def backward(t, idx):
+        def backward(t: Tree, idx: jnp.ndarray) -> tuple[Tree, jnp.ndarray]:
             return lax.cond(
                 # only accumulate G if it is a policy node with children, use prune penalty otherwise
                 (idx >= 0) & (jnp.any(t.children_indices[idx] >= 0)),
@@ -883,14 +936,14 @@ def optimized_tree_search(
         tree = _update_node(tree, idx, G=G_recursive, children_indices=children_indices, children_probs=q_pi)
         return tree
 
-    def _tree_backward(tree, h):
+    def _tree_backward(tree: Tree, h: int) -> tuple[Tree, int]:
         """
         Calculate the new recursive G value for all nodes at horizon h
         """
 
         # jax.debug.print("Go backward at horizon {h}", h=h)
 
-        def _do_backward(tree, idx):
+        def _do_backward(tree: Tree, idx: jnp.ndarray) -> tuple[Tree, None]:
             tree = lax.cond(
                 (tree.used[idx, 0])
                 & (tree.horizon[idx, 0] == h)
@@ -911,7 +964,7 @@ def optimized_tree_search(
         tree = _remove_orphans(tree)
         return tree, h - 1
 
-    def _expand_horizon(tree, agent, h):
+    def _expand_horizon(tree: Tree, agent: Any, h: int) -> tuple[Tree, Any, int]:
         """
         Expand the planning tree at a given horizon by expanding all nodes at that horizon.
         After expanding, it will also perform a backward pass to recursively update the G values
@@ -928,12 +981,12 @@ def optimized_tree_search(
 
         # TODO backward here or backward at the end?
         # tree backward
-        def backward_pass(tree, agent, h):
-            def backward_step(carry, current_h):
-                def do_backward(t, ch):
+        def backward_pass(tree: Tree, agent: Any, h: int) -> tuple[Tree, Any, int]:
+            def backward_step(carry: Tree, current_h: jnp.ndarray) -> tuple[Tree, jnp.ndarray]:
+                def do_backward(t: Tree, ch: jnp.ndarray) -> tuple[Tree, int]:
                     return _tree_backward(t, ch)
                 
-                def skip_backward(t, ch):
+                def skip_backward(t: Tree, ch: jnp.ndarray) -> tuple[Tree, jnp.ndarray]:
                     return t, ch - 1
                 
                 return lax.cond(
@@ -954,7 +1007,7 @@ def optimized_tree_search(
         return lax.cond(tree_updated.used.sum() < tree.used.shape[0] - 1, backward_pass, lambda x,y,z: (tree, agent, horizon), tree_updated, agent, h)
 
     # expand till max horizon (h) 
-    def continue_expansion(tree, agent, h):
+    def continue_expansion(tree: Tree, agent: Any, h: int) -> jnp.ndarray:
         q_pi = tree.children_probs[root_idx(tree)]
         entropy = pymdp.maths.stable_entropy(q_pi)
 
@@ -969,14 +1022,16 @@ def optimized_tree_search(
             & (tree.G[root_idx(tree), 0] < efe_stop_threshold)
         )
 
-    def scan_step(carry, _):
+    def scan_step(
+        carry: tuple[Tree, Any, int, bool], _: Any
+    ) -> tuple[tuple[Tree, Any, int, bool], None]:
         tree, agent, h, stop_expansion = carry
         
-        def do_expand(args):
+        def do_expand(args: tuple[Tree, Any, int]) -> tuple[Tree, Any, int]:
             tree, agent, h = args
             return _expand_horizon(tree, agent, h)
         
-        def do_nothing(args):
+        def do_nothing(args: tuple[Tree, Any, int]) -> tuple[Tree, Any, int]:
             tree, agent, h = args
             return tree, agent, h
         

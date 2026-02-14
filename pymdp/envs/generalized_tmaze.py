@@ -1,4 +1,5 @@
 from .env import PymdpEnv
+from typing import Any
 import numpy as np
 import math
 import jax.numpy as jnp
@@ -11,7 +12,7 @@ from jaxtyping import PRNGKeyArray
 from matplotlib.lines import Line2D
 
 
-def get_maze_matrix(small=False):
+def get_maze_matrix(small: bool = False) -> np.ndarray:
 
     """
     We create a matrix representation of the T-maze environment
@@ -67,7 +68,7 @@ def get_maze_matrix(small=False):
 
     return M
 
-def parse_maze(maze, rng_key: PRNGKeyArray):
+def parse_maze(maze: np.ndarray, rng_key: PRNGKeyArray) -> dict[str, Any]:
     """
     Parses the maze matrix into a format needed for the environment and its visualization.
     
@@ -167,7 +168,7 @@ def parse_maze(maze, rng_key: PRNGKeyArray):
     }
 
 
-def generate_A(maze_info):
+def generate_A(maze_info: dict[str, Any]) -> tuple[list[jnp.ndarray], list[list[int]]]:
     """
     Parameters
     ----------
@@ -249,7 +250,7 @@ def generate_A(maze_info):
     return combined_likelihood, likelihood_dependencies
 
 
-def generate_B(maze_info):
+def generate_B(maze_info: dict[str, Any]) -> tuple[list[jnp.ndarray], list[list[int]]]:
     """
     Parameters
     ----------
@@ -319,7 +320,7 @@ def generate_B(maze_info):
     return combined_transition, transition_dependencies
 
 
-def generate_D(maze_info):
+def generate_D(maze_info: dict[str, Any]) -> list[jnp.ndarray]:
     """
     Parameters
     ----------
@@ -357,14 +358,14 @@ class GeneralizedTMazeEnv(PymdpEnv):
     similar to the original T-maze.
     """
 
-    def __init__(self, env_info):
+    def __init__(self, env_info: dict[str, Any]) -> None:
         A, A_dependencies = generate_A(env_info)
         B, B_dependencies = generate_B(env_info)
         D = generate_D(env_info)
         super().__init__(A, B, D, A_dependencies, B_dependencies)
         self.env_info = env_info
 
-    def render(self, states, mode="human"):
+    def render(self, states: list[jnp.ndarray], mode: str = "human") -> jnp.ndarray | None:
         """
         Renders the environment
         Parameters
@@ -507,5 +508,4 @@ class GeneralizedTMazeEnv(PymdpEnv):
             plt.close(fig) 
             return img
     
-
 

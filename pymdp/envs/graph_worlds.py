@@ -1,11 +1,13 @@
 import networkx as nx
 from jax import numpy as jnp, random as jr, tree_util as jtu
-from typing import Optional, List, Tuple
+from typing import Any, Optional, List, Tuple
 from jaxtyping import PRNGKeyArray
 from .env import PymdpEnv
 import warnings
 
-def generate_connected_clusters(cluster_size=2, connections=2):
+def generate_connected_clusters(
+    cluster_size: int = 2, connections: int = 2
+) -> tuple[nx.Graph, dict[str, list[str]]]:
     edges = []
     connecting_node = 0
     while connecting_node < connections * cluster_size:
@@ -26,7 +28,13 @@ class GraphEnv(PymdpEnv):
     The agent observes its own location, as well as whether the object is at its location.
     """
 
-    def __init__(self, graph: nx.Graph, object_location: Optional[int] = None, agent_location: Optional[int] = None, key: Optional[PRNGKeyArray] = None):
+    def __init__(
+        self,
+        graph: nx.Graph,
+        object_location: Optional[int] = None,
+        agent_location: Optional[int] = None,
+        key: Optional[PRNGKeyArray] = None,
+    ) -> None:
 
         A, A_dependencies = self.generate_A(graph)
         B, B_dependencies = self.generate_B(graph)
@@ -44,7 +52,7 @@ class GraphEnv(PymdpEnv):
 
         super().__init__(A=A, B=B, D=D, A_dependencies=A_dependencies, B_dependencies=B_dependencies)
 
-    def generate_A(self, graph: nx.Graph):
+    def generate_A(self, graph: nx.Graph) -> tuple[list[jnp.ndarray], list[list[int]]]:
         A = []
         A_dependencies = []
 
@@ -76,7 +84,7 @@ class GraphEnv(PymdpEnv):
         A_dependencies.append([0, 1])
         return A, A_dependencies
 
-    def generate_B(self, graph: nx.Graph):
+    def generate_B(self, graph: nx.Graph) -> tuple[list[jnp.ndarray], list[list[int]]]:
         B = []
         B_dependencies = []
 
@@ -104,7 +112,9 @@ class GraphEnv(PymdpEnv):
 
         return B, B_dependencies
     
-    def generate_D(self, graph: nx.Graph, object_location: int, agent_location: int):
+    def generate_D(
+        self, graph: nx.Graph, object_location: int, agent_location: int
+    ) -> list[jnp.ndarray]:
 
         num_locations = len(graph.nodes)
         num_object_locations = num_locations + 1
@@ -118,7 +128,14 @@ class GraphEnv(PymdpEnv):
 
         return D
     
-    def generate_env_params(self,  graph: nx.Graph, key=None, object_locations: Optional[List[int]]=None, agent_locations: Optional[List[int]]=None, batch_size: Optional[int]=None):
+    def generate_env_params(
+        self,
+        graph: nx.Graph,
+        key: Optional[PRNGKeyArray] = None,
+        object_locations: Optional[List[int]] = None,
+        agent_locations: Optional[List[int]] = None,
+        batch_size: Optional[int] = None,
+    ) -> dict[str, Any]:
         """
         Override of `generate_env_params` from `Env` class that returns batched environmental parameters, with
         the option to randomize initial object and agent locations (lists of integers) which, if provided, should be of length `batch_size`

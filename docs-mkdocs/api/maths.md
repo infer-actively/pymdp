@@ -1,0 +1,3 @@
+# `pymdp.maths`
+
+::: pymdp.maths
