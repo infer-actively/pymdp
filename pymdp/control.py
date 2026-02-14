@@ -53,7 +53,7 @@ def get_marginals(q_pi: Array, policies: Array, num_controls: Sequence[int]) -> 
     Returns
     ----------
     action_marginals: `List[Array]`
-       Marginal posterior over actions for each control factor.
+        Marginal posterior over actions for each control factor.
     """
     num_factors = len(num_controls)    
 
