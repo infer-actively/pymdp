@@ -34,17 +34,52 @@ ShapeList = list[Shape]
 
 
 def norm_dist(dist: Tensor) -> Tensor:
-    """Normalizes a Categorical probability distribution"""
+    """Normalizes a Categorical probability distribution.
+
+    Parameters
+    ----------
+    dist: Tensor
+        Unnormalized Categorical distribution.
+
+    Returns
+    -------
+    Tensor
+        Normalized distribution.
+    """
     return dist / dist.sum(0)
 
 def list_array_norm_dist(dist_list: List[Tensor]) -> List[Tensor]:
-    """Normalizes a list of Categorical probability distributions"""
+    """Normalizes a list of Categorical probability distributions.
+
+    Parameters
+    ----------
+    dist_list: List[Tensor]
+        List of unnormalized Categorical distributions.
+
+    Returns
+    -------
+    List[Tensor]
+        List of normalized distributions.
+    """
     return jtu.tree_map(lambda dist: norm_dist(dist), dist_list)
 
 def validate_normalization(tensor: Tensor, axis: int = 1, tensor_name: str = "tensor") -> None:
     """
-    Validates that a probability tensor has normalised distributions along specified axis.
-    It raises a ValueError if tensor has zero-filled distributions or unnormalised distributions
+    Validate that a probability tensor has normalized distributions along a given axis.
+
+    Parameters
+    ----------
+    tensor: Tensor
+        Tensor to validate.
+    axis: int, default=1
+        Axis that should contain normalized probability distributions.
+    tensor_name: str, default="tensor"
+        Human-readable name used in error messages.
+
+    Returns
+    -------
+    None
+        Raises `ValueError` if distributions are invalid.
     """
 
     # sum along the specified axis
@@ -58,10 +93,19 @@ def validate_normalization(tensor: Tensor, axis: int = 1, tensor_name: str = "te
 
 def random_factorized_categorical(key: Array, dims_per_var: Sequence[int]) -> list[Array]:
     """
-    Creates a list of jax arrays representing random Categorical distributions with dimensions
-    given by dims_per_var[i]. In the context of observations or hidden state posteriors,
-    this can seen as a factorized categorical distribution over multiple variables, i.e.
-    P(X1, X2, ..., Xn) = P(X1)P(X2)...P(Xn)
+    Create random factorized Categorical distributions.
+
+    Parameters
+    ----------
+    key: Array
+        PRNG key for sampling.
+    dims_per_var: Sequence[int]
+        Number of levels per variable.
+
+    Returns
+    -------
+    List[Array]
+        A list of sampled categorical vectors.
     """
 
     num_vars = len(dims_per_var)
@@ -75,12 +119,23 @@ def random_A_array(
     num_states: int | Sequence[int],
     A_dependencies: list[list[int]] | None = None,
 ) -> list[Array]:
-    """
-    Creates a list of jax arrays representing observation likelihoods (A tensors or A matrices) with shapes
-    determined by num_obs and num_states, and factorized according to A_factor_list.
+    """Create random observation likelihood tensors.
 
-    The storage of each A tensor in a separate list element represents the factorized assumption over modalities, namely:
-    P(o^{1:M} | s^{1:F}) = P(o^1 | s^{factors for o^1}) * ... * P(o^M | s^{factors for o^M})
+    Parameters
+    ----------
+    key: Array
+        PRNG key for sampling.
+    num_obs: int | Sequence[int]
+        Number of observation outcomes.
+    num_states: int | Sequence[int]
+        Number of hidden states per factor.
+    A_dependencies: List[List[int]] | None
+        Optional dependency structure per modality.
+
+    Returns
+    -------
+    List[Array]
+        Randomized A tensors.
     """
     num_obs    = [num_obs]    if isinstance(num_obs, int)    else num_obs
     num_states = [num_states] if isinstance(num_states, int) else num_states
@@ -107,12 +162,25 @@ def random_B_array(
     B_dependencies: list[list[int]] | None = None,
     B_action_dependencies: list[list[int]] | None = None,
 ) -> list[Array]:
-    """
-    Creates a list of jax arrays representing state transition likelihoods (B tensors or B matrices) with shapes
-    determined by num_states and num_controls, and factorized according to B_dependencies and B_action_dependencies.
-    
-    The storage of each B tensor in a separate list element represents the factorized assumption over hidden state factors, namely:
-    P(s^{1:F} | s^{1:F}, a^{1:A}) = \prod_{f=1}^{F} P(s^f | s^{factors for s^f}, a^{controls for s^f})
+    """Create random transition tensors.
+
+    Parameters
+    ----------
+    key: Array
+        PRNG key for sampling.
+    num_states: int | Sequence[int]
+        Number of states per hidden-state factor.
+    num_controls: int | Sequence[int]
+        Number of controls per factor.
+    B_dependencies: List[List[int]] | None
+        Optional state-factor dependency structure per factor.
+    B_action_dependencies: List[List[int]] | None
+        Optional action-factor dependency structure per hidden-state factor.
+
+    Returns
+    -------
+    List[Array]
+        Randomized B tensors.
     """
 
     num_states = [num_states] if isinstance(num_states, int) else num_states
@@ -144,12 +212,19 @@ def random_B_array(
 def create_controllable_B(
     num_states: int | Sequence[int], num_controls: int | Sequence[int]
 ) -> Vector:
-    """
-    JAX equivalent of `pymdp.legacy.utils.construct_controllable_B`.
-    
-    Generates a fully controllable transition likelihood array, where each 
-    action (control state) corresponds to a move to the n-th state from any 
-    other state, for each control factor
+    """Create deterministic fully-controllable transition matrices.
+
+    Parameters
+    ----------
+    num_states: int | Sequence[int]
+        Number of hidden states per factor.
+    num_controls: int | Sequence[int]
+        Number of controls per factor.
+
+    Returns
+    -------
+    Vector
+        A list of fully controllable transition tensors.
     """
 
     num_states = [num_states] if isinstance(num_states, int) else list(num_states)
@@ -170,9 +245,17 @@ def create_controllable_B(
 
 def list_array_uniform(shape_list: ShapeList) -> Vector:
     """
-    Creates a list of jax arrays representing uniform Categorical
-    distributions with shapes given by shape_list[i]. The shapes (elements of shape_list)
-    can either be tuples or lists.
+    Creates uniform Categorical arrays for each requested shape.
+
+    Parameters
+    ----------
+    shape_list: ShapeList
+        Target tensor shapes.
+
+    Returns
+    -------
+    Vector
+        Uniform distributions for each shape.
     """
     arr = []
     for shape in shape_list:
@@ -181,8 +264,17 @@ def list_array_uniform(shape_list: ShapeList) -> Vector:
 
 
 def list_array_zeros(shape_list: ShapeList) -> Vector:
-    """
-    Creates a list of 1-D jax arrays filled with zeros, with shapes given by shape_list[i]
+    """Create zero arrays for each requested shape.
+
+    Parameters
+    ----------
+    shape_list: ShapeList
+        Target tensor shapes.
+
+    Returns
+    -------
+    Vector
+        Zero-filled arrays for each shape.
     """
     arr = []
     for shape in shape_list:
@@ -191,8 +283,19 @@ def list_array_zeros(shape_list: ShapeList) -> Vector:
 
 
 def list_array_scaled(shape_list: ShapeList, scale: float = 1.0) -> Vector:
-    """
-    Creates a list of 1-D jax arrays filled with scale, with shapes given by shape_list[i]
+    """Create arrays filled with a constant scale value.
+
+    Parameters
+    ----------
+    shape_list: ShapeList
+        Target tensor shapes.
+    scale: float, default=1.0
+        Fill value.
+
+    Returns
+    -------
+    Vector
+        Arrays filled with `scale`.
     """
     arr = []
     for shape in shape_list:
@@ -207,14 +310,14 @@ def get_combination_index(x: jax.Array | np.ndarray, dims: Sequence[int]) -> jax
 
     Parameters
     ----------
-    x: `numpy.ndarray` or `jax.Array` of shape `(batch_size, act_dims)`
+    x: `jax.Array` | `np.ndarray` of shape `(batch_size, act_dims)`
         Categorical values to be converted into combination index.
     dims: `Sequence[int]`
         Categorical dimensions used for conversion.
 
     Returns
     ----------
-    index: `np.ndarray` or `jax.Array` of shape `(batch_size)`
+    index: `jax.Array` | `np.ndarray` of shape `(batch_size)`
         Index of the combination.
     """
     assert isinstance(x, jax.Array) or isinstance(x, np.ndarray)
@@ -241,7 +344,7 @@ def index_to_combination(index: jax.Array | np.ndarray, dims: Sequence[int]) -> 
 
     Returns
     ----------
-    x: `numpy.ndarray` or `jax.Array` of shape `(batch_size, act_dims)`
+    x: `jax.Array` | `np.ndarray` of shape `(batch_size, act_dims)`
         Categorical values corresponding to each factor.
     """
     x = []
@@ -258,10 +361,23 @@ def make_A_full(
     num_obs: list[int],
     num_states: list[int],
 ) -> list[Array]:
-    """ 
-    Given a reduced A matrix, `A_reduced`, and a list of dependencies between hidden state factors and observation modalities, `A_dependencies`,
-    return a full A matrix, `A_full`, where `A_full[m]` is the full A matrix for modality `m`. This means all redundant conditional independencies
-    between observation modalities `m` and all hidden state factors (i.e. `range(len(num_states))`) are represented as lagging dimensions in `A_full`.
+    """Lift reduced likelihood tensors into full modality tensors.
+
+    Parameters
+    ----------
+    A_reduced: List[Array]
+        Reduced likelihood tensors.
+    A_dependencies: List[List[int]]
+        Dependency structure between modalities and state factors.
+    num_obs: List[int]
+        Observation dimensions.
+    num_states: List[int]
+        State dimensions.
+
+    Returns
+    -------
+    List[Array]
+        Full likelihood tensors with redundant factor dimensions restored.
     """
     A_shape_list = [ [no] + num_states for no in num_obs]
     A_full = list_array_zeros(A_shape_list) # initialize the full likelihood tensor (ALL modalities might depend on ALL factors)
@@ -281,7 +397,17 @@ def make_A_full(
 
 def fig2img(fig: Any) -> np.ndarray:
     """
-    Utility function that converts a matplotlib figure to a numpy array
+    Utility conversion from Matplotlib figure to RGB image array.
+
+    Parameters
+    ----------
+    fig: Any
+        Matplotlib figure object.
+
+    Returns
+    -------
+    np.ndarray
+        RGB image array extracted from the figure.
     """
     with io.BytesIO() as buff:
         fig.savefig(buff, facecolor="white", format="raw")
@@ -299,20 +425,20 @@ def fig2img(fig: Any) -> np.ndarray:
 # Generate random agent specs
 
 def A_dep_factors_dist(num_states: np.ndarray, A_dep_len: int) -> np.ndarray:
-    '''
-    Probability distribution over hidden states to sample from when randomly
-    generating A_dependencies. Ensures a negative correlation between lengths
-    of A dependency lists and dimensionalities (numbers of levels) of hidden
-    states (e.g. the longer a list is, the more we favor lower dimensional
-    hidden states).
+    """Probability over hidden-state factors when building A dependencies.
 
-    num_states: np.array of integers, representing dimensionalities of
-                hidden states
-    A_dep_len:  int, representing the desired length of an A dependency
-                list
+    Parameters
+    ----------
+    num_states: np.ndarray
+        Hidden-state dimensionalities.
+    A_dep_len: int
+        Candidate dependency-list length.
 
-    returns:    np.array of probabilities, with the same shape as num_states
-    '''
+    Returns
+    -------
+    np.ndarray
+        Probability vector over factors, same shape as `num_states`.
+    """
     if A_dep_len == 1:
         # in the shortest possible case, use a uniform distribution
         return np.ones_like(num_states) / len(num_states)
@@ -324,37 +450,39 @@ def A_dep_factors_dist(num_states: np.ndarray, A_dep_len: int) -> np.ndarray:
 
 
 def A_dep_len_dist(choices: np.ndarray, curr_sf_dim: int, max_sf_dim: int) -> np.ndarray:
-    '''
-    In case a hidden state has already been assigned to an A dependency list,
-    getting a probability distribution over potential lengths of that list.
-    Again ensuring a negative correlation, the higher the dimensionality of
-    the already assigned hidden state, the higher the probabilities of choosing
-    a small length of the list.
+    """Distribution over A-dependency list lengths.
 
-    choices:     np.array of integers, representing the possibilities for the
-                 length of an A dependency list
-    curr_sf_dim: int, representing the number of levels of the hidden state that
-                 has already been assigned to an A dependency list.
-    max_sf_dim:  int, representing the largest possible number of levels of any
-                 hidden state
+    Parameters
+    ----------
+    choices: np.ndarray
+        Candidate dependency-list lengths.
+    curr_sf_dim: int
+        Dimensionality of a currently assigned hidden state.
+    max_sf_dim: int
+        Maximum hidden-state dimensionality.
 
-    returns:     np.array of probabilities, with the same shape as choices
-    '''
+    Returns
+    -------
+    np.ndarray
+        Normalized weights over `choices`.
+    """
     tmp = np.exp(-choices * curr_sf_dim / max_sf_dim)
     return tmp / np.sum(tmp)
 
 
 def A_dep_len_dist_unconditional(choices: np.ndarray) -> np.ndarray:
-    '''
-    An unconditional exponential distribution over possible lengths of A
-    dependency lists, to favor shorter lists and only occasionally sample
-    longer ones.
+    """Unconditional prior for A-dependency list lengths.
 
-    choices:     np.array of integers, representing the possibilities for the
-                 length of an A dependency list
+    Parameters
+    ----------
+    choices: np.ndarray
+        Candidate dependency-list lengths.
 
-    returns:     np.array of probabilities, with the same shape as choices
-    '''
+    Returns
+    -------
+    np.ndarray
+        Normalized weights over `choices`.
+    """
     tmp = np.exp(-choices / 3)
     return tmp / np.sum(tmp)
 
@@ -368,29 +496,33 @@ def generate_agent_spec(
         dim_sampling_type: str,
         A_dep_len_prior: str = 'uniform',
         key: Array | None = None,
-    ) -> tuple[list[int], list[int], list[list[int]]]:
+) -> tuple[list[int], list[int], list[list[int]]]:
+    """Generate a random agent specification from high-level constraints.
 
-    '''
-    The main function - generating an agent specification given some basic information.
+    Parameters
+    ----------
+    num_factors: int
+        Total number of hidden state factors.
+    num_modalities: int
+        Total number of observation modalities.
+    state_dim_limits: tuple[int, int]
+        Inclusive lower/upper bounds for state dimensions.
+    obs_dim_limits: tuple[int, int]
+        Inclusive lower/upper bounds for observation dimensions.
+    A_dep_len_limits: tuple[int, int]
+        Lower/upper bounds for A-dependency list length.
+    dim_sampling_type: str
+        Sampling strategy used for dimensionalities.
+    A_dep_len_prior: str, default='uniform'
+        Prior for A-dependency length.
+    key: Array | None
+        Optional PRNG key.
 
-    num_factors:       int, representing the total number of hidden state factors
-    num_modalities:    int, representing the total number of observation modalities
-    state_dim_limits:  (int, int), the lower and upper limits on the numbers of
-                       levels for each hidden state factor
-    obs_dim_limits:    (int, int), the lower and upper limits on the numbers of
-                       levels for each observation modality
-    A_dep_len_limits:  (int, int), the lower and upper limits on the lengths of
-                       A dependency lists
-    dim_sampling_type: 'uniform' | 'with_gap_uniform' | 'with_gap_skewed' |
-                       'with_large_gap_uniform' | 'with_large_gap_skewed' - which
-                       kind of sampling to use for dimensionalities of hidden
-                       states and observation modalities (described further below)
-    A_dep_len_prior:   'uniform'| 'exponential' - whether to sample lengths of A
-                       dependency lists uniformly or to favor shorter ones, in cases
-                       where no hidden states have already been assigned to a list
-    key:               JAX PRNGKey for reproducible random number generation.
-                       If None, uses PRNGKey(0)
-    '''
+    Returns
+    -------
+    tuple[list[int], list[int], list[list[int]]]
+        `(num_states, num_obs, A_dependencies)`.
+    """
 
     if key is None:
         key = jr.PRNGKey(0)
@@ -547,19 +679,28 @@ def generate_agent_specs_from_parameter_sets(
         max_A_dependency_list_size: int = 10,
         output_file: str | None = 'agent_specs.json',
         seed: int | None = None,
-    ) -> dict[str, list[dict[str, Any]]]:
-    '''
-    Generate agent specifications from coordinated parameter sets.
+) -> dict[str, list[dict[str, Any]]]:
+    """Generate multiple agent specs from parameter grids.
 
-    parameter_sets:       list of tuples, where each tuple contains
-                         (num_factors, num_modalities, state_dim_upper_limit,
-                          obs_dim_upper_limit, dim_sampling_type, label)
-    num_agents_per_set:   int, number of random agents to generate per parameter set
-    output_file:          str, path to save the JSON file with agent specifications
-    seed:                 int or None, seed for reproducible random number generation
+    Parameters
+    ----------
+    parameter_sets: Sequence[tuple[int, int, int, int, str, str]]
+        Tuples of
+        `(num_factors, num_modalities, state_dim_upper_limit, obs_dim_upper_limit, dim_sampling_type, label)`.
+    num_agents_per_set: int, default=1
+        Number of samples to draw for each parameter set.
+    max_A_dependency_list_size: int, default=10
+        Maximum allowed A-dependency list size.
+    output_file: str | None, default='agent_specs.json'
+        Optional path to save generated specs.
+    seed: int | None, default=None
+        RNG seed.
 
-    returns:              dict with agent specifications
-    '''
+    Returns
+    -------
+    dict[str, list[dict[str, Any]]]
+        Mapping to generated specification records.
+    """
 
     # Create JAX PRNGKey with seed for reproducibility
     key = jr.PRNGKey(seed if seed is not None else 0)
@@ -624,7 +765,19 @@ def generate_agent_specs_from_parameter_sets(
 
 
 def apply_padding_batched(xs: list[Array]) -> Array:
-    '''xs: list of arrays'''
+    """
+    Pad and concatenate variable-size arrays along a new batch axis.
+
+    Parameters
+    ----------
+    xs: List[Array]
+        Arrays to concatenate.
+
+    Returns
+    -------
+    Array
+        Padded batch tensor.
+    """
     
     max_rank = max(x.ndim for x in xs)
     max_dims = [sum(x.shape[0] for x in xs)] + [max(x.shape[i] for x in xs if i < x.ndim) for i in range(1, max_rank)]
@@ -645,6 +798,20 @@ def apply_padding_batched(xs: list[Array]) -> Array:
     return xs_padded
 
 def get_sample_obs(num_obs: Sequence[int], batch_size: int = 1) -> list[Array]:
+    """Generate random observations for each modality.
+
+    Parameters
+    ----------
+    num_obs: Sequence[int]
+        Outcome counts per modality.
+    batch_size: int, default=1
+        Number of samples per modality.
+
+    Returns
+    -------
+    List[Array]
+        Random observations of shape `(batch_size, 1)` per modality.
+    """
     obs = [np.random.randint(0, obs_dim, (batch_size, 1)) for obs_dim in num_obs]
     return [jnp.array(o) for o in obs]
 
@@ -655,6 +822,26 @@ def init_A_and_D_from_spec(
     A_sparsity_level: float | None = None,
     batch_size: int = 1,
 ) -> tuple[list[Array], list[Array]]:
+    """Create initial A and D tensors from explicit model metadata.
+
+    Parameters
+    ----------
+    num_obs: Sequence[int]
+        Observation cardinalities.
+    num_states: Sequence[int]
+        Hidden-state cardinalities.
+    A_dependencies: List[List[int]]
+        Modality-to-state dependencies.
+    A_sparsity_level: float | None, default=None
+        Optional sparsity level when constructing A.
+    batch_size: int, default=1
+        Number of sampled model instances.
+
+    Returns
+    -------
+    tuple[List[Array], List[Array]]
+        Initialized A and D arrays.
+    """
 
     A = []
     
@@ -702,7 +889,18 @@ def init_A_and_D_from_spec(
 def build_block_diag_A(
     A_list: list[Array],
 ) -> tuple[Array, tuple[tuple[int, ...], ...], tuple[int, ...]]:
-    """Return block‑diagonal matrix and per‑modality state shapes."""
+    """Build a block-diagonal representation from modality-wise likelihood tensors.
+
+    Parameters
+    ----------
+    A_list: List[Array]
+        List of likelihood tensors.
+
+    Returns
+    -------
+    tuple[Array, tuple[tuple[int, ...], ...], tuple[int, ...]]
+        `(A_big, state_shapes, cuts)`.
+    """
     A_flat = [a.reshape(a.shape[0], -1, a.shape[-1]) for a in A_list]
     state_shapes = tuple(tuple(int(d) for d in a.shape[1:-1]) for a in A_list)  # hashable tuples
     
@@ -724,22 +922,69 @@ def build_block_diag_A(
 def preprocess_A_for_block_diag(
     A: list[Array],
 ) -> tuple[Array, tuple[tuple[int, ...], ...], tuple[int, ...]]:
-    """Preprocess A matrices for block diagonal approach."""
+    """Preprocess A matrices for block-diagonal likelihood evaluation.
+
+    Parameters
+    ----------
+    A: List[Array]
+        Likelihood tensors.
+
+    Returns
+    -------
+    tuple[Array, tuple[tuple[int, ...], ...], tuple[int, ...]]
+        Block-diagonal representation and auxiliary metadata.
+    """
     A_big, state_shapes, cuts = build_block_diag_A(A)
     return A_big, state_shapes, cuts
 
 def prepare_obs_for_block_diag(obs: list[Array], num_obs: Sequence[int]) -> list[Array]:
-    """Prepare observation vectors for block diagonal approach."""
+    """Prepare observation vectors for block-diagonal calculations.
+
+    Parameters
+    ----------
+    obs: List[Array]
+        Raw observation tensors.
+    num_obs: Sequence[int]
+        Observation cardinalities.
+
+    Returns
+    -------
+    List[Array]
+        One-hot encoded observation arrays prepared for block-diagonal use.
+    """
     # Convert to one-hot if needed
     o_vec = [nn.one_hot(o, num_obs[m]) for m, o in enumerate(obs)]
     obs_tmp = jtu.tree_map(lambda x: x[-1], o_vec)
     return obs_tmp
 
 def concatenate_observations_block_diag(obs_list: list[Array]) -> Array:
-    """Step 0: Concatenate observations for block diagonal approach."""
+    """Concatenate observation vectors for block-diagonal processing.
+
+    Parameters
+    ----------
+    obs_list: List[Array]
+        One-hot encoded observations per modality.
+
+    Returns
+    -------
+    Array
+        Concatenated observation tensor.
+    """
     return jnp.concatenate(obs_list, axis=1)
 
 def apply_A_end2end_padding_batched(A: list[Array]) -> Array:
+    """Pad A tensors for end-to-end batched processing.
+
+    Parameters
+    ----------
+    A: List[Array]
+        A tensors per modality.
+
+    Returns
+    -------
+    Array
+        Batched padded A tensor.
+    """
     
     max_rank = max(a.ndim for a in A)
     max_dims = [len(A), A[0].shape[0], max(a.shape[1] for a in A)] + [max(max(a.shape[2:]) for a in A)]*(max_rank - 2)
@@ -758,6 +1003,20 @@ def apply_A_end2end_padding_batched(A: list[Array]) -> Array:
     return A_padded
 
 def apply_obs_end2end_padding_batched(obs: list[Array], max_obs_dim: int) -> Array:
+    """Pad observations for end-to-end batched processing.
+
+    Parameters
+    ----------
+    obs: List[Array]
+        Observation tensors.
+    max_obs_dim: int
+        Dimensionality to pad observation axis to.
+
+    Returns
+    -------
+    Array
+        Batched padded observation tensor.
+    """
     
     full_shape = [len(obs), obs[0].shape[0], max_obs_dim]
     
