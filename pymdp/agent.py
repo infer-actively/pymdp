@@ -20,16 +20,19 @@ class Agent(Module):
     """
     The Agent class, the highest-level API that wraps together processes for action, perception, and learning under active inference.
 
-    The basic usage is as follows:
+    Examples
+    --------
+    .. code-block:: python
 
-    >>> from jax import random as jr
-    >>> my_agent = Agent(A = A, B = B, C = C, <more_params>)
-    >>> observation = env.step(initial_action)
-    >>> qs = my_agent.infer_states(observation, empirical_prior=my_agent.D)
-    >>> q_pi, G = my_agent.infer_policies(qs)
-    >>> keys = jr.split(rng_key, my_agent.batch_size + 1)
-    >>> next_action = my_agent.sample_action(q_pi, rng_key=keys[1:])
-    >>> next_observation = env.step(next_action)
+        from jax import random as jr
+
+        my_agent = Agent(A=A, B=B, C=C, <more_params>)
+        observation = env.step(initial_action)
+        qs = my_agent.infer_states(observation, empirical_prior=my_agent.D)
+        q_pi, G = my_agent.infer_policies(qs)
+        keys = jr.split(rng_key, my_agent.batch_size + 1)
+        next_action = my_agent.sample_action(q_pi, rng_key=keys[1:])
+        next_observation = env.step(next_action)
 
     This represents one timestep of an active inference process. Wrapping this step in a loop with an `Env()` class that returns
     observations and takes actions as inputs, would entail a dynamic agent-environment interaction.
@@ -418,6 +421,35 @@ class Agent(Module):
         lr_pB: float = 1.0,
         **kwargs: Any,
     ) -> "Agent":
+        """Update Dirichlet parameters for `A` and/or `B` models from data.
+
+        Parameters
+        ----------
+        beliefs_A: List[Array]
+            Marginal state beliefs used when updating the observation model
+            parameters.
+        outcomes: List[Array]
+            Observation histories for each modality.
+        actions: Array or None
+            Action history aligned to time. For multi-action agents this should be
+            shaped `(batch, T, num_factors)`.
+        beliefs_B: List[Array] | None, optional
+            Optional sequence of beliefs used for transition updates. If `None`,
+            transition updates are skipped.
+        lr_pA: float, default=1.0
+            Learning-rate multiplier for `A` updates.
+        lr_pB: float, default=1.0
+            Learning-rate multiplier for `B` updates.
+        **kwargs: Any
+            Reserved for future/compatibility arguments.
+
+        Returns
+        -------
+        Agent
+            Agent instance with updated `pA`, `A`, `pB`, and `B` where learning is
+            enabled.
+        """
+
         agent = self
 
         # ------------------------------------------------------------------
@@ -591,7 +623,7 @@ class Agent(Module):
 
         Parameters
         ----------
-        observations: list or tuple
+        observations: List[Array] or List[int]
             The observation input. Format depends on the default preprocessing:
 
             - If `self.categorical_obs=False` (default): Each entry `observations[m]` is an integer
@@ -602,7 +634,7 @@ class Agent(Module):
 
         Returns
         -------
-        o_vec: list or tuple
+        o_vec: List[Array]
             Observations in distributional form (one-hot vectors or categorical distributions).
 
         Notes
@@ -628,7 +660,7 @@ class Agent(Module):
 
         Parameters
         ----------
-        observations: list or tuple
+        observations: List[Array] or List[int]
             Each entry `observations[m]` is an integer index for modality `m`.
 
         Returns
@@ -654,7 +686,7 @@ class Agent(Module):
 
         Parameters
         ----------
-        observations: list or tuple
+        observations: List[Array] | List[int]
             Observation input in one of two formats:
 
             - Discrete observations (default): each `observations[m]` is an
@@ -665,16 +697,16 @@ class Agent(Module):
             If `preprocess_fn` is provided, it should map the raw input to
             categorical observations and takes precedence over default handling.
 
-        empirical_prior: list or tuple of Array
+        empirical_prior: List[Array] or tuple[Array]
             Empirical prior beliefs over hidden states. Depending on the inference algorithm chosen,
-            the resulting `empirical_prior` variable may be a matrix (or list of matrices)
+            the resulting `empirical_prior` variable may be a matrix (or `List[Array]`).
             of additional dimensions to encode extra conditioning variables like timepoint and policy.
 
-        past_actions: list or tuple of int, optional
+        past_actions: List[int] or tuple[int], optional
             The action input. Each entry `past_actions[f]` stores indices representing the actions
             for control factor `f`.
 
-        qs_hist: list or tuple of Array, optional
+        qs_hist: List[Array] or tuple[Array], optional
             History of posterior beliefs over hidden states.
 
         valid_steps: Array or int, optional
@@ -682,7 +714,7 @@ class Agent(Module):
             If provided, sequence inference methods (`mmp`, `vmp`) ignore padded prefix
             timesteps and transitions.
 
-        mask: list or tuple, optional
+        mask: List[Array] or tuple[Array], optional
             Mask for observations.
 
         preprocess_fn: callable, optional
@@ -699,7 +731,7 @@ class Agent(Module):
 
         Returns
         -------
-        qs: list of Array
+        qs: List[Array]
             Posterior beliefs over hidden states. Depending on the inference algorithm chosen,
             the resulting `qs` variable will have additional sub-structure to reflect whether
             beliefs are additionally conditioned on timepoint and policy.
@@ -783,12 +815,12 @@ class Agent(Module):
         ----------
         action: Array
             Action sampled at the current timestep for each control factor.
-        qs: list of Array
+        qs: List[Array]
             Posterior beliefs over hidden states for the current timestep/history.
 
         Returns
         -------
-        pred: list of Array
+        pred: List[Array]
             Predicted prior over hidden states for the next inference step.
             For sequence methods (`mmp`, `vmp`), this returns `self.D` to preserve sequence-inference semantics.
         """
@@ -812,7 +844,7 @@ class Agent(Module):
 
         Parameters
         ----------
-        qs: list of Array
+        qs: List[Array]
             Posterior beliefs over hidden states (typically output of
             `infer_states`), including the most recent timestep.
 
@@ -915,7 +947,19 @@ class Agent(Module):
         return action
     
     def decode_multi_actions(self, action: Array) -> Array:
-        """Decode flattened actions to multiple actions"""
+        """Decode flattened multi-actions back to factor-wise actions.
+
+        Parameters
+        ----------
+        action: Array
+            Flattened multi-action indices.
+
+        Returns
+        -------
+        Array
+            Array of shape `(batch_size, num_controls_multi)` containing decoded
+            actions per control factor.
+        """
         if self.action_maps is None:
             return action
 
@@ -929,7 +973,18 @@ class Agent(Module):
         return action_multi
 
     def encode_multi_actions(self, action_multi: Array) -> Array:
-        """Encode multiple actions to flattened actions"""
+        """Encode factor-wise multi-actions into flattened actions.
+
+        Parameters
+        ----------
+        action_multi: Array
+            Array of actions per control factor.
+
+        Returns
+        -------
+        Array
+            Flattened action indices with shape `(batch_size, num_controls)`.
+        """
         if self.action_maps is None:
             return action_multi
 
@@ -948,7 +1003,23 @@ class Agent(Module):
 
     def get_model_dimensions(self) -> dict[str, Any]:
         """
-        Get a dictionary of the model dimensions.
+        Collect key model dimensions in a single object.
+
+        Returns
+        -------
+        dict[str, Any]
+            Dictionary containing model shape metadata. Includes:
+
+            - `num_obs`: List[int]
+            - `num_states`: List[int]
+            - `num_controls`: List[int]
+            - `num_modalities`: int
+            - `num_factors`: int
+            - `num_policies`: int
+            - `policy_len`: int
+            - `inference_horizon`: int | None
+            - `A_dependencies`: List[List[int]]
+            - `B_dependencies`: List[List[int]]
         """
         return {
             "num_obs": self.num_obs,
