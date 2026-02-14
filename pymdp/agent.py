@@ -1,11 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-""" Agent Class implementation in Jax
-
-__author__: Conor Heins, Dimitrije Markovic, Alexander Tschantz, Daphne Demekas, Brennan Klein
-
-"""
+"""Agent API for Active Inference with the modern JAX backend."""
 import math as pymath
 import warnings
 import jax.numpy as jnp
@@ -43,28 +39,19 @@ class Agent(Module):
     Observations can be provided in two formats:
 
     1. **Discrete observations** (default, categorical_obs=False):
-       Observations are discrete indices, e.g., observation = [0, 2, 1]
-       These are internally converted to one-hot vectors.
+       Each ``observations[m]`` is an integer outcome index for modality ``m``.
+       These are converted to one-hot vectors internally.
 
     2. **Categorical observations** (categorical_obs=True):
-       Observations are probability distributions, e.g.,
-       observation = [[0.7, 0.2, 0.1], [0.0, 1.0], ...]
-       This allows encoding uncertainty in observations, useful for:
-       - Noisy sensors with known noise models
-       - Ambiguous perceptual evidence
-       - Soft evidence from preprocessing/feature extraction
-
-       Each observation must be a valid probability distribution:
-       - All elements non-negative
-       - Sums to 1.0 along the observation dimension
+       Each ``observations[m]`` is a probability vector over outcomes for
+       modality ``m``.
 
     Advanced preprocessing
     ----------------------
-    You can override the default preprocessing by passing ``preprocess_fn`` at
-    agent construction or on individual ``infer_states`` calls.
-
-    Note: If ``preprocess_fn`` is set, it takes precedence over the
-    ``categorical_obs`` flag for determining preprocessing behavior.
+    You can override default preprocessing with ``preprocess_fn`` (set on the
+    agent or per ``infer_states`` call). If provided, this function should
+    return categorical observations and takes precedence over default
+    discrete/categorical handling.
     """
 
     A: List[Array]
@@ -595,7 +582,7 @@ class Agent(Module):
 
         Parameters
         ----------
-        observations: ``list`` or ``tuple``
+        observations: list or tuple
             The observation input. Format depends on the default preprocessing:
 
             - If ``self.categorical_obs=False`` (default): Each entry ``observations[m]`` is an integer
@@ -606,7 +593,7 @@ class Agent(Module):
 
         Returns
         -------
-        o_vec: ``list`` or ``tuple``
+        o_vec: list or tuple
             Observations in distributional form (one-hot vectors or categorical distributions).
 
         Notes
@@ -632,12 +619,12 @@ class Agent(Module):
 
         Parameters
         ----------
-        observations: ``list`` or ``tuple``
+        observations: list or tuple
             Each entry ``observations[m]`` is an integer index for modality ``m``.
 
         Returns
         -------
-        o_vec: ``list``
+        o_vec: list
             One-hot categorical distributions for each modality.
         """
         return [nn.one_hot(o, self.num_obs[m]) for m, o in enumerate(observations)]
@@ -658,35 +645,35 @@ class Agent(Module):
 
         Parameters
         ----------
-        observations: ``list`` or ``tuple``
-            The observation input. Format depends on the preprocessing function used:
+        observations: list or tuple
+            Observation input in one of two formats:
 
-            - If using the default preprocessing with ``self.categorical_obs=False``:
-              Each entry ``observations[m]`` is an integer
-              index representing the discrete observation for modality ``m``.
+            - Discrete observations (default): each ``observations[m]`` is an
+              integer index for modality ``m``.
+            - Categorical observations: each ``observations[m]`` is a probability
+              vector over outcomes for modality ``m``.
 
-            - If using the default preprocessing with ``self.categorical_obs=True``:
-              Each entry ``observations[m]`` is a 1D array representing
-              a probability distribution over observations for modality ``m``. Must sum to 1.0.
+            If ``preprocess_fn`` is provided, it should map the raw input to
+            categorical observations and takes precedence over default handling.
 
-        empirical_prior: ``list`` or ``tuple`` of ``jax.numpy.ndarray``
+        empirical_prior: list or tuple of Array
             Empirical prior beliefs over hidden states. Depending on the inference algorithm chosen,
             the resulting ``empirical_prior`` variable may be a matrix (or list of matrices)
             of additional dimensions to encode extra conditioning variables like timepoint and policy.
 
-        past_actions: ``list`` or ``tuple`` of ints, optional
+        past_actions: list or tuple of int, optional
             The action input. Each entry ``past_actions[f]`` stores indices representing the actions
             for control factor ``f``.
 
-        qs_hist: ``list`` or ``tuple`` of ``jax.numpy.ndarray``, optional
+        qs_hist: list or tuple of Array, optional
             History of posterior beliefs over hidden states.
 
-        valid_steps: ``jax.numpy.ndarray`` or ``int``, optional
+        valid_steps: Array or int, optional
             Number of valid (unpadded) timesteps when using fixed-size sequence windows.
             If provided, sequence inference methods (`mmp`, `vmp`) ignore padded prefix
             timesteps and transitions.
 
-        mask: ``list`` or ``tuple``, optional
+        mask: list or tuple, optional
             Mask for observations.
 
         preprocess_fn: callable, optional
@@ -703,7 +690,7 @@ class Agent(Module):
 
         Returns
         -------
-        qs: ``list`` of ``jax.numpy.ndarray``
+        qs: list of Array
             Posterior beliefs over hidden states. Depending on the inference algorithm chosen,
             the resulting ``qs`` variable will have additional sub-structure to reflect whether
             beliefs are additionally conditioned on timepoint and policy.
@@ -785,14 +772,14 @@ class Agent(Module):
 
         Parameters
         ----------
-        action: ``jax.numpy.ndarray``
+        action: Array
             Action sampled at the current timestep for each control factor.
-        qs: ``list`` of ``jax.numpy.ndarray``
+        qs: list of Array
             Posterior beliefs over hidden states for the current timestep/history.
 
         Returns
         -------
-        pred: ``list`` of ``jax.numpy.ndarray``
+        pred: list of Array
             Predicted prior over hidden states for the next inference step.
             For sequence methods (``mmp``, ``vmp``), this returns ``self.D`` to preserve sequence-inference semantics.
         """
@@ -816,16 +803,16 @@ class Agent(Module):
 
         Parameters
         ----------
-        qs: ``list`` of ``jax.Array``
+        qs: list of Array
             Posterior beliefs over hidden states (typically output of
             ``infer_states``), including the most recent timestep.
 
         Returns
         ----------
-        q_pi: ``jax.Array``
+        q_pi: Array
             Posterior beliefs over policies with shape
             ``(batch_size, num_policies)``.
-        G: ``jax.Array``
+        G: Array
             Negative expected free energies of policies with shape
             ``(batch_size, num_policies)``.
         """
@@ -863,12 +850,12 @@ class Agent(Module):
 
         Parameters
         ----------
-        q_pi: ``jax.Array``
+        q_pi: Array
             Posterior beliefs over policies for one batch element.
 
         Returns
         ----------
-        ``jax.Array``
+        Array
             Probability vector over unique multi-actions.
         """
 
@@ -894,16 +881,16 @@ class Agent(Module):
         
         Parameters
         ----------
-        q_pi: ``jax.Array``
+        q_pi: Array
             Posterior over policies for each batch element (usually from
             ``infer_policies``).
-        rng_key: ``jax.Array`` or sequence of keys, optional
+        rng_key: Array or sequence of keys, optional
             Required for stochastic action selection. For batched agents, pass a
             key array with one key per batch element.
 
         Returns
         ----------
-        action: ``jax.Array``
+        action: Array
             Action indices per batch element and control factor.
         """
         if (rng_key is None) and (self.action_selection == "stochastic"):

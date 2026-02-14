@@ -1,6 +1,15 @@
-# pymdp Documentation (JAX-first)
+# pymdp Documentation
 
-`pymdp` is now documented with a modern JAX-first structure.
+`pymdp` is a Python package for simulating Active Inference agents in
+discrete-state Markov Decision Process environments. For background and
+motivation, see the companion JOSS paper:
+[`pymdp: A Python library for active inference in discrete state spaces`](https://joss.theoj.org/papers/10.21105/joss.04098).
+
+This documentation focuses on the modern JAX backend, which supports:
+- accelerator-friendly execution (CPU/GPU) and JIT compilation,
+- differentiable workflows via autodiff,
+- scalable batched simulations and model-fitting workflows (for example,
+  with NumPyro or pybefit).
 
 ## Start here
 - [Installation](getting-started/installation.md)

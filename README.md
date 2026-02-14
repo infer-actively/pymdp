@@ -16,8 +16,7 @@ Most of the low-level mathematical operations are [NumPy](https://github.com/num
 
 ![status](https://img.shields.io/badge/status-active-green)
 ![PyPI version](https://img.shields.io/pypi/v/inferactively-pymdp)
-[![Documentation Status](https://readthedocs.org/projects/pymdp-rtd/badge/?version=latest)](https://pymdp-rtd.readthedocs.io/en/latest/?badge=latest)
-[![Docs Build](https://img.shields.io/github/actions/workflow/status/infer-actively/pymdp/test.yaml?label=docs%20build)](https://github.com/infer-actively/pymdp/actions/workflows/test.yaml)
+[![Documentation Status](https://readthedocs.org/projects/pymdp-rtd/badge/?version=docs-rehaul)](https://pymdp-rtd.readthedocs.io/en/docs-rehaul/?badge=docs-rehaul)
 [![DOI](https://joss.theoj.org/papers/10.21105/joss.04098/status.svg)](https://doi.org/10.21105/joss.04098)
 
 
