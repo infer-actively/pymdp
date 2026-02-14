@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # pylint: disable=no-member
+"""Dirichlet-parameter learning updates for modern JAX pymdp models."""
 
 from pymdp.maths import multidimensional_outer, dirichlet_expected_value
 from jax.tree_util import tree_map
@@ -8,7 +9,28 @@ from jaxtyping import Array
 from jax import vmap, nn, lax
 
 def update_obs_likelihood_dirichlet_m(pA_m, obs_m, qs, dependencies_m, lr=1.0):
-    """JAX version of ``pymdp.learning.update_obs_likelihood_dirichlet_m``"""
+    """Update one modality's Dirichlet parameters for the observation model.
+
+    Parameters
+    ----------
+    pA_m : jax.Array
+        Current Dirichlet concentration parameters for modality ``m``.
+    obs_m : jax.Array
+        Observation sequence for modality ``m`` in categorical/distributional
+        form with leading time axis.
+    qs : list[jax.Array]
+        Posterior beliefs over hidden-state factors.
+    dependencies_m : list[int]
+        Hidden-state factors that modality ``m`` depends on.
+    lr : float, default=1.0
+        Learning-rate multiplier for concentration updates.
+
+    Returns
+    -------
+    tuple[jax.Array, jax.Array]
+        Updated concentration parameters and expected likelihood tensor for
+        modality ``m``.
+    """
     # pA_m - parameters of the dirichlet from the prior
     # pA_m.shape = (no_m x num_states[k] x num_states[j] x ... x num_states[n]) where (k, j, n) are indices of the hidden state factors that are parents of modality m
 
@@ -81,7 +103,25 @@ def update_obs_likelihood_dirichlet(pA, A, obs, qs, *, A_dependencies, categoric
     return qA, E_qA
 
 def update_state_transition_dirichlet_f(pB_f, actions_f, joint_qs_f, lr=1.0):
-    """ JAX version of ``pymdp.learning.update_state_likelihood_dirichlet_f`` """
+    """Update one factor's Dirichlet parameters for the transition model.
+
+    Parameters
+    ----------
+    pB_f : jax.Array
+        Current Dirichlet concentration parameters for hidden-state factor ``f``.
+    actions_f : jax.Array
+        One-hot action history for factor ``f`` with leading time axis.
+    joint_qs_f : jax.Array | list[jax.Array]
+        Pairwise state beliefs (for example, ``q(s_t, s_{t-1})``) used for
+        transition learning.
+    lr : float, default=1.0
+        Learning-rate multiplier for concentration updates.
+
+    Returns
+    -------
+    tuple[jax.Array, jax.Array]
+        Updated concentration parameters and expected transition tensor.
+    """
     # pB_f - parameters of the dirichlet from the prior
     # pB_f.shape = (num_states[f] x num_states[f] x num_actions[f]) where f is the index of the hidden state factor
 
@@ -104,7 +144,30 @@ def update_state_transition_dirichlet(pB, B, joint_beliefs, actions, *, num_cont
     """
     Update posterior Diriichlet parameters of the state transition likelihood model (B) given the joint beliefs over hidden states and actions.
 
-    Supports selective learning of only particular hidden state factors via the `factors_to_update` argument, which can either be "all" or a list of factor indices to update.
+    Supports selective learning of only particular hidden-state factors via
+    ``factors_to_update`` (either ``\"all\"`` or a list of indices).
+
+    Parameters
+    ----------
+    pB : list[jax.Array]
+        Dirichlet concentration parameters for transition model factors.
+    B : list[jax.Array]
+        Current expected transition tensors.
+    joint_beliefs : list[jax.Array]
+        Time-aligned joint beliefs per factor for transition learning.
+    actions : jax.Array
+        Integer action history with shape ``(batch, T-1, num_factors)``.
+    num_controls : list[int]
+        Number of control states per factor.
+    lr : float
+        Learning-rate multiplier for concentration updates.
+    factors_to_update : \"all\" | list[int], default=\"all\"
+        Which hidden-state factors should be updated.
+
+    Returns
+    -------
+    tuple[list[jax.Array], list[jax.Array]]
+        Updated concentration parameters and expected transition tensors.
     """
     nf = len(pB)
 

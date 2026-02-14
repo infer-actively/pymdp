@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=no-member
 # pylint: disable=not-an-iterable
+"""Policy construction, expected free energy, and action sampling utilities."""
 
 import itertools
 import jax.numpy as jnp
@@ -42,19 +43,17 @@ def get_marginals(q_pi, policies, num_controls):
 
     Parameters
     ----------
-    q_pi: 1D ``numpy.ndarray``
+    q_pi: 1D ``jax.Array``
         Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
-    policies: ``list`` of 2D ``numpy.ndarray``
-        ``list`` that stores each policy as a 2D array in ``policies[p_idx]``. Shape of ``policies[p_idx]`` 
-        is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
-        depth of the policy and ``num_factors`` is the number of control factors.
+    policies: ``jax.Array``
+        Policy matrix with shape ``(num_policies, policy_len, num_factors)``.
     num_controls: ``list`` of ``int``
         ``list`` of the dimensionalities of each control state factor.
     
     Returns
     ----------
-    action_marginals: ``list`` of ``jax.numpy.ndarrays``
-       List of arrays corresponding to marginal probability of each action possible action
+    action_marginals: ``list`` of ``jax.Array``
+       Marginal posterior over actions for each control factor.
     """
     num_factors = len(num_controls)    
 
@@ -71,12 +70,10 @@ def sample_action(policies, num_controls, q_pi, action_selection="deterministic"
 
     Parameters
     ----------
-    q_pi: 1D ``numpy.ndarray``
+    q_pi: 1D ``jax.Array``
         Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
-    policies: ``list`` of 2D ``numpy.ndarray``
-        ``list`` that stores each policy as a 2D array in ``policies[p_idx]``. Shape of ``policies[p_idx]`` 
-        is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
-        depth of the policy and ``num_factors`` is the number of control factors.
+    policies: ``jax.Array``
+        Policy matrix with shape ``(num_policies, policy_len, num_factors)``.
     num_controls: ``list`` of ``int``
         ``list`` of the dimensionalities of each control state factor.
     action_selection: string, default "deterministic"
@@ -85,10 +82,12 @@ def sample_action(policies, num_controls, q_pi, action_selection="deterministic"
     alpha: float, default 16.0
         Action selection precision -- the inverse temperature of the softmax that is used to scale the 
         action marginals before sampling. This is only used if ``action_selection`` argument is "stochastic"
+    rng_key: ``jax.Array`` or ``None``, optional
+        PRNG key required when ``action_selection='stochastic'``.
 
     Returns
     ----------
-    selected_policy: 1D ``numpy.ndarray``
+    selected_policy: 1D ``jax.Array``
         Vector containing the indices of the actions for each control factor
     """
 
@@ -105,6 +104,26 @@ def sample_action(policies, num_controls, q_pi, action_selection="deterministic"
     return jnp.array(selected_policy)
 
 def sample_policy(policies, q_pi, action_selection="deterministic", alpha = 16.0, rng_key=None):
+    """Select or sample a policy, then return its first-step multi-action.
+
+    Parameters
+    ----------
+    policies : ``jax.Array``
+        Policy matrix with shape ``(num_policies, policy_len, num_factors)``.
+    q_pi : ``jax.Array``
+        Posterior over policies for one batch element.
+    action_selection : {"deterministic", "stochastic"}, default="deterministic"
+        Selection mode for choosing a policy.
+    alpha : float, default=16.0
+        Precision (inverse temperature) used for stochastic sampling.
+    rng_key : ``jax.Array`` or ``None``, optional
+        PRNG key required for ``action_selection='stochastic'``.
+
+    Returns
+    -------
+    jax.Array
+        First-step action vector for all control factors.
+    """
 
     if action_selection == "deterministic":
         policy_idx = jnp.argmax(q_pi)
@@ -117,9 +136,7 @@ def sample_policy(policies, q_pi, action_selection="deterministic", alpha = 16.0
 
 def construct_policies(num_states, num_controls = None, policy_len=1, control_fac_idx=None):
     """
-    Generate a ``list`` of policies. The returned array ``policies`` is a ``list`` that stores one policy per entry.
-    A particular policy (``policies[i]``) has shape ``(num_timesteps, num_factors)`` 
-    where ``num_timesteps`` is the temporal depth of the policy and ``num_factors`` is the number of control factors.
+    Generate an exhaustive policy matrix for the specified planning horizon.
 
     Parameters
     ----------
@@ -134,10 +151,8 @@ def construct_policies(num_states, num_controls = None, policy_len=1, control_fa
 
     Returns
     ----------
-    policies: ``list`` of 2D ``numpy.ndarray``
-        ``list`` that stores each policy as a 2D array in ``policies[p_idx]``. Shape of ``policies[p_idx]`` 
-        is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
-        depth of the policy and ``num_factors`` is the number of control factors.
+    policies: ``jax.Array``
+        Policy matrix with shape ``(num_policies, policy_len, num_factors)``.
     """
 
     num_factors = len(num_states)

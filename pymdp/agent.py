@@ -26,11 +26,13 @@ class Agent(Module):
 
     The basic usage is as follows:
 
+    >>> from jax import random as jr
     >>> my_agent = Agent(A = A, B = B, C = C, <more_params>)
     >>> observation = env.step(initial_action)
-    >>> qs = my_agent.infer_states(observation)
+    >>> qs = my_agent.infer_states(observation, empirical_prior=my_agent.D)
     >>> q_pi, G = my_agent.infer_policies(qs)
-    >>> next_action = my_agent.sample_action()
+    >>> keys = jr.split(rng_key, my_agent.batch_size + 1)
+    >>> next_action = my_agent.sample_action(q_pi, rng_key=keys[1:])
     >>> next_observation = env.step(next_action)
 
     This represents one timestep of an active inference process. Wrapping this step in a loop with an ``Env()`` class that returns
@@ -812,12 +814,20 @@ class Agent(Module):
         free energy of policies, ``gamma`` is a policy precision and ``lnE`` is the (log) prior probability of policies.
         This function returns the posterior over policies as well as the negative expected free energy of each policy.
 
+        Parameters
+        ----------
+        qs: ``list`` of ``jax.Array``
+            Posterior beliefs over hidden states (typically output of
+            ``infer_states``), including the most recent timestep.
+
         Returns
         ----------
-        q_pi: 1D ``numpy.ndarray``
-            Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
-        G: 1D ``numpy.ndarray``
-            Negative expected free energies of each policy, i.e. a vector containing one negative expected free energy per policy.
+        q_pi: ``jax.Array``
+            Posterior beliefs over policies with shape
+            ``(batch_size, num_policies)``.
+        G: ``jax.Array``
+            Negative expected free energies of policies with shape
+            ``(batch_size, num_policies)``.
         """
 
         latest_belief = jtu.tree_map(lambda x: x[:, -1], qs) # only get the posterior belief held at the current timepoint
@@ -853,13 +863,13 @@ class Agent(Module):
 
         Parameters
         ----------
-        q_pi: 1D ``numpy.ndarray``
-        Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
+        q_pi: ``jax.Array``
+            Posterior beliefs over policies for one batch element.
 
         Returns
         ----------
-        multi-action: 1D ``jax.numpy.ndarray``
-            Vector containing probabilities of possible multi-actions for different factors
+        ``jax.Array``
+            Probability vector over unique multi-actions.
         """
 
         if self.sampling_mode == "marginal":
@@ -882,12 +892,19 @@ class Agent(Module):
         """
         Sample or select a discrete action from the posterior over control states.
         
+        Parameters
+        ----------
+        q_pi: ``jax.Array``
+            Posterior over policies for each batch element (usually from
+            ``infer_policies``).
+        rng_key: ``jax.Array`` or sequence of keys, optional
+            Required for stochastic action selection. For batched agents, pass a
+            key array with one key per batch element.
+
         Returns
         ----------
-        action: 1D ``jax.numpy.ndarray``
-            Vector containing the indices of the actions for each control factor
-        action_probs: 2D ``jax.numpy.ndarray``
-            Array of action probabilities
+        action: ``jax.Array``
+            Action indices per batch element and control factor.
         """
         if (rng_key is None) and (self.action_selection == "stochastic"):
             raise ValueError("Please provide a random number generator key to sample actions stochastically")

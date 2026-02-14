@@ -1,6 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # pylint: disable=no-member
+"""State inference and smoothing utilities for modern JAX-based pymdp agents.
+
+This module provides:
+- one-step posterior updates (`fpi`, `exact`, `ovf`),
+- sequence-based inference (`mmp`, `vmp`),
+- backward smoothing utilities for transition/posterior learning.
+
+All public functions operate on JAX arrays and pytrees and are designed to
+work with batched agent execution (`vmap`) and fixed-window sequence buffers.
+"""
 
 import jax.numpy as jnp
 from pymdp.algos import (
@@ -156,6 +166,49 @@ def update_posterior_states(
     inference_horizon=None,
     valid_steps=None,
 ):
+    """Infer posterior beliefs over hidden states from observations.
+
+    Parameters
+    ----------
+    A : list[jax.Array]
+        Observation likelihood tensors per modality.
+    B : list[jax.Array] | None
+        Transition model tensors per hidden-state factor. For one-step methods,
+        this can be provided unchanged. For sequence methods and non-``None``
+        ``past_actions``, transitions are conditioned per timestep.
+    obs : pytree
+        Observation sequence or single-step observation in distributional form
+        (for example, one-hot vectors per modality).
+    past_actions : jax.Array | None
+        Action history with shape ``(T-1, num_factors)`` for sequence methods.
+        Can be ``None`` when no valid history is available.
+    prior : list[jax.Array], optional
+        Prior beliefs over hidden states.
+    qs_hist : list[jax.Array], optional
+        Existing posterior history buffer. If provided, one-step updates append
+        to this history.
+    A_dependencies : list[list[int]], optional
+        Sparse modality-to-factor dependency mapping.
+    B_dependencies : list[list[int]], optional
+        Sparse transition-factor dependency mapping.
+    num_iter : int, default=16
+        Number of variational update iterations.
+    method : {"fpi", "ovf", "mmp", "vmp", "exact"}, default="fpi"
+        Inference routine to execute.
+    distr_obs : bool, default=True
+        Whether observations are already distributional.
+    inference_horizon : int | None, optional
+        Optional truncation horizon for sequence inference.
+    valid_steps : int | jax.Array | None, optional
+        Number of valid (unpadded) timesteps for fixed-window sequence inputs.
+
+    Returns
+    -------
+    list[jax.Array]
+        Posterior state beliefs, with shape semantics depending on ``method``:
+        one-step methods return/append a time axis, sequence methods return full
+        sequence posteriors.
+    """
     if method in SEQUENCE_METHODS:
         obs, past_actions = _truncate_for_horizon(obs, past_actions, inference_horizon)
 
@@ -285,20 +338,25 @@ def joint_dist_factor(
     filtered_qs: list[Array],
     actions: ArrayLike = None,
 ):
-    """
-    Compute backward-smoothed marginals and pairwise joints for single-step
-    transition conditioning.
+    """Compute smoothed marginals and pairwise joints for one factor.
 
     Parameters
     ----------
-    b:
-        Either an action-conditioned transition stack ``(T-1, K_next, K_curr)`` or the
-        raw transition tensor with action dimension ``(..., K_next, K_curr, N_actions)``.
-    filtered_qs:
-        Filtered posterior sequence with shape ``(T, batch, K)` for each factor.
-    actions:
-        Optional action sequence used to condition ``b``. When ``None``, ``b`` is
-        treated as already conditioned.
+    b : jax.Array
+        Either an action-conditioned transition sequence
+        ``(T-1, K_next, K_curr)`` or a transition tensor with action axis
+        ``(..., K_next, K_curr, n_actions)``.
+    filtered_qs : list[jax.Array]
+        Filtered posterior sequence for this factor with leading time axis.
+    actions : jax.Array | None, optional
+        Optional action sequence to select transitions from ``b``.
+
+    Returns
+    -------
+    tuple[jax.Array, jax.Array]
+        ``(smoothed_marginals, pairwise_joints)`` where:
+        - smoothed marginals have shape ``(T, K)``
+        - joints have shape ``(T-1, K_next, K_curr)``
     """
     if actions is None:
         conditioned_transitions = b
@@ -311,6 +369,23 @@ def joint_dist_factor(
 
 
 def smoothing_ovf(filtered_post, B, past_actions):
+    """Run backward smoothing for factorized online variational filtering history.
+
+    Parameters
+    ----------
+    filtered_post : list[jax.Array]
+        Filtering posteriors per factor, each with shape ``(T, K_f)`` (or
+        equivalent leading-time layout for a batch element).
+    B : list[jax.Array]
+        Transition tensors per factor.
+    past_actions : jax.Array
+        Action history with shape ``(T-1, num_factors)``.
+
+    Returns
+    -------
+    tuple[list[jax.Array], list[jax.Array]]
+        ``(marginals, joints)`` per factor.
+    """
     assert len(filtered_post) == len(B)
     nf = len(B)  # number of factors
 

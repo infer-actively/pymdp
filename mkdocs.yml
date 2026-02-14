@@ -1,0 +1,62 @@
+site_name: pymdp
+site_description: JAX-first Active Inference in discrete state spaces
+site_url: https://pymdp-rtd.readthedocs.io/en/latest/
+repo_url: https://github.com/infer-actively/pymdp
+repo_name: infer-actively/pymdp
+docs_dir: docs-mkdocs
+strict: true
+validation:
+  omitted_files: ignore
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.sections
+    - content.code.copy
+markdown_extensions:
+  - admonition
+  - attr_list
+  - footnotes
+  - toc:
+      permalink: true
+plugins:
+  - search
+  - mkdocs-jupyter:
+      execute: false
+      include_source: true
+      ignore_h1_titles: true
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: false
+            show_signature_annotations: true
+            show_root_heading: true
+            docstring_style: numpy
+            heading_level: 2
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quickstart (JAX): getting-started/quickstart-jax.md
+  - Guides:
+      - rollout() Active Inference Loop: guides/rollout-active-inference-loop.md
+  - Migration:
+      - NumPy/legacy to JAX: migration/numpy-to-jax.md
+  - Tutorials:
+      - Overview: tutorials/index.md
+      - Notebook Gallery: tutorials/notebooks/index.md
+  - API Reference:
+      - Overview: api/index.md
+      - Agent: api/agent.md
+      - Inference: api/inference.md
+      - Control: api/control.md
+      - Learning: api/learning.md
+      - Algorithms: api/algos.md
+      - Utils: api/utils.md
+      - Maths: api/maths.md
+      - Env Rollout: api/envs-rollout.md
+  - Legacy:
+      - Legacy/NumPy Archive: legacy/index.md
+  - Development:
+      - Viewing Docs Locally: development/viewing-docs.md

@@ -83,13 +83,19 @@ def factor_dot_flex(M, xs, dims: List[Tuple[int]], keep_dims: Optional[Tuple[int
 
     Parameters
     ----------
-    - `M` [numpy.ndarray] - tensor
-    - 'xs' [list of numpyr.ndarray] - list of tensors
-    - 'dims' [list of tuples] - list of dimensions of xs tensors in tensor M
-    - 'keep_dims' [tuple] - tuple of integers denoting dimesions to keep
+    M: ``jax.Array``
+        Tensor to be contracted.
+    xs: ``list[jax.Array]``
+        Factors to contract against ``M``.
+    dims: ``list[tuple[int]]``
+        Axes in ``M`` aligned to each tensor in ``xs``.
+    keep_dims: ``tuple[int]``, optional
+        Axes to retain in the output even if listed in ``dims``.
+
     Returns
     -------
-    - `Y` [1D numpy.ndarray] - the result of the dot product
+    ``jax.Array``
+        Result of the contracted dot product.
     """
     all_dims = tuple(range(M.ndim))
     matrix = [[xs[f], dims[f]] for f in range(len(xs))]

@@ -1,3 +1,10 @@
+"""Core variational-inference and exact-HMM algorithm implementations.
+
+This module contains lower-level routines used by high-level inference/control
+APIs. Public entry points include fixed-point iteration, message-passing over
+sequences, and exact single-factor scan-based HMM smoothing.
+"""
+
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from typing import NamedTuple, Tuple, List
@@ -314,9 +321,30 @@ def run_vmp(
     obs_valid_mask=None,
     transition_valid_mask=None,
 ):
-    '''
-    Run variational message passing (VMP) on a sequence of observations
-    '''
+    """Run variational message passing over a sequence window.
+
+    Parameters
+    ----------
+    A, B, obs, prior : pytree/list
+        Model tensors and sequence observations.
+    A_dependencies, B_dependencies : list[list[int]]
+        Sparse dependency maps for observation and transition models.
+    num_iter : int, default=1
+        Number of variational update iterations.
+    tau : float, default=1.0
+        Mirror-descent step size.
+    distr_obs : bool, default=True
+        Whether observations are already distributional.
+    obs_valid_mask : jax.Array | None, optional
+        Optional validity mask for padded observation windows.
+    transition_valid_mask : jax.Array | None, optional
+        Optional validity mask for transitions in padded windows.
+
+    Returns
+    -------
+    list[jax.Array]
+        Sequence posterior beliefs per hidden-state factor.
+    """
 
     qs = update_marginals(
         get_vmp_messages,
@@ -420,6 +448,15 @@ def run_mmp(
     obs_valid_mask=None,
     transition_valid_mask=None,
 ):
+    """Run marginal message passing over a sequence window.
+
+    Parameters are identical to :func:`run_vmp`.
+
+    Returns
+    -------
+    list[jax.Array]
+        Sequence posterior beliefs per hidden-state factor.
+    """
     qs = update_marginals(
         get_mmp_messages,
         obs,

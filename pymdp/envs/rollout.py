@@ -1,3 +1,10 @@
+"""Utilities for running active-inference loops against environment dynamics.
+
+The two primary public entry points are:
+- :func:`infer_and_plan` for one-step inference/planning/action selection
+- :func:`rollout` for multi-step scanned execution with optional online learning
+"""
+
 import warnings
 from functools import partial
 from typing import List
@@ -351,23 +358,41 @@ def infer_and_plan(
     learning_beliefs=None,
     valid_steps=None,
 ):
-    """
-    Perform a single inference and planning step for an agent in an environment.
+    """Run one active-inference step (state update, policy inference, action sample).
 
     Parameters
     ----------
-    agent: active inference agent
-    qs_prev: previous posterior beliefs about hidden states, retained for temporal learning/smoothing updates
-    observation: current observation from the environment
-    action_prev: optional last action taken by the agent, if None agent.D is used as empirical prior
-    rng_key: random key in cased the policy_search function needs to sample
-    policy_search: optional custom policy inference function such as sophisticated inference
-    past_actions: optional action sequence used by sequence inference methods
-    empirical_prior: optional empirical prior override
-    learning_observations: optional observations passed to learning (defaults to ``observation``)
-    learning_actions: optional action sequence passed to learning
-    learning_beliefs: optional sequence of filtering beliefs passed to learning
-    valid_steps: optional number of valid timesteps in fixed-size windows
+    agent : Agent
+        Active inference agent instance.
+    qs_prev : list[jax.Array]
+        Previous posterior beliefs over hidden states.
+    observation : list[jax.Array] | list[int]
+        Current environment observation.
+    action_prev : jax.Array | None, optional
+        Previous action. If ``None``, ``agent.D`` is used as empirical prior.
+    rng_key : jax.Array
+        PRNG key used by policy search and action sampling.
+    policy_search : callable | None, optional
+        Optional custom policy-search function. Defaults to expected-free-energy
+        policy inference.
+    past_actions : jax.Array | None, optional
+        Optional action history for sequence inference methods.
+    empirical_prior : list[jax.Array] | None, optional
+        Optional override for the empirical prior.
+    learning_observations : optional
+        Optional learning observation buffer; defaults to current observation.
+    learning_actions : optional
+        Optional learning action buffer.
+    learning_beliefs : optional
+        Optional learning belief buffer for smoothing-based updates.
+    valid_steps : int | jax.Array | None, optional
+        Number of valid timesteps in padded fixed windows.
+
+    Returns
+    -------
+    tuple
+        ``(updated_agent, action, qs, info)`` where ``info`` contains policy
+        posterior and additional policy-search diagnostics.
     """
     if policy_search is None:
         policy_search = default_policy_search
@@ -426,27 +451,31 @@ def rollout(
     policy_search=None,
     env_params=None,
 ):
-    """
-    Rollout an agent in an environment for a number of timesteps.
+    """Roll out an active-inference agent/environment loop for ``num_timesteps``.
 
     Parameters
     ----------
-    agent: active inference agent
-    env: environment that can step forward and return observations
-    num_timesteps: how many timesteps to simulate
-    rng_key: random key for sampling
-    initial_carry: optional dict to overwrite parts of the auto-constructed carry (e.g., just "env_state" and "observation")
-    policy_search: optional custom policy inference function such as sophisticated inference
-    env_params: optional pytree of environment parameters (assume batched along first dimension and matches batch size of `agent`)
+    agent : Agent
+        Active inference agent.
+    env : Env
+        Environment implementing ``reset`` and ``step``.
+    num_timesteps : int
+        Number of timesteps to simulate.
+    rng_key : jax.Array
+        Root PRNG key; internally split per-step and per-batch.
+    initial_carry : dict | None, optional
+        Optional carry overrides for warm-starting from existing state.
+    policy_search : callable | None, optional
+        Optional custom policy-search routine.
+    env_params : pytree | None, optional
+        Optional batched environment parameters.
 
     Returns
     ----------
-    last: ``dict``
-        dictionary from the last timestep about the rollout, i.e., the final action, observation, beliefs, etc.
-    info: ``dict``
-        dictionary containing information about the rollout, i.e. executed actions, observations, beliefs, etc.
-    env: ``Env``
-        environment state after the rollout
+    last : dict
+        Final carry state after the final timestep.
+    info : dict
+        Time-indexed rollout traces (actions, observations, beliefs, etc.).
     """
 
     # get the batch_size of the agent
