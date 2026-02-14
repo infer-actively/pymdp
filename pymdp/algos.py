@@ -357,27 +357,13 @@ def run_vmp(
 ) -> list[Array]:
     """Run variational message passing over a sequence window.
 
-    Parameters
-    ----------
-    A, B, obs, prior : pytree/list
-        Model tensors and sequence observations.
-    A_dependencies, B_dependencies : list[list[int]]
-        Sparse dependency maps for observation and transition models.
-    num_iter : int, default=1
-        Number of variational update iterations.
-    tau : float, default=1.0
-        Mirror-descent step size.
-    distr_obs : bool, default=True
-        Whether observations are already distributional.
-    obs_valid_mask : Array | None, optional
-        Optional validity mask for padded observation windows.
-    transition_valid_mask : Array | None, optional
-        Optional validity mask for transitions in padded windows.
+    Parameters are identical to :func:`run_mmp`.
 
     Returns
     -------
     list[Array]
-        Sequence posterior beliefs per hidden-state factor.
+        Sequence posterior beliefs per hidden-state factor (same structure as
+        :func:`run_mmp`).
     """
 
     qs = update_marginals(
@@ -491,11 +477,34 @@ def run_mmp(
 ) -> list[Array]:
     """Run marginal message passing over a sequence window.
 
-    Parameters are identical to :func:`run_vmp`.
+    Parameters
+    ----------
+    A : List[Array]
+        Model likelihood tensors.
+    B : List[Array] | None
+        Transition tensors (or `None` for static-state models).
+    obs : List[Array]
+        Observation sequence per modality.
+    prior : List[Array]
+        Sequence prior over hidden states.
+    A_dependencies : List[List[int]]
+        Sparse observation dependencies per modality.
+    B_dependencies : List[List[int]]
+        Sparse transition dependencies per factor.
+    num_iter : int, default=1
+        Number of variational update iterations.
+    tau : float, default=1.0
+        Mirror-descent step size.
+    distr_obs : bool, default=True
+        Whether observations are already distributional.
+    obs_valid_mask : Array | None, optional
+        Optional validity mask for padded observation windows.
+    transition_valid_mask : Array | None, optional
+        Optional validity mask for transitions in padded windows.
 
     Returns
     -------
-    list[Array]
+    List[Array]
         Sequence posterior beliefs per hidden-state factor.
     """
     qs = update_marginals(
