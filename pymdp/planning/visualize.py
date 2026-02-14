@@ -1,6 +1,7 @@
 
 
 from types import NoneType
+from typing import Any, Callable
 import numpy as np
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -18,7 +19,7 @@ from IPython.display import display, HTML
 
 # default function to convert actions to string representation
 # can be overridden by passing a custom function to the `plot_tree` function
-def action_to_string(action, model=None):
+def action_to_string(action: Any, model: Any = None) -> str:
     if model is None:
         return str(action)
     
@@ -46,7 +47,7 @@ def action_to_string(action, model=None):
     return ", ".join(action_parts)
 
 
-def observation_to_string(observation, model=None):
+def observation_to_string(observation: Any, model: Any = None) -> str:
     if model is None:
         return str(observation[0])
     
@@ -61,7 +62,7 @@ def observation_to_string(observation, model=None):
     return obs
 
 
-def formatting_jax(value, format_str=".2f"):
+def formatting_jax(value: Any, format_str: str = ".2f") -> str:
     try:
         if hasattr(value, "shape"):
             if value.shape == ():
@@ -83,19 +84,19 @@ def formatting_jax(value, format_str=".2f"):
 
 
 def plot_plan_tree(
-    tree,
-    model=None,
-    root_node=None,
-    max_depth=4,
-    min_prob=0.2,
-    observation_description=observation_to_string,
-    action_description=action_to_string,
-    figsize=(8,7),
-    font_size=10,
-    node_size=1500,
-    layout="dot",
-    ax=None,
-):
+    tree: Any,
+    model: Any = None,
+    root_node: Any = None,
+    max_depth: int = 4,
+    min_prob: float = 0.2,
+    observation_description: Callable = observation_to_string,
+    action_description: Callable = action_to_string,
+    figsize: tuple[int, int] = (8, 7),
+    font_size: int = 10,
+    node_size: int = 1500,
+    layout: str = "dot",
+    ax: Any = None,
+) -> tuple[nx.DiGraph, Any]:
 
     G = nx.DiGraph()
     node_labels = {}
@@ -252,21 +253,21 @@ def plot_plan_tree(
 
 
 def visualize_plan_tree(
-    info,
-    time_idx=0,
-    agent_idx=0,
-    root_idx=None,
-    model=None,
-    observation_description=observation_to_string,
-    action_description=action_to_string,
-    max_depth=4,
-    min_prob=0.2,
-    layout="dot",
-    node_size=1500,
-    font_size=10,
-    figsize=(8,7),
-    ax=None,
-):
+    info: dict[str, Any],
+    time_idx: int | None = 0,
+    agent_idx: int = 0,
+    root_idx: int | None = None,
+    model: Any = None,
+    observation_description: Callable = observation_to_string,
+    action_description: Callable = action_to_string,
+    max_depth: int = 4,
+    min_prob: float = 0.2,
+    layout: str = "dot",
+    node_size: int = 1500,
+    font_size: int = 10,
+    figsize: tuple[int, int] = (8, 7),
+    ax: Any = None,
+) -> None:
     """
     Wrapper function for plotting plan trees.
     
@@ -335,7 +336,7 @@ def visualize_plan_tree(
     plt.show()
 
 
-def visualize_beliefs(info, agent_idx=0, model=None):
+def visualize_beliefs(info: dict[str, Any], agent_idx: int = 0, model: Any = None) -> None:
     """Plot the results of the agent's beliefs and actions."""
     num_plots = len(info["qs"])
     fig, axes = plt.subplots(num_plots, 1, figsize=(6, 2*num_plots), sharex=True)
@@ -370,13 +371,13 @@ def visualize_beliefs(info, agent_idx=0, model=None):
 
 
 def visualize_env(
-    info,
-    model=None,
-    observation_description=observation_to_string,
-    action_description=action_to_string,
-    save_as_gif=False,
-    gif_filename="rollout.gif",
-):
+    info: dict[str, Any],
+    model: Any = None,
+    observation_description: Callable = observation_to_string,
+    action_description: Callable = action_to_string,
+    save_as_gif: bool = False,
+    gif_filename: str = "rollout.gif",
+) -> None:
     try:
         batch_size = info["env"].num_agents
     except (AttributeError, KeyError):
@@ -389,7 +390,7 @@ def visualize_env(
     fig_height = base_height + (batch_size - 1) * height_per_agent
     fig, ax = plt.subplots(figsize=(4, fig_height))
     
-    def update(time_idx):
+    def update(time_idx: int) -> None:
         ax.clear()
         ax.axis("off")
         ax.set_aspect("equal")

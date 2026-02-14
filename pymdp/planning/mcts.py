@@ -1,4 +1,5 @@
 from functools import partial
+from typing import Any, Callable
 from jax import vmap, nn, random as jr, tree_util as jtu, lax
 from pymdp.control import (
     compute_expected_state,
@@ -12,10 +13,12 @@ import jax.numpy as jnp
 
 
 def mcts_policy_search(
-    search_algo=mctx.gumbel_muzero_policy, max_depth=6, num_simulations=4096
-):
+    search_algo: Callable = mctx.gumbel_muzero_policy,
+    max_depth: int = 6,
+    num_simulations: int = 4096,
+) -> Callable[[Any, list[jnp.ndarray], jnp.ndarray], tuple[jnp.ndarray, Any]]:
 
-    def si_policy(agent, beliefs, rng_key):
+    def si_policy(agent: Any, beliefs: list[jnp.ndarray], rng_key: jnp.ndarray) -> tuple[jnp.ndarray, Any]:
 
         # remove time dimension
         embedding = jtu.tree_map(lambda x: x[:, 0], beliefs)
@@ -42,7 +45,17 @@ def mcts_policy_search(
 
 
 @partial(vmap, in_axes=(0, 0, 0, None, 0, None, 0, None, None))
-def compute_neg_efe(qs, action, A, A_dependencies, B, B_dependencies, C, use_states_info_gain=True, use_utility=True):
+def compute_neg_efe(
+    qs: list[jnp.ndarray],
+    action: jnp.ndarray,
+    A: list[jnp.ndarray],
+    A_dependencies: list[list[int]],
+    B: list[jnp.ndarray],
+    B_dependencies: list[list[int]],
+    C: list[jnp.ndarray],
+    use_states_info_gain: bool = True,
+    use_utility: bool = True,
+) -> tuple[jnp.ndarray, list[jnp.ndarray], list[jnp.ndarray]]:
     qs_next_pi = compute_expected_state(
         qs, B, action, B_dependencies=B_dependencies
     )
@@ -63,15 +76,17 @@ def compute_neg_efe(qs, action, A, A_dependencies, B, B_dependencies, C, use_sta
 
 
 @partial(vmap, in_axes=(0, 0, None))
-def get_prob_single_modality(o_m, po_m, distr_obs):
+def get_prob_single_modality(o_m: jnp.ndarray, po_m: jnp.ndarray, distr_obs: bool) -> jnp.ndarray:
     """Compute observation likelihood for a single modality (observation and likelihood)"""
     return jnp.inner(o_m, po_m) if distr_obs else po_m[o_m]
 
 
-def make_aif_recurrent_fn():
+def make_aif_recurrent_fn() -> Callable[[Any, jnp.ndarray, jnp.ndarray, Any], tuple[mctx.RecurrentFnOutput, Any]]:
     """Returns a recurrent_fn for an AIF agent."""
 
-    def recurrent_fn(agent, rng_key, action, embedding):
+    def recurrent_fn(
+        agent: Any, rng_key: jnp.ndarray, action: jnp.ndarray, embedding: Any
+    ) -> tuple[mctx.RecurrentFnOutput, Any]:
         multi_action = agent.policies[action, 0]
         qs = embedding
         neg_efe, qs_next_pi, qo_next_pi = compute_neg_efe(qs,
@@ -117,11 +132,17 @@ def make_aif_recurrent_fn():
 
 
 # custom rollout function for mcts
-def rollout(policy_search, agent, env, num_timesteps, rng_key):
+def rollout(
+    policy_search: Callable,
+    agent: Any,
+    env: Any,
+    num_timesteps: int,
+    rng_key: jnp.ndarray,
+) -> tuple[dict[str, Any], dict[str, Any], Any]:
     # get the batch_size of the agent
     batch_size = agent.batch_size
 
-    def step_fn(carry, x):
+    def step_fn(carry: dict[str, Any], x: jnp.ndarray) -> tuple[dict[str, Any], dict[str, Any]]:
         observation_t = carry["observation_t"]
         prior = carry["empirical_prior"]
         env = carry["env"]

@@ -1,11 +1,11 @@
 import numpy as np
 from pymdp.utils import norm_dist
-from typing import Optional
+from typing import Any, Iterator, Optional
 
 
 class Distribution:
 
-    def __init__(self, event: dict, batch: dict = {}, data: np.ndarray = None):
+    def __init__(self, event: dict, batch: dict = {}, data: np.ndarray | None = None) -> None:
         self.event = event
         self.batch = batch
 
@@ -29,31 +29,33 @@ class Distribution:
             self._data = np.zeros(shape)
 
     @property
-    def data(self):
+    def data(self) -> np.ndarray:
         return self._data
 
     @data.setter
-    def data(self, value):
+    def data(self, value: np.ndarray) -> None:
         if hasattr(self, '_data') and self._data is not None:
             if self._data.shape != value.shape:
                 raise ValueError(f"When setting the tensor directly, the new shape {value.shape} must match the existing tensor shape {self._data.shape}")
         self._data = value
 
-    def get(self, batch=None, event=None):
+    def get(self, batch: dict | None = None, event: dict | None = None) -> np.ndarray:
         event_slices = self._get_slices(event, self.event_indices, self.event)
         batch_slices = self._get_slices(batch, self.batch_indices, self.batch)
 
         slices = event_slices + batch_slices
         return self._data[tuple(slices)]
 
-    def set(self, batch=None, event=None, values=None):
+    def set(
+        self, batch: dict | None = None, event: dict | None = None, values: np.ndarray | float | int | None = None
+    ) -> None:
         event_slices = self._get_slices(event, self.event_indices, self.event)
         batch_slices = self._get_slices(batch, self.batch_indices, self.batch)
 
         slices = event_slices + batch_slices
         self._data[tuple(slices)] = values
 
-    def _get_slices(self, keys, indices, full_indices):
+    def _get_slices(self, keys: dict | None, indices: dict, full_indices: dict) -> list[Any]:
         slices = []
         if keys is None:
             return [slice(None)] * len(full_indices)
@@ -69,13 +71,13 @@ class Distribution:
                 slices.append(slice(None))
         return slices
 
-    def _get_index(self, key, index_map):
+    def _get_index(self, key: Any, index_map: dict) -> int:
         if isinstance(key, int):
             return key
         else:
             return index_map[key]
 
-    def _get_index_from_axis(self, axis, element):
+    def _get_index_from_axis(self, axis: int, element: Any) -> int | slice:
         if isinstance(element, slice):
             return slice(None)
         if axis < len(self.event):
@@ -86,7 +88,7 @@ class Distribution:
             index_map = self.batch_indices[key]
         return self._get_index(element, index_map)
 
-    def __getitem__(self, indices):
+    def __getitem__(self, indices: Any) -> np.ndarray:
         if not isinstance(indices, tuple):
             indices = (indices,)
         index_list = [
@@ -94,7 +96,7 @@ class Distribution:
         ]
         return self._data[tuple(index_list)]
 
-    def __setitem__(self, indices, value):
+    def __setitem__(self, indices: Any, value: Any) -> None:
         if not isinstance(indices, tuple):
             indices = (indices,)
         index_list = [
@@ -102,10 +104,10 @@ class Distribution:
         ]
         self._data[tuple(index_list)] = value
 
-    def normalize(self):
+    def normalize(self) -> None:
         self.data = norm_dist(self.data)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Distribution({self.event}, {self.batch})\n {self.data}"
 
 
@@ -115,14 +117,14 @@ class DistributionIndexer(dict):
     Acts as a list otherwise ...
     """
 
-    def __init__(self, distributions: list[Distribution]):
+    def __init__(self, distributions: list[Distribution]) -> None:
         super().__init__()
         self.distributions = distributions
         for d in distributions:
             for key in d.event:
                 self[key] = d
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str | int) -> Distribution:
         if isinstance(key, int):
             return self.distributions[key]
         else:
@@ -132,7 +134,7 @@ class DistributionIndexer(dict):
                 )
             return super().__getitem__(key)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Distribution]:
         return iter(self.distributions)
 
 
@@ -147,7 +149,7 @@ class Model(dict):
         preferred_states: list[Distribution],
         B_action_dependencies: Optional[list[list[int]]]=None,
         num_controls: Optional[list[int]]=None,
-    ):
+    ) -> None:
         super().__init__()
         super().__setitem__("A", likelihoods)
         super().__setitem__("B", transitions)
@@ -157,7 +159,7 @@ class Model(dict):
         super().__setitem__("B_action_dependencies", B_action_dependencies)
         super().__setitem__("num_controls", num_controls)
 
-    def __getattr__(self, key):
+    def __getattr__(self, key: str) -> Any:
         if key in ["A", "B", "C", "D", "H"]:
             return DistributionIndexer(self[key])
         elif key == "B_action_dependencies":
@@ -167,7 +169,7 @@ class Model(dict):
         raise AttributeError("Model only supports attributes A,B,C,D,H, B_action_dependencies, and num_controls")
 
 
-def compile_model(config):
+def compile_model(config: dict[str, Any]) -> Model:
     """Compile a model from a config.
 
     Takes a model description dictionary and builds the corresponding
@@ -310,7 +312,9 @@ def compile_model(config):
     )
 
 
-def get_dependencies(likelihoods, transitions):
+def get_dependencies(
+    likelihoods: list[Distribution], transitions: list[Distribution]
+) -> tuple[list[list[int]], list[list[int]]]:
     likelihood_dependencies = dict()
     transition_dependencies = dict()
     states = [list(trans.event.keys())[0] for trans in transitions]

@@ -1,14 +1,38 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # pylint: disable=no-member
+"""Dirichlet-parameter learning updates for modern JAX pymdp models."""
 
 from pymdp.maths import multidimensional_outer, dirichlet_expected_value
 from jax.tree_util import tree_map
 from jaxtyping import Array
 from jax import vmap, nn, lax
 
-def update_obs_likelihood_dirichlet_m(pA_m, obs_m, qs, dependencies_m, lr=1.0):
-    """JAX version of ``pymdp.learning.update_obs_likelihood_dirichlet_m``"""
+def update_obs_likelihood_dirichlet_m(
+    pA_m: Array, obs_m: Array, qs: list[Array], dependencies_m: list[int], lr: float = 1.0
+) -> tuple[Array, Array]:
+    """Update one modality's Dirichlet parameters for the observation model.
+
+    Parameters
+    ----------
+    pA_m : Array
+        Current Dirichlet concentration parameters for modality `m`.
+    obs_m : Array
+        Observation sequence for modality `m` in categorical/distributional
+        form with leading time axis.
+    qs : list[Array]
+        Posterior beliefs over hidden-state factors.
+    dependencies_m : list[int]
+        Hidden-state factors that modality `m` depends on.
+    lr : float, default=1.0
+        Learning-rate multiplier for concentration updates.
+
+    Returns
+    -------
+    tuple[Array, Array]
+        Updated concentration parameters and expected likelihood tensor for
+        modality `m`.
+    """
     # pA_m - parameters of the dirichlet from the prior
     # pA_m.shape = (no_m x num_states[k] x num_states[j] x ... x num_states[n]) where (k, j, n) are indices of the hidden state factors that are parents of modality m
 
@@ -30,42 +54,54 @@ def update_obs_likelihood_dirichlet_m(pA_m, obs_m, qs, dependencies_m, lr=1.0):
 
     return new_pA_m, A_m
     
-def update_obs_likelihood_dirichlet(pA, A, obs, qs, *, A_dependencies, categorical_obs, num_obs, lr):
+def update_obs_likelihood_dirichlet(
+    pA: list[Array | None],
+    A: list[Array],
+    obs: list[Array],
+    qs: list[Array],
+    *,
+    A_dependencies: list[list[int]],
+    categorical_obs: bool,
+    num_obs: list[int],
+    lr: float,
+) -> tuple[list[Array | None], list[Array]]:
     """
     Update Dirichlet parameters of the observation likelihood (A matrix) given observations and beliefs.
 
-    JAX version of ``pymdp.learning.update_obs_likelihood_dirichlet``
+    JAX version of `pymdp.learning.update_obs_likelihood_dirichlet`
 
     Parameters
     ----------
-    pA : list of arrays
+    pA : List[Array]
         Prior Dirichlet parameters for A matrices
-    A : list of arrays
+    A : List[Array]
         Current A matrices (observation likelihoods)
-    obs : list
+    obs : List[Array]
         Observations (either discrete indices or categorical distributions depending on categorical_obs)
-    qs : list of arrays
+    qs : List[Array]
         Posterior beliefs over hidden states
-    A_dependencies : list of lists
+    A_dependencies : List[List[int]]
         Dependencies between observation modalities and state factors
     categorical_obs : bool
         If True, observations are probability distributions; if False, discrete indices
-    num_obs : list of ints
+    num_obs : List[int]
         Number of observations for each modality
     lr : float
         Learning rate
 
     Returns
     -------
-    qA : list of arrays
+    qA : List[Array]
         Updated Dirichlet parameters
-    E_qA : list of arrays
+    E_qA : List[Array]
         Expected values (updated A matrices)
     """
 
     obs_m = lambda o, dim: nn.one_hot(o, dim) if not categorical_obs else o
-    update_A_fn = lambda pA_m, o_m, dim, dependencies_m: None if pA_m is None else update_obs_likelihood_dirichlet_m(
-        pA_m, obs_m(o_m, dim), qs, dependencies_m, lr=lr
+    update_A_fn = (
+        lambda pA_m, o_m, dim, dependencies_m: None
+        if pA_m is None
+        else update_obs_likelihood_dirichlet_m(pA_m, obs_m(o_m, dim), qs, dependencies_m, lr=lr)
     )
     result = tree_map(update_A_fn, pA, obs, num_obs, A_dependencies, is_leaf=lambda x: x is None)
     qA = []
@@ -80,8 +116,28 @@ def update_obs_likelihood_dirichlet(pA, A, obs, qs, *, A_dependencies, categoric
 
     return qA, E_qA
 
-def update_state_transition_dirichlet_f(pB_f, actions_f, joint_qs_f, lr=1.0):
-    """ JAX version of ``pymdp.learning.update_state_likelihood_dirichlet_f`` """
+def update_state_transition_dirichlet_f(
+    pB_f: Array, actions_f: Array, joint_qs_f: Array | list[Array], lr: float = 1.0
+) -> tuple[Array, Array]:
+    """Update one factor's Dirichlet parameters for the transition model.
+
+    Parameters
+    ----------
+    pB_f : Array
+        Current Dirichlet concentration parameters for hidden-state factor `f`.
+    actions_f : Array
+        One-hot action history for factor `f` with leading time axis.
+    joint_qs_f : Array | list[Array]
+        Pairwise state beliefs (for example, `q(s_t, s_{t-1})`) used for
+        transition learning.
+    lr : float, default=1.0
+        Learning-rate multiplier for concentration updates.
+
+    Returns
+    -------
+    tuple[Array, Array]
+        Updated concentration parameters and expected transition tensor.
+    """
     # pB_f - parameters of the dirichlet from the prior
     # pB_f.shape = (num_states[f] x num_states[f] x num_actions[f]) where f is the index of the hidden state factor
 
@@ -100,17 +156,49 @@ def update_state_transition_dirichlet_f(pB_f, actions_f, joint_qs_f, lr=1.0):
 
     return qB_f, dirichlet_expected_value(qB_f)
 
-def update_state_transition_dirichlet(pB, B, joint_beliefs, actions, *, num_controls, lr, factors_to_update='all'):
+def update_state_transition_dirichlet(
+    pB: list[Array],
+    B: list[Array],
+    joint_beliefs: list[Array],
+    actions: Array,
+    *,
+    num_controls: list[int],
+    lr: float,
+    factors_to_update: str | list[int] = 'all',
+) -> tuple[list[Array], list[Array]]:
     """
     Update posterior Diriichlet parameters of the state transition likelihood model (B) given the joint beliefs over hidden states and actions.
 
-    Supports selective learning of only particular hidden state factors via the `factors_to_update` argument, which can either be "all" or a list of factor indices to update.
+    Supports selective learning of only particular hidden-state factors via
+    `factors_to_update` (either `"all"` or a `List[int]`).
+
+    Parameters
+    ----------
+    pB : list[Array]
+        Dirichlet concentration parameters for transition model factors.
+    B : list[Array]
+        Current expected transition tensors.
+    joint_beliefs : list[Array]
+        Time-aligned joint beliefs per factor for transition learning.
+    actions : Array
+        Integer action history with shape `(batch, T-1, num_factors)`.
+    num_controls : list[int]
+        Number of control states per factor.
+    lr : float
+        Learning-rate multiplier for concentration updates.
+    factors_to_update : "all" | List[int], default="all"
+        Which hidden-state factors should be updated.
+
+    Returns
+    -------
+    tuple[List[Array], List[Array]]
+        Updated concentration parameters and expected transition tensors.
     """
     nf = len(pB)
 
     actions_onehot_fn = lambda f, dim: nn.one_hot(actions[..., f], dim, axis=-1)
 
-    def update_B_f_fn(pB_f, joint_qs_f, f, na):
+    def update_B_f_fn(pB_f: Array, joint_qs_f: Array, f: int, na: int) -> tuple[Array, Array]:
        """ 
        Conditionally-update the Dirichlet posterior over a given single factor's B parameters
        Updating is conditional upon the value of `f`: if the factor index (f) is greater than -1, then use the value of f as the factor index
@@ -154,21 +242,21 @@ def update_state_transition_dirichlet(pB, B, joint_beliefs, actions, *, num_cont
 
 #     Parameters
 #     -----------
-#     pD: ``numpy.ndarray`` of dtype object
-#         Prior Dirichlet parameters over initial hidden state prior (same shape as ``qs``)
-#     qs: 1D ``numpy.ndarray`` or ``numpy.ndarray`` of dtype object
+#     pD: `numpy.ndarray` of dtype object
+#         Prior Dirichlet parameters over initial hidden state prior (same shape as `qs`)
+#     qs: 1D `numpy.ndarray` or `numpy.ndarray` of dtype object
 #         Marginal posterior beliefs over hidden states at current timepoint
-#     lr: float, default ``1.0``
+#     lr: float, default `1.0`
 #         Learning rate, scale of the Dirichlet pseudo-count update.
-#     factors: ``list``, default "all"
-#         Indices (ranging from 0 to ``n_factors - 1``) of the hidden state factors to include 
-#         in learning. Defaults to "all", meaning that factor-specific sub-vectors of ``pD``
+#     factors: `list`, default "all"
+#         Indices (ranging from 0 to `n_factors - 1`) of the hidden state factors to include 
+#         in learning. Defaults to "all", meaning that factor-specific sub-vectors of `pD`
 #         are all updated using the corresponding hidden state distributions.
     
 #     Returns
 #     -----------
-#     qD: ``numpy.ndarray`` of dtype object
-#         Posterior Dirichlet parameters over initial hidden state prior (same shape as ``qs``), after having updated it with state beliefs.
+#     qD: `numpy.ndarray` of dtype object
+#         Posterior Dirichlet parameters over initial hidden state prior (same shape as `qs`), after having updated it with state beliefs.
 #     """
 
 #     num_factors = len(pD)
@@ -190,19 +278,19 @@ def update_state_transition_dirichlet(pB, B, joint_beliefs, actions, *, num_cont
 
 #     Parameters
 #     -----------
-#     prior: 1D ``numpy.ndarray`` or ``numpy.ndarray`` of dtype object
-#         The vector(s) containing the priors over hidden states of a generative model, e.g. the prior over hidden states (``D`` vector). 
-#     levels_to_remove: ``list`` of ``int``, ``list`` of ``list``
-#         A ``list`` of the levels (indices of the support) to remove. If the prior in question has multiple hidden state factors / multiple observation modalities, 
-#         then this will be a ``list`` of ``list``, where each sub-list within ``levels_to_remove`` will contain the levels to prune for a particular hidden state factor or modality 
-#     dirichlet: ``Bool``, default ``False``
+#     prior: 1D `numpy.ndarray` or `numpy.ndarray` of dtype object
+#         The vector(s) containing the priors over hidden states of a generative model, e.g. the prior over hidden states (`D` vector). 
+#     levels_to_remove: `list` of `int`, `list` of `list`
+#         A `list` of the levels (indices of the support) to remove. If the prior in question has multiple hidden state factors / multiple observation modalities, 
+#         then this will be a `list` of `list`, where each sub-list within `levels_to_remove` will contain the levels to prune for a particular hidden state factor or modality 
+#     dirichlet: `Bool`, default `False`
 #         A Boolean flag indicating whether the input vector(s) is/are a Dirichlet distribution, and therefore should not be normalized at the end. 
 #         @TODO: Instead, the dirichlet parameters from the pruned levels should somehow be re-distributed among the remaining levels
 
 #     Returns
 #     -----------
-#     reduced_prior: 1D ``numpy.ndarray`` or ``numpy.ndarray`` of dtype object
-#         The prior vector(s), after pruning, that lacks the hidden state or modality levels indexed by ``levels_to_remove``
+#     reduced_prior: 1D `numpy.ndarray` or `numpy.ndarray` of dtype object
+#         The prior vector(s), after pruning, that lacks the hidden state or modality levels indexed by `levels_to_remove`
 #     """
 
 #     if utils.is_obj_array(prior): # in case of multiple hidden state factors
@@ -252,24 +340,24 @@ def update_state_transition_dirichlet(pB, B, joint_beliefs, actions, *, num_cont
 #     :meta private:
 #     Parameters
 #     -----------
-#     A: ``numpy.ndarray`` with ``ndim >= 2``, or ``numpy.ndarray`` of dtype object
-#         Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element ``A[m]`` of
-#         stores an ``numpy.ndarray`` multidimensional array for observation modality ``m``, whose entries ``A[m][i, j, k, ...]`` store 
-#         the probability of observation level ``i`` given hidden state levels ``j, k, ...``
-#     obs_levels_to_prune: ``list`` of int or ``list`` of ``list``: 
-#         A ``list`` of the observation levels to remove. If the likelihood in question has multiple observation modalities, 
-#         then this will be a ``list`` of ``list``, where each sub-list within ``obs_levels_to_prune`` will contain the observation levels 
+#     A: `numpy.ndarray` with `ndim >= 2`, or `numpy.ndarray` of dtype object
+#         Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element `A[m]` of
+#         stores an `numpy.ndarray` multidimensional array for observation modality `m`, whose entries `A[m][i, j, k, ...]` store 
+#         the probability of observation level `i` given hidden state levels `j, k, ...`
+#     obs_levels_to_prune: `list` of int or `list` of `list`: 
+#         A `list` of the observation levels to remove. If the likelihood in question has multiple observation modalities, 
+#         then this will be a `list` of `list`, where each sub-list within `obs_levels_to_prune` will contain the observation levels 
 #         to remove for a particular observation modality 
-#     state_levels_to_prune: ``list`` of ``int``
-#         A ``list`` of the hidden state levels to remove (this will be the same across modalities)
-#     dirichlet: ``Bool``, default ``False``
+#     state_levels_to_prune: `list` of `int`
+#         A `list` of the hidden state levels to remove (this will be the same across modalities)
+#     dirichlet: `Bool`, default `False`
 #         A Boolean flag indicating whether the input array(s) is/are a Dirichlet distribution, and therefore should not be normalized at the end. 
 #         @TODO: Instead, the dirichlet parameters from the pruned columns should somehow be re-distributed among the remaining columns
 
 #     Returns
 #     -----------
-#     reduced_A: ``numpy.ndarray`` with ndim >= 2, or ``numpy.ndarray ``of dtype object
-#         The observation model, after pruning, which lacks the observation or hidden state levels given by the arguments ``obs_levels_to_prune`` and ``state_levels_to_prune``
+#     reduced_A: `numpy.ndarray` with ndim >= 2, or `numpy.ndarray `of dtype object
+#         The observation model, after pruning, which lacks the observation or hidden state levels given by the arguments `obs_levels_to_prune` and `state_levels_to_prune`
 #     """
 
 #     columns_to_keep_list = []
@@ -323,26 +411,26 @@ def update_state_transition_dirichlet(pB, B, joint_beliefs, actions, *, num_cont
 
 #     Parameters
 #     -----------
-#     B: ``numpy.ndarray`` of ``ndim == 3`` or ``numpy.ndarray`` of dtype object
+#     B: `numpy.ndarray` of `ndim == 3` or `numpy.ndarray` of dtype object
 #         Dynamics likelihood mapping or 'transition model', mapping from hidden states at `t` to hidden states at `t+1`, given some control state `u`.
 #         Each element B[f] of this object array stores a 3-D tensor for hidden state factor `f`, whose entries `B[f][s, v, u] store the probability
 #         of hidden state level `s` at the current time, given hidden state level `v` and action `u` at the previous time.
-#     state_levels_to_prune: ``list`` of ``int`` or ``list`` of ``list`` 
-#         A ``list`` of the state levels to remove. If the likelihood in question has multiple hidden state factors, 
-#         then this will be a ``list`` of ``list``, where each sub-list within ``state_levels_to_prune`` will contain the state levels 
+#     state_levels_to_prune: `list` of `int` or `list` of `list` 
+#         A `list` of the state levels to remove. If the likelihood in question has multiple hidden state factors, 
+#         then this will be a `list` of `list`, where each sub-list within `state_levels_to_prune` will contain the state levels 
 #         to remove for a particular hidden state factor 
-#     action_levels_to_prune: ``list`` of ``int`` or ``list`` of ``list`` 
-#         A ``list`` of the control state or action levels to remove. If the likelihood in question has multiple control state factors, 
-#         then this will be a ``list`` of ``list``, where each sub-list within ``action_levels_to_prune`` will contain the control state levels 
+#     action_levels_to_prune: `list` of `int` or `list` of `list` 
+#         A `list` of the control state or action levels to remove. If the likelihood in question has multiple control state factors, 
+#         then this will be a `list` of `list`, where each sub-list within `action_levels_to_prune` will contain the control state levels 
 #         to remove for a particular control state factor 
-#     dirichlet: ``Bool``, default ``False``
+#     dirichlet: `Bool`, default `False`
 #         A Boolean flag indicating whether the input array(s) is/are a Dirichlet distribution, and therefore should not be normalized at the end. 
 #         @TODO: Instead, the dirichlet parameters from the pruned rows/columns should somehow be re-distributed among the remaining rows/columns
 
 #     Returns
 #     -----------
-#     reduced_B: ``numpy.ndarray`` of `ndim == 3` or ``numpy.ndarray`` of dtype object
-#         The transition model, after pruning, which lacks the hidden state levels/action levels given by the arguments ``state_levels_to_prune`` and ``action_levels_to_prune``
+#     reduced_B: `numpy.ndarray` of `ndim == 3` or `numpy.ndarray` of dtype object
+#         The transition model, after pruning, which lacks the hidden state levels/action levels given by the arguments `state_levels_to_prune` and `action_levels_to_prune`
 #     """
 
 #     slices_to_keep_list = []

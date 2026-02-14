@@ -36,7 +36,7 @@ dependencies = [
 
 [dependency-groups]
 test = [
-    "ipykernel>=7.1.0",
+    "ipykernel>=6.29.0,<7",
     "jupyter>=1.1.1",
     "mediapy>=1.2.4",
     "nbval>=0.11.0",
@@ -47,11 +47,25 @@ test = [
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.5.0",
 ]
+docs = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.5.50",
+    "mkdocstrings[python]>=0.27.0",
+    "mkdocs-jupyter>=0.24.8",
+    "mkdocs-redirects>=1.2.2",
+]
 
 [project.optional-dependencies]
 gpu = [
     'jax[cuda12]>=0.3.4',
     'jaxlib[cuda12]>=0.3.4',
+]
+docs = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.5.50",
+    "mkdocstrings[python]>=0.27.0",
+    "mkdocs-jupyter>=0.24.8",
+    "mkdocs-redirects>=1.2.2",
 ]
 
 nb = [
@@ -64,7 +78,7 @@ modelfit = [
 ]
 
 [project.urls]
-Documentation = "https://pymdp-rtd.readthedocs.io/en/stable/"
+Documentation = "https://pymdp-rtd.readthedocs.io/en/latest/"
 Repository = "https://github.com/infer-actively/pymdp"
 
 [tool.setuptools]

@@ -1,0 +1,3 @@
+# `pymdp.utils`
+
+::: pymdp.utils

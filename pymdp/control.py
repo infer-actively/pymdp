@@ -2,11 +2,12 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=no-member
 # pylint: disable=not-an-iterable
+"""Policy construction, expected free energy, and action sampling utilities."""
 
 import itertools
 import jax.numpy as jnp
 import jax.tree_util as jtu
-from typing import List
+from typing import Sequence
 from functools import partial
 from jax import lax, vmap, nn
 from jax import random as jr
@@ -25,36 +26,34 @@ class Policies(eqx.Module):
     horizon: int = eqx.field(static=True)
     num_policies: int = eqx.field(static=True)
 
-    def __init__(self, policy_arr: Array):
+    def __init__(self, policy_arr: Array) -> None:
         self.num_policies = policy_arr.shape[0]
         self.horizon = policy_arr.shape[1]
         self.policy_arr = policy_arr
     
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Array:
         return self.policy_arr[idx]
     
-    def __len__(self):
+    def __len__(self) -> int:
         return self.num_policies
     
-def get_marginals(q_pi, policies, num_controls):
+def get_marginals(q_pi: Array, policies: Array, num_controls: Sequence[int]) -> list[Array]:
     """
     Computes the marginal posterior(s) over actions by integrating their posterior probability under the policies that they appear within.
 
     Parameters
     ----------
-    q_pi: 1D ``numpy.ndarray``
+    q_pi: 1D Array
         Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
-    policies: ``list`` of 2D ``numpy.ndarray``
-        ``list`` that stores each policy as a 2D array in ``policies[p_idx]``. Shape of ``policies[p_idx]`` 
-        is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
-        depth of the policy and ``num_factors`` is the number of control factors.
-    num_controls: ``list`` of ``int``
-        ``list`` of the dimensionalities of each control state factor.
+    policies: Array
+        Policy matrix with shape `(num_policies, policy_len, num_factors)`.
+    num_controls: Sequence[int]
+        Dimensionalities of each control state factor.
     
     Returns
     ----------
-    action_marginals: ``list`` of ``jax.numpy.ndarrays``
-       List of arrays corresponding to marginal probability of each action possible action
+    action_marginals: list[Array]
+        Marginal posterior over actions for each control factor.
     """
     num_factors = len(num_controls)    
 
@@ -65,30 +64,37 @@ def get_marginals(q_pi, policies, num_controls):
     
     return action_marginals
 
-def sample_action(policies, num_controls, q_pi, action_selection="deterministic", alpha=16.0, rng_key=None):
+def sample_action(
+    policies: Array,
+    num_controls: Sequence[int],
+    q_pi: Array,
+    action_selection: str = "deterministic",
+    alpha: float = 16.0,
+    rng_key: Array | None = None,
+) -> Array:
     """
     Samples an action from posterior marginals, one action per control factor.
 
     Parameters
     ----------
-    q_pi: 1D ``numpy.ndarray``
+    q_pi: 1D Array
         Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
-    policies: ``list`` of 2D ``numpy.ndarray``
-        ``list`` that stores each policy as a 2D array in ``policies[p_idx]``. Shape of ``policies[p_idx]`` 
-        is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
-        depth of the policy and ``num_factors`` is the number of control factors.
-    num_controls: ``list`` of ``int``
-        ``list`` of the dimensionalities of each control state factor.
+    policies: Array
+        Policy matrix with shape `(num_policies, policy_len, num_factors)`.
+    num_controls: Sequence[int]
+        Dimensionalities of each control state factor.
     action_selection: string, default "deterministic"
         String indicating whether whether the selected action is chosen as the maximum of the posterior over actions,
         or whether it's sampled from the posterior marginal over actions
     alpha: float, default 16.0
         Action selection precision -- the inverse temperature of the softmax that is used to scale the 
-        action marginals before sampling. This is only used if ``action_selection`` argument is "stochastic"
+        action marginals before sampling. This is only used if `action_selection` is `"stochastic"`.
+    rng_key: Array | None, optional
+        PRNG key required when `action_selection='stochastic'`.
 
     Returns
     ----------
-    selected_policy: 1D ``numpy.ndarray``
+    selected_policy: 1D Array
         Vector containing the indices of the actions for each control factor
     """
 
@@ -104,7 +110,33 @@ def sample_action(policies, num_controls, q_pi, action_selection="deterministic"
 
     return jnp.array(selected_policy)
 
-def sample_policy(policies, q_pi, action_selection="deterministic", alpha = 16.0, rng_key=None):
+def sample_policy(
+    policies: Array,
+    q_pi: Array,
+    action_selection: str = "deterministic",
+    alpha: float = 16.0,
+    rng_key: Array | None = None,
+) -> Array:
+    """Select or sample a policy, then return its first-step multi-action.
+
+    Parameters
+    ----------
+    policies : Array
+        Policy matrix with shape `(num_policies, policy_len, num_factors)`.
+    q_pi : Array
+        Posterior over policies for one batch element.
+    action_selection : {"deterministic", "stochastic"}, default="deterministic"
+        Selection mode for choosing a policy.
+    alpha : float, default=16.0
+        Precision (inverse temperature) used for stochastic sampling.
+    rng_key : Array | None, optional
+        PRNG key required for `action_selection='stochastic'`.
+
+    Returns
+    -------
+    Array
+        First-step action vector for all control factors.
+    """
 
     if action_selection == "deterministic":
         policy_idx = jnp.argmax(q_pi)
@@ -115,29 +147,31 @@ def sample_policy(policies, q_pi, action_selection="deterministic", alpha = 16.0
     selected_multiaction = policies[policy_idx, 0]
     return selected_multiaction
 
-def construct_policies(num_states, num_controls = None, policy_len=1, control_fac_idx=None):
+def construct_policies(
+    num_states: Sequence[int],
+    num_controls: Sequence[int] | None = None,
+    policy_len: int = 1,
+    control_fac_idx: Sequence[int] | None = None,
+) -> Array:
     """
-    Generate a ``list`` of policies. The returned array ``policies`` is a ``list`` that stores one policy per entry.
-    A particular policy (``policies[i]``) has shape ``(num_timesteps, num_factors)`` 
-    where ``num_timesteps`` is the temporal depth of the policy and ``num_factors`` is the number of control factors.
+    Generate an exhaustive policy matrix for the specified planning horizon.
 
     Parameters
     ----------
-    num_states: ``list`` of ``int``
-        ``list`` of the dimensionalities of each hidden state factor
-    num_controls: ``list`` of ``int``, default ``None``
-        ``list`` of the dimensionalities of each control state factor. If ``None``, then is automatically computed as the dimensionality of each hidden state factor that is controllable
-    policy_len: ``int``, default 1
+    num_states: Sequence[int]
+        Dimensionalities of each hidden state factor.
+    num_controls: Sequence[int], default None
+        Dimensionalities of each control state factor. If `None`, this is
+        computed from controllable state factors.
+    policy_len: int, default 1
         temporal depth ("planning horizon") of policies
-    control_fac_idx: ``list`` of ``int``
-        ``list`` of indices of the hidden state factors that are controllable (i.e. those state factors ``i`` where ``num_controls[i] > 1``)
+    control_fac_idx: Sequence[int]
+        Indices of controllable hidden state factors (factors `i` where `num_controls[i] > 1`).
 
     Returns
     ----------
-    policies: ``list`` of 2D ``numpy.ndarray``
-        ``list`` that stores each policy as a 2D array in ``policies[p_idx]``. Shape of ``policies[p_idx]`` 
-        is ``(num_timesteps, num_factors)`` where ``num_timesteps`` is the temporal
-        depth of the policy and ``num_factors`` is the number of control factors.
+    policies: Array
+        Policy matrix with shape `(num_policies, policy_len, num_factors)`.
     """
 
     num_factors = len(num_states)
@@ -159,7 +193,60 @@ def construct_policies(num_states, num_controls = None, policy_len=1, control_fa
     return jnp.stack(policies)
 
 
-def update_posterior_policies(policy_matrix, qs_init, A, B, C, E, pA, pB, A_dependencies, B_dependencies, gamma=16.0, use_utility=True, use_states_info_gain=True, use_param_info_gain=False):
+def update_posterior_policies(
+    policy_matrix: Array,
+    qs_init: list[Array],
+    A: list[Array],
+    B: list[Array],
+    C: list[Array],
+    E: Array,
+    pA: list[Array] | None,
+    pB: list[Array] | None,
+    A_dependencies: list[list[int]],
+    B_dependencies: list[list[int]],
+    gamma: float = 16.0,
+    use_utility: bool = True,
+    use_states_info_gain: bool = True,
+    use_param_info_gain: bool = False,
+) -> tuple[Array, Array]:
+    """Compute posterior over policies and policy-wise negative expected free energy.
+
+    Parameters
+    ----------
+    policy_matrix: Array
+        Policy tensor with shape `(num_policies, policy_len, num_factors)`.
+    qs_init: list[Array]
+        Current marginal beliefs over hidden states.
+    A: list[Array]
+        Observation likelihood tensors.
+    B: list[Array]
+        Transition tensors.
+    C: list[Array]
+        Prior preferences over outcomes.
+    E: Array
+        Prior over policies.
+    pA: list[Array] | None
+        Posterior Dirichlet parameters for `A` (required when `use_param_info_gain=True`).
+    pB: list[Array] | None
+        Posterior Dirichlet parameters for `B` (required when `use_param_info_gain=True`).
+    A_dependencies: list[list[int]]
+        Observation dependencies between modalities and hidden-state factors.
+    B_dependencies: list[list[int]]
+        Transition dependencies between hidden-state factors.
+    gamma: float, default=16.0
+        Policy precision parameter.
+    use_utility: bool, default=True
+        Whether to include expected utility in EFE.
+    use_states_info_gain: bool, default=True
+        Whether to include state epistemic value.
+    use_param_info_gain: bool, default=False
+        Whether to include parameter epistemic value.
+
+    Returns
+    -------
+    tuple[Array, Array]
+        `(q_pi, neg_efe_all_policies)` where `q_pi` is the posterior over policies.
+    """
     # policy --> n_levels_factor_f x 1
     # factor --> n_levels_factor_f x n_policies
     ## vmap across policies
@@ -175,13 +262,37 @@ def update_posterior_policies(policy_matrix, qs_init, A, B, C, E, pA, pB, A_depe
 
     return nn.softmax(gamma * neg_efe_all_policies + log_stable(E)), neg_efe_all_policies
 
-def compute_expected_state(qs_prior, B, u_t, B_dependencies=None): 
+def compute_expected_state(
+    qs_prior: list[Array],
+    B: list[Array],
+    u_t: Array | Sequence[int],
+    B_dependencies: list[list[int]] | None = None,
+) -> list[Array]:
     """
     Compute posterior over next state, given belief about previous state, transition model and action...
+
+    Parameters
+    ----------
+    qs_prior: list[Array]
+        Marginal beliefs over hidden states at time `t`.
+    B: list[Array]
+        Transition model tensors.
+    u_t: Array | Sequence[int]
+        Action indices for each control factor.
+    B_dependencies: list[list[int]], optional
+        Optional dependencies used to marginalize transition tensors. If `None`,
+        defaults to factor-local transitions.
+
+    Returns
+    -------
+    list[Array]
+        Marginal beliefs over next-time hidden states.
     """
     #Note: this algorithm is only correct if each factor depends only on itself. For any interactions, 
     # we will have empirical priors with codependent factors. 
-    assert len(u_t) == len(B)  
+    assert len(u_t) == len(B)
+    if B_dependencies is None:
+        B_dependencies = [[f] for f in range(len(B))]
     qs_next = []
     for B_f, u_f, deps in zip(B, u_t, B_dependencies):
         relevant_factors = [qs_prior[idx] for idx in deps]
@@ -191,9 +302,25 @@ def compute_expected_state(qs_prior, B, u_t, B_dependencies=None):
     # P(s'|s, u) = \sum_{s, u} P(s'|s) P(s|u) P(u|pi)P(pi) because u </-> pi
     return qs_next
 
-def compute_expected_state_and_Bs(qs_prior, B, u_t): 
-    """
-    Compute posterior over next state, given belief about previous state, transition model and action...
+def compute_expected_state_and_Bs(
+    qs_prior: list[Array], B: list[Array], u_t: Array | Sequence[int]
+) -> tuple[list[Array], list[Array]]:
+    """Compute one-step predictive states and selected transition matrices.
+
+    Parameters
+    ----------
+    qs_prior: list[Array]
+        Marginal beliefs over hidden states at time `t`.
+    B: list[Array]
+        Transition model tensors for each hidden-state factor.
+    u_t: Array | Sequence[int]
+        Action indices for each control factor at time `t`.
+
+    Returns
+    -------
+    tuple[list[Array], list[Array]]
+        `(qs_next, Bs)` where `qs_next` are next-state marginals and `Bs` are
+        the action-conditioned transition slices used for each factor.
     """
     assert len(u_t) == len(B)  
     qs_next = []
@@ -204,25 +331,58 @@ def compute_expected_state_and_Bs(qs_prior, B, u_t):
     
     return qs_next, Bs
 
-def compute_expected_obs(qs, A, A_dependencies):
+def compute_expected_obs(
+    qs: list[Array], A: list[Array], A_dependencies: list[list[int]]
+) -> list[Array]:
     """
     New version of expected observation (computation of Q(o|pi)) that takes into account sparse dependencies between observation
     modalities and hidden state factors
+
+    Parameters
+    ----------
+    qs: list[Array]
+        Beliefs over hidden states.
+    A: list[Array]
+        Observation likelihood models.
+    A_dependencies: list[list[int]]
+        Observation dependencies between modalities and state factors.
+
+    Returns
+    -------
+    list[Array]
+        Predictive beliefs over observations for each modality.
     """
         
-    def compute_expected_obs_modality(A_m, m):
+    def compute_expected_obs_modality(A_m: Array, m: int) -> Array:
         deps = A_dependencies[m]
         relevant_factors = [qs[idx] for idx in deps]
         return factor_dot(A_m, relevant_factors, keep_dims=(0,))
 
     return jtu.tree_map(compute_expected_obs_modality, A, list(range(len(A))))
 
-def compute_info_gain(qs, qo, A, A_dependencies):
-    """
-    New version of expected information gain that takes into account sparse dependencies between observation modalities and hidden state factors.
+def compute_info_gain(
+    qs: list[Array], qo: list[Array], A: list[Array], A_dependencies: list[list[int]]
+) -> Array:
+    """Compute expected state-information gain term of expected free energy.
+
+    Parameters
+    ----------
+    qs: list[Array]
+        Predicted hidden-state beliefs.
+    qo: list[Array]
+        Predicted observation beliefs.
+    A: list[Array]
+        Observation likelihood tensors.
+    A_dependencies: list[list[int]]
+        Observation dependencies between modalities and hidden-state factors.
+
+    Returns
+    -------
+    Array
+        Scalar epistemic value from expected information gain.
     """
 
-    def compute_info_gain_for_modality(qo_m, A_m, m):
+    def compute_info_gain_for_modality(qo_m: Array, A_m: Array, m: int) -> Array:
         H_qo = stable_entropy(qo_m)
         H_A_m = - stable_xlogx(A_m).sum(0)
         deps = A_dependencies[m]
@@ -234,8 +394,25 @@ def compute_info_gain(qs, qo, A, A_dependencies):
         
     return jtu.tree_reduce(lambda x,y: x+y, info_gains_per_modality)
 
-def compute_expected_utility(qo, C, t=0):
-    
+def compute_expected_utility(qo: list[Array], C: list[Array], t: int = 0) -> Array:
+    """Compute expected utility from predictive observations and preferences.
+
+    Parameters
+    ----------
+    qo: list[Array]
+        Predicted observations for each modality.
+    C: list[Array]
+        Prior preferences per modality. Each modality can be static `(num_obs,)`
+        or time-indexed `(policy_len, num_obs)`.
+    t: int, default=0
+        Planning timestep used when `C[m]` is time-indexed.
+
+    Returns
+    -------
+    Array
+        Scalar expected utility contribution.
+    """
+
     util = 0.
     for o_m, C_m in zip(qo, C):
         if C_m.ndim > 1:
@@ -245,28 +422,30 @@ def compute_expected_utility(qo, C, t=0):
     
     return util
 
-def calc_pA_info_gain(pA, qo, qs, A_dependencies):
+def calc_pA_info_gain(
+    pA: list[Array], qo: list[Array], qs: list[Array], A_dependencies: list[list[int]]
+) -> Array:
     """
-    Compute expected Dirichlet information gain about parameters ``pA`` for a given posterior predictive distribution over observations ``qo`` and states ``qs``.
+    Compute expected Dirichlet information gain about parameters `pA` for a given posterior predictive distribution over observations `qo` and states `qs`.
 
     Parameters
     ----------
-    pA: ``numpy.ndarray`` of dtype object
-        Dirichlet parameters over observation model (same shape as ``A``)
-    qo: ``list`` of ``numpy.ndarray`` of dtype object
+    pA: list[Array]
+        Dirichlet parameters over observation model (same shape as `A`)
+    qo: list[Array]
         Predictive posterior beliefs over observations; stores the beliefs about
-        observations expected under the policy at some arbitrary time ``t``
-    qs: ``list`` of ``numpy.ndarray`` of dtype object
+        observations expected under the policy at some arbitrary time `t`
+    qs: list[Array]
         Predictive posterior beliefs over hidden states, stores the beliefs about
-        hidden states expected under the policy at some arbitrary time ``t``
+        hidden states expected under the policy at some arbitrary time `t`
 
     Returns
     -------
     infogain_pA: float
-        Surprise (about Dirichlet parameters) expected for the pair of posterior predictive distributions ``qo`` and ``qs``
+        Surprise (about Dirichlet parameters) expected for the pair of posterior predictive distributions `qo` and `qs`
     """
 
-    def infogain_per_modality(pa_m, qo_m, m):
+    def infogain_per_modality(pa_m: Array, qo_m: Array, m: int) -> Array:
         wa_m = spm_wnorm(pa_m) * (pa_m > 0.)
         fd = factor_dot(wa_m, [s for f, s in enumerate(qs) if f in A_dependencies[m]], keep_dims=(0,))[..., None]
         return qo_m.dot(fd)
@@ -278,19 +457,25 @@ def calc_pA_info_gain(pA, qo, qs, A_dependencies):
     infogain_pA = jtu.tree_reduce(lambda x, y: x + y, pA_infogain_per_modality)
     return infogain_pA.squeeze(-1)
 
-def calc_pB_info_gain(pB, qs_t, qs_t_minus_1, B_dependencies, u_t_minus_1):
+def calc_pB_info_gain(
+    pB: list[Array],
+    qs_t: list[Array],
+    qs_t_minus_1: list[Array],
+    B_dependencies: list[list[int]],
+    u_t_minus_1: Array | Sequence[int],
+) -> Array:
     """
-    Compute expected Dirichlet information gain about parameters ``pB`` under a given policy
+    Compute expected Dirichlet information gain about parameters `pB` under a given policy
 
     Parameters
     ----------
-    pB: ``Array`` of dtype object
-        Dirichlet parameters over transition model (same shape as ``B``)
-    qs_t: ``list`` of ``Array`` of dtype object
-        Predictive posterior beliefs over hidden states expected under the policy at time ``t``
-    qs_t_minus_1: ``list`` of ``Array`` of dtype object
-        Posterior over hidden states at time ``t-1`` (before receiving observations)
-    u_t_minus_1: "Array"
+    pB: list[Array]
+        Dirichlet parameters over transition model (same shape as `B`)
+    qs_t: list[Array]
+        Predictive posterior beliefs over hidden states expected under the policy at time `t`
+    qs_t_minus_1: list[Array]
+        Posterior over hidden states at time `t-1` (before receiving observations)
+    u_t_minus_1: Array | Sequence[int]
         Actions in time step t-1 for each factor
 
     Returns
@@ -306,10 +491,56 @@ def calc_pB_info_gain(pB, qs_t, qs_t_minus_1, B_dependencies, u_t_minus_1):
     infogain_pB = jtu.tree_reduce(lambda x, y: x + y, pB_infogain_per_factor)[0]
     return infogain_pB
 
-def compute_G_policy(qs_init, A, B, C, pA, pB, A_dependencies, B_dependencies, policy_i, use_utility=True, use_states_info_gain=True, use_param_info_gain=False):
-    """ Write a version of compute_G_policy that does the same computations as `compute_G_policy` but using `lax.scan` instead of a for loop. """
+def compute_G_policy(
+    qs_init: list[Array],
+    A: list[Array],
+    B: list[Array],
+    C: list[Array],
+    pA: list[Array] | None,
+    pB: list[Array] | None,
+    A_dependencies: list[list[int]],
+    B_dependencies: list[list[int]],
+    policy_i: Array,
+    use_utility: bool = True,
+    use_states_info_gain: bool = True,
+    use_param_info_gain: bool = False,
+) -> Array:
+    """Compute policy-wise negative expected free energy for one policy.
 
-    def scan_body(carry, t):
+    Parameters
+    ----------
+    qs_init: list[Array]
+        Initial hidden-state marginals at current timestep.
+    A: list[Array]
+        Observation likelihood tensors.
+    B: list[Array]
+        Transition tensors.
+    C: list[Array]
+        Prior preferences over outcomes.
+    pA: list[Array] | None
+        Posterior Dirichlet parameters for `A`.
+    pB: list[Array] | None
+        Posterior Dirichlet parameters for `B`.
+    A_dependencies: list[list[int]]
+        Observation dependencies between modalities and hidden-state factors.
+    B_dependencies: list[list[int]]
+        Transition dependencies between hidden-state factors.
+    policy_i: Array
+        Single policy trajectory with shape `(policy_len, num_factors)`.
+    use_utility: bool, default=True
+        Include expected utility term.
+    use_states_info_gain: bool, default=True
+        Include state-information-gain term.
+    use_param_info_gain: bool, default=False
+        Include parameter-information-gain term.
+
+    Returns
+    -------
+    Array
+        Scalar negative expected free energy for `policy_i`.
+    """
+
+    def scan_body(carry: tuple[list[Array], Array], t: Array) -> tuple[tuple[list[Array], Array], None]:
 
         qs, neg_G = carry
 
@@ -334,13 +565,66 @@ def compute_G_policy(qs_init, A, B, C, pA, pB, A_dependencies, B_dependencies, p
     qs_final, neg_G = final_state
     return neg_G
 
-def compute_G_policy_inductive(qs_init, A, B, C, pA, pB, A_dependencies, B_dependencies, I, policy_i, inductive_epsilon=1e-3, use_utility=True, use_states_info_gain=True, use_param_info_gain=False, use_inductive=False):
-    """ 
-    Write a version of compute_G_policy that does the same computations as `compute_G_policy` but using `lax.scan` instead of a for loop.
-    This one further adds computations used for inductive planning.
+def compute_G_policy_inductive(
+    qs_init: list[Array],
+    A: list[Array],
+    B: list[Array],
+    C: list[Array],
+    pA: list[Array] | None,
+    pB: list[Array] | None,
+    A_dependencies: list[list[int]],
+    B_dependencies: list[list[int]],
+    I: list[Array],
+    policy_i: Array,
+    inductive_epsilon: float = 1e-3,
+    use_utility: bool = True,
+    use_states_info_gain: bool = True,
+    use_param_info_gain: bool = False,
+    use_inductive: bool = False,
+) -> Array:
+    """
+    Compute policy-wise negative expected free energy with inductive planning.
+
+    Parameters
+    ----------
+    qs_init: list[Array]
+        Initial hidden-state marginals at current timestep.
+    A: list[Array]
+        Observation likelihood tensors.
+    B: list[Array]
+        Transition tensors.
+    C: list[Array]
+        Prior preferences over outcomes.
+    pA: list[Array] | None
+        Posterior Dirichlet parameters for `A`.
+    pB: list[Array] | None
+        Posterior Dirichlet parameters for `B`.
+    A_dependencies: list[list[int]]
+        Observation dependencies between modalities and hidden-state factors.
+    B_dependencies: list[list[int]]
+        Transition dependencies between hidden-state factors.
+    I: list[Array]
+        Inductive reachability matrices.
+    policy_i: Array
+        Single policy trajectory with shape `(policy_len, num_factors)`.
+    inductive_epsilon: float, default=1e-3
+        Scale of the inductive-value contribution.
+    use_utility: bool, default=True
+        Include expected utility term.
+    use_states_info_gain: bool, default=True
+        Include state-information-gain term.
+    use_param_info_gain: bool, default=False
+        Include parameter-information-gain term.
+    use_inductive: bool, default=False
+        Include inductive-value term.
+
+    Returns
+    -------
+    Array
+        Scalar negative expected free energy for `policy_i`.
     """
 
-    def scan_body(carry, t):
+    def scan_body(carry: tuple[list[Array], Array], t: Array) -> tuple[tuple[list[Array], Array], None]:
 
         qs, neg_G = carry
 
@@ -370,7 +654,72 @@ def compute_G_policy_inductive(qs_init, A, B, C, pA, pB, A_dependencies, B_depen
     _, neg_G = final_state
     return neg_G
 
-def update_posterior_policies_inductive(policy_matrix, qs_init, A, B, C, E, pA, pB, A_dependencies, B_dependencies, I, gamma=16.0, inductive_epsilon=1e-3, use_utility=True, use_states_info_gain=True, use_param_info_gain=False, use_inductive=True):
+def update_posterior_policies_inductive(
+    policy_matrix: Array,
+    qs_init: list[Array],
+    A: list[Array],
+    B: list[Array],
+    C: list[Array],
+    E: Array,
+    pA: list[Array] | None,
+    pB: list[Array] | None,
+    A_dependencies: list[list[int]],
+    B_dependencies: list[list[int]],
+    I: list[Array],
+    gamma: float = 16.0,
+    inductive_epsilon: float = 1e-3,
+    use_utility: bool = True,
+    use_states_info_gain: bool = True,
+    use_param_info_gain: bool = False,
+    use_inductive: bool = True,
+) -> tuple[Array, Array]:
+    """
+    Compute policy posterior and expected free energy with optional inductive terms.
+
+    Parameters
+    ----------
+    policy_matrix: Array
+        Policy tensor with shape `(num_policies, policy_len, num_factors)`.
+    qs_init: list[Array]
+        Current marginal state beliefs.
+    A: list[Array]
+        Observation likelihood models.
+    B: list[Array]
+        Transition models.
+    C: list[Array]
+        Prior preference vectors.
+    E: Array
+        Policy prior over the policy space.
+    pA: list[Array] | None
+        Optional posterior Dirichlet parameters for `A`.
+    pB: list[Array] | None
+        Optional posterior Dirichlet parameters for `B`.
+    A_dependencies: list[list[int]]
+        Observation dependencies between modalities and state factors.
+    B_dependencies: list[list[int]]
+        Transition dependencies between hidden-state factors and control factors.
+    I: list[Array]
+        Inductive planning matrices.
+    gamma: float = 16.0
+        Policy precision for softmax policy posterior.
+    inductive_epsilon: float = 1e-3
+        Inductive value scale factor.
+    use_utility: bool = True
+        Include utility term in expected free energy.
+    use_states_info_gain: bool = True
+        Include epistemic state-information gain term.
+    use_param_info_gain: bool = False
+        Include epistemic parameter-information gain term.
+    use_inductive: bool = True
+        Include inductive value term.
+
+    Returns
+    -------
+    q_pi: Array
+        Posterior over policies.
+    neg_efe_all_policies: Array
+        Policy-wise negative expected free energies.
+    """
     # policy --> n_levels_factor_f x 1
     # factor --> n_levels_factor_f x n_policies
     ## vmap across policies
@@ -386,26 +735,26 @@ def update_posterior_policies_inductive(policy_matrix, qs_init, A, B, C, E, pA, 
 
     return nn.softmax(gamma * neg_efe_all_policies + log_stable(E)), neg_efe_all_policies
 
-def generate_I_matrix(H: List[Array], B: List[Array], threshold: float, depth: int):
+def generate_I_matrix(H: list[Array], B: list[Array], threshold: float, depth: int) -> list[Array]:
     """ 
     Generates the `I` matrices used in inductive planning. These matrices stores the probability of reaching the goal state backwards from state j (columns) after i (rows) steps.
     Parameters
     ----------    
-    H: ``list`` of ``jax.numpy.ndarray``
+    H: list[Array]
         Constraints over desired states (1 if you want to reach that state, 0 otherwise)
-    B: ``list`` of ``jax.numpy.ndarray``
-        Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
-        Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
-        of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
-    threshold: ``float``
+    B: list[Array]
+        Dynamics likelihood mapping or transition model, mapping from hidden states at `t` to hidden states at `t+1`, given some control state `u`.
+        Each element `B[f]` stores a 3-D tensor for hidden state factor `f`, whose entries `B[f][s, v, u]` store the probability
+        of hidden state level `s` at the current time, given hidden state level `v` and action `u` at the previous time.
+    threshold: float
         The threshold for pruning transitions that are below a certain probability
-    depth: ``int``
+    depth: int
         The temporal depth of the backward induction
 
     Returns
     ----------
-    I: ``numpy.ndarray`` of dtype object
-        For each state factor, contains a 2D ``numpy.ndarray`` whose element i,j yields the probability 
+    I: list[Array]
+        For each state factor, contains a 2D array whose element i,j yields the probability
         of reaching the goal state backwards from state j after i steps.
     """
     
@@ -422,7 +771,7 @@ def generate_I_matrix(H: List[Array], B: List[Array], threshold: float, depth: i
         b_reachable = jnp.where(B[f] > threshold, 1.0, 0.0).sum(axis=-1)
         b_reachable = jnp.where(b_reachable > 0., 1.0, 0.0)
 
-        def step_fn(carry, i):
+        def step_fn(carry: Array, i: Array) -> tuple[Array, Array]:
             I_prev = carry
             I_next = jnp.dot(b_reachable, I_prev)
             I_next = jnp.where(I_next > 0.1, 1.0, 0.0) # clamp I_next to 1.0 if it's above 0.1, 0 otherwise
@@ -435,21 +784,23 @@ def generate_I_matrix(H: List[Array], B: List[Array], threshold: float, depth: i
     
     return I
 
-def calc_inductive_value_t(qs, qs_next, I, epsilon=1e-3):
+def calc_inductive_value_t(
+    qs: list[Array], qs_next: list[Array], I: list[Array], epsilon: float = 1e-3
+) -> Array:
     """
     Computes the inductive value of a state at a particular time (translation of @tverbele's `numpy` implementation of inductive planning, formerly
     called `calc_inductive_cost`).
 
     Parameters
     ----------
-    qs: ``list`` of ``jax.numpy.ndarray`` 
+    qs: list[Array]
         Marginal posterior beliefs over hidden states at a given timepoint.
-    qs_next: ```list`` of ``jax.numpy.ndarray`` 
+    qs_next: list[Array]
         Predictive posterior beliefs over hidden states expected under the policy.
-    I: ``numpy.ndarray`` of dtype object
-        For each state factor, contains a 2D ``numpy.ndarray`` whose element i,j yields the probability 
+    I: list[Array]
+        For each state factor, contains a 2D array whose element i,j yields the probability
         of reaching the goal state backwards from state j after i steps.
-    epsilon: ``float``
+    epsilon: float
         Value that tunes the strength of the inductive value (how much it contributes to the expected free energy of policies)
 
     Returns

@@ -1,11 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-""" Agent Class implementation in Jax
-
-__author__: Conor Heins, Dimitrije Markovic, Alexander Tschantz, Daphne Demekas, Brennan Klein
-
-"""
+"""Agent API for Active Inference with the modern JAX backend."""
 import math as pymath
 import warnings
 import jax.numpy as jnp
@@ -15,7 +11,7 @@ from pymdp import inference, control, learning, utils
 from pymdp.distribution import Distribution, get_dependencies
 from equinox import Module, field, tree_at
 
-from typing import Callable, List, Optional, Union
+from typing import Any, Callable, Optional, Sequence, Union
 from jaxtyping import Array
 from functools import partial
 from jax import lax
@@ -24,16 +20,21 @@ class Agent(Module):
     """
     The Agent class, the highest-level API that wraps together processes for action, perception, and learning under active inference.
 
-    The basic usage is as follows:
+    Examples
+    --------
+    A single timestep of active inference:
 
-    >>> my_agent = Agent(A = A, B = B, C = C, <more_params>)
-    >>> observation = env.step(initial_action)
-    >>> qs = my_agent.infer_states(observation)
-    >>> q_pi, G = my_agent.infer_policies(qs)
-    >>> next_action = my_agent.sample_action()
-    >>> next_observation = env.step(next_action)
+        from jax import random as jr
 
-    This represents one timestep of an active inference process. Wrapping this step in a loop with an ``Env()`` class that returns
+        my_agent = Agent(A=A, B=B, C=C, <more_params>)
+        observation = env.step(initial_action)
+        qs = my_agent.infer_states(observation, empirical_prior=my_agent.D)
+        q_pi, G = my_agent.infer_policies(qs)
+        keys = jr.split(rng_key, my_agent.batch_size + 1)
+        next_action = my_agent.sample_action(q_pi, rng_key=keys[1:])
+        next_observation = env.step(next_action)
+
+    This represents one timestep of an active inference process. Wrapping this step in a loop with an `Env()` class that returns
     observations and takes actions as inputs, would entail a dynamic agent-environment interaction.
 
     Observation Formats
@@ -41,37 +42,28 @@ class Agent(Module):
     Observations can be provided in two formats:
 
     1. **Discrete observations** (default, categorical_obs=False):
-       Observations are discrete indices, e.g., observation = [0, 2, 1]
-       These are internally converted to one-hot vectors.
+       Each `observations[m]` is an integer outcome index for modality `m`.
+       These are converted to one-hot vectors internally.
 
     2. **Categorical observations** (categorical_obs=True):
-       Observations are probability distributions, e.g.,
-       observation = [[0.7, 0.2, 0.1], [0.0, 1.0], ...]
-       This allows encoding uncertainty in observations, useful for:
-       - Noisy sensors with known noise models
-       - Ambiguous perceptual evidence
-       - Soft evidence from preprocessing/feature extraction
-
-       Each observation must be a valid probability distribution:
-       - All elements non-negative
-       - Sums to 1.0 along the observation dimension
+       Each `observations[m]` is a probability vector over outcomes for
+       modality `m`.
 
     Advanced preprocessing
     ----------------------
-    You can override the default preprocessing by passing ``preprocess_fn`` at
-    agent construction or on individual ``infer_states`` calls.
-
-    Note: If ``preprocess_fn`` is set, it takes precedence over the
-    ``categorical_obs`` flag for determining preprocessing behavior.
+    You can override default preprocessing with `preprocess_fn` (set on the
+    agent or per `infer_states` call). If provided, this function should
+    return categorical observations and takes precedence over default
+    discrete/categorical handling.
     """
 
-    A: List[Array]
-    B: List[Array]
-    C: List[Array]
-    D: List[Array]
+    A: list[Array]
+    B: list[Array]
+    C: list[Array]
+    D: list[Array]
     E: Array
-    pA: List[Array]
-    pB: List[Array]
+    pA: list[Array]
+    pB: list[Array]
     gamma: Array
     alpha: Array
 
@@ -83,25 +75,25 @@ class Agent(Module):
     # epsilon for inductive inference (trade-off/weight for how much inductive value contributes to EFE of policies)
     inductive_epsilon: Array
     # H vectors (one per hidden state factor) used for inductive inference -- these encode goal states or constraints
-    H: List[Array]
+    H: list[Array]
     # I matrices (one per hidden state factor) used for inductive inference -- these encode the 'reachability' matrices of goal states encoded in `self.H`
-    I: List[Array]
+    I: list[Array]
     # static parameters not leaves of the PyTree
-    A_dependencies: Optional[List] = field(static=True)
-    B_dependencies: Optional[List] = field(static=True)
-    B_action_dependencies: Optional[List] = field(static=True)
+    A_dependencies: Optional[list[list[int]]] = field(static=True)
+    B_dependencies: Optional[list[list[int]]] = field(static=True)
+    B_action_dependencies: Optional[list[list[int]]] = field(static=True)
     # mapping from multi action dependencies to flat action dependencies for each B
-    action_maps: List[dict] = field(static=True)
+    action_maps: list[dict] = field(static=True)
     batch_size: int = field(static=True)
     num_iter: int = field(static=True)
-    num_obs: List[int] = field(static=True)
+    num_obs: list[int] = field(static=True)
     num_modalities: int = field(static=True)
-    num_states: List[int] = field(static=True)
+    num_states: list[int] = field(static=True)
     num_factors: int = field(static=True)
-    num_controls: List[int] = field(static=True)
+    num_controls: list[int] = field(static=True)
     # Used to store original action dimensions in case there are multiple action dependencies per state
-    num_controls_multi: List[int] = field(static=True)
-    control_fac_idx: Optional[List[int]] = field(static=True)
+    num_controls_multi: list[int] = field(static=True)
+    control_fac_idx: Optional[list[int]] = field(static=True)
     # depth of planning during roll-outs (i.e. number of timesteps to look ahead when computing expected free energy of policies)
     policy_len: int = field(static=True)
     # number of past timesteps (including current) to use for sequence inference (mmp, vmp, exact)
@@ -135,46 +127,46 @@ class Agent(Module):
 
     def __init__(
         self,
-        A: Union[List[Array], List[Distribution]],
-        B: Union[List[Array], List[Distribution]],
-        C: Optional[List[Array]] = None,
-        D: Optional[List[Array]] = None,
+        A: Union[list[Array], list[Distribution]],
+        B: Union[list[Array], list[Distribution]],
+        C: Optional[list[Array]] = None,
+        D: Optional[list[Array]] = None,
         E: Optional[Array] = None,
-        pA=None,
-        pB=None,
-        H=None,
-        I=None,
-        A_dependencies=None,
-        B_dependencies=None,
-        B_action_dependencies=None,
-        num_controls=None,
-        control_fac_idx=None,
-        policy_len=1,
-        policies=None,
-        gamma=1.0,
-        alpha=1.0,
-        inductive_depth=1,
-        inductive_threshold=0.1,
-        inductive_epsilon=1e-3,
-        use_utility=True,
-        use_states_info_gain=True,
-        use_param_info_gain=False,
-        use_inductive=False,
-        categorical_obs=False,
-        preprocess_fn=None,
-        action_selection="deterministic",
-        sampling_mode="full",
-        inference_algo="fpi",
-        inference_horizon=None,
-        num_iter=16,
-        batch_size=1,
-        learning_mode="online", # TODO: or should this be an argument to `self.infer_parameters()` or even `env/rollout.py:rollout()`
-        learn_A=False,
-        learn_B=False,
-        learn_C=False,
-        learn_D=False,
-        learn_E=False,
-    ):
+        pA: Optional[list[Array]] = None,
+        pB: Optional[list[Array]] = None,
+        H: Optional[list[Array]] = None,
+        I: Optional[list[Array]] = None,
+        A_dependencies: Optional[list[list[int]]] = None,
+        B_dependencies: Optional[list[list[int]]] = None,
+        B_action_dependencies: Optional[list[list[int]]] = None,
+        num_controls: Optional[list[int]] = None,
+        control_fac_idx: Optional[list[int]] = None,
+        policy_len: int = 1,
+        policies: Optional[Union[Array, control.Policies]] = None,
+        gamma: float | Array = 1.0,
+        alpha: float | Array = 1.0,
+        inductive_depth: int = 1,
+        inductive_threshold: float | Array = 0.1,
+        inductive_epsilon: float | Array = 1e-3,
+        use_utility: bool = True,
+        use_states_info_gain: bool = True,
+        use_param_info_gain: bool = False,
+        use_inductive: bool = False,
+        categorical_obs: bool = False,
+        preprocess_fn: Optional[Callable] = None,
+        action_selection: str = "deterministic",
+        sampling_mode: str = "full",
+        inference_algo: str = "fpi",
+        inference_horizon: Optional[int] = None,
+        num_iter: int = 16,
+        batch_size: int = 1,
+        learning_mode: str = "online", # TODO: or should this be an argument to `self.infer_parameters()` or even `env/rollout.py:rollout()`
+        learn_A: bool = False,
+        learn_B: bool = False,
+        learn_C: bool = False,
+        learn_D: bool = False,
+        learn_E: bool = False,
+    ) -> None:
         if B_action_dependencies is not None:
             assert num_controls is not None, "Please specify num_controls if you're also using complex action dependencies"
 
@@ -400,11 +392,11 @@ class Agent(Module):
         self._validate()
 
     @property
-    def unique_multiactions(self):
+    def unique_multiactions(self) -> Array:
         size = pymath.prod(self.num_controls)
         return jnp.unique(self.policies.policy_arr[:, 0], axis=0, size=size, fill_value=-1)
 
-    def _get_num_states_from_B(self, B, B_dependencies):
+    def _get_num_states_from_B(self, B: list[Array], B_dependencies: list[list[int]]) -> list[int]:
         """ Use the shapes of B and the B_dependencies to determine the number of states for each factor."""
   
         num_states = []
@@ -419,7 +411,45 @@ class Agent(Module):
 
         return num_states
 
-    def infer_parameters(self, beliefs_A, outcomes, actions, beliefs_B=None, lr_pA=1., lr_pB=1., **kwargs):
+    def infer_parameters(
+        self,
+        beliefs_A: list[Array],
+        outcomes: list[Array],
+        actions: Array | None,
+        beliefs_B: list[Array] | None = None,
+        lr_pA: float = 1.0,
+        lr_pB: float = 1.0,
+        **kwargs: Any,
+    ) -> "Agent":
+        """Update Dirichlet parameters for `A` and/or `B` models from data.
+
+        Parameters
+        ----------
+        beliefs_A: list[Array]
+            Marginal state beliefs used when updating the observation model
+            parameters.
+        outcomes: list[Array]
+            Observation histories for each modality.
+        actions: Array or None
+            Action history aligned to time. For multi-action agents this should be
+            shaped `(batch, T, num_factors)`.
+        beliefs_B: list[Array] | None, optional
+            Optional sequence of beliefs used for transition updates. If `None`,
+            transition updates are skipped.
+        lr_pA: float, default=1.0
+            Learning-rate multiplier for `A` updates.
+        lr_pB: float, default=1.0
+            Learning-rate multiplier for `B` updates.
+        **kwargs: Any
+            Reserved for future/compatibility arguments.
+
+        Returns
+        -------
+        Agent
+            Agent instance with updated `pA`, `A`, `pB`, and `B` where learning is
+            enabled.
+        """
+
         agent = self
 
         # ------------------------------------------------------------------
@@ -465,11 +495,11 @@ class Agent(Module):
             and can_update_Beliefs
         )
 
-        def _apply_transition_mask(joint_beliefs):
+        def _apply_transition_mask(joint_beliefs: list[Array] | None) -> list[Array] | None:
             if valid_transition_mask is None:
                 return joint_beliefs
 
-            def _mask_joint(x):
+            def _mask_joint(x: Array) -> Array:
                 mask = valid_transition_mask.astype(x.dtype).reshape(
                     valid_transition_mask.shape + (1,) * (x.ndim - 2)
                 )
@@ -477,7 +507,7 @@ class Agent(Module):
 
             return jtu.tree_map(_mask_joint, joint_beliefs)
 
-        def _empty_joint_beliefs():
+        def _empty_joint_beliefs() -> list[Array]:
             return [
                 jnp.zeros(
                     (
@@ -490,14 +520,14 @@ class Agent(Module):
                 for f in range(self.num_factors)
             ]
 
-        def _build_outer_product_joints():
+        def _build_outer_product_joints() -> list[list[Array]]:
             return [
                 [seq_beliefs[f][:, 1:]] + [seq_beliefs[f_idx][:, :-1] for f_idx in self.B_dependencies[f]]
                 for f in range(self.num_factors)
             ]
 
-        def _smooth_or_fallback(smoothing_fn):
-            def update_with_smoothing(_):
+        def _smooth_or_fallback(smoothing_fn: Callable[..., Any]) -> tuple[list[Array], list[Array]]:
+            def update_with_smoothing(_: Any) -> tuple[list[Array], list[Array]]:
                 # Use the *sequence* of filtered beliefs (seq_beliefs) for smoothing
                 #   vmap runs over batch: each call sees (T, Ns_f) and (T-1, Nu)
                 smoothed_marginals_and_joints = vmap(smoothing_fn)(
@@ -507,7 +537,7 @@ class Agent(Module):
                 joint_beliefs = _apply_transition_mask(smoothed_marginals_and_joints[1])  # list[f] -> (B, T-1, ...)
                 return marginal_beliefs, joint_beliefs
 
-            def use_filtered_beliefs(_):
+            def use_filtered_beliefs(_: Any) -> tuple[list[Array], list[Array]]:
                 # No valid transition yet (or sentinel action found):
                 # - Use filtered beliefs for A-learning,
                 # - and either skip B-learning or fall back to the two-frame outer-product joint.
@@ -557,7 +587,7 @@ class Agent(Module):
             update_B = partial(learning.update_state_transition_dirichlet, num_controls=self.num_controls)
             lrB = jnp.broadcast_to(lr_pB, (self.batch_size,))
 
-            def update_B_step(_):
+            def update_B_step(_: Any) -> tuple[list[Array], list[Array]]:
                 qB, E_qB = vmap(update_B)(
                     self.pB,
                     self.B,
@@ -567,7 +597,7 @@ class Agent(Module):
                 )
                 return qB, E_qB
 
-            def skip_B_step(_):
+            def skip_B_step(_: Any) -> tuple[list[Array], list[Array]]:
                 return self.pB, self.B
 
             qB, E_qB = lax.cond(can_update_B, update_B_step, skip_B_step, operand=None)
@@ -587,34 +617,34 @@ class Agent(Module):
 
         return agent
 
-    def process_obs(self, observations):
+    def process_obs(self, observations: list[Array] | list[int]) -> list[Array]:
         """
         Preprocess observations into the distributional format expected by the inference routines.
 
         Parameters
         ----------
-        observations: ``list`` or ``tuple``
+        observations: list[Array] or list[int]
             The observation input. Format depends on the default preprocessing:
 
-            - If ``self.categorical_obs=False`` (default): Each entry ``observations[m]`` is an integer
-              index representing the discrete observation for modality ``m``.
+            - If `self.categorical_obs=False` (default): Each entry `observations[m]` is an integer
+              index representing the discrete observation for modality `m`.
 
-            - If ``self.categorical_obs=True``: Each entry ``observations[m]`` is a 1D array representing
-              a probability distribution over observations for modality ``m``.
+            - If `self.categorical_obs=True`: Each entry `observations[m]` is a 1D array representing
+              a probability distribution over observations for modality `m`.
 
         Returns
         -------
-        o_vec: ``list`` or ``tuple``
+        o_vec: list[Array]
             Observations in distributional form (one-hot vectors or categorical distributions).
 
         Notes
         -----
-        If ``self.preprocess_fn`` is set on the agent, it takes precedence over the default
+        If `self.preprocess_fn` is set on the agent, it takes precedence over the default
         categorical/discrete handling and will be used instead of the logic based on
-        ``self.categorical_obs``. This override only affects preprocessing; ``self.categorical_obs``
+        `self.categorical_obs`. This override only affects preprocessing; `self.categorical_obs`
         is still used by learning and planning code paths that consume raw observations.
-        Ensure ``self.categorical_obs`` matches the output format of your preprocessing
-        (or per-call ``preprocess_fn``) to keep those paths consistent.
+        Ensure `self.categorical_obs` matches the output format of your preprocessing
+        (or per-call `preprocess_fn`) to keep those paths consistent.
         """
         if self.preprocess_fn is not None:
             return self.preprocess_fn(observations)
@@ -624,90 +654,90 @@ class Agent(Module):
 
         return self.make_categorical(observations)
 
-    def make_categorical(self, observations):
+    def make_categorical(self, observations: list[Array] | list[int]) -> list[Array]:
         """
         Convert discrete index observations into one-hot categorical distributions.
 
         Parameters
         ----------
-        observations: ``list`` or ``tuple``
-            Each entry ``observations[m]`` is an integer index for modality ``m``.
+        observations: list[Array] or list[int]
+            Each entry `observations[m]` is an integer index for modality `m`.
 
         Returns
         -------
-        o_vec: ``list``
+        o_vec: list
             One-hot categorical distributions for each modality.
         """
         return [nn.one_hot(o, self.num_obs[m]) for m, o in enumerate(observations)]
 
     def infer_states(
         self,
-        observations,
-        empirical_prior,
+        observations: list[Array] | list[int],
+        empirical_prior: list[Array],
         *,
-        past_actions=None,
-        qs_hist=None,
-        valid_steps=None,
-        mask=None,
-        preprocess_fn=None,
-    ):
+        past_actions: Array | None = None,
+        qs_hist: list[Array] | None = None,
+        valid_steps: int | Array | None = None,
+        mask: list[Array] | None = None,
+        preprocess_fn: Callable | None = None,
+    ) -> list[Array]:
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
         Parameters
         ----------
-        observations: ``list`` or ``tuple``
-            The observation input. Format depends on the preprocessing function used:
+        observations: list[Array] | list[int]
+            Observation input in one of two formats:
 
-            - If using the default preprocessing with ``self.categorical_obs=False``:
-              Each entry ``observations[m]`` is an integer
-              index representing the discrete observation for modality ``m``.
+            - Discrete observations (default): each `observations[m]` is an
+              integer index for modality `m`.
+            - Categorical observations: each `observations[m]` is a probability
+              vector over outcomes for modality `m`.
 
-            - If using the default preprocessing with ``self.categorical_obs=True``:
-              Each entry ``observations[m]`` is a 1D array representing
-              a probability distribution over observations for modality ``m``. Must sum to 1.0.
+            If `preprocess_fn` is provided, it should map the raw input to
+            categorical observations and takes precedence over default handling.
 
-        empirical_prior: ``list`` or ``tuple`` of ``jax.numpy.ndarray``
+        empirical_prior: list[Array] or tuple[Array]
             Empirical prior beliefs over hidden states. Depending on the inference algorithm chosen,
-            the resulting ``empirical_prior`` variable may be a matrix (or list of matrices)
+            the resulting `empirical_prior` variable may be a matrix (or list[Array]).
             of additional dimensions to encode extra conditioning variables like timepoint and policy.
 
-        past_actions: ``list`` or ``tuple`` of ints, optional
-            The action input. Each entry ``past_actions[f]`` stores indices representing the actions
-            for control factor ``f``.
+        past_actions: list[int] or tuple[int], optional
+            The action input. Each entry `past_actions[f]` stores indices representing the actions
+            for control factor `f`.
 
-        qs_hist: ``list`` or ``tuple`` of ``jax.numpy.ndarray``, optional
+        qs_hist: list[Array] or tuple[Array], optional
             History of posterior beliefs over hidden states.
 
-        valid_steps: ``jax.numpy.ndarray`` or ``int``, optional
+        valid_steps: Array or int, optional
             Number of valid (unpadded) timesteps when using fixed-size sequence windows.
             If provided, sequence inference methods (`mmp`, `vmp`) ignore padded prefix
             timesteps and transitions.
 
-        mask: ``list`` or ``tuple``, optional
+        mask: list[Array] or tuple[Array], optional
             Mask for observations.
 
         preprocess_fn: callable, optional
             Optional preprocessing function to convert observations into distributional form.
-            If None, defaults to ``self.process_obs``. The callable should accept
-            ``observations`` and return distributional observations.
+            If None, defaults to `self.process_obs`. The callable should accept
+            `observations` and return distributional observations.
 
         Notes
         -----
-        ``categorical_obs`` is no longer an argument to ``infer_states``. Set it when
-        constructing the agent or supply a ``preprocess_fn``. If you provide a custom
-        preprocessing function, ensure ``self.categorical_obs`` matches the output format,
+        `categorical_obs` is no longer an argument to `infer_states`. Set it when
+        constructing the agent or supply a `preprocess_fn`. If you provide a custom
+        preprocessing function, ensure `self.categorical_obs` matches the output format,
         since it is still used by learning and planning code paths that consume raw observations.
 
         Returns
         -------
-        qs: ``list`` of ``jax.numpy.ndarray``
+        qs: list[Array]
             Posterior beliefs over hidden states. Depending on the inference algorithm chosen,
-            the resulting ``qs`` variable will have additional sub-structure to reflect whether
+            the resulting `qs` variable will have additional sub-structure to reflect whether
             beliefs are additionally conditioned on timepoint and policy.
-            For example, in case the ``self.inference_algo == 'MMP'`` indexing structure is
-            policy->timepoint->factor, so that ``qs[p_idx][t_idx][f_idx]`` refers to beliefs
-            about marginal factor ``f_idx`` expected under policy ``p_idx`` at timepoint ``t_idx``.
+            For example, in case the `self.inference_algo == 'MMP'` indexing structure is
+            policy->timepoint->factor, so that `qs[p_idx][t_idx][f_idx]` refers to beliefs
+            about marginal factor `f_idx` expected under policy `p_idx` at timepoint `t_idx`.
 
         Examples
         --------
@@ -777,22 +807,22 @@ class Agent(Module):
 
         return output
 
-    def update_empirical_prior(self, action, qs):
+    def update_empirical_prior(self, action: Array, qs: list[Array]) -> list[Array]:
         """
         Compute the empirical prior used for the next state-inference step.
 
         Parameters
         ----------
-        action: ``jax.numpy.ndarray``
+        action: Array
             Action sampled at the current timestep for each control factor.
-        qs: ``list`` of ``jax.numpy.ndarray``
+        qs: list[Array]
             Posterior beliefs over hidden states for the current timestep/history.
 
         Returns
         -------
-        pred: ``list`` of ``jax.numpy.ndarray``
+        pred: list[Array]
             Predicted prior over hidden states for the next inference step.
-            For sequence methods (``mmp``, ``vmp``), this returns ``self.D`` to preserve sequence-inference semantics.
+            For sequence methods (`mmp`, `vmp`), this returns `self.D` to preserve sequence-inference semantics.
         """
         # this computation of the predictive prior is correct only for fully factorised Bs.
         if self.inference_algo in inference.SEQUENCE_METHODS:
@@ -805,19 +835,27 @@ class Agent(Module):
         
         return pred
 
-    def infer_policies(self, qs: List):
+    def infer_policies(self, qs: list[Array]) -> tuple[Array, Array]:
         """
         Perform policy inference by optimizing a posterior (categorical) distribution over policies.
-        This distribution is computed as the softmax of ``G * gamma + lnE`` where ``G`` is the negative expected
-        free energy of policies, ``gamma`` is a policy precision and ``lnE`` is the (log) prior probability of policies.
+        This distribution is computed as the softmax of `G * gamma + lnE` where `G` is the negative expected
+        free energy of policies, `gamma` is a policy precision and `lnE` is the (log) prior probability of policies.
         This function returns the posterior over policies as well as the negative expected free energy of each policy.
+
+        Parameters
+        ----------
+        qs: list[Array]
+            Posterior beliefs over hidden states (typically output of
+            `infer_states`), including the most recent timestep.
 
         Returns
         ----------
-        q_pi: 1D ``numpy.ndarray``
-            Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
-        G: 1D ``numpy.ndarray``
-            Negative expected free energies of each policy, i.e. a vector containing one negative expected free energy per policy.
+        q_pi: Array
+            Posterior beliefs over policies with shape
+            `(batch_size, num_policies)`.
+        G: Array
+            Negative expected free energies of policies with shape
+            `(batch_size, num_policies)`.
         """
 
         latest_belief = jtu.tree_map(lambda x: x[:, -1], qs) # only get the posterior belief held at the current timepoint
@@ -847,19 +885,19 @@ class Agent(Module):
 
         return q_pi, G
     
-    def multiaction_probabilities(self, q_pi: Array):
+    def multiaction_probabilities(self, q_pi: Array) -> Array:
         """
         Compute probabilities of unique multi-actions from the posterior over policies.
 
         Parameters
         ----------
-        q_pi: 1D ``numpy.ndarray``
-        Posterior beliefs over policies, i.e. a vector containing one posterior probability per policy.
+        q_pi: Array
+            Posterior beliefs over policies for one batch element.
 
         Returns
         ----------
-        multi-action: 1D ``jax.numpy.ndarray``
-            Vector containing probabilities of possible multi-actions for different factors
+        Array
+            Probability vector over unique multi-actions.
         """
 
         if self.sampling_mode == "marginal":
@@ -878,16 +916,23 @@ class Agent(Module):
 
         return marginals
 
-    def sample_action(self, q_pi: Array, rng_key=None):
+    def sample_action(self, q_pi: Array, rng_key: Array | None = None) -> Array:
         """
         Sample or select a discrete action from the posterior over control states.
         
+        Parameters
+        ----------
+        q_pi: Array
+            Posterior over policies for each batch element (usually from
+            `infer_policies`).
+        rng_key: Array or sequence of keys, optional
+            Required for stochastic action selection. For batched agents, pass a
+            key array with one key per batch element.
+
         Returns
         ----------
-        action: 1D ``jax.numpy.ndarray``
-            Vector containing the indices of the actions for each control factor
-        action_probs: 2D ``jax.numpy.ndarray``
-            Array of action probabilities
+        action: Array
+            Action indices per batch element and control factor.
         """
         if (rng_key is None) and (self.action_selection == "stochastic"):
             raise ValueError("Please provide a random number generator key to sample actions stochastically")
@@ -901,8 +946,20 @@ class Agent(Module):
 
         return action
     
-    def decode_multi_actions(self, action):
-        """Decode flattened actions to multiple actions"""
+    def decode_multi_actions(self, action: Array) -> Array:
+        """Decode flattened multi-actions back to factor-wise actions.
+
+        Parameters
+        ----------
+        action: Array
+            Flattened multi-action indices.
+
+        Returns
+        -------
+        Array
+            Array of shape `(batch_size, num_controls_multi)` containing decoded
+            actions per control factor.
+        """
         if self.action_maps is None:
             return action
 
@@ -915,8 +972,19 @@ class Agent(Module):
             action_multi = action_multi.at[..., action_map["multi_dependency"]].set(action_multi_f)
         return action_multi
 
-    def encode_multi_actions(self, action_multi):
-        """Encode multiple actions to flattened actions"""
+    def encode_multi_actions(self, action_multi: Array) -> Array:
+        """Encode factor-wise multi-actions into flattened actions.
+
+        Parameters
+        ----------
+        action_multi: Array
+            Array of actions per control factor.
+
+        Returns
+        -------
+        Array
+            Flattened action indices with shape `(batch_size, num_controls)`.
+        """
         if self.action_maps is None:
             return action_multi
 
@@ -933,9 +1001,25 @@ class Agent(Module):
             action = action.at[..., f].set(action_f)
         return action
 
-    def get_model_dimensions(self):
+    def get_model_dimensions(self) -> dict[str, Any]:
         """
-        Get a dictionary of the model dimensions.
+        Collect key model dimensions in a single object.
+
+        Returns
+        -------
+        dict[str, Any]
+            Dictionary containing model shape metadata. Includes:
+
+            - `num_obs`: list[int]
+            - `num_states`: list[int]
+            - `num_controls`: list[int]
+            - `num_modalities`: int
+            - `num_factors`: int
+            - `num_policies`: int
+            - `policy_len`: int
+            - `inference_horizon`: int | None
+            - `A_dependencies`: list[list[int]]
+            - `B_dependencies`: list[list[int]]
         """
         return {
             "num_obs": self.num_obs,
@@ -950,7 +1034,14 @@ class Agent(Module):
             "B_dependencies": self.B_dependencies,
         }
 
-    def _construct_dependencies(self, A_dependencies, B_dependencies, B_action_dependencies, A, B):
+    def _construct_dependencies(
+        self,
+        A_dependencies: list[list[int]] | None,
+        B_dependencies: list[list[int]] | None,
+        B_action_dependencies: list[list[int]] | None,
+        A: list[Array] | list[Distribution],
+        B: list[Array] | list[Distribution],
+    ) -> tuple[list[list[int]], list[list[int]], list[list[int]]]:
         if A_dependencies is not None:
             A_dependencies = A_dependencies
         elif isinstance(A[0], Distribution) and isinstance(B[0], Distribution):
@@ -972,7 +1063,12 @@ class Agent(Module):
             B_action_dependencies = [[f] for f in range(self.num_factors)]
         return A_dependencies, B_dependencies, B_action_dependencies
 
-    def _flatten_B_action_dims(self, B, pB, B_action_dependencies):
+    def _flatten_B_action_dims(
+        self,
+        B: list[Array],
+        pB: list[Array] | None,
+        B_action_dependencies: list[list[int]],
+    ) -> tuple[list[Array], list[Array] | None, list[dict[str, Any]]]:
         assert hasattr(B[0], "shape"), "Elements of B must be tensors and have attribute shape"
         action_maps = []  # mapping from multi action dependencies to flat action dependencies for each B
         B_flat = []
@@ -1004,7 +1100,7 @@ class Agent(Module):
             pB_flat = None
         return B_flat, pB_flat, action_maps
 
-    def _construct_flattend_policies(self, policies, action_maps):
+    def _construct_flattend_policies(self, policies: Array, action_maps: list[dict[str, Any]]) -> Array:
         policies_flat = []
         for action_map in action_maps:
             if action_map["multi_dependency"] == []:
@@ -1020,7 +1116,7 @@ class Agent(Module):
         policies_flat = jnp.stack(policies_flat, axis=-1)
         return policies_flat
 
-    def _get_default_params(self):
+    def _get_default_params(self) -> dict[str, Any] | None:
         method = self.inference_algo
         default_params = None
         if method == "VANILLA":
@@ -1038,7 +1134,7 @@ class Agent(Module):
 
         return default_params
 
-    def _validate(self):
+    def _validate(self) -> None:
         for m in range(self.num_modalities):
             factor_dims = tuple([self.num_states[f] for f in self.A_dependencies[m]])
             assert (
