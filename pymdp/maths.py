@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 
 from functools import partial
-from typing import Optional, Tuple, List, Sequence
+from typing import Optional, Tuple, Sequence
 from jax import tree_util, nn, jit, vmap, lax
 from jax.scipy.special import xlogy, digamma
 from opt_einsum import contract
@@ -18,7 +18,7 @@ def stable_xlogx(x: ArrayLike) -> ArrayLike:
 
     Parameters
     ----------
-    x: `ArrayLike`
+    x: ArrayLike
         Input tensor.
 
     Returns
@@ -33,7 +33,7 @@ def stable_entropy(x: ArrayLike) -> ArrayLike:
 
     Parameters
     ----------
-    x: `ArrayLike`
+    x: ArrayLike
         Tensor of probabilities.
 
     Returns
@@ -48,9 +48,9 @@ def stable_cross_entropy(x: ArrayLike, y: ArrayLike) -> ArrayLike:
 
     Parameters
     ----------
-    x: `ArrayLike`
+    x: ArrayLike
         Source distribution tensor.
-    y: `ArrayLike`
+    y: ArrayLike
         Target distribution tensor.
 
     Returns
@@ -65,7 +65,7 @@ def log_stable(x: ArrayLike) -> ArrayLike:
 
     Parameters
     ----------
-    x: `ArrayLike`
+    x: ArrayLike
         Input tensor.
 
     Returns
@@ -86,11 +86,11 @@ def factor_dot(
 
     Parameters
     ----------
-    M: `ArrayLike`
+    M: ArrayLike
         Input tensor to be contracted.
-    xs: `List[ArrayLike]`
+    xs: list[ArrayLike]
         Factors to contract against `M`.
-    keep_dims: `tuple[int] | None`, optional
+    keep_dims: tuple[int] | None, optional
         Axes retained in the output.
 
     Returns
@@ -113,11 +113,11 @@ def factor_dot(
 
     Parameters
     ----------
-    M: `JAXSparse`
+    M: JAXSparse
         Sparse input tensor.
-    xs: `List[ArrayLike]`
+    xs: list[ArrayLike]
         Factors to contract against `M`.
-    keep_dims: `tuple[int] | None`, optional
+    keep_dims: tuple[int] | None, optional
         Axes retained in the output.
 
     Returns
@@ -142,13 +142,13 @@ def spm_dot_sparse(
 
     Parameters
     ----------
-    X: `JAXSparse`
+    X: JAXSparse
         Sparse tensor to contract.
-    x: `List[ArrayLike]`
+    x: list[ArrayLike]
         Factors to contract against `X`.
-    dims: `List[tuple[int]] | None`
+    dims: list[tuple[int]] | None
         Input axes in `X` aligned to each entry in `x`.
-    keep_dims: `List[tuple[int]] | None`
+    keep_dims: list[tuple[int]] | None
         Axes preserved in the output.
 
     Returns
@@ -186,18 +186,18 @@ def factor_dot_flex(
 
     Parameters
     ----------
-    M: `Array`
+    M: Array
         Tensor to be contracted.
-    xs: `List[ArrayLike]`
+    xs: list[ArrayLike]
         Factors to contract against `M`.
-    dims: `List[tuple[int]]`
+    dims: list[tuple[int]]
         Axes in `M` aligned to each tensor in `xs`.
-    keep_dims: `tuple[int]`, optional
+    keep_dims: tuple[int], optional
         Axes to retain in the output even if listed in `dims`.
 
     Returns
     -------
-    `Array`
+    Array
         Result of the contracted dot product.
     """
     all_dims = tuple(range(M.ndim))
@@ -217,16 +217,16 @@ def compute_log_likelihood_single_modality(
 
     Parameters
     ----------
-    o_m: `ArrayLike`
+    o_m: ArrayLike
         Observation for one modality.
-    A_m: `ArrayLike`
+    A_m: ArrayLike
         Likelihood tensor for one modality.
     distr_obs: bool, default=True
         Interpret `o_m` as distribution if `True`, otherwise as discrete index.
 
     Returns
     -------
-    `ArrayLike`
+    ArrayLike
         Log-likelihood for this modality.
     """
     if distr_obs:
@@ -244,16 +244,16 @@ def compute_log_likelihood(
 
     Parameters
     ----------
-    obs: `List[ArrayLike]`
+    obs: list[ArrayLike]
         Observations for each modality.
-    A: `List[ArrayLike]`
+    A: list[ArrayLike]
         Likelihood tensors for each modality.
     distr_obs: bool, default=True
         Interpret observations as distributions if `True`.
 
     Returns
     -------
-    `ArrayLike`
+    ArrayLike
         Combined log-likelihood over hidden states.
     """
     result = tree_util.tree_map(lambda o, a: compute_log_likelihood_single_modality(o, a, distr_obs=distr_obs), obs, A)
@@ -269,16 +269,16 @@ def compute_log_likelihood_per_modality(
 
     Parameters
     ----------
-    obs: `List[ArrayLike]`
+    obs: list[ArrayLike]
         Observations for each modality.
-    A: `List[ArrayLike]`
+    A: list[ArrayLike]
         Likelihood tensors for each modality.
     distr_obs: bool, default=True
         Interpret observations as distributions if `True`.
 
     Returns
     -------
-    `List[ArrayLike]`
+    list[ArrayLike]
         Per-modality log-likelihood tensors.
     """
     ll_all = tree_util.tree_map(lambda o, a: compute_log_likelihood_single_modality(o, a, distr_obs=distr_obs), obs, A)
@@ -291,16 +291,16 @@ def compute_accuracy(qs: list[ArrayLike], obs: list[ArrayLike], A: list[ArrayLik
 
     Parameters
     ----------
-    qs: `List[ArrayLike]`
+    qs: list[ArrayLike]
         Marginal state beliefs.
-    obs: `List[ArrayLike]`
+    obs: list[ArrayLike]
         Observations for each modality.
-    A: `List[ArrayLike]`
+    A: list[ArrayLike]
         Likelihood tensors for each modality.
 
     Returns
     -------
-    `ArrayLike`
+    ArrayLike
         Expected log-likelihood term.
     """
 
@@ -327,18 +327,18 @@ def compute_free_energy(
 
     Parameters
     ----------
-    qs: `List[ArrayLike]`
+    qs: list[ArrayLike]
         Marginal state beliefs per factor.
-    prior: `List[ArrayLike]`
+    prior: list[ArrayLike]
         Prior distributions per factor.
-    obs: `List[ArrayLike]`
+    obs: list[ArrayLike]
         Observations for each modality.
-    A: `List[ArrayLike]`
+    A: list[ArrayLike]
         Likelihood tensors per modality.
 
     Returns
     -------
-    `ArrayLike`
+    ArrayLike
         Variational free energy value.
     """
 
@@ -358,12 +358,12 @@ def multidimensional_outer(arrs: list[ArrayLike]) -> ArrayLike:
 
     Parameters
     ----------
-    arrs: `List[ArrayLike]`
+    arrs: list[ArrayLike]
         List of arrays to combine.
 
     Returns
     -------
-    `ArrayLike`
+    ArrayLike
         Outer product tensor.
     """
 
@@ -381,12 +381,12 @@ def _exact_wnorm(A: ArrayLike) -> ArrayLike:
 
     Parameters
     ----------
-    A: `ArrayLike`
+    A: ArrayLike
         Dirichlet-like array.
 
     Returns
     -------
-    `ArrayLike`
+    ArrayLike
         Exact parameter information-gain weight matrix.
     """
     # Clip once and reuse for numerical stability
@@ -411,14 +411,14 @@ def spm_wnorm(A: ArrayLike, exact_param_info_gain: bool = True) -> ArrayLike:
 
     Parameters
     ----------
-    A: `ArrayLike`
+    A: ArrayLike
         Dirichlet concentration-like array.
     exact_param_info_gain: bool, default=True
         Choose exact (`True`) or legacy heuristic (`False`) form.
 
     Returns
     -------
-    `ArrayLike`
+    ArrayLike
         Parameter information-gain weight matrix.
     """
 
@@ -440,14 +440,14 @@ def dirichlet_expected_value(dir_arr: ArrayLike, event_dim: int = 0) -> ArrayLik
 
     Parameters
     ----------
-    dir_arr: `ArrayLike`
+    dir_arr: ArrayLike
         Dirichlet parameters.
     event_dim: int, default=0
         Event axis to normalize over.
 
     Returns
     -------
-    `ArrayLike`
+    ArrayLike
         Expected Categorical probabilities.
     """
     dir_arr = jnp.clip(dir_arr, min=MINVAL)
@@ -466,14 +466,14 @@ def compute_log_likelihoods_padded(obs_padded: ArrayLike, A_padded: ArrayLike) -
 
     Parameters
     ----------
-    obs_padded: `ArrayLike`
+    obs_padded: ArrayLike
         Padded observations.
-    A_padded: `ArrayLike`
+    A_padded: ArrayLike
         Padded likelihood tensor.
 
     Returns
     -------
-    `ArrayLike`
+    ArrayLike
         Log-stable likelihood over padded input.
     """
     return log_stable(
@@ -487,14 +487,14 @@ def deconstruct_lls(
 
     Parameters
     ----------
-    lls_padded: `ArrayLike`
+    lls_padded: ArrayLike
         Combined padded log-likelihood tensor.
-    A_shapes: `Sequence[tuple[int, ...]]`
+    A_shapes: Sequence[tuple[int, ...]]
         Original unpadded shapes per modality.
 
     Returns
     -------
-    `List[ArrayLike]`
+    list[ArrayLike]
         One tensor per modality.
     """
     # Extract batch size from the first A_shape (all should have the same batch size)
@@ -522,14 +522,14 @@ def compute_log_likelihoods_flat_block_diag_einsum(
 
     Parameters
     ----------
-    A_big: `ArrayLike`
+    A_big: ArrayLike
         Block-diagonal likelihood matrix.
-    obs_big: `ArrayLike`
+    obs_big: ArrayLike
         Block-diagonal observations.
 
     Returns
     -------
-    `ArrayLike`
+    ArrayLike
         Flat log-likelihoods.
     """
     # ll_flat = A_big @ obs_big
@@ -544,14 +544,14 @@ def compute_log_likelihoods_flat_block_diag(A_big: ArrayLike, obs_big: ArrayLike
 
     Parameters
     ----------
-    A_big: `ArrayLike`
+    A_big: ArrayLike
         Block-diagonal likelihood matrix.
-    obs_big: `ArrayLike`
+    obs_big: ArrayLike
         Block-diagonal observations.
 
     Returns
     -------
-    `ArrayLike`
+    ArrayLike
         Flat log-likelihoods.
     """
     ll_flat = A_big @ obs_big
@@ -567,16 +567,16 @@ def deconstruct_log_likelihoods_block_diag(
 
     Parameters
     ----------
-    ll_flat: `ArrayLike`
+    ll_flat: ArrayLike
         Flat log-likelihood tensor.
-    state_shapes: `Sequence[tuple[int, ...]]`
+    state_shapes: Sequence[tuple[int, ...]]
         Unwrapped state shapes per modality.
-    cuts: `Sequence[int]`
+    cuts: Sequence[int]
         Boundary indices for each modality block.
 
     Returns
     -------
-    `List[ArrayLike]`
+    list[ArrayLike]
         Reshaped per-modality likelihood tensors.
     """
     pieces = jnp.split(ll_flat, cuts, axis=1)
@@ -595,20 +595,20 @@ def compute_log_likelihoods_block_diag(
 
     Parameters
     ----------
-    A_big: `ArrayLike`
+    A_big: ArrayLike
         Block-diagonal likelihood matrix.
-    obs_big: `ArrayLike`
+    obs_big: ArrayLike
         Concatenated block observations.
-    state_shapes: `Sequence[tuple[int, ...]]`
+    state_shapes: Sequence[tuple[int, ...]]
         Shape of each modality block.
-    cuts: `Sequence[int]`
+    cuts: Sequence[int]
         Cumulative cut indices.
     use_einsum: bool, default=False
         Use explicit einsum path if `True`.
 
     Returns
     -------
-    `List[ArrayLike]`
+    list[ArrayLike]
         Per-modality log-likelihood tensors.
     """
     # obs_big = concatenate_observations_block_diag(obs_list)
@@ -627,12 +627,12 @@ def log_stable_sparse(x: ArrayLike) -> ArrayLike:
 
     Parameters
     ----------
-    x: `ArrayLike`
+    x: ArrayLike
         Input tensor.
 
     Returns
     -------
-    `ArrayLike`
+    ArrayLike
         Elementwise log with sparse support preserved.
     """
     if isinstance(x, jsparse.BCOO):
@@ -647,16 +647,16 @@ def compute_log_likelihood_per_modality_end2end2_padded(
 
     Parameters
     ----------
-    obs_padded: `ArrayLike`
+    obs_padded: ArrayLike
         Padded observations.
-    A_padded: `ArrayLike`
+    A_padded: ArrayLike
         Padded likelihood tensors.
     sparsity: str
         If `"ll_only"` return only dense log-likelihoods, else sparse variant.
 
     Returns
     -------
-    `ArrayLike`
+    ArrayLike
         Log-likelihood tensor.
     """
     likelihood = (

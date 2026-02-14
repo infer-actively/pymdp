@@ -7,7 +7,7 @@ sequences, and exact single-factor scan-based HMM smoothing.
 
 import jax.numpy as jnp
 import jax.tree_util as jtu
-from typing import Any, Callable, NamedTuple, Tuple, List
+from typing import Any, Callable, NamedTuple, Tuple
 from jax import jit, vmap, grad, lax, nn
 from jaxtyping import Array
 # from jax.config import config
@@ -479,17 +479,17 @@ def run_mmp(
 
     Parameters
     ----------
-    A : List[Array]
+    A : list[Array]
         Model likelihood tensors.
-    B : List[Array] | None
+    B : list[Array] | None
         Transition tensors (or `None` for static-state models).
-    obs : List[Array]
+    obs : list[Array]
         Observation sequence per modality.
-    prior : List[Array]
+    prior : list[Array]
         Sequence prior over hidden states.
-    A_dependencies : List[List[int]]
+    A_dependencies : list[list[int]]
         Sparse observation dependencies per modality.
-    B_dependencies : List[List[int]]
+    B_dependencies : list[list[int]]
         Sparse transition dependencies per factor.
     num_iter : int, default=1
         Number of variational update iterations.
@@ -504,7 +504,7 @@ def run_mmp(
 
     Returns
     -------
-    List[Array]
+    list[Array]
         Sequence posterior beliefs per hidden-state factor.
     """
     qs = update_marginals(
@@ -670,14 +670,14 @@ def run_factorized_fpi_end2end_padded(
 
 class FilterMessage(NamedTuple):
     # A: conditional transition-like matrix for the segment
-    A: jnp.ndarray      # (..., K, K)
+    A: Array      # (..., K, K)
     # log_b: log normalizer term (per left-boundary state)
-    log_b: jnp.ndarray  # (..., K)
+    log_b: Array  # (..., K)
 
 
-def _normalize_preserve_zeros(u: jnp.ndarray,
+def _normalize_preserve_zeros(u: Array,
                               axis: int = -1,
-                              eps: float = 1e-15) -> Tuple[jnp.ndarray, jnp.ndarray]:
+                              eps: float = 1e-15) -> Tuple[Array, Array]:
     """
     Normalize along `axis` while preserving exact structural zeros and flooring tiny
     positive values to improve gradient stability in near-degenerate regimes.
@@ -691,8 +691,8 @@ def _normalize_preserve_zeros(u: jnp.ndarray,
     return u_safe / c_safe, jnp.squeeze(c_safe, axis=axis)
 
 
-def _log_predictive_normalizer(predicted_probs: jnp.ndarray,
-                               log_likelihoods: jnp.ndarray) -> jnp.ndarray:
+def _log_predictive_normalizer(predicted_probs: Array,
+                               log_likelihoods: Array) -> Array:
     """
     Compute log c_t = log p(x_t | x_{1:t-1}) in a stable way for each timestep.
     """
@@ -700,9 +700,9 @@ def _log_predictive_normalizer(predicted_probs: jnp.ndarray,
     stable_weights = jnp.exp(log_likelihoods - ll_max)
     return log_stable(jnp.sum(predicted_probs * stable_weights, axis=-1)) + ll_max.squeeze(-1)
 
-def _condition_on(A: jnp.ndarray,
-                  ll: jnp.ndarray,
-                  axis: int = -1) -> Tuple[jnp.ndarray, jnp.ndarray]:
+def _condition_on(A: Array,
+                  ll: Array,
+                  axis: int = -1) -> Tuple[Array, Array]:
     """
     Condition a transition-like object A on log-likelihood ll in a numerically stable way.
 
@@ -729,10 +729,10 @@ def _condition_on(A: jnp.ndarray,
 
 
 def _hmm_filter_scan_row_oriented(
-    initial_probs: jnp.ndarray,
-    transition_mats: jnp.ndarray,
-    log_likelihoods: jnp.ndarray,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    initial_probs: Array,
+    transition_mats: Array,
+    log_likelihoods: Array,
+) -> tuple[Array, Array, Array]:
     """
     Core row-oriented HMM filtering via associative scan.
 
@@ -797,10 +797,10 @@ def _hmm_filter_scan_row_oriented(
 
 
 def hmm_filter_scan_rowstoch(
-    initial_probs: jnp.ndarray,
-    transition_mats: jnp.ndarray,
-    log_likelihoods: jnp.ndarray,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    initial_probs: Array,
+    transition_mats: Array,
+    log_likelihoods: Array,
+) -> tuple[Array, Array, Array]:
     """
     Exact HMM filtering via `lax.associative_scan` for row-stochastic transitions.
 
@@ -825,10 +825,10 @@ def hmm_filter_scan_rowstoch(
 
 
 def _hmm_smoother_scan_row_oriented(
-    initial_probs: jnp.ndarray,
-    transition_mats: jnp.ndarray,
-    log_likelihoods: jnp.ndarray,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    initial_probs: Array,
+    transition_mats: Array,
+    log_likelihoods: Array,
+) -> tuple[Array, Array, Array, Array, Array, Array]:
     """
     Core row-oriented HMM filtering + smoothing via associative scans.
 
@@ -853,7 +853,7 @@ def _hmm_smoother_scan_row_oriented(
         col_scale = jnp.exp(log_likelihoods[1:] - log_c[1:][:, None])
         M = transition_mats * col_scale[:, None, :]
 
-        def op(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
+        def op(x: Array, y: Array) -> Array:
             # batched matmul works; associative_scan may call this with leading batch dims
             return y @ x
 
@@ -884,10 +884,10 @@ def _hmm_smoother_scan_row_oriented(
 
 
 def hmm_smoother_scan_rowstoch(
-    initial_probs: jnp.ndarray,
-    transition_mats: jnp.ndarray,
-    log_likelihoods: jnp.ndarray,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    initial_probs: Array,
+    transition_mats: Array,
+    log_likelihoods: Array,
+) -> tuple[Array, Array, Array, Array, Array, Array]:
     """
     Exact HMM filtering + smoothing via associative scans for row-stochastic transitions.
 
@@ -910,10 +910,10 @@ def hmm_smoother_scan_rowstoch(
 
 
 def hmm_filter_scan_colstoch(
-    initial_probs: jnp.ndarray,
-    B_mats: jnp.ndarray,
-    log_likelihoods: jnp.ndarray,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    initial_probs: Array,
+    B_mats: Array,
+    log_likelihoods: Array,
+) -> tuple[Array, Array, Array]:
     """
     Exact HMM filtering via `lax.associative_scan` for column-stochastic transitions.
 
@@ -941,9 +941,9 @@ def hmm_filter_scan_colstoch(
 
 
 def hmm_smoother_scan_colstoch(
-    initial_probs: jnp.ndarray,
-    B_mats: jnp.ndarray,
-    log_likelihoods: jnp.ndarray,
+    initial_probs: Array,
+    B_mats: Array,
+    log_likelihoods: Array,
     return_trans_probs: bool = False,
 ) -> tuple[Any, ...]:
     """
@@ -988,8 +988,8 @@ def hmm_smoother_scan_colstoch(
 
 
 def hmm_smoother_from_filtered_colstoch(
-    filtered_probs: jnp.ndarray,
-    B_mats: jnp.ndarray,
+    filtered_probs: Array,
+    B_mats: Array,
     return_trans_probs: bool = False,
 ) -> tuple[Any, ...]:
     """
@@ -1052,7 +1052,7 @@ def hmm_smoother_from_filtered_colstoch(
     M = cond_probs.transpose(0, 2, 1)  # (T-1, K_curr, K_next)
     R = M[::-1]
 
-    def op(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
+    def op(x: Array, y: Array) -> Array:
         return y @ x
 
     P_rev = lax.associative_scan(op, R)  # cumulative products from the end

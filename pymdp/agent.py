@@ -11,7 +11,7 @@ from pymdp import inference, control, learning, utils
 from pymdp.distribution import Distribution, get_dependencies
 from equinox import Module, field, tree_at
 
-from typing import Any, Callable, List, Optional, Sequence, Union
+from typing import Any, Callable, Optional, Sequence, Union
 from jaxtyping import Array
 from functools import partial
 from jax import lax
@@ -22,7 +22,7 @@ class Agent(Module):
 
     Examples
     --------
-    .. code-block:: python
+    A single timestep of active inference:
 
         from jax import random as jr
 
@@ -57,13 +57,13 @@ class Agent(Module):
     discrete/categorical handling.
     """
 
-    A: List[Array]
-    B: List[Array]
-    C: List[Array]
-    D: List[Array]
+    A: list[Array]
+    B: list[Array]
+    C: list[Array]
+    D: list[Array]
     E: Array
-    pA: List[Array]
-    pB: List[Array]
+    pA: list[Array]
+    pB: list[Array]
     gamma: Array
     alpha: Array
 
@@ -75,25 +75,25 @@ class Agent(Module):
     # epsilon for inductive inference (trade-off/weight for how much inductive value contributes to EFE of policies)
     inductive_epsilon: Array
     # H vectors (one per hidden state factor) used for inductive inference -- these encode goal states or constraints
-    H: List[Array]
+    H: list[Array]
     # I matrices (one per hidden state factor) used for inductive inference -- these encode the 'reachability' matrices of goal states encoded in `self.H`
-    I: List[Array]
+    I: list[Array]
     # static parameters not leaves of the PyTree
-    A_dependencies: Optional[List] = field(static=True)
-    B_dependencies: Optional[List] = field(static=True)
-    B_action_dependencies: Optional[List] = field(static=True)
+    A_dependencies: Optional[list[list[int]]] = field(static=True)
+    B_dependencies: Optional[list[list[int]]] = field(static=True)
+    B_action_dependencies: Optional[list[list[int]]] = field(static=True)
     # mapping from multi action dependencies to flat action dependencies for each B
-    action_maps: List[dict] = field(static=True)
+    action_maps: list[dict] = field(static=True)
     batch_size: int = field(static=True)
     num_iter: int = field(static=True)
-    num_obs: List[int] = field(static=True)
+    num_obs: list[int] = field(static=True)
     num_modalities: int = field(static=True)
-    num_states: List[int] = field(static=True)
+    num_states: list[int] = field(static=True)
     num_factors: int = field(static=True)
-    num_controls: List[int] = field(static=True)
+    num_controls: list[int] = field(static=True)
     # Used to store original action dimensions in case there are multiple action dependencies per state
-    num_controls_multi: List[int] = field(static=True)
-    control_fac_idx: Optional[List[int]] = field(static=True)
+    num_controls_multi: list[int] = field(static=True)
+    control_fac_idx: Optional[list[int]] = field(static=True)
     # depth of planning during roll-outs (i.e. number of timesteps to look ahead when computing expected free energy of policies)
     policy_len: int = field(static=True)
     # number of past timesteps (including current) to use for sequence inference (mmp, vmp, exact)
@@ -127,20 +127,20 @@ class Agent(Module):
 
     def __init__(
         self,
-        A: Union[List[Array], List[Distribution]],
-        B: Union[List[Array], List[Distribution]],
-        C: Optional[List[Array]] = None,
-        D: Optional[List[Array]] = None,
+        A: Union[list[Array], list[Distribution]],
+        B: Union[list[Array], list[Distribution]],
+        C: Optional[list[Array]] = None,
+        D: Optional[list[Array]] = None,
         E: Optional[Array] = None,
-        pA: Optional[List[Array]] = None,
-        pB: Optional[List[Array]] = None,
-        H: Optional[List[Array]] = None,
-        I: Optional[List[Array]] = None,
-        A_dependencies: Optional[List[List[int]]] = None,
-        B_dependencies: Optional[List[List[int]]] = None,
-        B_action_dependencies: Optional[List[List[int]]] = None,
-        num_controls: Optional[List[int]] = None,
-        control_fac_idx: Optional[List[int]] = None,
+        pA: Optional[list[Array]] = None,
+        pB: Optional[list[Array]] = None,
+        H: Optional[list[Array]] = None,
+        I: Optional[list[Array]] = None,
+        A_dependencies: Optional[list[list[int]]] = None,
+        B_dependencies: Optional[list[list[int]]] = None,
+        B_action_dependencies: Optional[list[list[int]]] = None,
+        num_controls: Optional[list[int]] = None,
+        control_fac_idx: Optional[list[int]] = None,
         policy_len: int = 1,
         policies: Optional[Union[Array, control.Policies]] = None,
         gamma: float | Array = 1.0,
@@ -425,15 +425,15 @@ class Agent(Module):
 
         Parameters
         ----------
-        beliefs_A: List[Array]
+        beliefs_A: list[Array]
             Marginal state beliefs used when updating the observation model
             parameters.
-        outcomes: List[Array]
+        outcomes: list[Array]
             Observation histories for each modality.
         actions: Array or None
             Action history aligned to time. For multi-action agents this should be
             shaped `(batch, T, num_factors)`.
-        beliefs_B: List[Array] | None, optional
+        beliefs_B: list[Array] | None, optional
             Optional sequence of beliefs used for transition updates. If `None`,
             transition updates are skipped.
         lr_pA: float, default=1.0
@@ -623,7 +623,7 @@ class Agent(Module):
 
         Parameters
         ----------
-        observations: List[Array] or List[int]
+        observations: list[Array] or list[int]
             The observation input. Format depends on the default preprocessing:
 
             - If `self.categorical_obs=False` (default): Each entry `observations[m]` is an integer
@@ -634,7 +634,7 @@ class Agent(Module):
 
         Returns
         -------
-        o_vec: List[Array]
+        o_vec: list[Array]
             Observations in distributional form (one-hot vectors or categorical distributions).
 
         Notes
@@ -660,7 +660,7 @@ class Agent(Module):
 
         Parameters
         ----------
-        observations: List[Array] or List[int]
+        observations: list[Array] or list[int]
             Each entry `observations[m]` is an integer index for modality `m`.
 
         Returns
@@ -686,7 +686,7 @@ class Agent(Module):
 
         Parameters
         ----------
-        observations: List[Array] | List[int]
+        observations: list[Array] | list[int]
             Observation input in one of two formats:
 
             - Discrete observations (default): each `observations[m]` is an
@@ -697,16 +697,16 @@ class Agent(Module):
             If `preprocess_fn` is provided, it should map the raw input to
             categorical observations and takes precedence over default handling.
 
-        empirical_prior: List[Array] or tuple[Array]
+        empirical_prior: list[Array] or tuple[Array]
             Empirical prior beliefs over hidden states. Depending on the inference algorithm chosen,
-            the resulting `empirical_prior` variable may be a matrix (or `List[Array]`).
+            the resulting `empirical_prior` variable may be a matrix (or list[Array]).
             of additional dimensions to encode extra conditioning variables like timepoint and policy.
 
-        past_actions: List[int] or tuple[int], optional
+        past_actions: list[int] or tuple[int], optional
             The action input. Each entry `past_actions[f]` stores indices representing the actions
             for control factor `f`.
 
-        qs_hist: List[Array] or tuple[Array], optional
+        qs_hist: list[Array] or tuple[Array], optional
             History of posterior beliefs over hidden states.
 
         valid_steps: Array or int, optional
@@ -714,7 +714,7 @@ class Agent(Module):
             If provided, sequence inference methods (`mmp`, `vmp`) ignore padded prefix
             timesteps and transitions.
 
-        mask: List[Array] or tuple[Array], optional
+        mask: list[Array] or tuple[Array], optional
             Mask for observations.
 
         preprocess_fn: callable, optional
@@ -731,7 +731,7 @@ class Agent(Module):
 
         Returns
         -------
-        qs: List[Array]
+        qs: list[Array]
             Posterior beliefs over hidden states. Depending on the inference algorithm chosen,
             the resulting `qs` variable will have additional sub-structure to reflect whether
             beliefs are additionally conditioned on timepoint and policy.
@@ -815,12 +815,12 @@ class Agent(Module):
         ----------
         action: Array
             Action sampled at the current timestep for each control factor.
-        qs: List[Array]
+        qs: list[Array]
             Posterior beliefs over hidden states for the current timestep/history.
 
         Returns
         -------
-        pred: List[Array]
+        pred: list[Array]
             Predicted prior over hidden states for the next inference step.
             For sequence methods (`mmp`, `vmp`), this returns `self.D` to preserve sequence-inference semantics.
         """
@@ -844,7 +844,7 @@ class Agent(Module):
 
         Parameters
         ----------
-        qs: List[Array]
+        qs: list[Array]
             Posterior beliefs over hidden states (typically output of
             `infer_states`), including the most recent timestep.
 
@@ -1010,16 +1010,16 @@ class Agent(Module):
         dict[str, Any]
             Dictionary containing model shape metadata. Includes:
 
-            - `num_obs`: List[int]
-            - `num_states`: List[int]
-            - `num_controls`: List[int]
+            - `num_obs`: list[int]
+            - `num_states`: list[int]
+            - `num_controls`: list[int]
             - `num_modalities`: int
             - `num_factors`: int
             - `num_policies`: int
             - `policy_len`: int
             - `inference_horizon`: int | None
-            - `A_dependencies`: List[List[int]]
-            - `B_dependencies`: List[List[int]]
+            - `A_dependencies`: list[list[int]]
+            - `B_dependencies`: list[list[int]]
         """
         return {
             "num_obs": self.num_obs,
