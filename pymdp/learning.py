@@ -72,28 +72,28 @@ def update_obs_likelihood_dirichlet(
 
     Parameters
     ----------
-    pA : list of arrays
+    pA : List[Array]
         Prior Dirichlet parameters for A matrices
-    A : list of arrays
+    A : List[Array]
         Current A matrices (observation likelihoods)
-    obs : list
+    obs : List[Array]
         Observations (either discrete indices or categorical distributions depending on categorical_obs)
-    qs : list of arrays
+    qs : List[Array]
         Posterior beliefs over hidden states
-    A_dependencies : list of lists
+    A_dependencies : List[List[int]]
         Dependencies between observation modalities and state factors
     categorical_obs : bool
         If True, observations are probability distributions; if False, discrete indices
-    num_obs : list of ints
+    num_obs : List[int]
         Number of observations for each modality
     lr : float
         Learning rate
 
     Returns
     -------
-    qA : list of arrays
+    qA : List[Array]
         Updated Dirichlet parameters
-    E_qA : list of arrays
+    E_qA : List[Array]
         Expected values (updated A matrices)
     """
 
@@ -170,7 +170,7 @@ def update_state_transition_dirichlet(
     Update posterior Diriichlet parameters of the state transition likelihood model (B) given the joint beliefs over hidden states and actions.
 
     Supports selective learning of only particular hidden-state factors via
-    `factors_to_update` (either `"all"` or a list of indices).
+    `factors_to_update` (either `"all"` or a `List[int]`).
 
     Parameters
     ----------
@@ -186,12 +186,12 @@ def update_state_transition_dirichlet(
         Number of control states per factor.
     lr : float
         Learning-rate multiplier for concentration updates.
-    factors_to_update : "all" | list[int], default="all"
+    factors_to_update : "all" | List[int], default="all"
         Which hidden-state factors should be updated.
 
     Returns
     -------
-    tuple[list[Array], list[Array]]
+    tuple[List[Array], List[Array]]
         Updated concentration parameters and expected transition tensors.
     """
     nf = len(pB)
