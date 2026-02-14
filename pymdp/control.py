@@ -52,7 +52,7 @@ def get_marginals(q_pi: Array, policies: Array, num_controls: Sequence[int]) -> 
     
     Returns
     ----------
-    action_marginals: `list[Array]`
+    action_marginals: `List[Array]`
        Marginal posterior over actions for each control factor.
     """
     num_factors = len(num_controls)    
@@ -232,6 +232,23 @@ def compute_expected_state(
 ) -> list[Array]:
     """
     Compute posterior over next state, given belief about previous state, transition model and action...
+
+    Parameters
+    ----------
+    qs_prior: List[Array]
+        Marginal beliefs over hidden states at time `t`.
+    B: List[Array]
+        Transition model tensors.
+    u_t: Array | Sequence[int]
+        Action indices for each control factor.
+    B_dependencies: List[List[int]], optional
+        Optional dependencies used to marginalize transition tensors. If `None`,
+        defaults to factor-local transitions.
+
+    Returns
+    -------
+    List[Array]
+        Marginal beliefs over next-time hidden states.
     """
     #Note: this algorithm is only correct if each factor depends only on itself. For any interactions, 
     # we will have empirical priors with codependent factors. 
@@ -268,6 +285,20 @@ def compute_expected_obs(
     """
     New version of expected observation (computation of Q(o|pi)) that takes into account sparse dependencies between observation
     modalities and hidden state factors
+
+    Parameters
+    ----------
+    qs: List[Array]
+        Beliefs over hidden states.
+    A: List[Array]
+        Observation likelihood models.
+    A_dependencies: List[List[int]]
+        Observation dependencies between modalities and state factors.
+
+    Returns
+    -------
+    List[Array]
+        Predictive beliefs over observations for each modality.
     """
         
     def compute_expected_obs_modality(A_m: Array, m: int) -> Array:
@@ -315,12 +346,12 @@ def calc_pA_info_gain(
 
     Parameters
     ----------
-    pA: `list[Array]`
+    pA: `List[Array]`
         Dirichlet parameters over observation model (same shape as `A`)
-    qo: `list[Array]`
+    qo: `List[Array]`
         Predictive posterior beliefs over observations; stores the beliefs about
         observations expected under the policy at some arbitrary time `t`
-    qs: `list[Array]`
+    qs: `List[Array]`
         Predictive posterior beliefs over hidden states, stores the beliefs about
         hidden states expected under the policy at some arbitrary time `t`
 
@@ -354,11 +385,11 @@ def calc_pB_info_gain(
 
     Parameters
     ----------
-    pB: `list[Array]`
+    pB: `List[Array]`
         Dirichlet parameters over transition model (same shape as `B`)
-    qs_t: `list[Array]`
+    qs_t: `List[Array]`
         Predictive posterior beliefs over hidden states expected under the policy at time `t`
-    qs_t_minus_1: `list[Array]`
+    qs_t_minus_1: `List[Array]`
         Posterior over hidden states at time `t-1` (before receiving observations)
     u_t_minus_1: `Array | Sequence[int]`
         Actions in time step t-1 for each factor
@@ -488,6 +519,53 @@ def update_posterior_policies_inductive(
     use_param_info_gain: bool = False,
     use_inductive: bool = True,
 ) -> tuple[Array, Array]:
+    """
+    Compute policy posterior and expected free energy with optional inductive terms.
+
+    Parameters
+    ----------
+    policy_matrix: Array
+        Policy tensor with shape `(num_policies, policy_len, num_factors)`.
+    qs_init: List[Array]
+        Current marginal state beliefs.
+    A: List[Array]
+        Observation likelihood models.
+    B: List[Array]
+        Transition models.
+    C: List[Array]
+        Prior preference vectors.
+    E: Array
+        Policy prior over the policy space.
+    pA: List[Array] | None
+        Optional posterior Dirichlet parameters for `A`.
+    pB: List[Array] | None
+        Optional posterior Dirichlet parameters for `B`.
+    A_dependencies: List[List[int]]
+        Observation dependencies between modalities and state factors.
+    B_dependencies: List[List[int]]
+        Transition dependencies between hidden-state factors and control factors.
+    I: List[Array]
+        Inductive planning matrices.
+    gamma: float = 16.0
+        Policy precision for softmax policy posterior.
+    inductive_epsilon: float = 1e-3
+        Inductive value scale factor.
+    use_utility: bool = True
+        Include utility term in expected free energy.
+    use_states_info_gain: bool = True
+        Include epistemic state-information gain term.
+    use_param_info_gain: bool = False
+        Include epistemic parameter-information gain term.
+    use_inductive: bool = True
+        Include inductive value term.
+
+    Returns
+    -------
+    q_pi: Array
+        Posterior over policies.
+    neg_efe_all_policies: Array
+        Policy-wise negative expected free energies.
+    """
     # policy --> n_levels_factor_f x 1
     # factor --> n_levels_factor_f x n_policies
     ## vmap across policies
@@ -508,9 +586,9 @@ def generate_I_matrix(H: list[Array], B: list[Array], threshold: float, depth: i
     Generates the `I` matrices used in inductive planning. These matrices stores the probability of reaching the goal state backwards from state j (columns) after i (rows) steps.
     Parameters
     ----------    
-    H: `list[Array]`
+    H: `List[Array]`
         Constraints over desired states (1 if you want to reach that state, 0 otherwise)
-    B: `list[Array]`
+    B: `List[Array]`
         Dynamics likelihood mapping or transition model, mapping from hidden states at `t` to hidden states at `t+1`, given some control state `u`.
         Each element `B[f]` stores a 3-D tensor for hidden state factor `f`, whose entries `B[f][s, v, u]` store the probability
         of hidden state level `s` at the current time, given hidden state level `v` and action `u` at the previous time.
@@ -521,7 +599,7 @@ def generate_I_matrix(H: list[Array], B: list[Array], threshold: float, depth: i
 
     Returns
     ----------
-    I: `list[Array]`
+    I: `List[Array]`
         For each state factor, contains a 2D array whose element i,j yields the probability
         of reaching the goal state backwards from state j after i steps.
     """
@@ -561,11 +639,11 @@ def calc_inductive_value_t(
 
     Parameters
     ----------
-    qs: `list[Array]`
+    qs: `List[Array]`
         Marginal posterior beliefs over hidden states at a given timepoint.
-    qs_next: `list[Array]`
+    qs_next: `List[Array]`
         Predictive posterior beliefs over hidden states expected under the policy.
-    I: `list[Array]`
+    I: `List[Array]`
         For each state factor, contains a 2D array whose element i,j yields the probability
         of reaching the goal state backwards from state j after i steps.
     epsilon: `float`
