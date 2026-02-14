@@ -7,6 +7,7 @@
 - [Quickstart (JAX)](getting-started/quickstart-jax.md)
 - [NumPy/legacy to JAX migration guide](migration/numpy-to-jax.md)
 - [Building active inference loops with `rollout()`](guides/rollout-active-inference-loop.md)
+- [Thinking in generative-model factorization](guides/generative-model-structure.md)
 
 ## Tutorials and notebooks
 - [Tutorial overview](tutorials/index.md)

@@ -41,6 +41,7 @@ nav:
       - Quickstart (JAX): getting-started/quickstart-jax.md
   - Guides:
       - rollout() Active Inference Loop: guides/rollout-active-inference-loop.md
+      - Generative Model Structure: guides/generative-model-structure.md
   - Migration:
       - NumPy/legacy to JAX: migration/numpy-to-jax.md
   - Tutorials:
