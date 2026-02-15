@@ -8,6 +8,7 @@ To add a notebook:
 
 ## Curated notebooks
 - [examples/api/model_construction_tutorial.ipynb](examples/api/model_construction_tutorial.ipynb)
+- [examples/model_fitting/fitting_with_pybefit.ipynb](examples/model_fitting/fitting_with_pybefit.ipynb)
 - [examples/envs/tmaze_demo.ipynb](examples/envs/tmaze_demo.ipynb)
 - [examples/envs/generalized_tmaze_demo.ipynb](examples/envs/generalized_tmaze_demo.ipynb)
 - [examples/envs/graph_worlds_demo.ipynb](examples/envs/graph_worlds_demo.ipynb)

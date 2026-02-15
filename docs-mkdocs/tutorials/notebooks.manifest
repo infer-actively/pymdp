@@ -1,5 +1,6 @@
 # One notebook path per line, relative to repository root.
 examples/api/model_construction_tutorial.ipynb
+examples/model_fitting/fitting_with_pybefit.ipynb
 examples/envs/tmaze_demo.ipynb
 examples/envs/generalized_tmaze_demo.ipynb
 examples/envs/graph_worlds_demo.ipynb
