@@ -22,7 +22,7 @@ q_pi, G = agent.infer_policies()
 q_pi, G = agent.infer_policies(qs)
 ```
 
-2. Stochastic action sampling requires explicit random keys:
+2. Stochastic functions require explicit random keys (not just action sampling):
 ```python
 # legacy
 action = agent.sample_action()
@@ -31,6 +31,14 @@ action = agent.sample_action()
 keys = jr.split(rng_key, agent.batch_size + 1)
 action = agent.sample_action(q_pi, rng_key=keys[1:])
 ```
+
+Common examples in `pymdp` include:
+- action/policy sampling (for example `agent.sample_action(..., rng_key=...)`)
+- random generative model initialization utilities such as
+  `utils.random_A_array(...)`, `utils.random_B_array(...)`, and
+  `utils.random_factorized_categorical(...)`
+- rollout execution (`rollout(..., rng_key=...)`)
+- stochastic environment methods (`env.reset(key, ...)`, `env.step(key, ...)`)
 
 3. Keep observation preprocessing consistent:
 - If `categorical_obs=False`, pass discrete indices.
@@ -49,6 +57,14 @@ q_pi, _ = agent.infer_policies(qs)
 keys = jr.split(key_action, agent.batch_size + 1)
 action = agent.sample_action(q_pi, rng_key=keys[1:])
 ```
+
+Other frequently used stochastic APIs that also require explicit keys:
+- `utils.random_A_array(...)`
+- `utils.random_B_array(...)`
+- `utils.random_factorized_categorical(...)`
+- `utils.generate_agent_spec(..., key=...)`
+- `rollout(..., rng_key=...)`
+- stochastic `env.reset(key, ...)` / `env.step(key, ...)`
 
 Avoid `np.random` in modern paths.
 
@@ -88,7 +104,8 @@ action = agent.sample_action(q_pi, rng_key=action_keys[1:])
 ## Common migration pitfalls
 
 1. Missing `empirical_prior` argument in `infer_states`.
-2. Missing `rng_key` when using stochastic action sampling.
+2. Missing `rng_key`/`key` in stochastic calls (for example `sample_action`,
+   random model constructors, `rollout`, or stochastic `env.reset`/`env.step`).
 3. Mixing `numpy.ndarray` into JAX-only paths.
 4. Forgetting sequence action-history shape `(T-1, num_factors)`.
 

@@ -1,22 +1,64 @@
 # Installation
 
-## Pip
-```bash
-pip install inferactively-pymdp
-```
+## Recommended workflow: `uv`
 
-## Local development with uv
+### 1) Create and activate a virtual environment
 ```bash
 # from repo root
+uv venv .venv311 --python 3.11
+source .venv311/bin/activate
+```
+
+If `.venv311` already exists, just activate it:
+
+```bash
+source .venv311/bin/activate
+```
+
+### 2) Sync dependencies
+```bash
 uv sync --group test
 ```
 
-## Docs dependencies
+### Dependency groups and extras
+
+- `--group test`: test and notebook tooling (`pytest`, `pytest-xdist`, `nbval`, `jupyter`, `ipykernel`) plus common visualization deps (`mediapy`, `pygraphviz`) and model-fitting dependency (`pybefit`).
+- `--group docs`: documentation toolchain (`mkdocs`, `mkdocs-material`, `mkdocstrings`, `mkdocs-jupyter`, `mkdocs-redirects`).
+- `--extra nb`: optional notebook/media extras (`mediapy`, `pygraphviz`) when notebook visualization is needed outside test tooling.
+- `--extra modelfit`: installs `pybefit` for model-fitting workflows.
+- `--extra gpu`: installs CUDA-enabled JAX packages.
+- `--extra docs`: documentation extras (same package set as docs tooling).
+
+Common `uv` sync patterns:
+
 ```bash
-uv sync --no-default-groups --extra docs
+# standard dev/test work
+uv sync --group test
+
+# notebook-heavy workflows
+uv sync --group test --extra nb
+
+# model fitting workflows
+uv sync --group test --extra modelfit
+
+# docs workflow
+uv sync --group test --extra docs
+
+# GPU workflow
+uv sync --group test --extra gpu
 ```
 
 ## Verify docs build
 ```bash
 ./scripts/docs_build.sh
+```
+
+## Alternative: `pip`
+
+If you only want package installation (without the `uv` workflow):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install inferactively-pymdp
 ```

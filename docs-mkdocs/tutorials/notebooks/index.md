@@ -7,9 +7,34 @@ To add a notebook:
 2. Run `./scripts/sync_docs_notebooks.sh`.
 
 ## Curated notebooks
-- [examples/api/model_construction_tutorial.ipynb](examples/api/model_construction_tutorial.ipynb)
-- [examples/envs/tmaze_demo.ipynb](examples/envs/tmaze_demo.ipynb)
-- [examples/envs/generalized_tmaze_demo.ipynb](examples/envs/generalized_tmaze_demo.ipynb)
-- [examples/envs/graph_worlds_demo.ipynb](examples/envs/graph_worlds_demo.ipynb)
-- [examples/inductive_inference/inductive_inference_example.ipynb](examples/inductive_inference/inductive_inference_example.ipynb)
-- [examples/experimental/sophisticated_inference/si_tmaze_SIvalidation.ipynb](examples/experimental/sophisticated_inference/si_tmaze_SIvalidation.ipynb)
+
+### Getting started
+- [`Model` and `Distribution` Tutorial](examples/api/model_construction_tutorial.ipynb)
+- [T-Maze Demo](examples/envs/tmaze_demo.ipynb)
+- [T-Maze Task with Distractors](examples/envs/generalized_tmaze_demo.ipynb)
+- [Graph worlds](examples/envs/graph_worlds_demo.ipynb)
+- [Demo: Knapsack Problem](examples/envs/knapsack_demo.ipynb)
+
+### Sophisticated Inference
+- [Validating Sophisticated Inference (SI) Planning Algorithm using the T-Maze Task](examples/experimental/sophisticated_inference/si_tmaze_SIvalidation.ipynb)
+- [Sophisticated inference on a T-Maze Task with Distractors](examples/experimental/sophisticated_inference/si_generalized_tmaze.ipynb)
+- [Sophisticated inference on Graph Worlds](examples/experimental/sophisticated_inference/si_graph_world.ipynb)
+
+### Inductive Inference
+- [Inductive Inference Example](examples/inductive_inference/inductive_inference_example.ipynb)
+- [Inductive Inference Gridworld](examples/inductive_inference/inductive_inference_gridworld.ipynb)
+
+### Parameter Learning
+- [Learning Gridworld](examples/learning/learning_gridworld.ipynb)
+
+### Fitting POMDPs to experimental / behavioral data
+- [Fitting With `pybefit`](examples/model_fitting/fitting_with_pybefit.ipynb)
+
+### Advanced
+- [Working with complex action dependencies](examples/advanced/complex_action_dependency.ipynb)
+- [Testing optimized inference methods](examples/advanced/infer_states_optimization/methods_test.ipynb)
+- [Sparse Array Benchmarking](examples/sparse/sparse_benchmark.ipynb)
+- [Sophisticated inference with Monte Carlo Tree Search on TMaze with Distractors](examples/experimental/sophisticated_inference/mcts_generalized_tmaze.ipynb)
+- [Sophisticated inference with Monte Carlo Tree Search on Graph World](examples/experimental/sophisticated_inference/mcts_graph_world.ipynb)
+- [Comparing sequential inference algorithms](examples/inference_and_learning/inference_methods_comparison.ipynb)
+
