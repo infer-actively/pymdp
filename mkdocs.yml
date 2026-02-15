@@ -40,7 +40,8 @@ nav:
       - Installation: getting-started/installation.md
       - Quickstart (JAX): getting-started/quickstart-jax.md
   - Guides:
-      - rollout() Active Inference Loop: guides/rollout-active-inference-loop.md
+      - Using `rollout()` to JIT the full agent-environment interaction loop: guides/rollout-active-inference-loop.md
+      - PymdpEnv and Custom Environments: guides/pymdp-env.md
       - Generative Model Structure: guides/generative-model-structure.md
   - Migration:
       - NumPy/legacy to JAX: migration/numpy-to-jax.md
@@ -56,6 +57,7 @@ nav:
       - Algorithms: api/algos.md
       - Utils: api/utils.md
       - Maths: api/maths.md
+      - Environment: api/envs-env.md
       - Env Rollout: api/envs-rollout.md
   - Legacy:
       - Legacy/NumPy Archive: legacy/index.md

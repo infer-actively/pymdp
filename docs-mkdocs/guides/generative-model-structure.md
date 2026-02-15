@@ -1,13 +1,13 @@
 # Thinking in Generative Models in `pymdp`
 
 This guide explains how to map Active Inference concepts onto the list-based
-model representation used in modern `pymdp`.
+model representation used in `pymdp`.
 
 ## Mental model
 
 Use two independent indexing systems:
 
-1. **Observation modalities** (`m`) index sensory channels.
+1. **Observation modalities** (`m`) index independent sensory channels.
 2. **Hidden-state factors** (`f`) index latent causes.
 
 In code, this means:
@@ -19,7 +19,7 @@ In code, this means:
 
 Each modality gets its own likelihood tensor:
 
-- `A[m] = P(o_m | s_dependencies_for_m)`
+- `A[m] = P(obs_m | state_i, state_j, state_k)`, if `i, j, k` are in `A_dependencies[m]`
 - `observations[m]` is the actual observation for modality `m`
 
 So if you have two modalities (for example, location and reward), you should
@@ -31,7 +31,7 @@ Each hidden-state factor gets its own prior, posterior, and transition model:
 
 - `D[f]`: prior over factor-`f` states
 - `qs[f]`: posterior over factor-`f` states
-- `B[f] = P(s_f,t+1 | s_dependencies_for_f,t, u_f,t)`
+- `B[f] = P(s_{[f,t+1]} | state_i, state_j, state_k, action_a, action_b)`, if `i, j, k` are in `B_dependencies[f]` and `a, b` are in `B_action_dependencies[f]`
 
 This means you can reason about each factor semantically (for example, context,
 location, or object identity) and keep dimensions aligned by factor index.
@@ -42,6 +42,7 @@ location, or object identity) and keep dimensions aligned by factor index.
 
 - `A_dependencies[m]`: which factors modality `m` depends on
 - `B_dependencies[f]`: which previous factors influence factor `f` transitions
+- `B_action_dependencies[f]`: which action/control factors influence factor `f` transitions
 
 This is the key to building structured models without forcing every modality to
 depend on every factor.
@@ -73,7 +74,7 @@ Read this as:
 
 1. `len(observations)` does not match `len(A)`.
 2. Mixing modality index `m` and factor index `f`.
-3. `A_dependencies` or `B_dependencies` indices not matching your list layout.
+3. `A_dependencies`, `B_dependencies`, or `B_action_dependencies` indices not matching your list layout.
 4. Passing raw integer observations when your setup expects categorical vectors
    (or vice versa).
 

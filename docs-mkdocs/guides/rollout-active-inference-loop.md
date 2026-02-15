@@ -1,11 +1,12 @@
-# Building an Active Inference Loop with `rollout()`
+# Using `rollout()` to JIT the full agent-environment interaction loop
 
 `rollout()` runs repeated inference, planning, action sampling, and environment stepping for a fixed horizon.
 
 ## When to use it
-- You have a JAX-compatible `Env` and `Agent`.
-- You want reproducible multi-step simulations with explicit key management.
-- You want optional online learning integrated into the loop.
+- The `.step()` and `.reset()` methods of your `Env` can be JIT-compiled.
+  This includes compatibility with `pymdp`'s native `PymdpEnv`, as well as JAX RL environment frameworks such as [gymnax](https://github.com/RobertTLange/gymnax), [jumanji](https://github.com/instadeepai/jumanji), and [navix](https://github.com/epignatelli/navix).
+- You want high-throughput simulations by compiling the full closed-loop interaction once and executing it efficiently across many rollouts.
+- You want a single, consistent API for multi-step Active Inference rollouts with explicit PRNG key threading.
 
 ## Required inputs
 - `agent`: `pymdp.agent.Agent`
