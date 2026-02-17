@@ -14,38 +14,32 @@ This guide is for users moving from `pymdp.legacy` (NumPy/object-array style) to
 
 ## API differences to update
 
-1. Policy inference now takes current beliefs as inputs, since they are no longer stored internally on the agent:
+1. Policy inference now takes current beliefs as inputs, since they are no longer stored internally on the agent.
 
-   ```python
-   # legacy
-   q_pi, G = agent.infer_policies()
+        # legacy
+        q_pi, G = agent.infer_policies()
 
-   # modern
-   q_pi, G = agent.infer_policies(qs)
-   ```
+        # modern
+        q_pi, G = agent.infer_policies(qs)
 
-2. Stochastic functions require explicit random keys:
+2. Stochastic functions require explicit random keys. Common examples in
+   `pymdp` include action/policy sampling (for example
+   `agent.sample_action(..., rng_key=...)`), random generative model
+   initialization utilities such as `utils.random_A_array(...)`,
+   `utils.random_B_array(...)`, and `utils.random_factorized_categorical(...)`,
+   rollout execution (`rollout(..., rng_key=...)`), and stochastic
+   environment methods (`env.reset(key, ...)`, `env.step(key, ...)`).
 
-   ```python
-   # legacy
-   action = agent.sample_action()
+        # legacy
+        action = agent.sample_action()
 
-   # modern (stochastic mode)
-   keys = jr.split(rng_key, agent.batch_size + 1)
-   action = agent.sample_action(q_pi, rng_key=keys[1:])
-   ```
+        # modern (stochastic mode)
+        keys = jr.split(rng_key, agent.batch_size + 1)
+        action = agent.sample_action(q_pi, rng_key=keys[1:])
 
-   Common examples in `pymdp` include:
-   - action/policy sampling (for example `agent.sample_action(..., rng_key=...)`)
-   - random generative model initialization utilities such as
-     `utils.random_A_array(...)`, `utils.random_B_array(...)`, and
-     `utils.random_factorized_categorical(...)`
-   - rollout execution (`rollout(..., rng_key=...)`)
-   - stochastic environment methods (`env.reset(key, ...)`, `env.step(key, ...)`)
-
-3. Keep observation preprocessing consistent:
-   - If `categorical_obs=False`, pass discrete indices.
-   - If `categorical_obs=True`, pass normalized categorical vectors.
+3. Keep observation preprocessing consistent.
+    - If `categorical_obs=False`, pass discrete indices.
+    - If `categorical_obs=True`, pass normalized categorical vectors.
 
 ## Batching and `batch_size`
 
