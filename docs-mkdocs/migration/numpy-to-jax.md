@@ -13,7 +13,7 @@ This guide is for users moving from `pymdp.legacy` (NumPy/object-array style) to
 
 ## API differences to update
 
-1. Policy inference now uses current beliefs:
+1. Policy inference now takes current beliefs as inputs, since they are no longer stored internally on the agent:
 ```python
 # legacy
 q_pi, G = agent.infer_policies()
@@ -22,7 +22,7 @@ q_pi, G = agent.infer_policies()
 q_pi, G = agent.infer_policies(qs)
 ```
 
-2. Stochastic functions require explicit random keys (not just action sampling):
+2. Stochastic functions require explicit random keys:
 ```python
 # legacy
 action = agent.sample_action()
@@ -43,6 +43,37 @@ Common examples in `pymdp` include:
 3. Keep observation preprocessing consistent:
 - If `categorical_obs=False`, pass discrete indices.
 - If `categorical_obs=True`, pass normalized categorical vectors.
+
+## Batching and `batch_size`
+
+Most of `pymdp`'s JAX APIs expecting a leading `batch_size` dimension to most input arrays (e.g., arrays of state and parameter posteriors and priors). This allows for easy parallelization using [`jax.vmap`](https://docs.jax.dev/en/latest/_autosummary/jax.vmap.html) to automatically run multiple active inference agents/processes in parallel.
+
+When migrating from legacy single-agent code, keep these points in mind:
+
+- Multi-agent simulations (this could also be running multiple parameterizations of one agent, in parallel) requires batched per-agent information (observations, beliefs, parameters, preferences, some hyperparameters).
+- If you pass unbatched model arrays to `Agent(..., batch_size=N)`, they are
+  broadcast internally to `N` copies of the input model parameters. 
+- Even in the default single-agent case (`batch_size=1`), most arrays and
+  outputs are represented with a leading singleton dimension.
+- This is why you will often see shapes that begin with `(1, ...)` in the JAX-based
+  code paths.
+
+Typical multi-agent setup pattern:
+
+```python
+batch_size = 3
+agent = Agent(A=A, B=B, C=C, D=D, batch_size=batch_size)
+
+# One discrete modality for 3 parallel agents: shape (batch_size, 1)
+obs = [jnp.array([[0], [2], [3]])]
+qs = agent.infer_states(obs, empirical_prior=agent.D)
+```
+
+For environment-side batching, either:
+- keep a single environment and run batched agents against shared `env.A/B/D`,
+  or
+- pass batched `env_params` (for example via
+  `env.generate_env_params(batch_size=...)`) when using `rollout()`. The parameters inside `env_params` must also carry a leading `batch_size` dimension that is matched to each set of parameters in the `Agent` class.
 
 ## Randomness migration
 

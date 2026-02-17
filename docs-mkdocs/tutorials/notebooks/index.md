@@ -10,6 +10,7 @@ To add a notebook:
 
 ### Getting started
 - [`Model` and `Distribution` Tutorial](examples/api/model_construction_tutorial.ipynb)
+- [Cue Chaining Demo](examples/envs/cue_chaining_demo.ipynb)
 - [T-Maze Demo](examples/envs/tmaze_demo.ipynb)
 - [T-Maze Task with Distractors](examples/envs/generalized_tmaze_demo.ipynb)
 - [Graph worlds](examples/envs/graph_worlds_demo.ipynb)
