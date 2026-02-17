@@ -1,17 +1,37 @@
-from functools import partial
+"""Environment interfaces and POMDP-backed environment utilities.
+
+This module provides:
+- `Env`: an abstract JAX-compatible environment interface used by `rollout()`,
+- `PymdpEnv`: a concrete environment driven by categorical `A`, `B`, and `D`,
+- `make(...)`: a convenience constructor for `PymdpEnv` and optional params.
+"""
+
 from abc import ABC, abstractmethod
+from functools import partial
 from typing import Any, Sequence
 
 import jax.numpy as jnp
-from jax import vmap, jit, random as jr, tree_util as jtu
+from jax import jit, random as jr, tree_util as jtu, vmap
 from jaxtyping import Array
 
 from pymdp.distribution import Distribution, get_dependencies
 
 
 def _float_to_int_index(x: Array) -> Array:
-    # converting float to integer for array indexing while preserving the og data structure for gradient computation    
+    """Cast index arrays to int32 for safe advanced indexing.
+
+    Parameters
+    ----------
+    x : Array
+        Index leaf, potentially represented in floating type.
+
+    Returns
+    -------
+    Array
+        Integer index array (`int32`) with the same structure as `x`.
+    """
     return jnp.asarray(x, jnp.int32)
+
 
 def select_probs(
     positions: Sequence[Array],
@@ -19,7 +39,25 @@ def select_probs(
     dependency_list: Sequence[int],
     actions: Array | None = None,
 ) -> Array:
-    # creating integer indices from float state positions for the positions specified in dependency_list
+    """Select conditional probabilities from a factorized tensor.
+
+    Parameters
+    ----------
+    positions : Sequence[Array]
+        Current hidden-state indices for all factors.
+    matrix : Array
+        Likelihood or transition tensor to index.
+    dependency_list : Sequence[int]
+        Indices of factors used to index `matrix` lagging dimensions.
+    actions : Array | None, optional
+        Optional action index (or action indices) used to select the final
+        action axis in transition tensors.
+
+    Returns
+    -------
+    Array
+        Selected conditional probability vector(s).
+    """
     index_args = tuple(_float_to_int_index(positions[i]) for i in dependency_list)
     if actions is not None:
         index_args += (_float_to_int_index(actions),)
@@ -27,11 +65,24 @@ def select_probs(
 
 
 def cat_sample(key: Array, p: Array) -> Array:
+    """Sample from one or more categorical distributions.
+
+    Parameters
+    ----------
+    key : Array
+        JAX PRNG key.
+    p : Array
+        Probability vector or batch of probability vectors on the last axis.
+
+    Returns
+    -------
+    Array
+        Sampled category index/indices as floating values.
+    """
     a = jnp.arange(p.shape[-1], dtype=jnp.float32)
     if p.ndim > 1:
         choice = lambda key, p: jr.choice(key, a, p=p)
         keys = jr.split(key, len(p))
-        # print(keys.shape)
         return vmap(choice)(keys, p)
 
     return jr.choice(key, a, p=p)
@@ -46,32 +97,43 @@ def make(
     make_env_params: bool = False,
     **kwargs: Any,
 ) -> tuple["PymdpEnv", dict[str, list[Array]] | None]:
-    """
-    Convenience factory to construct a `PymdpEnv`.
+    """Construct a `PymdpEnv` (and optionally environment parameters).
 
     Parameters
     ----------
-    A, B, D: sequence of arrays or Distribution
-        Likelihoods, transitions, and priors describing the POMDP. Each entry
-        corresponds to a modality (A) or state factor (B, D). Entries may be
-        raw arrays or `Distribution` instances.
-    A_dependencies, B_dependencies: list, optional
-        Explicit dependency structures. If omitted, they are inferred.
-    make_env_params: bool
-        If True, also return a dict of env_params (with Distribution instances
-        converted to their `.data`). Otherwise, env_params is None. Returned
-        env_params match the input shapes (shapes of `A`, `B`, and `D`) and are 
-        not broadcast; for broadcasting single-batch environmental parameters to a larger batch size,
-        call `env.generate_env_params(batch_size=...)`  on the `env` that is returned by this function.
-    kwargs: dict
-        Passed through to `PymdpEnv`.
+    A : sequence[Array] | sequence[Distribution]
+        Observation likelihood tensors, one per observation modality.
+    B : sequence[Array] | sequence[Distribution]
+        Transition tensors, one per hidden-state factor.
+    D : sequence[Array] | sequence[Distribution]
+        Initial-state priors, one per hidden-state factor.
+    A_dependencies : list[list[int]] | None, optional
+        Explicit modality-to-state dependencies. If `None`, dependencies are
+        inferred when possible.
+    B_dependencies : list[list[int]] | None, optional
+        Explicit state-transition dependencies. If `None`, dependencies are
+        inferred when possible.
+    make_env_params : bool, default=False
+        If `True`, also return `env_params={"A": ..., "B": ..., "D": ...}`
+        with `Distribution` entries converted to dense arrays.
+    **kwargs : Any
+        Additional keyword arguments forwarded to `PymdpEnv`.
 
     Returns
     -------
-    env: PymdpEnv
-    env_params: dict | None
+    tuple[PymdpEnv, dict[str, list[Array]] | None]
+        Constructed environment and optional unbatched environment parameters.
+        To broadcast parameters to a larger batch, call
+        `env.generate_env_params(batch_size=...)`.
     """
-    env = PymdpEnv(A=A, B=B, D=D, A_dependencies=A_dependencies, B_dependencies=B_dependencies, **kwargs)
+    env = PymdpEnv(
+        A=A,
+        B=B,
+        D=D,
+        A_dependencies=A_dependencies,
+        B_dependencies=B_dependencies,
+        **kwargs,
+    )
     if not make_env_params:
         return env, None
 
@@ -84,7 +146,9 @@ def make(
 
     return env, env_params
 
+
 class Env(ABC):
+    """Abstract JAX-compatible environment interface used by `rollout()`."""
 
     @abstractmethod
     def reset(
@@ -93,6 +157,22 @@ class Env(ABC):
         state: list[Array] | None = None,
         env_params: dict[str, list[Array]] | None = None,
     ) -> tuple[list[Array], list[Array]]:
+        """Reset environment state and return initial observation/state.
+
+        Parameters
+        ----------
+        key : Array
+            JAX PRNG key.
+        state : list[Array] | None, optional
+            Optional explicit initial hidden state.
+        env_params : dict[str, list[Array]] | None, optional
+            Optional runtime override for environment parameters.
+
+        Returns
+        -------
+        tuple[list[Array], list[Array]]
+            Initial observations and hidden state.
+        """
         raise NotImplementedError
 
     @abstractmethod
@@ -103,14 +183,55 @@ class Env(ABC):
         action: Array | None,
         env_params: dict[str, list[Array]] | None = None,
     ) -> tuple[list[Array], list[Array]]:
+        """Advance one environment step and return new observation/state.
+
+        Parameters
+        ----------
+        key : Array
+            JAX PRNG key.
+        state : list[Array]
+            Current hidden state.
+        action : Array | None
+            Action sampled by the agent. `None` can be used for no-op updates.
+        env_params : dict[str, list[Array]] | None, optional
+            Optional runtime override for environment parameters.
+
+        Returns
+        -------
+        tuple[list[Array], list[Array]]
+            Next observations and hidden state.
+        """
         raise NotImplementedError
 
     def generate_env_params(
         self, key: Array | None = None, batch_size: int | None = None
     ) -> dict[str, list[Array]] | None:
+        """Generate optional environment parameter pytrees.
+
+        Parameters
+        ----------
+        key : Array | None, optional
+            Optional JAX PRNG key (unused by default implementation).
+        batch_size : int | None, optional
+            Optional batch size for parameter generation.
+
+        Returns
+        -------
+        dict[str, list[Array]] | None
+            Environment parameters or `None` if not implemented.
+        """
         return None
 
+
 class PymdpEnv(Env):
+    """Environment whose dynamics are defined by categorical `A`, `B`, and `D`.
+
+    `PymdpEnv` is useful when the environment is isomorphic to a discrete POMDP
+    generative process:
+    - `A[m]`: observation likelihoods per modality,
+    - `B[f]`: transitions per hidden-state factor,
+    - `D[f]`: initial-state priors per hidden-state factor.
+    """
 
     def __init__(
         self,
@@ -121,6 +242,25 @@ class PymdpEnv(Env):
         B_dependencies: list[list[int]] | None = None,
         **kwargs: Any,
     ) -> None:
+        """Initialize `PymdpEnv`.
+
+        Parameters
+        ----------
+        A : sequence[Array] | sequence[Distribution] | None, optional
+            Observation likelihood tensors.
+        B : sequence[Array] | sequence[Distribution] | None, optional
+            Transition tensors.
+        D : sequence[Array] | sequence[Distribution] | None, optional
+            Initial-state priors.
+        A_dependencies : list[list[int]] | None, optional
+            Modality-to-state dependencies for `A`.
+        B_dependencies : list[list[int]] | None, optional
+            State-to-state dependencies for `B`.
+        **kwargs : Any
+            Accepted for forward compatibility.
+        """
+        del kwargs
+
         if A_dependencies is not None:
             self.A_dependencies = A_dependencies
         elif A is not None and B is not None:
@@ -159,13 +299,30 @@ class PymdpEnv(Env):
     def generate_env_params(
         self, key: Array | None = None, batch_size: int | None = None
     ) -> dict[str, list[Array]]:
+        """Return default environment params, optionally broadcast to batch.
+
+        Parameters
+        ----------
+        key : Array | None, optional
+            Optional JAX PRNG key (unused).
+        batch_size : int | None, optional
+            If provided, broadcast each parameter leaf with leading shape
+            `(batch_size, ...)`.
+
+        Returns
+        -------
+        dict[str, list[Array]]
+            Dictionary with keys `"A"`, `"B"`, and `"D"`.
+        """
+        del key
+
         env_params = {"A": self.A, "B": self.B, "D": self.D}
         if batch_size is None:
             return env_params
 
         expand_to_batch = lambda x: jnp.broadcast_to(jnp.asarray(x), (batch_size,) + x.shape)
         return jtu.tree_map(expand_to_batch, {"A": self.A, "B": self.B, "D": self.D})
-    
+
     @partial(jit, static_argnums=(0,))
     def reset(
         self,
@@ -173,6 +330,10 @@ class PymdpEnv(Env):
         state: list[Array] | None = None,
         env_params: dict[str, list[Array]] | None = None,
     ) -> tuple[list[Array], list[Array]]:
+        """Reset state and emit an initial observation sample.
+
+        If `state` is omitted, states are sampled from `D`.
+        """
         if state is None:
             probs = env_params["D"] if env_params is not None else self.D
             keys = list(jr.split(key, len(probs) + 1))
@@ -189,6 +350,11 @@ class PymdpEnv(Env):
         action: Array | None,
         env_params: dict[str, list[Array]] | None = None,
     ) -> tuple[list[Array], list[Array]]:
+        """Advance the process by one timestep.
+
+        If `action` is provided, next hidden states are sampled from `B`.
+        Observations are then sampled from `A` conditioned on the new state.
+        """
         key_state, key_obs = jr.split(key)
         if action is not None:
             action = list(action)
@@ -208,6 +374,7 @@ class PymdpEnv(Env):
     def _sample_obs(
         self, key: Array, state: list[Array], env_params: dict[str, list[Array]] | None
     ) -> list[Array]:
+        """Sample all observation modalities conditioned on hidden state."""
         _select_probs = partial(select_probs, state)
         A = env_params["A"] if env_params is not None else self.A
         obs_probs = jtu.tree_map(_select_probs, A, self.A_dependencies)
