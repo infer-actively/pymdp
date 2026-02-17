@@ -9,40 +9,43 @@ This guide is for users moving from `pymdp.legacy` (NumPy/object-array style) to
 | `numpy.ndarray(dtype=object)` collections | pytrees/lists of `jax.Array` |
 | `np.random` global RNG | explicit `jr.PRNGKey` threading |
 | stateful loops with implicit mutation | functional updates with explicit returns |
+| mutable attribute assignment (`agent.x = ...`) | functional pytree updates (`eqx.tree_at(...)`) |
 | `pymdp.legacy.*` modules | `pymdp.*` modern modules |
 
 ## API differences to update
 
 1. Policy inference now takes current beliefs as inputs, since they are no longer stored internally on the agent:
-```python
-# legacy
-q_pi, G = agent.infer_policies()
 
-# modern
-q_pi, G = agent.infer_policies(qs)
-```
+   ```python
+   # legacy
+   q_pi, G = agent.infer_policies()
+
+   # modern
+   q_pi, G = agent.infer_policies(qs)
+   ```
 
 2. Stochastic functions require explicit random keys:
-```python
-# legacy
-action = agent.sample_action()
 
-# modern (stochastic mode)
-keys = jr.split(rng_key, agent.batch_size + 1)
-action = agent.sample_action(q_pi, rng_key=keys[1:])
-```
+   ```python
+   # legacy
+   action = agent.sample_action()
 
-Common examples in `pymdp` include:
-- action/policy sampling (for example `agent.sample_action(..., rng_key=...)`)
-- random generative model initialization utilities such as
-  `utils.random_A_array(...)`, `utils.random_B_array(...)`, and
-  `utils.random_factorized_categorical(...)`
-- rollout execution (`rollout(..., rng_key=...)`)
-- stochastic environment methods (`env.reset(key, ...)`, `env.step(key, ...)`)
+   # modern (stochastic mode)
+   keys = jr.split(rng_key, agent.batch_size + 1)
+   action = agent.sample_action(q_pi, rng_key=keys[1:])
+   ```
+
+   Common examples in `pymdp` include:
+   - action/policy sampling (for example `agent.sample_action(..., rng_key=...)`)
+   - random generative model initialization utilities such as
+     `utils.random_A_array(...)`, `utils.random_B_array(...)`, and
+     `utils.random_factorized_categorical(...)`
+   - rollout execution (`rollout(..., rng_key=...)`)
+   - stochastic environment methods (`env.reset(key, ...)`, `env.step(key, ...)`)
 
 3. Keep observation preprocessing consistent:
-- If `categorical_obs=False`, pass discrete indices.
-- If `categorical_obs=True`, pass normalized categorical vectors.
+   - If `categorical_obs=False`, pass discrete indices.
+   - If `categorical_obs=True`, pass normalized categorical vectors.
 
 ## Batching and `batch_size`
 
@@ -74,6 +77,30 @@ For environment-side batching, either:
   or
 - pass batched `env_params` (for example via
   `env.generate_env_params(batch_size=...)`) when using `rollout()`. The parameters inside `env_params` must also carry a leading `batch_size` dimension that is matched to each set of parameters in the `Agent` class.
+
+## Updating `Agent` fields in JAX mode
+
+The `Agent` class is an [Equinox](https://github.com/patrick-kidger/equinox)
+module. In practice, this means you should avoid mutable-style setter updates
+like:
+
+```python
+agent.A = new_A
+agent.B = new_B
+```
+
+Instead, use Equinox-style functional updates with `eqx.tree_at(...)`:
+
+```python
+import equinox as eqx
+
+agent = eqx.tree_at(lambda x: (x.A,), agent, (new_A,))
+agent = eqx.tree_at(lambda x: (x.B,), agent, (new_B,))
+```
+
+This is the pattern used near the end of
+`infer_parameters()` in `pymdp/agent.py`, where after a learning update, the new `A`/`B` (and, when
+enabled, `I`) arrays are written back into a new `Agent` instance.
 
 ## Randomness migration
 
