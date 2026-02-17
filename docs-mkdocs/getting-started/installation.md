@@ -23,11 +23,10 @@ uv sync --group test
 ### Dependency groups and extras
 
 - `--group test`: test and notebook tooling (`pytest`, `pytest-xdist`, `nbval`, `jupyter`, `ipykernel`) plus common visualization deps (`mediapy`, `pygraphviz`) and model-fitting dependency (`pybefit`).
-- `--group docs`: documentation toolchain (`mkdocs`, `mkdocs-material`, `mkdocstrings`, `mkdocs-jupyter`, `mkdocs-redirects`).
 - `--extra nb`: optional notebook/media extras (`mediapy`, `pygraphviz`) when notebook visualization is needed outside test tooling.
 - `--extra modelfit`: installs `pybefit` for model-fitting workflows.
 - `--extra gpu`: installs CUDA-enabled JAX packages.
-- `--extra docs`: documentation extras (same package set as docs tooling).
+- `--extra docs`: documentation toolchain (`mkdocs`, `mkdocs-material`, `mkdocstrings`, `mkdocs-jupyter`, `mkdocs-redirects`).
 
 Common `uv` sync patterns:
 
