@@ -5,14 +5,14 @@
 ### 1) Create and activate a virtual environment
 ```bash
 # from repo root
-uv venv .venv311 --python 3.11
-source .venv311/bin/activate
+uv venv .venv
+source .venv/bin/activate
 ```
 
-If `.venv311` already exists, just activate it:
+If `.venv` already exists, just activate it:
 
 ```bash
-source .venv311/bin/activate
+source .venv/bin/activate
 ```
 
 ### 2) Sync dependencies
@@ -23,11 +23,10 @@ uv sync --group test
 ### Dependency groups and extras
 
 - `--group test`: test and notebook tooling (`pytest`, `pytest-xdist`, `nbval`, `jupyter`, `ipykernel`) plus common visualization deps (`mediapy`, `pygraphviz`) and model-fitting dependency (`pybefit`).
-- `--group docs`: documentation toolchain (`mkdocs`, `mkdocs-material`, `mkdocstrings`, `mkdocs-jupyter`, `mkdocs-redirects`).
 - `--extra nb`: optional notebook/media extras (`mediapy`, `pygraphviz`) when notebook visualization is needed outside test tooling.
 - `--extra modelfit`: installs `pybefit` for model-fitting workflows.
 - `--extra gpu`: installs CUDA-enabled JAX packages.
-- `--extra docs`: documentation extras (same package set as docs tooling).
+- `--extra docs`: documentation toolchain (`mkdocs`, `mkdocs-material`, `mkdocstrings`, `mkdocs-jupyter`, `mkdocs-redirects`).
 
 Common `uv` sync patterns:
 
