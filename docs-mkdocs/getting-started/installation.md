@@ -5,14 +5,14 @@
 ### 1) Create and activate a virtual environment
 ```bash
 # from repo root
-uv venv .venv311 --python 3.11
-source .venv311/bin/activate
+uv venv .venv
+source .venv/bin/activate
 ```
 
-If `.venv311` already exists, just activate it:
+If `.venv` already exists, just activate it:
 
 ```bash
-source .venv311/bin/activate
+source .venv/bin/activate
 ```
 
 ### 2) Sync dependencies
