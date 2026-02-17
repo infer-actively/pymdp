@@ -165,7 +165,7 @@ Build docs locally:
 ./scripts/docs_build.sh
 ```
 
-## Authors
+## Contributors
 
 - Conor Heins [@conorheins](https://github.com/conorheins)
 - Tim Verbelen [@tverbele](https://github.com/tverbele)
