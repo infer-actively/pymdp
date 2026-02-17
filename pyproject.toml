@@ -36,6 +36,7 @@ dependencies = [
 
 [dependency-groups]
 test = [
+    # Keep ipykernel<7 while mkdocs-jupyter requires ipykernel>6,<7.
     "ipykernel>=6.29.0,<7",
     "jupyter>=1.1.1",
     "mediapy>=1.2.4",
@@ -46,13 +47,6 @@ test = [
     "pytest>=8.4.2",
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.5.0",
-]
-docs = [
-    "mkdocs>=1.6.1",
-    "mkdocs-material>=9.5.50",
-    "mkdocstrings[python]>=0.27.0",
-    "mkdocs-jupyter>=0.24.8",
-    "mkdocs-redirects>=1.2.2",
 ]
 
 [project.optional-dependencies]
