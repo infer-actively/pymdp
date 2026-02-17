@@ -24,9 +24,9 @@ Most of the low-level mathematical operations are [NumPy](https://github.com/num
 
 Here's a visualization of ``pymdp`` agents in action. One of the defining features of active inference agents is the drive to maximize "epistemic value" (i.e. curiosity). Equipped with such a drive in environments with uncertain yet disclosable hidden structure, active inference can ultimately allow agents to simultaneously learn about the environment as well as maximize reward.
 
-The simulation below (see associated notebook [here](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/cue_chaining_demo.html)) demonstrates what might be called "epistemic chaining," where an agent (here, analogized to a mouse seeking food) forages for a chain of cues, each of which discloses the location of the subsequent cue in the chain. The final cue (here, "Cue 2") reveals the location a hidden reward. This is similar in spirit to "behavior chaining" used in operant conditioning, except that here, each successive action in the behavioral sequence doesn't need to be learned through instrumental conditioning. Rather, active inference agents will naturally forage the sequence of cues based on an intrinsic desire to disclose information. This ultimately leads the agent to the hidden reward source in the fewest number of moves as possible.
+The simulation below (see associated JAX notebook [here](https://pymdp-rtd.readthedocs.io/en/docs-rehaul/tutorials/notebooks/examples/envs/cue_chaining_demo/)) demonstrates what might be called "epistemic chaining," where an agent (here, analogized to a mouse seeking food) forages for a chain of cues, each of which discloses the location of the subsequent cue in the chain. The final cue (here, "Cue 2") reveals the location a hidden reward. This is similar in spirit to "behavior chaining" used in operant conditioning, except that here, each successive action in the behavioral sequence doesn't need to be learned through instrumental conditioning. Rather, active inference agents will naturally forage the sequence of cues based on an intrinsic desire to disclose information. This ultimately leads the agent to the hidden reward source in the fewest number of moves as possible.
 
-You can run the code behind simulating tasks like this one and others in the **Examples** section of the [official documentation](https://pymdp-rtd.readthedocs.io/en/latest/).
+You can run the code behind simulating tasks like this one and others in the **Examples** section of the [official documentation](https://pymdp-rtd.readthedocs.io/en/docs-rehaul/). The GIF generation script used for these animations is available [here](examples/envs/chained_cue_navigation.py).
 
 <!-- 
 <p align="center">
@@ -93,15 +93,15 @@ action = agent.sample_action(q_pi, rng_key=action_keys[1:])
 
 ## Getting started / introductory material
 
-We recommend starting with the JAX-first [official documentation](https://pymdp-rtd.readthedocs.io/en/latest/) for the repository, which provides practical guides, curated notebooks, and generated API references.
+We recommend starting with the JAX-first [official documentation](https://pymdp-rtd.readthedocs.io/en/docs-rehaul/) for the repository, which provides practical guides, curated notebooks, and generated API references.
 
 For new users to `pymdp`, we specifically recommend stepping through following three Jupyter notebooks (can also be used on Google Colab):
 
-- [Quickstart (JAX)](https://pymdp-rtd.readthedocs.io/en/latest/getting-started/quickstart-jax/)
-- [NumPy/legacy to JAX migration guide](https://pymdp-rtd.readthedocs.io/en/latest/migration/numpy-to-jax/)
-- [`rollout()` active inference loop guide](https://pymdp-rtd.readthedocs.io/en/latest/guides/rollout-active-inference-loop/)
+- [Quickstart (JAX)](https://pymdp-rtd.readthedocs.io/en/docs-rehaul/getting-started/quickstart-jax/)
+- [NumPy/legacy to JAX migration guide](https://pymdp-rtd.readthedocs.io/en/docs-rehaul/migration/numpy-to-jax/)
+- [`rollout()` active inference loop guide](https://pymdp-rtd.readthedocs.io/en/docs-rehaul/guides/rollout-active-inference-loop/)
 
-We also have (and are continuing to build) a series of notebooks that walk through active inference agents performing different types of tasks in the [Notebook Gallery](https://pymdp-rtd.readthedocs.io/en/latest/tutorials/notebooks/).
+We also have (and are continuing to build) a series of notebooks that walk through active inference agents performing different types of tasks in the [Notebook Gallery](https://pymdp-rtd.readthedocs.io/en/docs-rehaul/tutorials/notebooks/).
 
 ## Contributing
 
