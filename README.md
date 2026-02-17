@@ -76,8 +76,8 @@ You can run the code behind simulating tasks like this one and others in the **E
 We recommend installing `pymdp` using [`uv`](https://docs.astral.sh/uv/), with an explicit virtual environment:
 
 ```bash
-uv venv .venv311 --python 3.11
-source .venv311/bin/activate
+uv venv .venv
+source .venv/bin/activate
 uv pip install inferactively-pymdp
 ```
 
@@ -135,8 +135,8 @@ Recommended local setup:
 
 ```bash
 cd <path_to_repo_fork>
-uv venv .venv311 --python 3.11
-source .venv311/bin/activate
+uv venv .venv
+source .venv/bin/activate
 uv sync --group test
 ```
 
@@ -168,11 +168,21 @@ Build docs locally:
 ## Authors
 
 - Conor Heins [@conorheins](https://github.com/conorheins)
-- Alec Tschantz [@alec-tschantz](https://github.com/alec-tschantz)
-- Beren Millidge [@BerenMillidge](https://github.com/BerenMillidge)
-- Brennan Klein [@jkbren](https://github.com/jkbren)
-- Arun Niranjan [@Arun-Niranjan](https://github.com/Arun-Niranjan)
-- Daphne Demekas [@daphnedemekas](https://github.com/daphnedemekas)
-- Aswin Paul [@aswinpaul](https://github.com/aswinpaul)
 - Tim Verbelen [@tverbele](https://github.com/tverbele)
 - Dimitrije Markovic [@dimarkov](https://github.com/dimarkov)
+- Riddhi Pittliya Jain [@riddhipits](https://github.com/riddhipits)
+- Arun Niranjan [@Arun-Niranjan](https://github.com/Arun-Niranjan)
+- Toon Van de Maele [@toonvdm](https://github.com/toonvdm)
+- Ozan Catal [@OzanCatalVerses](https://github.com/OzanCatalVerses)
+- Tommaso Salvatori [@salvatomm](https://github.com/salvatomm)
+- Aswin Paul [@aswinpaul](https://github.com/aswinpaul)
+- Ran Wei
+- Alexander Tschantz [@alec-tschantz](https://github.com/alec-tschantz)
+- Miguel de Prado [@praesc](https://github.com/praesc)
+- Nikola Pižurica [@NIkolaPizurica](https://github.com/NIkolaPizurica)
+- Nikola Milović [@nikolamilovic-ft](https://github.com/nikolamilovic-ft)
+- Matteo Risso
+- Christopher Buckley [@clb27](https://github.com/clb27)
+- Beren Millidge [@BerenMillidge](https://github.com/BerenMillidge)
+- Daphne Demekas [@daphnedemekas](https://github.com/daphnedemekas)
+- Cooper Williams [@coopwilliams](https://github.com/coopwilliams)
