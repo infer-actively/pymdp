@@ -8,6 +8,24 @@
 A Python package for simulating Active Inference agents in Markov Decision Process environments.
 Please see our companion paper, published in the Journal of Open Source Software: ["pymdp: A Python library for active inference in discrete state spaces"](https://joss.theoj.org/papers/10.21105/joss.04098) for an overview of the package and its motivation. For a more in-depth, tutorial-style introduction to the package and a mathematical overview of active inference in Markov Decision Processes, see the [longer arxiv version](https://arxiv.org/abs/2201.03904) of the paper.
 
+## Citing `pymdp`
+If you use `pymdp` in your work or research, please cite:
+
+```
+@article{Heins2022,
+  doi = {10.21105/joss.04098},
+  url = {https://doi.org/10.21105/joss.04098},
+  year = {2022},
+  publisher = {The Open Journal},
+  volume = {7},
+  number = {73},
+  pages = {4098},
+  author = {Conor Heins and Beren Millidge and Daphne Demekas and Brennan Klein and Karl Friston and Iain D. Couzin and Alexander Tschantz},
+  title = {pymdp: A Python library for active inference in discrete state spaces},
+  journal = {Journal of Open Source Software}
+}
+```
+
 This package is hosted on the [`infer-actively`](https://github.com/infer-actively) GitHub organization, which was built with the intention of hosting open-source active inference and free-energy-principle related software.
 
 Most of the low-level mathematical operations are [NumPy](https://github.com/numpy/numpy) ports of their equivalent functions from the `SPM` [implementation](https://www.fil.ion.ucl.ac.uk/spm/doc/) in MATLAB. We have benchmarked and validated most of these functions against their SPM counterparts.
@@ -55,9 +73,15 @@ You can run the code behind simulating tasks like this one and others in the **E
 
 ## Quick-start: Installation and Usage
 
-In order to use `pymdp` to build and develop active inference agents, we recommend installing it with the the package installer [`pip`](https://pip.pypa.io/en/stable/), which will install `pymdp` locally as well as its dependencies. This can also be done in a virtual environment (e.g. with `venv`). 
+We recommend installing `pymdp` using [`uv`](https://docs.astral.sh/uv/), with an explicit virtual environment:
 
-When pip installing `pymdp`, use the package name `inferactively-pymdp`:
+```bash
+uv venv .venv311 --python 3.11
+source .venv311/bin/activate
+uv pip install inferactively-pymdp
+```
+
+If you prefer `pip`, use:
 
 ```bash
 pip install inferactively-pymdp
@@ -105,40 +129,41 @@ We also have (and are continuing to build) a series of notebooks that walk throu
 
 ## Contributing
 
-This package is under active development. If you would like to contribute, please refer to [this file](CONTRIBUTING.md)
+This package is under active development. If you would like to contribute, please refer to [CONTRIBUTING.md](CONTRIBUTING.md).
 
-If you would like to contribute to this repo, we recommend using venv and pip
+Recommended local setup:
+
 ```bash
 cd <path_to_repo_fork>
-python3 -m venv env
-source env/bin/activate
-pip install -e .  # This will install pymdp as a local dev package
+uv venv .venv311 --python 3.11
+source .venv311/bin/activate
+uv sync --group test
 ```
 
-You should then be able to run tests locally with `pytest`
+Useful variants:
+
+```bash
+# docs work
+uv sync --group test --extra docs
+
+# notebook/media extras
+uv sync --group test --extra nb
+
+# model fitting extras
+uv sync --group test --extra modelfit
+```
+
+Run tests:
+
 ```bash
 pytest test
 ```
 
-## Citing `pymdp`
-If you use `pymdp` in your work or research, please consider citing our [paper](https://joss.theoj.org/papers/10.21105/joss.04098) (open-access) published in the Journal of Open-Source Software:
+Build docs locally:
 
+```bash
+./scripts/docs_build.sh
 ```
-@article{Heins2022,
-  doi = {10.21105/joss.04098},
-  url = {https://doi.org/10.21105/joss.04098},
-  year = {2022},
-  publisher = {The Open Journal},
-  volume = {7},
-  number = {73},
-  pages = {4098},
-  author = {Conor Heins and Beren Millidge and Daphne Demekas and Brennan Klein and Karl Friston and Iain D. Couzin and Alexander Tschantz},
-  title = {pymdp: A Python library for active inference in discrete state spaces},
-  journal = {Journal of Open Source Software}
-}
-```
-
-For a more in-depth, tutorial-style introduction to the package and a mathematical overview of active inference in Markov Decision Processes, you can also consult the [longer arxiv version](https://arxiv.org/abs/2201.03904) of the paper.
 
 ## Authors
 
