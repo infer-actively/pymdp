@@ -14,7 +14,7 @@
 - `num_timesteps`: integer horizon
 - `rng_key`: JAX PRNG key
 
-Optional:
+## Optional inputs
 - `initial_carry`: override initial rollout carry
 - `policy_search`: custom policy search function
 - `env_params`: batched environment parameters
@@ -22,15 +22,18 @@ Optional:
 ## Canonical usage
 
 ```python
+from jax import jit
 from jax import random as jr
 from pymdp.envs.rollout import rollout
 
 rng_key = jr.PRNGKey(0)
-last, info = rollout(
+rollout_jit = jit(rollout, static_argnums=[1, 2])  # env and num_timesteps are static
+
+last, info = rollout_jit(
     agent,
     env,
-    num_timesteps=20,
-    rng_key=rng_key,
+    20,
+    rng_key,
 )
 ```
 
@@ -51,6 +54,7 @@ last, info = rollout(
 `rollout()` repeatedly applies the one-step helper `infer_and_plan` internally.
 
 Use manual loops when:
+
 - your environment is not JAX-friendly,
 - you need custom per-step side effects.
 

@@ -3,6 +3,38 @@
 This guide explains how to map Active Inference concepts onto the list-based
 model representation used in `pymdp`.
 
+For a model with `F` hidden-state factors and `M` observation modalities over
+`T` timesteps, a common joint factorization is:
+
+$$
+{\small p\left(o_{1:T}^{1:M}, s_{1:T}^{1:F}, \pi;\,A,B,D\right)
+= p(\pi)\underbrace{p\left(s_1^{1:F};\,D\right)}_{\text{initial-state model / }D}
+\prod_{t=1}^{T-1}\underbrace{p\left(s_{t+1}^{1:F} \mid s_t^{1:F}, u_t^\pi;\,B\right)}_{\text{transition model / }B}
+\prod_{t=1}^{T}\underbrace{p\left(o_t^{1:M} \mid s_t^{1:F};\,A\right)}_{\text{observation model / }A}.}
+$$
+
+Here, $\pi$ is a latent policy variable that indexes a full sequence of
+actions, and $u_t^\pi$ denotes the action entailed by policy $\pi$ at time $t$.
+
+In `pymdp`, those terms are typically factorized as:
+
+$$
+p\left(s_1^{1:F};\,D\right)
+= \prod_{f=1}^{F} p\left(s_1^f;\,D_f\right).
+$$
+
+$$
+p\left(s_{t+1}^{1:F} \mid s_t^{1:F}, u_t^\pi;\,B\right)
+= \prod_{f=1}^{F}
+p\left(s_{t+1}^f \mid s_t^{B_{\mathrm{dependencies}}[f]}, u_t^\pi;\,B_f\right).
+$$
+
+$$
+p\left(o_t^{1:M} \mid s_t^{1:F};\,A\right)
+= \prod_{m=1}^{M}
+p\left(o_t^m \mid s_t^{A_{\mathrm{dependencies}}[m]};\,A_m\right).
+$$
+
 ## Mental model
 
 Use two independent indexing systems:
