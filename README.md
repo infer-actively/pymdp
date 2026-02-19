@@ -181,7 +181,7 @@ Build docs locally:
 - Miguel de Prado [@praesc](https://github.com/praesc)
 - Nikola Pižurica [@NIkolaPizurica](https://github.com/NIkolaPizurica)
 - Nikola Milović [@nikolamilovic-ft](https://github.com/nikolamilovic-ft)
-- Matteo Risso
+- Matteo Risso [@matteorisso](https://github.com/matteorisso)
 - Christopher Buckley [@clb27](https://github.com/clb27)
 - Beren Millidge [@BerenMillidge](https://github.com/BerenMillidge)
 - Daphne Demekas [@daphnedemekas](https://github.com/daphnedemekas)
