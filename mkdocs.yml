@@ -4,6 +4,7 @@ site_url: https://pymdp-rtd.readthedocs.io/en/latest/
 repo_url: https://github.com/infer-actively/pymdp
 repo_name: infer-actively/pymdp
 docs_dir: docs-mkdocs
+site_dir: !ENV [MKDOCS_SITE_DIR, site]
 strict: true
 validation:
   omitted_files: ignore
@@ -21,6 +22,8 @@ markdown_extensions:
       generic: true
   - toc:
       permalink: true
+extra_css:
+  - styles/crisp-api.css
 extra_javascript:
   - javascripts/mathjax.js
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js

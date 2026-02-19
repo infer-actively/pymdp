@@ -8,13 +8,13 @@ For a model with `F` hidden-state factors and `M` observation modalities over
 
 $$
 {\small p\left(o_{1:T}^{1:M}, s_{1:T}^{1:F}, \pi;\,A,B,D\right)
-= p(\pi)\underbrace{p\left(s_1^{1:F};\,D\right)}_{\text{initial-state model / }D}
+= p(\pi)\underbrace{p\left(s_1^{1:F};\,D\right)}_{\text{initial state prior / }D}
 \prod_{t=1}^{T-1}\underbrace{p\left(s_{t+1}^{1:F} \mid s_t^{1:F}, u_t^\pi;\,B\right)}_{\text{transition model / }B}
 \prod_{t=1}^{T}\underbrace{p\left(o_t^{1:M} \mid s_t^{1:F};\,A\right)}_{\text{observation model / }A}.}
 $$
 
-Here, $\pi$ is a latent policy variable that indexes a full sequence of
-actions, and $u_t^\pi$ denotes the action entailed by policy $\pi$ at time $t$.
+Here, $\pi$ refers to _policies_; this is a discrete latent variable whose realizations correspond to sequences of
+actions over time, and $u_t^\pi$ denotes the action entailed by policy $\pi$ at time $t$.
 
 In `pymdp`, those terms are typically factorized as:
 
@@ -51,7 +51,7 @@ In code, this means:
 
 Each modality gets its own likelihood tensor:
 
-- `A[m] = P(obs_m | state_i, state_j, state_k)`, if `i, j, k` are in `A_dependencies[m]`
+- `A[m] = P(obs_m | state_{i in A_dependencies[f]})`
 - `observations[m]` is the actual observation for modality `m`
 
 So if you have two modalities (for example, location and reward), you should
@@ -63,7 +63,7 @@ Each hidden-state factor gets its own prior, posterior, and transition model:
 
 - `D[f]`: prior over factor-`f` states
 - `qs[f]`: posterior over factor-`f` states
-- `B[f] = P(s_{[f,t+1]} | state_i, state_j, state_k, action_a, action_b)`, if `i, j, k` are in `B_dependencies[f]` and `a, b` are in `B_action_dependencies[f]`
+- `B[f] = P(s_{[f,t+1]} | state_{i in B_dependencies[f]}, action_{j in B_action_dependencies[f]})`
 
 This means you can reason about each factor semantically (for example, context,
 location, or object identity) and keep dimensions aligned by factor index.

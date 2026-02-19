@@ -1,25 +1,25 @@
 # NumPy/legacy to JAX Migration
 
-This guide is for users moving from `pymdp.legacy` (NumPy/object-array style) to modern JAX-first `pymdp`.
+This guide is for users moving from `pymdp.legacy` (NumPy/object-array style) to the [JAX](https://github.com/jax-ml/jax) backend of `pymdp`.
 
 ## Key concept shifts
 
-| Legacy/NumPy style | Modern JAX style |
+| Legacy NumPy | JAX |
 |---|---|
 | `numpy.ndarray(dtype=object)` collections | pytrees/lists of `jax.Array` |
 | `np.random` global RNG | explicit `jr.PRNGKey` threading |
 | stateful loops with implicit mutation | functional updates with explicit returns |
 | mutable attribute assignment (`agent.x = ...`) | functional pytree updates (`eqx.tree_at(...)`) |
-| `pymdp.legacy.*` modules | `pymdp.*` modern modules |
+| `pymdp.legacy.*` modules | `pymdp.*` modern JAX-based modules |
 
 ## API differences to update
 
 1. Policy inference now takes current beliefs as inputs, since they are no longer stored internally on the agent.
 
-        # legacy
+        # legacy NumPy
         q_pi, G = agent.infer_policies()
 
-        # modern
+        # JAX
         q_pi, G = agent.infer_policies(qs)
 
 2. Stochastic functions require explicit random keys. Common examples in
@@ -30,10 +30,10 @@ This guide is for users moving from `pymdp.legacy` (NumPy/object-array style) to
    rollout execution (`rollout(..., rng_key=...)`), and stochastic
    environment methods (`env.reset(key, ...)`, `env.step(key, ...)`).
 
-        # legacy
+        # legacy NumPy
         action = agent.sample_action()
 
-        # modern (stochastic mode)
+        # JAX
         keys = jr.split(rng_key, agent.batch_size + 1)
         action = agent.sample_action(q_pi, rng_key=keys[1:])
 
@@ -123,12 +123,12 @@ Other frequently used stochastic APIs that also require explicit keys:
 - `rollout(..., rng_key=...)`
 - stochastic `env.reset(key, ...)` / `env.step(key, ...)`
 
-Avoid `np.random` in modern paths.
+Avoid `np.random` when using the new JAX backend (see also this [this post](https://builtin.com/data-science/numpy-random-seed) which  encourages caution when working with `np.random`)
 
-## Legacy-to-modern worked conversion
+## NumPy-to-JAX worked conversion
 
 ```python
-# LEGACY
+# legacy NumPy
 from pymdp.legacy.agent import Agent as LegacyAgent
 from pymdp.legacy import utils as legacy_utils
 A = legacy_utils.random_A_matrix([3], [2])
@@ -141,7 +141,7 @@ action = agent.sample_action()
 ```
 
 ```python
-# MODERN JAX
+# JAX
 from jax import random as jr
 from pymdp.agent import Agent
 from pymdp import utils
@@ -160,16 +160,17 @@ action = agent.sample_action(q_pi, rng_key=action_keys[1:])
 
 ## Common migration pitfalls
 
-1. Missing `empirical_prior` argument in `infer_states`.
-2. Missing `rng_key`/`key` in stochastic calls (for example `sample_action`,
+1. Missing batch-size dimension for `observations`, `actions`, `qs`,  or parameters (`A`, `B`, `C`, `D`).
+2. Missing `empirical_prior` argument in `infer_states`.
+3. Missing `rng_key`/`key` in stochastic calls (for example `sample_action`,
    random model constructors, `rollout`, or stochastic `env.reset`/`env.step`).
-3. Mixing `numpy.ndarray` into JAX-only paths.
-4. Forgetting sequence action-history shape `(T-1, num_factors)`.
+4. Mixing `numpy.ndarray` into JAX-only paths.
+5. Forgetting sequence action-history shape `(T-1, num_factors)`.
 
 ## Migration done checklist
 
 1. No imports from `pymdp.legacy` in active scripts/notebooks.
 2. Randomness uses explicit `jr.PRNGKey` flow.
 3. `infer_policies(qs)` and `sample_action(q_pi, rng_key=...)` usage updated.
-4. Modern tests pass (`pytest test`).
-5. Notebook/docs examples run with modern API.
+4. Tests pass (`pytest test`).
+5. Notebook/docs examples run with API.

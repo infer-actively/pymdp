@@ -13,6 +13,8 @@ This documentation focuses on the modern JAX backend, which supports:
   <li>scalable batched simulations and model-fitting workflows (for example, with NumPyro or <a href="https://github.com/dimarkov/pybefit">pybefit</a>)</li>
 </ul>
 
+![Cue-chaining demo](assets/cue-chaining-demo.gif){ width="880" }
+
 ## Start here
 - [Installation](getting-started/installation.md)
 - [Quickstart (JAX)](getting-started/quickstart-jax.md)
