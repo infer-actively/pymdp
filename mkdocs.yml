@@ -17,8 +17,13 @@ markdown_extensions:
   - admonition
   - attr_list
   - footnotes
+  - pymdownx.arithmatex:
+      generic: true
   - toc:
       permalink: true
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js
 plugins:
   - search
   - mkdocs-jupyter:

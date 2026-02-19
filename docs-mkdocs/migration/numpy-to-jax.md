@@ -72,7 +72,7 @@ For environment-side batching, either:
 - pass batched `env_params` (for example via
   `env.generate_env_params(batch_size=...)`) when using `rollout()`. The parameters inside `env_params` must also carry a leading `batch_size` dimension that is matched to each set of parameters in the `Agent` class.
 
-## Updating `Agent` fields in JAX mode
+## Updating `Agent` fields in JAX
 
 The `Agent` class is an [Equinox](https://github.com/patrick-kidger/equinox)
 module. In practice, this means you should avoid mutable-style setter updates
@@ -91,6 +91,11 @@ import equinox as eqx
 agent = eqx.tree_at(lambda x: (x.A,), agent, (new_A,))
 agent = eqx.tree_at(lambda x: (x.B,), agent, (new_B,))
 ```
+
+If you change static `Agent` fields (for example model dimensions, dependency
+structure, or static hyperparameters such as number of policies), JAX will
+trigger recompiles of agent-specific JIT-compiled methods such as
+`infer_states`, `infer_policies`, and related methods used during rollouts.
 
 This is the pattern used near the end of
 `infer_parameters()` in `pymdp/agent.py`, where after a learning update, the new `A`/`B` (and, when

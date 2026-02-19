@@ -12,8 +12,9 @@ agent-environment loops.
 ## Two ways to build an environment
 
 1. Subclass `Env` for fully custom dynamics and observation logic.
-2. Use `PymdpEnv` when your environment is isomorphic to a discrete POMDP
-   generative process defined by `A`, `B`, and `D`.
+2. Use `PymdpEnv` when your environment is a discrete POMDP generative process
+   defined by a discrete observation model `A`, discrete transition model `B`, and
+   discrete distribution over initial states `D`.
 
 ## Using `PymdpEnv`
 
