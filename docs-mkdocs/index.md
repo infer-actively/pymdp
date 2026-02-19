@@ -8,7 +8,7 @@ motivation, see the companion JOSS paper:
 This documentation focuses on the modern JAX backend, which supports:
 
 <ul>
-  <li>accelerator-friendly execution (CPU/GPU) and JIT compilation</li>
+  <li>accelerator-friendly execution (CPU/GPU/TPU) and JIT compilation</li>
   <li>differentiable workflows via autodiff</li>
   <li>scalable batched simulations and model-fitting workflows (for example, with NumPyro or <a href="https://github.com/dimarkov/pybefit">pybefit</a>)</li>
 </ul>
