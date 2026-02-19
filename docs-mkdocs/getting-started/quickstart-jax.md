@@ -1,5 +1,10 @@
 # Quickstart (JAX)
 
+Here are a couple of lines to quickly build an active inference agent and run state inference, policy inference (planning), and action selection. The agent is created with a random generative model comprising two observation modalities and two hidden state factors.
+The first of the two state factors is controllable via a 3 dimensional action.
+
+The agent also has uniform preferences (a flat `C` vector) over the observation modalities.
+
 ```python
 from jax import random as jr
 from pymdp import utils
