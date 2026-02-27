@@ -4,9 +4,9 @@
 
 ## When to use it
 - The `.step()` and `.reset()` methods of your `Env` can be JIT-compiled.
-  This includes compatibility with `pymdp`'s native `PymdpEnv`, as well as JAX RL environment frameworks such as [gymnax](https://github.com/RobertTLange/gymnax), [jumanji](https://github.com/instadeepai/jumanji), and [navix](https://github.com/epignatelli/navix).
+  This includes compatibility with `pymdp`'s native `PymdpEnv`, as well as existing JAX RL environment frameworks (see for example [gymnax](https://github.com/RobertTLange/gymnax), [jumanji](https://github.com/instadeepai/jumanji), and [navix](https://github.com/epignatelli/navix)).
 - You want high-throughput simulations by compiling the full closed-loop interaction once and executing it efficiently across many rollouts.
-- You want a single, consistent API for multi-step Active Inference rollouts with explicit PRNG key threading.
+- You want a single, consistent API for multi-step active inference rollouts with explicit PRNG key threading.
 
 ## Required inputs
 - `agent`: `pymdp.agent.Agent`
@@ -40,9 +40,10 @@ last, info = rollout_jit(
 ## Reproducible key flow
 
 `rollout()` internally splits keys per step and per batch. For deterministic re-runs:
-1. keep the same `rng_key` seed,
-2. keep environment params/carry identical,
-3. avoid hidden non-JAX randomness.
+
+1. pass in the same `rng_key` seed,
+2. keep environment params/initial carry identical,
+3. avoid hidden non-JAX randomness inside your environment's `.step()` or `.reset()` methods.
 
 ## Batched runs and carry
 
@@ -51,14 +52,14 @@ last, info = rollout_jit(
 
 ## Relationship to manual loops
 
-`rollout()` repeatedly applies the one-step helper `infer_and_plan` internally.
+`rollout()` repeatedly applies the one-step helper `infer_and_plan` internally using `jax.lax.scan`, to efficiently JIT compile the full agent/environment interaction loop.
 
 Use manual loops when:
 
-- your environment is not JAX-friendly,
-- you need custom per-step side effects.
+- your environment's `.step()` and `.reset()` methods cannot be JITTed.
+- you need custom per-step side effects that don't respect the active inference logic of `infer_and_plan`.
 
-For JAX environments, `rollout()` is usually simpler and less error-prone.
+For JAX-based environments, we recommend using `rollout()`, as it's usually simpler and less error-prone.
 
 ## Debugging checklist
 
