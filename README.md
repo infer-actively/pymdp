@@ -170,7 +170,7 @@ Build docs locally:
 - Conor Heins [@conorheins](https://github.com/conorheins)
 - Tim Verbelen [@tverbele](https://github.com/tverbele)
 - Dimitrije Markovic [@dimarkov](https://github.com/dimarkov)
-- Riddhi Pittliya Jain [@riddhipits](https://github.com/riddhipits)
+- Riddhi Jain Pitliya [@riddhipits](https://github.com/riddhipits)
 - Arun Niranjan [@Arun-Niranjan](https://github.com/Arun-Niranjan)
 - Toon Van de Maele [@toonvdm](https://github.com/toonvdm)
 - Ozan Catal [@OzanCatalVerses](https://github.com/OzanCatalVerses)
