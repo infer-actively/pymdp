@@ -141,7 +141,7 @@ def decode_observations(
     g = config.group_size
     n = config.image_size // g
     C = config.n_channels
-    f = C * g * g
+    # f = C * g * g
 
     # Bin indices -> bin centres
     centres = (basis.bin_edges[..., :-1] + basis.bin_edges[..., 1:]) / 2  # (n, n, k, n_levels)
