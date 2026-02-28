@@ -35,6 +35,10 @@ dependencies = [
 ]
 
 [dependency-groups]
+rgm = [
+    "scikit-image>=0.25.2",
+    "scikit-learn>=1.7.2",
+]
 test = [
     "ipykernel>=7.1.0",
     "jupyter>=1.1.1",
@@ -50,8 +54,8 @@ test = [
 
 [project.optional-dependencies]
 gpu = [
-    'jax[cuda12]>=0.3.4',
-    'jaxlib[cuda12]>=0.3.4',
+    "jax[cuda13]>=0.6.2",
+    "jaxlib[cuda13]>=0.6.2",
 ]
 
 nb = [
