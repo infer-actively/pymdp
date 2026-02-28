@@ -1,5 +1,6 @@
 # One notebook path per line, relative to repository root.
 examples/advanced/complex_action_dependency.ipynb
+examples/advanced/pymdp_with_neural_encoder.ipynb
 examples/advanced/infer_states_optimization/methods_test.ipynb
 examples/api/model_construction_tutorial.ipynb
 examples/envs/cue_chaining_demo.ipynb

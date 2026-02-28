@@ -115,6 +115,10 @@ sections = [
                 "examples/advanced/complex_action_dependency.ipynb",
             ),
             (
+                "Using `pymdp` with a neural encoder",
+                "examples/advanced/pymdp_with_neural_encoder.ipynb",
+            ),
+            (
                 "Testing optimized inference methods",
                 "examples/advanced/infer_states_optimization/methods_test.ipynb",
             ),

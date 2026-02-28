@@ -35,6 +35,7 @@ To add a notebook:
 
 ### Advanced
 - [Working with complex action dependencies](examples/advanced/complex_action_dependency.ipynb)
+- [Using `pymdp` with a neural encoder](examples/advanced/pymdp_with_neural_encoder.ipynb)
 - [Testing optimized inference methods](examples/advanced/infer_states_optimization/methods_test.ipynb)
 - [Sparse Array Benchmarking](examples/sparse/sparse_benchmark.ipynb)
 - [Sophisticated inference with Monte Carlo Tree Search on TMaze with Distractors](examples/experimental/sophisticated_inference/mcts_generalized_tmaze.ipynb)
