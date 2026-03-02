@@ -36,7 +36,7 @@ from discretise import (
 
 class PatchStateStats(NamedTuple):
     num_states: jnp.ndarray  # (n_groups, n_groups) int — unique state count per patch
-    state_patterns: list  # [i][j] -> (num_states_ij, n_components) unique observation tuples
+    state_patterns: list  # [i][j] -> (num_states_ij, max_components) unique observation tuples
     state_to_images: list  # [i][j][s] -> list of image indices mapping to state s
 
 
@@ -51,7 +51,7 @@ def compute_patch_states(observations: jnp.ndarray) -> PatchStateStats:
     """Find unique observation patterns per patch location across structure images.
 
     Args:
-        observations: (N, n_groups, n_groups, n_components) integer bin indices
+        observations: (N, n_groups, n_groups, max_components) integer bin indices
                       from encode_images()
 
     Returns:
@@ -156,7 +156,7 @@ def create_patch_agents(
     """Build a single batched pymdp Agent for all patch locations.
 
     Each patch location becomes one element in the batch. All patches share:
-    - n_components observation modalities, each with n_levels levels
+    - max_components observation modalities, each with n_levels levels
     - 1 hidden state factor whose size = max unique states across all patches
 
     Args:
@@ -168,7 +168,7 @@ def create_patch_agents(
     """
     n_groups = config.image_size // config.group_size
     n_patches = n_groups * n_groups
-    n_mod = config.n_components
+    n_mod = config.max_components
     n_levels = config.n_levels
 
     num_states_flat = stats.num_states.flatten()  # (n_patches,)
@@ -185,7 +185,7 @@ def create_patch_agents(
     m_idx = np.arange(n_mod)[:, None]  # (n_mod, 1) for broadcasting
     for flat_idx in range(n_patches):
         i, j = divmod(flat_idx, n_groups)
-        patterns = np.asarray(stats.state_patterns[i][j])  # (n_s, n_components)
+        patterns = np.asarray(stats.state_patterns[i][j])  # (n_s, max_components)
         n_s = patterns.shape[0]
         s_idx = np.arange(n_s)[None, :]  # (1, n_s)
         A_np[:, flat_idx, :, :n_s] = 0.0
@@ -241,7 +241,7 @@ def infer_patch_states(
     Args:
         agent: Batched Agent from create_patch_agents()
         valid_mask: (n_patches, max_states) boolean mask
-        observations: (n_groups, n_groups, n_components) single image observations
+        observations: (n_groups, n_groups, max_components) single image observations
 
     Returns:
         (n_groups, n_groups) MAP state indices
@@ -249,7 +249,7 @@ def infer_patch_states(
     n_i, n_j, n_mod = observations.shape
     n_patches = n_i * n_j
 
-    # Flatten spatial dims: (n_patches, n_components)
+    # Flatten spatial dims: (n_patches, max_components)
     obs_flat = observations.reshape(n_patches, n_mod)
 
     # Split into list of modalities, each (n_patches,) integer
@@ -471,10 +471,10 @@ def _expand_to_obs(
         config: DiscretiseConfig
 
     Returns:
-        (n_groups, n_groups, n_components) discrete bin indices
+        (n_groups, n_groups, max_components) discrete bin indices
     """
     n_groups = config.image_size // config.group_size
-    n_comp = config.n_components
+    n_comp = config.max_components
     obs_grid = np.zeros((n_groups, n_groups, n_comp), dtype=np.int32)
     for i in range(n_groups):
         for j in range(n_groups):
@@ -539,7 +539,7 @@ class RGMHierarchy:
             n_levels = log2(n_groups) + 1
 
         Args:
-            x_exemplars: (N, C, H, W) preprocessed structure images
+            x_exemplars: (N, H, W) or (N, C, H, W) preprocessed structure images
             y_exemplars: (N,) digit labels
             config: discretisation config (default: DiscretiseConfig())
 
@@ -602,7 +602,7 @@ class RGMHierarchy:
         """Bottom-up inference: images → digit predictions.
 
         Args:
-            images: (N, C, H, W) preprocessed images
+            images: (N, H, W) or (N, C, H, W) preprocessed images
 
         Returns:
             (predicted_digits, top_states) both shape (N,)
@@ -649,7 +649,7 @@ class RGMHierarchy:
 
         Returns:
             (image, observations) where image is (1, C, H, W) and
-            observations is (1, n_groups, n_groups, n_components) discrete bin indices
+            observations is (1, n_groups, n_groups, max_components) discrete bin indices
         """
         top_stats = self.levels[-1].stats
         n_top = int(top_stats.num_states[0, 0])

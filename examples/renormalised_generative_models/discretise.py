@@ -5,6 +5,10 @@ Implements the blocking transformation from:
     Friston et al. (2025) "From pixels to planning: scale-free active inference"
 
 Pipeline: partition into patches -> SVD basis learning -> quantisation into discrete bins.
+
+Aligned with SPM's DEM_MNIST_RGM.m and spm_rgb2O.m:
+- Adaptive SVD mode selection via singular value threshold (spm_svd)
+- Nearest-bin assignment using bin centres (not edges)
 """
 
 from typing import NamedTuple
@@ -13,18 +17,20 @@ from jax import numpy as jnp, vmap
 
 
 class DiscretiseConfig(NamedTuple):
-    group_size: int = 4
-    n_components: int = 16
-    n_levels: int = 7
+    group_size: int = 4        # nd in SPM (tile diameter)
+    max_components: int = 16   # mm in SPM (max singular modes)
+    sv_threshold: float = 8.0  # su in SPM (1/su = normalized SV cutoff)
+    n_levels: int = 7          # nb in SPM (number of discrete bins, forced odd)
     image_size: int = 32
-    n_channels: int = 3
+    n_channels: int = 1        # grayscale by default
 
 
 class SVDBasis(NamedTuple):
-    V: jnp.ndarray          # (n_groups, n_groups, n_features, n_components)
-    S: jnp.ndarray          # (n_groups, n_groups, n_components)
-    mean: jnp.ndarray       # (n_groups, n_groups, n_features)
-    bin_edges: jnp.ndarray  # (n_groups, n_groups, n_components, n_levels+1)
+    V: jnp.ndarray            # (n_groups, n_groups, n_features, max_components)
+    S: jnp.ndarray            # (n_groups, n_groups, max_components)
+    mean: jnp.ndarray         # (n_groups, n_groups, n_features)
+    bin_centres: jnp.ndarray  # (n_groups, n_groups, max_components, n_levels)
+    n_modes: jnp.ndarray      # (n_groups, n_groups) — actual modes per patch
 
 
 def get_gaussian_weights(config: DiscretiseConfig) -> jnp.ndarray:
@@ -38,7 +44,17 @@ def get_gaussian_weights(config: DiscretiseConfig) -> jnp.ndarray:
 
 
 def partition_into_patches(images: jnp.ndarray, config: DiscretiseConfig) -> jnp.ndarray:
-    """Partition (N, C, H, W) images into (N, n_groups, n_groups, C, g, g) patches."""
+    """Partition images into spatial patches.
+
+    Args:
+        images: (N, C, H, W) if n_channels > 1, or (N, H, W) if n_channels == 1
+        config: discretisation parameters
+
+    Returns:
+        (N, n_groups, n_groups, C, g, g) patches
+    """
+    if images.ndim == 3:
+        images = images[:, None, :, :]  # (N, H, W) -> (N, 1, H, W)
     N, C, _H, _W = images.shape
     g = config.group_size
     n = config.image_size // g
@@ -47,10 +63,15 @@ def partition_into_patches(images: jnp.ndarray, config: DiscretiseConfig) -> jnp
 
 def compute_svd_basis(images: jnp.ndarray, config: DiscretiseConfig) -> SVDBasis:
     """
-    Learn SVD basis and bin edges from structure images.
+    Learn SVD basis and bin centres from structure images.
+
+    Implements adaptive mode selection matching SPM's spm_svd:
+    - Retains modes where S[i]/S[0] > 1/sv_threshold
+    - Capped at max_components
+    - Uses masking with fixed shapes for JAX compatibility
 
     Args:
-        images: (N, C, H, W) preprocessed structure images
+        images: (N, H, W) or (N, C, H, W) preprocessed structure images
         config: discretisation parameters
 
     Returns:
@@ -58,7 +79,7 @@ def compute_svd_basis(images: jnp.ndarray, config: DiscretiseConfig) -> SVDBasis
     """
     g = config.group_size
     n = config.image_size // g
-    k = config.n_components
+    k = config.max_components
     f = config.n_channels * g * g
 
     patches = partition_into_patches(images, config)
@@ -75,32 +96,55 @@ def compute_svd_basis(images: jnp.ndarray, config: DiscretiseConfig) -> SVDBasis
     centred_2d = centred.transpose(1, 2, 0, 3).reshape(n * n, N, f)
 
     def svd_one(data):
-        _U, S, Vh = jnp.linalg.svd(data, full_matrices=False)
-        return Vh.T[:, :k], S[:k]
+        _U, S_full, Vh = jnp.linalg.svd(data, full_matrices=False)
+        V = Vh.T[:, :k]
+        S = S_full[:k]
 
-    V_flat, S_flat = vmap(svd_one)(centred_2d)
+        # Adaptive mode selection: retain modes where S[i]/S[0] > 1/sv_threshold
+        threshold = 1.0 / config.sv_threshold
+        normalized = S / jnp.maximum(S[0], 1e-12)
+        mode_mask = (normalized > threshold).astype(jnp.float32)  # (k,)
+        n_modes = mode_mask.sum().astype(jnp.int32)
+
+        # Zero out unused modes
+        V = V * mode_mask[None, :]
+        S = S * mode_mask
+
+        return V, S, n_modes
+
+    V_flat, S_flat, n_modes_flat = vmap(svd_one)(centred_2d)
     V = V_flat.reshape(n, n, f, k)
     S = S_flat.reshape(n, n, k)
+    n_modes = n_modes_flat.reshape(n, n)
 
-    # Project structure images to compute bin edges
+    # Project structure images to compute bin centres
     variates = jnp.einsum('bijf,ijfc->bijc', centred, V)  # (N, n, n, k)
 
-    def symmetric_bins(v):
+    # Create a mode mask for zeroing out bin centres of unused modes
+    mode_mask = (S > 0).astype(jnp.float32)  # (n, n, k)
+
+    def symmetric_bin_centres(v):
+        """Compute bin centres via linspace(-max_abs, max_abs, n_levels)."""
         max_abs = jnp.maximum(jnp.abs(v).max(), 1e-8)
-        return jnp.linspace(-max_abs, max_abs, config.n_levels + 1)
+        return jnp.linspace(-max_abs, max_abs, config.n_levels)
 
-    # vmap over (n, n, k) -> bin_edges (n, n, k, n_levels+1)
-    bin_edges = vmap(vmap(vmap(symmetric_bins)))(variates.transpose(1, 2, 3, 0))
+    # vmap over (n, n, k) -> bin_centres (n, n, k, n_levels)
+    bin_centres = vmap(vmap(vmap(symmetric_bin_centres)))(variates.transpose(1, 2, 3, 0))
 
-    return SVDBasis(V=V, S=S, mean=mean, bin_edges=bin_edges)
+    # Zero out bin centres for unused modes
+    bin_centres = bin_centres * mode_mask[:, :, :, None]
+
+    return SVDBasis(V=V, S=S, mean=mean, bin_centres=bin_centres, n_modes=n_modes)
 
 
 def encode_images(images: jnp.ndarray, basis: SVDBasis, config: DiscretiseConfig) -> jnp.ndarray:
     """
-    Encode images as discrete observations.
+    Encode images as discrete observations using nearest-bin assignment.
+
+    SPM uses: [~, U] = min(abs(u(t,m) - a)) where a is a vector of bin centres.
 
     Returns:
-        (N, n_groups, n_groups, n_components) integer bin indices in [0, n_levels-1]
+        (N, n_groups, n_groups, max_components) integer bin indices in [0, n_levels-1]
     """
     g = config.group_size
     n = config.image_size // g
@@ -115,15 +159,13 @@ def encode_images(images: jnp.ndarray, basis: SVDBasis, config: DiscretiseConfig
 
     variates = jnp.einsum('bijf,ijfc->bijc', centred, basis.V)
 
-    # Discretise
-    v_flat = variates.reshape(N, -1)                                # (N, n*n*k)
-    e_flat = basis.bin_edges.reshape(-1, basis.bin_edges.shape[-1])  # (n*n*k, n_levels+1)
+    # Nearest-bin assignment: argmin(|variate - centre|)
+    # variates: (N, n, n, k), bin_centres: (n, n, k, n_levels)
+    # Expand for broadcasting: (N, n, n, k, 1) vs (1, n, n, k, n_levels)
+    diffs = jnp.abs(variates[..., None] - basis.bin_centres[None, :, :, :, :])
+    indices = jnp.argmin(diffs, axis=-1)  # (N, n, n, k)
 
-    def digitize(v, edges):
-        return jnp.clip(jnp.searchsorted(edges, v, side='right') - 1, 0, config.n_levels - 1)
-
-    indices = vmap(digitize, in_axes=(1, 0), out_axes=1)(v_flat, e_flat)
-    return indices.reshape(N, n, n, config.n_components)
+    return indices
 
 
 def decode_observations(
@@ -132,8 +174,10 @@ def decode_observations(
     """
     Reconstruct images from discrete observations.
 
+    Uses bin centres directly (no edge midpoint computation needed).
+
     Args:
-        observations: (N, n_groups, n_groups, n_components) integer bin indices
+        observations: (N, n_groups, n_groups, max_components) integer bin indices
 
     Returns:
         (N, C, H, W) reconstructed images
@@ -141,10 +185,6 @@ def decode_observations(
     g = config.group_size
     n = config.image_size // g
     C = config.n_channels
-    # f = C * g * g
-
-    # Bin indices -> bin centres
-    centres = (basis.bin_edges[..., :-1] + basis.bin_edges[..., 1:]) / 2  # (n, n, k, n_levels)
 
     # Gather the centre for each observation
     def gather_centres(obs_ijn, centres_ijn):
@@ -153,7 +193,7 @@ def decode_observations(
 
     def gather_image(obs_i):
         # obs_i: (n, n, k)
-        return vmap(vmap(gather_centres))(obs_i, centres)
+        return vmap(vmap(gather_centres))(obs_i, basis.bin_centres)
 
     variates = vmap(gather_image)(observations)  # (N, n, n, k)
 
