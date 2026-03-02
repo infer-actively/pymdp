@@ -23,9 +23,13 @@ from pymdp.control import Policies
 from discretise import (
     DiscretiseConfig,
     SVDBasis,
+    OverlappingSVDBasis,
     compute_svd_basis,
+    compute_svd_basis_overlapping,
     encode_images,
+    encode_images_overlapping,
     decode_observations,
+    decode_observations_overlapping,
 )
 
 
@@ -504,14 +508,18 @@ class RGMHierarchy:
     def __init__(
         self,
         config: DiscretiseConfig,
-        basis: SVDBasis,
+        basis: "SVDBasis | OverlappingSVDBasis",
         y_exemplars: np.ndarray,
         levels: list[RGMLevel],
+        overlapping: bool = False,
     ):
         self.config = config
         self.basis = basis
         self.y_exemplars = np.asarray(y_exemplars)
         self.levels = levels
+        self.overlapping = overlapping
+        self._encode_fn = encode_images_overlapping if overlapping else encode_images
+        self._decode_fn = decode_observations_overlapping if overlapping else decode_observations
 
         # Build digit_state_map from top-level state_to_images + y_exemplars
         top_stats = levels[-1].stats
@@ -531,6 +539,7 @@ class RGMHierarchy:
         x_exemplars: jnp.ndarray,
         y_exemplars: np.ndarray,
         config: DiscretiseConfig | None = None,
+        overlapping: bool = False,
     ) -> "RGMHierarchy":
         """Build the full N-level hierarchy from preprocessed exemplar images.
 
@@ -542,6 +551,7 @@ class RGMHierarchy:
             x_exemplars: (N, H, W) or (N, C, H, W) preprocessed structure images
             y_exemplars: (N,) digit labels
             config: discretisation config (default: DiscretiseConfig())
+            overlapping: if True, use SPM-style overlapping tiles (spm_tile)
 
         Returns:
             Fully constructed RGMHierarchy
@@ -558,8 +568,12 @@ class RGMHierarchy:
         n_halvings = int(math.log2(n_groups))
 
         # SVD basis and discretisation
-        basis = compute_svd_basis(x_exemplars, config)
-        observations = encode_images(x_exemplars, basis, config)
+        if overlapping:
+            basis = compute_svd_basis_overlapping(x_exemplars, config)
+            observations = encode_images_overlapping(x_exemplars, basis)
+        else:
+            basis = compute_svd_basis(x_exemplars, config)
+            observations = encode_images(x_exemplars, basis)
 
         # Level 1: patch states
         l1_stats = compute_patch_states(observations)
@@ -594,6 +608,7 @@ class RGMHierarchy:
             basis=basis,
             y_exemplars=np.asarray(y_exemplars),
             levels=levels,
+            overlapping=overlapping,
         )
 
     def classify(
@@ -608,7 +623,7 @@ class RGMHierarchy:
             (predicted_digits, top_states) both shape (N,)
             predicted_digits[i] = -1 if the top-level state is ambiguous
         """
-        observations = encode_images(images, self.basis, self.config)
+        observations = self._encode_fn(images, self.basis)
         N = observations.shape[0]
         predicted_digits = np.empty(N, dtype=np.int32)
         top_states = np.empty(N, dtype=np.int32)
@@ -682,6 +697,6 @@ class RGMHierarchy:
         obs_grid = _expand_to_obs(grid, self.levels[0].stats, self.config)
 
         obs_jnp = jnp.array(obs_grid)[None]
-        image = decode_observations(obs_jnp, self.basis, self.config)
+        image = self._decode_fn(obs_jnp, self.basis)
 
         return image, obs_jnp
