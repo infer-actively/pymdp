@@ -617,29 +617,48 @@ def optimized_tree_search(
     infer_fn: Callable = infer_fn,
     predict_fn: Callable = predict_fn,
 ) -> Tree:
-    """
-    Perform a sophisticated inference tree search given an agent and planning tree.
+    """Perform sophisticated-inference tree expansion from the current root.
 
-    Keeps expanding the tree until one of the following conditions is met:
-    - The horizon is reached.
-    - The entropy of the root node's policy distribution is below a threshold.
-    - The expected free energy of the root node is below a threshold.
+    Expansion continues until one of the stop conditions is met:
 
-    Args:
-        agent: The agent to use for planning.
-        tree: The initial planning tree.
-        horizon: The maximum number of timesteps in the future to expand the tree.
-        policy_prune_threshold: Minimum probability threshold (default 1/16) below which policy branches are not expanded.
-        observation_prune_threshold: Minimum probability threshold (default 1/16) below which observation branches are not expanded.
-        entropy_stop_threshold: Entropy threshold below which to stop expanding (default 0.5). Lower values require more certainty; 0.0 means only stop with perfect certainty.
-        efe_stop_threshold: Expected free energy threshold below which to stop expanding (default 1e10). High values like default effectively disable this condition. 
-        kl_threshold: KL divergence threshold for reusing existing nodes instead of creating new ones when states (qs) are similar (default -1 disables reuse).
-        prune_penalty: Negative reward (default 512) assigned to pruned nodes to discourage exploration of unpromising branches.
-        gamma: Temperature parameter (default 1) for weighting policy probabilities. Higher values increase precision of probability distribution.
-        topk_obsspace: Maximum number of top observation combinations to consider (default 10000).
+    - planning horizon is reached
+    - root policy entropy drops below `entropy_stop_threshold`
+    - root expected free energy drops below `efe_stop_threshold`
 
-    Returns:
-        tree: The expanded planning tree.
+    Parameters
+    ----------
+    agent : Any
+        Agent instance containing model parameters and policy set.
+    tree : Tree
+        Initial planning tree to expand.
+    horizon : int
+        Maximum planning depth.
+    policy_prune_threshold : float, default=1/16
+        Minimum policy probability required to expand a policy branch.
+    observation_prune_threshold : float, default=1/16
+        Minimum observation probability required to expand an observation branch.
+    entropy_stop_threshold : float, default=0.5
+        Root-policy entropy threshold used as an early-stop criterion.
+    efe_stop_threshold : float, default=1e10
+        Root expected free energy threshold used as an early-stop criterion.
+    kl_threshold : float, default=-1
+        KL threshold for reusing existing observation nodes with similar beliefs.
+        A value of `-1` disables node reuse.
+    prune_penalty : float, default=512
+        Penalty assigned to pruned branches.
+    gamma : float, default=1
+        Precision (inverse temperature) for policy softmax updates.
+    topk_obsspace : int, default=10000
+        Maximum number of top observation combinations considered per expansion.
+    infer_fn : Callable, optional
+        Function used to infer posterior states from candidate observations.
+    predict_fn : Callable, optional
+        Function used to predict next-state/observation beliefs and policy scores.
+
+    Returns
+    -------
+    Tree
+        Expanded planning tree.
     """
     policies = agent.policies.policy_arr
 
