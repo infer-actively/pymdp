@@ -55,7 +55,8 @@ gpu = [
     'jaxlib[cuda12]>=0.3.4',
 ]
 docs = [
-    "mkdocs>=1.6.1",
+    # MkDocs 2.x currently emits incompatibility warnings with Material.
+    "mkdocs>=1.6.1,<2",
     "mkdocs-material>=9.5.50",
     "mkdocstrings[python]>=0.27.0",
     "mkdocs-jupyter>=0.24.8",

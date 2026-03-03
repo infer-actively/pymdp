@@ -21,8 +21,21 @@ from pymdp.control import (
 
 
 def predict_fn(agent: Any, qs: list[jnp.ndarray]) -> tuple[list[jnp.ndarray], list[jnp.ndarray], jnp.ndarray]:
-    """
-    For a given agent, calculate next qs, qo and G given the current qs and policies.
+    """Predict one-step beliefs and policy scores for all policies.
+
+    Parameters
+    ----------
+    agent : Any
+        Active inference agent containing `A`, `B`, `C`, dependencies, and
+        policy definitions.
+    qs : list[jnp.ndarray]
+        Current posterior beliefs over hidden-state factors.
+
+    Returns
+    -------
+    tuple[list[jnp.ndarray], list[jnp.ndarray], jnp.ndarray]
+        Predicted next-state beliefs, predicted next-observation beliefs, and
+        policy scores (`G`) for each policy.
     """
     policies = agent.policies.policy_arr
 
@@ -48,6 +61,22 @@ def predict_fn(agent: Any, qs: list[jnp.ndarray]) -> tuple[list[jnp.ndarray], li
 
 
 def infer_fn(agent: Any, obs: list[jnp.ndarray], qs: list[jnp.ndarray]) -> list[jnp.ndarray]:
+    """Infer posterior states for a candidate observation in SI expansion.
+
+    Parameters
+    ----------
+    agent : Any
+        Active inference agent.
+    obs : list[jnp.ndarray]
+        Candidate observation(s) for each modality.
+    qs : list[jnp.ndarray]
+        Prior/predictive beliefs to condition on for state inference.
+
+    Returns
+    -------
+    list[jnp.ndarray]
+        Posterior beliefs over hidden-state factors.
+    """
     agent_expanded = jtu.tree_map(lambda x: x[None, ...], agent)
     qs_post = agent_expanded.infer_states(obs, qs)
     # remove time dim from qs_post
@@ -70,8 +99,42 @@ def si_policy_search(
     infer_fn: Callable = infer_fn,
     predict_fn: Callable = predict_fn,
 ) -> Callable:
-    """
-    Create a search function that can be used in the pymdp `rollout` function.
+    """Create a sophisticated-inference policy-search function.
+
+    Parameters
+    ----------
+    horizon : int, default=5
+        Maximum tree-expansion horizon.
+    max_nodes : int, default=5000
+        Maximum number of nodes preallocated in the planning tree.
+    max_branching : int, default=10
+        Maximum number of children per node.
+    policy_prune_threshold : float, default=1/16
+        Minimum policy probability required for expansion.
+    observation_prune_threshold : float, default=1/16
+        Minimum observation-branch probability required for expansion.
+    entropy_stop_threshold : float, default=0.5
+        Stop-expansion threshold on root policy entropy.
+    efe_stop_threshold : float, default=1e10
+        Stop-expansion threshold on root expected free energy.
+    kl_threshold : float, default=-1
+        Optional KL threshold for node reuse.
+    prune_penalty : float, default=512
+        Penalty assigned to pruned/dead-end branches.
+    gamma : float, default=1
+        Precision/temperature scale used in policy softmax updates.
+    topk_obsspace : int, default=10000
+        Maximum observation-combination budget per expansion.
+    infer_fn : Callable, optional
+        State-inference function used during observation expansion.
+    predict_fn : Callable, optional
+        One-step prediction/valuation function for policy expansion.
+
+    Returns
+    -------
+    Callable
+        Search function compatible with `pymdp.envs.rollout.rollout` policy
+        hooks.
     """
 
     @partial(jax.jit, static_argnames=["reset"])
@@ -252,6 +315,18 @@ class Tree(eqx.Module):
 
 
 def root_idx(tree: Tree) -> jnp.ndarray:
+    """Return the index of the root observation node in a planning tree.
+
+    Parameters
+    ----------
+    tree : Tree
+        Planning tree instance.
+
+    Returns
+    -------
+    jnp.ndarray
+        Scalar index of the root node, or `-1` if not found.
+    """
     root_idx = jnp.argwhere(
         (tree.used)[:, 0]
         & (tree.horizon == 0)[:, 0]

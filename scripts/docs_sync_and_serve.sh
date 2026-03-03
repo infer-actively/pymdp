@@ -5,4 +5,5 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 ./scripts/sync_docs_notebooks.sh
+export NO_MKDOCS_2_WARNING=1
 uv run --active --no-default-groups --extra docs mkdocs serve

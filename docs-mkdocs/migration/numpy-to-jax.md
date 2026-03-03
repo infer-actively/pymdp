@@ -43,17 +43,28 @@ This guide is for users moving from `pymdp.legacy` (NumPy/object-array style) to
 
 ## Batching and `batch_size`
 
-Most of `pymdp`'s JAX APIs expecting a leading `batch_size` dimension to most input arrays (e.g., arrays of state and parameter posteriors and priors). This allows for easy parallelization using [`jax.vmap`](https://docs.jax.dev/en/latest/_autosummary/jax.vmap.html) to automatically run multiple active inference agents/processes in parallel.
+Most of `pymdp`'s JAX APIs expect a leading `batch_size` dimension on most
+arrays (for example state/parameter priors and posteriors). This makes it easy
+to parallelize with [`jax.vmap`](https://docs.jax.dev/en/latest/_autosummary/jax.vmap.html).
+
+Defaults to keep in mind:
+
+- `Agent(..., batch_size=1)` is the default.
+- By default, `Env` objects are typically unbatched (for example `env.A/B/D`
+  have no leading batch axis), while `Agent` leaves are batch-shaped.
+- In the default single-agent case, many arrays therefore appear as `(1, ...)`.
 
 When migrating from legacy single-agent code, keep these points in mind:
 
-- Multi-agent simulations (this could also be running multiple parameterizations of one agent, in parallel) requires batched per-agent information (observations, beliefs, parameters, preferences, some hyperparameters).
-- If you pass unbatched model arrays to `Agent(..., batch_size=N)`, they are
-  broadcast internally to `N` copies of the input model parameters. 
-- Even in the default single-agent case (`batch_size=1`), most arrays and
-  outputs are represented with a leading singleton dimension.
-- This is why you will often see shapes that begin with `(1, ...)` in the JAX-based
-  code paths.
+- Multi-agent simulations (including parallel parameter sweeps) require batched
+  per-agent information (observations, beliefs, parameters, preferences, and
+  some hyperparameters).
+- In `Agent.__init__`, if you pass unbatched `A`/`B` with `batch_size=N`, the
+  tensors are broadcast to `(N, ...)`.
+- If inputs are already batched with leading dimension `1` and `batch_size>1`,
+  they are also broadcast to `batch_size`.
+- If the leading dimension is batched but neither `1` nor `batch_size`, a
+  `ValueError` is raised.
 
 Typical multi-agent setup pattern:
 
@@ -67,10 +78,13 @@ qs = agent.infer_states(obs, empirical_prior=agent.D)
 ```
 
 For environment-side batching, either:
-- keep a single environment and run batched agents against shared `env.A/B/D`,
-  or
-- pass batched `env_params` (for example via
-  `env.generate_env_params(batch_size=...)`) when using `rollout()`. The parameters inside `env_params` must also carry a leading `batch_size` dimension that is matched to each set of parameters in the `Agent` class.
+
+- Keep a single (unbatched) environment and run batched agents against shared
+  `env.A/B/D`.
+- Pass batched `env_params` (for example via
+  `env.generate_env_params(batch_size=...)`) when using `rollout()`. Parameters
+  inside `env_params` should also carry a leading `batch_size` dimension
+  aligned to the `Agent`.
 
 ## Updating `Agent` fields in JAX
 
@@ -123,7 +137,9 @@ Other frequently used stochastic APIs that also require explicit keys:
 - `rollout(..., rng_key=...)`
 - stochastic `env.reset(key, ...)` / `env.step(key, ...)`
 
-Avoid `np.random` when using the new JAX backend (see also this [this post](https://builtin.com/data-science/numpy-random-seed) which  encourages caution when working with `np.random`)
+Avoid `np.random` when using the new JAX backend (see also
+[this post](https://builtin.com/data-science/numpy-random-seed), which
+encourages caution when working with `np.random`).
 
 ## NumPy-to-JAX worked conversion
 
