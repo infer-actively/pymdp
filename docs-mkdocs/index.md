@@ -5,7 +5,7 @@ discrete-state Markov Decision Process environments. For background and
 motivation, see the companion JOSS paper:
 [`pymdp: A Python library for active inference in discrete state spaces`](https://joss.theoj.org/papers/10.21105/joss.04098).
 
-This documentation focuses on the modern JAX backend, which supports:
+This documentation focuses on the JAX backend (the default backend since the 1.0.0 release), which supports:
 
 <ul>
   <li>accelerator-friendly execution (CPU/GPU/TPU) and JIT compilation</li>
@@ -19,12 +19,9 @@ This documentation focuses on the modern JAX backend, which supports:
 - [Installation](getting-started/installation.md)
 - [Quickstart (JAX)](getting-started/quickstart-jax.md)
 - [NumPy/legacy to JAX migration guide](migration/numpy-to-jax.md)
-- [Using `rollout()` to JIT the full agent-environment interaction loop](guides/rollout-active-inference-loop.md)
+- [Using rollout() for compiled active inference loops](guides/rollout-active-inference-loop.md)
 - [PymdpEnv and custom environments](guides/pymdp-env.md)
 - [Thinking in generative models in `pymdp`](guides/generative-model-structure.md)
-
-## Tutorials and notebooks
-- [Tutorial overview](tutorials/index.md)
 - [Notebook gallery](tutorials/notebooks/index.md)
 
 ## API reference

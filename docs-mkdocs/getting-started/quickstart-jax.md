@@ -34,8 +34,8 @@ sample_keys = jr.split(keys[2], agent.batch_size + 1)
 action = agent.sample_action(q_pi, rng_key=sample_keys[1:])
 ```
 
-You can also run a quick compiled agent-environment loop with `rollout()` and
-`PymdpEnv`:
+You can also run a quick agent-environment loop with `rollout()` and
+`PymdpEnv`. For repeated calls, we recommend wrapping `rollout` in `jit`:
 
 ```python
 from jax import jit
@@ -71,4 +71,5 @@ last, info = rollout_jit(
 actions = info["action"]
 ```
 
-For a more in-depth guide to JIT-compiled active inference loops, see the dedicated [`rollout()` guide](../guides/rollout-active-inference-loop.md).
+For a more in-depth guide to compiled active inference loops, see the dedicated
+[`rollout()` guide](../guides/rollout-active-inference-loop.md).

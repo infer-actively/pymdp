@@ -51,7 +51,7 @@ In code, this means:
 
 Each modality gets its own likelihood tensor:
 
-- `A[m] = P(obs_m | state_{i in A_dependencies[f]})`
+- `A[m] = P(obs_m | state_{i in A_dependencies[m]})`
 - `observations[m]` is the actual observation for modality `m`
 
 So if you have two modalities (for example, location and reward), you should

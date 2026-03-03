@@ -1,6 +1,7 @@
-# Using `rollout()` to JIT the full agent-environment interaction loop
+# Using `rollout()` for compiled active inference loops
 
 `rollout()` runs repeated inference, planning, action sampling, and environment stepping for a fixed horizon.
+Internally, it uses `jax.lax.scan`, so direct calls are valid and JAX-friendly.
 
 ## When to use it
 - The `.step()` and `.reset()` methods of your `Env` can be JIT-compiled.
@@ -20,6 +21,17 @@
 - `env_params`: batched environment parameters
 
 ## Canonical usage
+
+```python
+from jax import random as jr
+from pymdp.envs.rollout import rollout
+
+rng_key = jr.PRNGKey(0)
+last, info = rollout(agent, env, 20, rng_key)
+```
+
+For repeated calls with fixed `env` and `num_timesteps`, we recommend wrapping
+`rollout` with `jit` so XLA can cache the compiled program:
 
 ```python
 from jax import jit
@@ -52,7 +64,8 @@ last, info = rollout_jit(
 
 ## Relationship to manual loops
 
-`rollout()` repeatedly applies the one-step helper `infer_and_plan` internally using `jax.lax.scan`, to efficiently JIT compile the full agent/environment interaction loop.
+`rollout()` repeatedly applies the one-step helper `infer_and_plan` internally
+using `jax.lax.scan`.
 
 Use manual loops when:
 

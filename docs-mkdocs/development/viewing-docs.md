@@ -29,3 +29,5 @@ Local URL:
 ## Notes
 - Notebook docs are rendered from pre-executed `.ipynb` files committed in-repo.
 - To add notebook docs, update `docs-mkdocs/tutorials/notebooks.manifest` then run `./scripts/sync_docs_notebooks.sh`.
+- MkDocs source-of-truth content lives in `docs-mkdocs/`.
+- `docs/` is retained as legacy Sphinx-era content for compatibility/history.

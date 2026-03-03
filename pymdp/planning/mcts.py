@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from functools import partial
 from typing import Any, Callable
 from jax import vmap, nn, random as jr, tree_util as jtu, lax
@@ -8,15 +10,49 @@ from pymdp.control import (
     compute_expected_utility,
 )
 
-import mctx
 import jax.numpy as jnp
+
+try:
+    import mctx
+except ImportError:  # pragma: no cover - handled by runtime guard
+    mctx = None
+
+
+def _require_mctx() -> None:
+    """Raise a helpful error if optional `mctx` is not installed."""
+    if mctx is None:
+        raise ImportError(
+            "`pymdp.planning.mcts` requires the optional dependency `mctx`. "
+            "Install it to use MCTS policy search."
+        )
 
 
 def mcts_policy_search(
-    search_algo: Callable = mctx.gumbel_muzero_policy,
+    search_algo: Callable | None = None,
     max_depth: int = 6,
     num_simulations: int = 4096,
 ) -> Callable[[Any, list[jnp.ndarray], jnp.ndarray], tuple[jnp.ndarray, Any]]:
+    """Build an MCTS-based policy-search callable for `Agent` planning.
+
+    Parameters
+    ----------
+    search_algo : Callable, optional
+        MCTS search routine from `mctx` used to evaluate policy actions.
+    max_depth : int, default=6
+        Maximum planning depth for the tree search.
+    num_simulations : int, default=4096
+        Number of MCTS simulations per planning call.
+
+    Returns
+    -------
+    Callable[[Any, list[jnp.ndarray], jnp.ndarray], tuple[jnp.ndarray, Any]]
+        Function with signature `(agent, beliefs, rng_key) -> (q_pi, info)`
+        returning policy weights and raw search output.
+    """
+
+    if search_algo is None:
+        _require_mctx()
+        search_algo = mctx.gumbel_muzero_policy
 
     def si_policy(agent: Any, beliefs: list[jnp.ndarray], rng_key: jnp.ndarray) -> tuple[jnp.ndarray, Any]:
 
@@ -56,6 +92,35 @@ def compute_neg_efe(
     use_states_info_gain: bool = True,
     use_utility: bool = True,
 ) -> tuple[jnp.ndarray, list[jnp.ndarray], list[jnp.ndarray]]:
+    """Compute one-step negative expected free energy under an action.
+
+    Parameters
+    ----------
+    qs : list[jnp.ndarray]
+        Current posterior beliefs over hidden-state factors.
+    action : jnp.ndarray
+        Candidate action (multi-action index vector per batch element).
+    A : list[jnp.ndarray]
+        Observation model tensors.
+    A_dependencies : list[list[int]]
+        Modality-to-factor dependencies for `A`.
+    B : list[jnp.ndarray]
+        Transition model tensors.
+    B_dependencies : list[list[int]]
+        Factor-to-factor transition dependencies for `B`.
+    C : list[jnp.ndarray]
+        Preferences over observations.
+    use_states_info_gain : bool, default=True
+        Whether to include state information gain in EFE.
+    use_utility : bool, default=True
+        Whether to include expected utility in EFE.
+
+    Returns
+    -------
+    tuple[jnp.ndarray, list[jnp.ndarray], list[jnp.ndarray]]
+        Negative EFE, predicted next-state beliefs, and predicted
+        next-observation beliefs.
+    """
     qs_next_pi = compute_expected_state(
         qs, B, action, B_dependencies=B_dependencies
     )
@@ -83,6 +148,7 @@ def get_prob_single_modality(o_m: jnp.ndarray, po_m: jnp.ndarray, distr_obs: boo
 
 def make_aif_recurrent_fn() -> Callable[[Any, jnp.ndarray, jnp.ndarray, Any], tuple[mctx.RecurrentFnOutput, Any]]:
     """Returns a recurrent_fn for an AIF agent."""
+    _require_mctx()
 
     def recurrent_fn(
         agent: Any, rng_key: jnp.ndarray, action: jnp.ndarray, embedding: Any
@@ -139,6 +205,26 @@ def rollout(
     num_timesteps: int,
     rng_key: jnp.ndarray,
 ) -> tuple[dict[str, Any], dict[str, Any], Any]:
+    """Run a policy-search rollout loop for MCTS-based planning.
+
+    Parameters
+    ----------
+    policy_search : Callable
+        Planning callable that maps `(rng_key, agent, qs)` to policy weights.
+    agent : Any
+        Active inference agent.
+    env : Any
+        Environment exposing `step(...)` for batched transitions.
+    num_timesteps : int
+        Number of rollout steps.
+    rng_key : jnp.ndarray
+        Root JAX PRNG key.
+
+    Returns
+    -------
+    tuple[dict[str, Any], dict[str, Any], Any]
+        Final carry dictionary, per-step rollout traces, and final environment.
+    """
     # get the batch_size of the agent
     batch_size = agent.batch_size
 
