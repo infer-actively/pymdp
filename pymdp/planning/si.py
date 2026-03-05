@@ -1124,7 +1124,7 @@ def optimized_tree_search(
         q_pi = tree.children_probs[root_idx(tree)]
         entropy = pymdp.maths.stable_entropy(q_pi)
 
-        # jax.debug.print("horizon {h} out of {max_h}, entropy={e:.3f}, entropy threshold = {et}, halted_entropy={estop}, efe={g:.3f}, efe threshold = {efet}, halted_efe={efestop}, jnp.all(q_pi == 0) = {qpi}",
+        # jax.debug.print("horizon {h} out of {max_h}, entropy={e:.3f}, entropy threshold = {et}, halted_entropy={estop}, neg_efe={g:.3f}, neg_efe threshold = {efet}, halted_neg_efe={efestop}, jnp.all(q_pi == 0) = {qpi}",
         #                 h=h, max_h=horizon, e=entropy, et=entropy_stop_threshold,
         #                 estop=entropy <= entropy_stop_threshold, g=tree.neg_efe[tree.root_idx(), 0], efet=neg_efe_stop_threshold,
         #                 efestop=tree.neg_efe[tree.root_idx(), 0] >= neg_efe_stop_threshold, qpi=jnp.all(q_pi == 0))
