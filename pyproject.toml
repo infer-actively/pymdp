@@ -122,4 +122,4 @@ show_missing = true
 skip_covered = false
 
 [tool.uv.sources]
-pybefit = { git = "https://github.com/conorheins/pybefit.git", rev = "fix/pymdp-compat" }
+pybefit = { git = "https://github.com/dimarkov/pybefit.git" }
