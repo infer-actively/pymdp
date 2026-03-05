@@ -414,8 +414,8 @@ class Agent(Module):
     def infer_parameters(
         self,
         beliefs_A: list[Array],
-        observations: list[Array] | None = None,
-        actions: Array | None = None,
+        observations: list[Array],
+        actions: Array | None,
         beliefs_B: list[Array] | None = None,
         lr_pA: float = 1.0,
         lr_pB: float = 1.0,
@@ -441,7 +441,7 @@ class Agent(Module):
         lr_pB: float, default=1.0
             Learning-rate multiplier for `B` updates.
         **kwargs: Any
-            Reserved for future/compatibility arguments.
+            Reserved for future arguments.
 
         Returns
         -------
@@ -451,19 +451,6 @@ class Agent(Module):
         """
 
         agent = self
-        if observations is None:
-            observations = kwargs.pop("outcomes", None)
-            if observations is not None:
-                warnings.warn(
-                    "`outcomes` is deprecated in `infer_parameters`; use `observations`.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-        elif "outcomes" in kwargs:
-            raise ValueError("Pass either `observations` or `outcomes`, not both.")
-
-        if observations is None:
-            raise ValueError("`observations` must be provided to `infer_parameters`.")
 
         # ------------------------------------------------------------------
         # Prepare the sequences we'll use for A- and B- learning
