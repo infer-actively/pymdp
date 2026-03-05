@@ -526,9 +526,8 @@ def compute_neg_efe_policy(
 
     Notes
     -----
-    This function computes `neg_efe = -EFE` for a single policy. The function
-    name follows SPM-style notation where this policy score is commonly called
-    `G`.
+    This function computes `neg_efe = -EFE` for a single policy. In SPM-style
+    notation, this policy score (`neg_efe`) is commonly denoted `G`.
 
     Parameters
     ----------
@@ -611,8 +610,8 @@ def compute_neg_efe_policy_inductive(
     Notes
     -----
     This function computes `neg_efe = -EFE` for a single policy with optional
-    inductive-value terms. The function name follows SPM-style notation where
-    this score is commonly called `G`.
+    inductive-value terms. In SPM-style notation, this score is commonly
+    denoted `G`, so here `G = neg_efe = -EFE`.
 
     Parameters
     ----------
@@ -703,7 +702,8 @@ def update_posterior_policies_inductive(
     use_inductive: bool = True,
 ) -> tuple[Array, Array]:
     """
-    Compute policy posterior and expected free energy with optional inductive terms.
+    Compute policy posterior and negative expected free energy with optional
+    inductive terms.
 
     Notes
     -----
