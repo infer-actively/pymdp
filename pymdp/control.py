@@ -777,7 +777,7 @@ def update_posterior_policies_inductive(
 
     # only in the case of policy-dependent qs_inits
     # in_axes_list = (1,) * n_factors
-    # all_efe_of_policies = vmap(compute_neg_efe_policy, in_axes=(in_axes_list, 0))(qs_init_pi, policy_matrix)
+    # all_neg_efe_of_policies = vmap(compute_neg_efe_policy, in_axes=(in_axes_list, 0))(qs_init_pi, policy_matrix)
 
     # policies needs to be an NDarray of shape (n_policies, n_timepoints, n_control_factors)
     neg_efe_all_policies = vmap(compute_neg_efe_fixed_states)(policy_matrix)
