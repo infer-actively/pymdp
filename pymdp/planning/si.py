@@ -91,14 +91,13 @@ def si_policy_search(
     policy_prune_threshold: float = 1 / 16,
     observation_prune_threshold: float = 1 / 16,
     entropy_stop_threshold: float = 0.5,
-    efe_stop_threshold: float = 1e10,
+    neg_efe_stop_threshold: float = 1e10,
     kl_threshold: float = -1,
     prune_penalty: float = 512,
     gamma: float = 1,
     topk_obsspace: int = 10000,
     infer_fn: Callable = infer_fn,
     predict_fn: Callable = predict_fn,
-    neg_efe_stop_threshold: float | None = None,
 ) -> Callable:
     """Create a sophisticated-inference policy-search function.
 
@@ -116,11 +115,9 @@ def si_policy_search(
         Minimum observation-branch probability required for expansion.
     entropy_stop_threshold : float, default=0.5
         Stop-expansion threshold on root policy entropy.
-    efe_stop_threshold : float, default=1e10
-        Deprecated alias for `neg_efe_stop_threshold`.
-    neg_efe_stop_threshold : float | None, default=None
+    neg_efe_stop_threshold : float, default=1e10
         Stop-expansion threshold on root negative expected free energy
-        (`neg_efe = -EFE`). If `None`, falls back to `efe_stop_threshold`.
+        (`neg_efe = -EFE`).
     kl_threshold : float, default=-1
         Optional KL threshold for node reuse.
     prune_penalty : float, default=512
@@ -140,12 +137,6 @@ def si_policy_search(
         Search function compatible with `pymdp.envs.rollout.rollout` policy
         hooks.
     """
-
-    resolved_neg_efe_stop_threshold = (
-        efe_stop_threshold
-        if neg_efe_stop_threshold is None
-        else neg_efe_stop_threshold
-    )
 
     @partial(jax.jit, static_argnames=["reset"])
     def search_fn(
@@ -177,7 +168,7 @@ def si_policy_search(
             policy_prune_threshold=policy_prune_threshold,
             observation_prune_threshold=observation_prune_threshold,
             entropy_stop_threshold=entropy_stop_threshold,
-            neg_efe_stop_threshold=resolved_neg_efe_stop_threshold,
+            neg_efe_stop_threshold=neg_efe_stop_threshold,
             kl_threshold=kl_threshold,
             prune_penalty=prune_penalty,
             gamma=gamma,
@@ -621,8 +612,7 @@ def optimized_tree_search(
     policy_prune_threshold: float = 1 / 16,
     observation_prune_threshold: float = 1 / 16,
     entropy_stop_threshold: float = 0.5,
-    efe_stop_threshold: float = 1e10,
-    neg_efe_stop_threshold: float | None = None,
+    neg_efe_stop_threshold: float = 1e10,
     kl_threshold: float = -1,
     prune_penalty: float = 512,
     gamma: float = 1,
@@ -652,12 +642,9 @@ def optimized_tree_search(
         Minimum observation probability required to expand an observation branch.
     entropy_stop_threshold : float, default=0.5
         Root-policy entropy threshold used as an early-stop criterion.
-    efe_stop_threshold : float, default=1e10
-        Deprecated alias for `neg_efe_stop_threshold`.
-    neg_efe_stop_threshold : float | None, default=None
+    neg_efe_stop_threshold : float, default=1e10
         Root negative expected free energy threshold used as an early-stop
-        criterion (`neg_efe = -EFE`). If `None`, falls back to
-        `efe_stop_threshold`.
+        criterion (`neg_efe = -EFE`).
     kl_threshold : float, default=-1
         KL threshold for reusing existing observation nodes with similar beliefs.
         A value of `-1` disables node reuse.
@@ -678,9 +665,6 @@ def optimized_tree_search(
     Tree
         Expanded planning tree.
     """
-    if neg_efe_stop_threshold is None:
-        neg_efe_stop_threshold = efe_stop_threshold
-
     policies = agent.policies.policy_arr
 
     def _expand_observation_nodes(
