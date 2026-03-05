@@ -108,6 +108,9 @@ filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::FutureWarning",
 ]
+markers = [
+    "nightly: long-running tests executed in nightly CI",
+]
 
 [tool.coverage.run]
 source = ["pymdp"]

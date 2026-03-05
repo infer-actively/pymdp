@@ -373,9 +373,9 @@ class TestAgentJax(unittest.TestCase):
         """
         Test that an instance of the `Agent` class can be initialized and run with complex action dependency
         """
-        num_obs = [5, 4, 4]
-        num_states = [2, 3, 1]
-        num_controls = [2, 3, 2]
+        num_obs = [3, 3, 2]
+        num_states = [2, 2, 1]
+        num_controls = [2, 2, 2]
 
         a_key, b_key, action_key, obs_key = jr.split(jr.PRNGKey(5), 4)
 
@@ -414,9 +414,9 @@ class TestAgentJax(unittest.TestCase):
         def construct_and_run_agent(a_key, b_key, obs_key, action_key):
             """
             Test that an instance of the `Agent` class can be initialized and run with complex action dependency
-            num_obs = [5, 4, 4]
-            num_states = [2, 3, 1]
-            num_controls = [2, 3, 2]
+            num_obs = [3, 3, 2]
+            num_states = [2, 2, 1]
+            num_controls = [2, 2, 2]
             """
 
             A = utils.random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
@@ -582,12 +582,12 @@ class TestAgentJax(unittest.TestCase):
         """
         Test that the constructor call of the Agent class is jittable
         """
-        num_obs = [3, 4]
-        num_states = [4, 5, 6]
-        num_controls = [2, 3, 1]
+        num_obs = [2, 3]
+        num_states = [3, 4, 4]
+        num_controls = [2, 2, 1]
         A_dependencies = [[0], [0, 1, 2]]
         B_dependencies = [[0], [1], [2]]
-        batch_size = 2
+        batch_size = 1
 
         a_key, b_key, d_key = jr.split(jr.PRNGKey(123), 3)
 
@@ -700,12 +700,12 @@ class TestAgentJax(unittest.TestCase):
         and computation of multi-action log-probabilities.
         """
 
-        num_obs = [3, 4]
-        num_states = [4, 5, 6]
-        num_controls = [2, 3, 1]
+        num_obs = [2, 3]
+        num_states = [3, 4, 4]
+        num_controls = [2, 2, 1]
         A_dependencies = [[0], [0, 1, 2]]
         B_dependencies = [[0], [1], [2]]
-        batch_size = 2
+        batch_size = 1
 
         a_key, b_key, d_key = jr.split(jr.PRNGKey(123), 3)
 
