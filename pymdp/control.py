@@ -222,7 +222,7 @@ def update_posterior_policies(
     B: list[Array]
         Transition tensors.
     C: list[Array]
-        Prior preferences over outcomes.
+        Prior preferences over observations.
     E: Array
         Prior over policies.
     pA: list[Array] | None
@@ -516,7 +516,7 @@ def compute_G_policy(
     B: list[Array]
         Transition tensors.
     C: list[Array]
-        Prior preferences over outcomes.
+        Prior preferences over observations.
     pA: list[Array] | None
         Posterior Dirichlet parameters for `A`.
     pB: list[Array] | None
@@ -594,7 +594,7 @@ def compute_G_policy_inductive(
     B: list[Array]
         Transition tensors.
     C: list[Array]
-        Prior preferences over outcomes.
+        Prior preferences over observations.
     pA: list[Array] | None
         Posterior Dirichlet parameters for `A`.
     pB: list[Array] | None

@@ -165,14 +165,14 @@ def make_aif_recurrent_fn() -> Callable[[Any, jnp.ndarray, jnp.ndarray, Any], tu
                                                           agent.use_states_info_gain,
                                                           agent.use_utility)
 
-        # recursively branch the policy + outcome tree
+        # recursively branch the policy + observation tree
         choice = lambda key, po: jr.categorical(key, logits=jnp.log(po))
         if agent.categorical_obs:
             sample = lambda key, po, no: nn.one_hot(choice(key, po), no)
         else:
             sample = lambda key, po, no: choice(key, po)
 
-        # set discount to outcome probabilities
+        # set discount to observation probabilities
         discount = 1.0
         obs = []
         for no_m, qo_m in zip(agent.num_obs, qo_next_pi):

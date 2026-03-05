@@ -42,11 +42,11 @@ class Agent(Module):
     Observations can be provided in two formats:
 
     1. **Discrete observations** (default, categorical_obs=False):
-       Each `observations[m]` is an integer outcome index for modality `m`.
+       Each `observations[m]` is an integer observation index for modality `m`.
        These are converted to one-hot vectors internally.
 
     2. **Categorical observations** (categorical_obs=True):
-       Each `observations[m]` is a probability vector over outcomes for
+       Each `observations[m]` is a probability vector over observations for
        modality `m`.
 
     Advanced preprocessing
@@ -414,7 +414,7 @@ class Agent(Module):
     def infer_parameters(
         self,
         beliefs_A: list[Array],
-        outcomes: list[Array],
+        observations: list[Array],
         actions: Array | None,
         beliefs_B: list[Array] | None = None,
         lr_pA: float = 1.0,
@@ -428,7 +428,7 @@ class Agent(Module):
         beliefs_A: list[Array]
             Marginal state beliefs used when updating the observation model
             parameters.
-        outcomes: list[Array]
+        observations: list[Array]
             Observation histories for each modality.
         actions: Array or None
             Action history aligned to time. For multi-action agents this should be
@@ -441,7 +441,7 @@ class Agent(Module):
         lr_pB: float, default=1.0
             Learning-rate multiplier for `B` updates.
         **kwargs: Any
-            Reserved for future/compatibility arguments.
+            Reserved for future arguments.
 
         Returns
         -------
@@ -576,7 +576,7 @@ class Agent(Module):
             qA, E_qA = vmap(update_A)(
                 self.pA,
                 self.A,
-                outcomes,
+                observations,
                 marginal_beliefs,
                 lr=lr,
             )
@@ -692,7 +692,7 @@ class Agent(Module):
             - Discrete observations (default): each `observations[m]` is an
               integer index for modality `m`.
             - Categorical observations: each `observations[m]` is a probability
-              vector over outcomes for modality `m`.
+              vector over observations for modality `m`.
 
             If `preprocess_fn` is provided, it should map the raw input to
             categorical observations and takes precedence over default handling.
@@ -743,14 +743,14 @@ class Agent(Module):
         --------
         Discrete observations:
 
-        >>> obs = [0, 1]  # Modality 0 observed outcome 0, modality 1 observed outcome 1
+        >>> obs = [0, 1]  # Modality 0 observed observation 0, modality 1 observed observation 1
         >>> qs = agent.infer_states(obs, prior)
 
         Categorical observations:
 
         >>> obs = [
-        ...     jnp.array([0.7, 0.2, 0.1]),  # Peaked belief distribution for outcome 0
-        ...     jnp.array([0.5, 0.5])        # Flat belief distribution for outcome 1
+        ...     jnp.array([0.7, 0.2, 0.1]),  # Peaked belief distribution for observation 0
+        ...     jnp.array([0.5, 0.5])        # Flat belief distribution for observation 1
         ... ]
         >>> agent_cat = Agent(..., categorical_obs=True)
         >>> qs = agent_cat.infer_states(obs, prior)

@@ -477,7 +477,7 @@ class TestAgentJax(unittest.TestCase):
 
     def test_agent_validate_normalization_raises_on_bad_A(self):
         """
-        If A is not normalized along its outcome axis (axis=1 after broadcasting),
+        If A is not normalized along its observation axis (axis=1 after broadcasting),
         Agent construction should raise a ValueError via validate_normalization
         """
         num_obs = [3, 4]
@@ -647,12 +647,12 @@ class TestAgentJax(unittest.TestCase):
         )
 
         beliefs = [jnp.array([[[0.7, 0.3], [0.2, 0.8]]], dtype=jnp.float32)]
-        dummy_outcomes = [jnp.zeros((batch_size,), dtype=jnp.int32)]
+        dummy_observations = [jnp.zeros((batch_size,), dtype=jnp.int32)]
         actions = jnp.array([[[1]]], dtype=jnp.int32)
 
         agent = agent.infer_parameters(
             beliefs,
-            dummy_outcomes,
+            dummy_observations,
             actions,
         )
 
@@ -839,7 +839,7 @@ class TestAgentJax(unittest.TestCase):
 
         beliefs = [jnp.array([[[0.85, 0.10, 0.05], [0.10, 0.75, 0.15], [0.05, 0.15, 0.80]]])]
         actions = jnp.array([[[0], [1]]]).reshape((1, 2, 1))
-        outcomes = [jnp.array([[0, 1, 0]])]
+        observations = [jnp.array([[0, 1, 0]])]
 
         # Build expected A-updates from smoothed versus unsmoothed marginals.
         A_unbatched = jtu.tree_map(lambda x: x[0], agent.A)
@@ -854,7 +854,7 @@ class TestAgentJax(unittest.TestCase):
         _, E_A_smoothed = learning.update_obs_likelihood_dirichlet(
             [pA_unbatched[0]],
             [A_unbatched[0]],
-            [outcomes[0][0]],
+            [observations[0][0]],
             smoothed_marginals,
             A_dependencies=A_dependencies,
             categorical_obs=False,
@@ -865,7 +865,7 @@ class TestAgentJax(unittest.TestCase):
         _, E_A_filtered = learning.update_obs_likelihood_dirichlet(
             [pA_unbatched[0]],
             [A_unbatched[0]],
-            [outcomes[0][0]],
+            [observations[0][0]],
             [beliefs[0][0]],
             A_dependencies=A_dependencies,
             categorical_obs=False,
@@ -877,7 +877,7 @@ class TestAgentJax(unittest.TestCase):
 
         agent = agent.infer_parameters(
             beliefs,
-            outcomes,
+            observations,
             actions,
         )
 

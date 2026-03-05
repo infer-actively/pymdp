@@ -215,10 +215,11 @@ def _build_model_and_truth(cfg: RecoverabilityConfig) -> tuple[NumpyroModel, jnp
 def _simulate_measurements(model: NumpyroModel, z_true: jnp.ndarray, seed: int) -> dict[str, Any]:
     pred = Predictive(model, posterior_samples={"z": z_true[None, ...]}, return_sites=["z", "outcomes", "multiactions"])
     samples = pred(jr.PRNGKey(seed))
+    observations = samples["outcomes"]
     return {
         "samples": samples,
         "measurements": {
-            "outcomes": [outcomes[0] for outcomes in samples["outcomes"]],
+            "outcomes": [obs[0] for obs in observations],
             "multiactions": samples["multiactions"][0],
         },
     }

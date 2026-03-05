@@ -117,7 +117,7 @@ def random_A_array(
     key: Array
         PRNG key for sampling.
     num_obs: int | Sequence[int]
-        Number of observation outcomes.
+        Number of discrete observations.
     num_states: int | Sequence[int]
         Number of hidden states per factor.
     A_dependencies: list[list[int]] | None

@@ -436,7 +436,7 @@ def infer_and_plan(
     rng_key, key = jr.split(rng_key)
     qpi, xtra = policy_search(
         agent, qs, key
-    )  # compute policy posterior using EFE - uses C to consider preferred outcomes
+    )  # compute policy posterior using EFE - uses C to consider preferred observations
 
     # for learning A and/or B
     if (

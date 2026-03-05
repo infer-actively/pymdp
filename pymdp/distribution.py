@@ -144,7 +144,7 @@ class Model(dict):
         self,
         likelihoods: list[Distribution],
         transitions: list[Distribution],
-        preferred_outcomes: list[Distribution],
+        preferred_observations: list[Distribution],
         priors: list[Distribution],
         preferred_states: list[Distribution],
         B_action_dependencies: Optional[list[list[int]]]=None,
@@ -153,7 +153,7 @@ class Model(dict):
         super().__init__()
         super().__setitem__("A", likelihoods)
         super().__setitem__("B", transitions)
-        super().__setitem__("C", preferred_outcomes)
+        super().__setitem__("C", preferred_observations)
         super().__setitem__("D", priors)
         super().__setitem__("H", preferred_states)
         super().__setitem__("B_action_dependencies", B_action_dependencies)
@@ -279,12 +279,12 @@ def compile_model(config: dict[str, Any]) -> Model:
         arr = np.zeros(arr_shape)
         likelihoods.append(Distribution(event_descr, batch_descr, arr))
 
-    preferred_outcomes = []
+    preferred_observations = []
     for event, description in likelihood_events.items():
         arr_shape = [len(description)]
         arr = np.zeros(arr_shape)
         event_descr = {event: description}
-        preferred_outcomes.append(Distribution(event_descr, data=arr))
+        preferred_observations.append(Distribution(event_descr, data=arr))
 
     preferred_states = []
     for event, description in transition_events.items():
@@ -308,7 +308,7 @@ def compile_model(config: dict[str, Any]) -> Model:
             raise ValueError(f"Control {c} has no elements or size")
 
     return Model(
-        likelihoods, transitions, preferred_outcomes, priors, preferred_states, B_action_dependencies, num_controls
+        likelihoods, transitions, preferred_observations, priors, preferred_states, B_action_dependencies, num_controls
     )
 
 

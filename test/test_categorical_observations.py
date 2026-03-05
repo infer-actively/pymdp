@@ -27,7 +27,7 @@ class TestCategoricalObservationsCore(unittest.TestCase):
         # Should strongly believe in state 0
         self.assertTrue(jnp.allclose(jnp.array([0.933934, 0.03303304, 0.03303304]),qs_certain[0], atol=1e-3))
 
-        # Uncertain observation (50/50 between outcomes 0 and 1)
+        # Uncertain observation (50/50 between observations 0 and 1)
         obs_uncertain = [jnp.array([0.5, 0.5, 0.0])]
         qs_uncertain = algos.run_vanilla_fpi(A, obs_uncertain, prior, num_iter=16)
 
@@ -52,8 +52,8 @@ class TestCategoricalObservationsCore(unittest.TestCase):
 
         # Categorical observations for both modalities
         obs = [
-            jnp.array([0.7, 0.2, 0.1]),  # Modality 0: mostly outcome 0
-            jnp.array([0.4, 0.6])        # Modality 1: mostly outcome 1
+            jnp.array([0.7, 0.2, 0.1]),  # Modality 0: mostly observation 0
+            jnp.array([0.4, 0.6])        # Modality 1: mostly observation 1
         ]
 
         qs = algos.run_vanilla_fpi(A, obs, prior, num_iter=16)
@@ -484,7 +484,7 @@ class TestCategoricalObservationsLearning(unittest.TestCase):
             qs = agent.infer_states(obs, agent.D)
             q_pi, _ = agent.infer_policies(qs)
             action = agent.sample_action(q_pi)
-            # infer_parameters takes (beliefs, outcomes, actions) where actions shape is (batch, time, num_factors)
+            # infer_parameters takes (beliefs, observations, actions) where actions shape is (batch, time, num_factors)
             actions = jnp.array([[[action]]])  # Shape (1, 1, 1) for batch=1, time=1, num_factors=1
             agent = agent.infer_parameters(qs, obs, actions)
 
