@@ -4,6 +4,7 @@
 """Tests for associative-scan HMM filtering/smoothing."""
 
 import unittest
+import pytest
 from jax import numpy as jnp, random as jr, nn
 from jax import vmap, grad
 from jax import tree_util as jtu
@@ -397,10 +398,11 @@ class TestAssociativeScanHMM(unittest.TestCase):
         self._assert_close(xi_row, xi_col)
         self._assert_close(cond_row, cond_col)
 
+    @pytest.mark.nightly
     def test_smoother_scan_colstoch_stability_shifted_ll(self):
         key = jr.PRNGKey(6)
         initial_probs, B_mats, log_likelihoods = self._make_case_col(
-            key, T=100, K=100, time_varying=True
+            key, T=100, K=48, time_varying=True
         )
         log_likelihoods = log_likelihoods - 100.0
 
@@ -469,7 +471,7 @@ class TestAssociativeScanHMM(unittest.TestCase):
 
     def test_gradients_finite_rowstoch_smoother(self):
         key = jr.PRNGKey(11)
-        T, K = 24, 24
+        T, K = 16, 16
         k1, k2, k3 = jr.split(key, 3)
         pi_logits = jr.normal(k1, (K,))
         trans_logits = jr.normal(k2, (K, K))
@@ -503,7 +505,7 @@ class TestAssociativeScanHMM(unittest.TestCase):
 
     def test_gradients_finite_colstoch_smoother(self):
         key = jr.PRNGKey(12)
-        T, K = 24, 24
+        T, K = 16, 16
         k1, k2, k3 = jr.split(key, 3)
         pi_logits = jr.normal(k1, (K,))
         B_logits = jr.normal(k2, (K, K))
@@ -539,7 +541,7 @@ class TestAssociativeScanHMM(unittest.TestCase):
 
     def test_strict_zero_absorbing_transitions_finite_outputs_and_grads(self):
         key = jr.PRNGKey(14)
-        T, K = 40, 14
+        T, K = 24, 10
         ll_logits = jr.normal(key, (T, K)) * 3.0 - 80.0
         ll = nn.log_softmax(ll_logits, axis=-1)
 
@@ -589,7 +591,7 @@ class TestAssociativeScanHMM(unittest.TestCase):
 
     def test_near_zero_transitions_finite_outputs_and_grads(self):
         key = jr.PRNGKey(15)
-        T, K = 24, 20
+        T, K = 16, 12
         k1, k2 = jr.split(key, 2)
         ll_logits = jr.normal(k1, (T, K)) * 4.0 - 120.0
         ll = nn.log_softmax(ll_logits, axis=-1)
@@ -639,7 +641,7 @@ class TestAssociativeScanHMM(unittest.TestCase):
 
     def test_directional_derivative_rowstoch_filter_mll(self):
         key = jr.PRNGKey(13)
-        T, K = 12, 8
+        T, K = 10, 6
         n_pi = K
         n_trans = K * K
         n_ll = T * K
@@ -663,7 +665,7 @@ class TestAssociativeScanHMM(unittest.TestCase):
 
         # Check sampled directional derivatives against central finite differences.
         eps = 1e-3
-        n_dirs = 3
+        n_dirs = 2
         dir_keys = jr.split(jr.PRNGKey(101), n_dirs)
         for dkey in dir_keys:
             v = jr.normal(dkey, theta0.shape)

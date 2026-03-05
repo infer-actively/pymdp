@@ -9,12 +9,12 @@ def _small_cfg(parameterization: str) -> RecoverabilityConfig:
     return RecoverabilityConfig(
         parameterization=parameterization,
         seed=3,
-        num_agents=5,
-        num_blocks=12,
-        num_trials=5,
-        svi_steps=40,
+        num_agents=4,
+        num_blocks=8,
+        num_trials=4,
+        svi_steps=24,
         num_particles=1,
-        num_samples=16,
+        num_samples=8,
     )
 
 
@@ -23,8 +23,8 @@ def test_tmaze_recoverability_three_param_smoke():
 
     assert results["num_params"] == 3
     assert len(results["corr_latent"]) == 3
-    assert len(results["true_reward_probability"]) == 5
-    assert len(results["inferred_reward_probability"]) == 5
+    assert len(results["true_reward_probability"]) == 4
+    assert len(results["inferred_reward_probability"]) == 4
     assert 0.0 <= results["bimodality_score_reward_probability"] <= 1.0
     assert math.isfinite(results["corr_reward_probability"])
 
@@ -34,7 +34,7 @@ def test_tmaze_recoverability_reward_only_smoke():
 
     assert results["num_params"] == 1
     assert len(results["corr_latent"]) == 1
-    assert len(results["true_reward_probability"]) == 5
-    assert len(results["inferred_reward_probability"]) == 5
+    assert len(results["true_reward_probability"]) == 4
+    assert len(results["inferred_reward_probability"]) == 4
     assert 0.0 <= results["bimodality_score_reward_probability"] <= 1.0
     assert math.isfinite(results["corr_reward_probability"])

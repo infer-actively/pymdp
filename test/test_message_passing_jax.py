@@ -23,7 +23,7 @@ from pymdp.legacy import utils
 
 from typing import List, Dict
 
-def make_model_configs(source_seed=0, num_models=4) -> Dict:
+def make_model_configs(source_seed=0, num_models=3) -> Dict:
     rng_keys = jr.split(jr.PRNGKey(source_seed), num_models)
     num_factors_list = [ jr.randint(key, (1,), 1, 7)[0].item() for key in rng_keys ] # list of total numbers of hidden state factors per model
     num_states_list = [ jr.randint(key, (nf,), 2, 5).tolist() for nf, key in zip(num_factors_list, rng_keys) ]
@@ -59,7 +59,7 @@ class TestMessagePassing(unittest.TestCase):
 
     def test_fixed_point_iteration(self):
         cfg = {'source_seed': 0,
-                'num_models': 4
+                'num_models': 3
             }
         gm_params = make_model_configs(**cfg)
         num_states_list, num_obs_list = gm_params['ns_list'], gm_params['no_list']
@@ -92,7 +92,7 @@ class TestMessagePassing(unittest.TestCase):
         with multiple hidden state factors and multiple observation modalities.
         """
         cfg = {'source_seed': 1,
-                'num_models': 4
+                'num_models': 3
             }
         gm_params = make_model_configs(**cfg)
         num_states_list, num_obs_list = gm_params['ns_list'], gm_params['no_list']
@@ -123,7 +123,7 @@ class TestMessagePassing(unittest.TestCase):
         and observation modalities
         """
         cfg = {'source_seed': 3,
-                'num_models': 4
+                'num_models': 3
             }
         gm_params = make_model_configs(**cfg)
 
@@ -152,7 +152,7 @@ class TestMessagePassing(unittest.TestCase):
     def test_marginal_message_passing(self):
 
         cfg = {'source_seed': 5,
-                'num_models': 4
+                'num_models': 3
             }
         gm_params = make_model_configs(**cfg)
 

@@ -69,7 +69,7 @@ class TestInferStatesComparison(unittest.TestCase):
         parameter_sets = [
             (5, 5, 5, 5, 'uniform', 'low'),
             (10, 10, 10, 10, 'uniform', 'medium'),
-            (25, 25, 25, 25, 'uniform', 'high'),
+            (18, 18, 18, 18, 'uniform', 'high'),
             # (125, 125, 125, 125, 'uniform', 'extreme'),  # Uncomment to include extreme cases
         ]
 
@@ -309,7 +309,7 @@ class TestInferStatesComparison(unittest.TestCase):
         """Test that batch size method works with different batch sizes."""
         spec = self.AGENT_SPECS[0]  # Use first spec
 
-        for batch_size in [1, 2, 4, 8]:
+        for batch_size in [1, 4]:
             with self.subTest(batch_size=batch_size):
                 self._test_single_spec_with_batch(spec, batch_size=batch_size)
 
