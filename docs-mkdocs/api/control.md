@@ -17,7 +17,7 @@
         - compute_expected_utility
         - calc_pA_info_gain
         - calc_pB_info_gain
-        - compute_G_policy
-        - compute_G_policy_inductive
+        - compute_neg_efe_policy
+        - compute_neg_efe_policy_inductive
         - generate_I_matrix
         - calc_inductive_value_t

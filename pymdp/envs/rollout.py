@@ -56,10 +56,10 @@ def _resolve_history_len(agent: Agent, num_timesteps: int, use_windowing: bool) 
 
 
 def default_policy_search(agent: Agent, qs: list[Array], rng_key: Array) -> tuple[Array, dict[str, Array]]:
-    qpi, G = agent.infer_policies(
+    qpi, neg_efe = agent.infer_policies(
         qs
     )  # infer_policies computes posterior over policies using EFE
-    return qpi, {"G": G}
+    return qpi, {"neg_efe": neg_efe}
 
 
 def _resolve_empirical_prior(

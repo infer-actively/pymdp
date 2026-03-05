@@ -98,7 +98,7 @@ def plot_plan_tree(
     ax: Any = None,
 ) -> tuple[nx.DiGraph, Any]:
 
-    G = nx.DiGraph()
+    graph = nx.DiGraph()
     node_labels = {}
     node_colors = []
 
@@ -130,11 +130,13 @@ def plot_plan_tree(
             if "prob" in current:
                 label_parts.append(f"P:{formatting_jax(current['prob'])}")
 
-            # add G_recur for observation nodes
-            if "G_recursive" in current:
-                label_parts.append(f"G:{formatting_jax(current['G_recursive'][0])}")
+            # add recursive policy score for observation nodes
+            if "neg_efe_recursive" in current:
+                label_parts.append(
+                    f"neg_efe:{formatting_jax(current['neg_efe_recursive'][0])}"
+                )
             else:
-                label_parts.append(f"G:{formatting_jax(current['G'])}")
+                label_parts.append(f"neg_efe:{formatting_jax(current['neg_efe'])}")
 
             color_map = obs_cmap
 
@@ -145,8 +147,8 @@ def plot_plan_tree(
             if "prob" in current:
                 label_parts.append(f"P:{formatting_jax(current['prob'])}")
 
-            if "G" in current:
-                label_parts.append(f"G:{formatting_jax(current['G'])}")
+            if "neg_efe" in current:
+                label_parts.append(f"neg_efe:{formatting_jax(current['neg_efe'])}")
 
             color_map = policy_cmap
 
@@ -162,7 +164,7 @@ def plot_plan_tree(
 
         node_colors.append(color)
 
-        G.add_node(
+        graph.add_node(
             node_id,
             idx=current["idx"],
             type="policy" if "policy" in current else "observation",
@@ -170,7 +172,7 @@ def plot_plan_tree(
         node_labels[node_id] = "\n".join(label_parts)
 
         if parent is not None:
-            G.add_edge(parent, node_id)
+            graph.add_edge(parent, node_id)
 
         # Only process children if we haven't reached max_depth yet
         # This prevents adding children beyond max_depth to the queue
@@ -200,19 +202,21 @@ def plot_plan_tree(
 
     try:
         if layout == "dot":  # traditional hierarchical
-            pos = nx.nx_agraph.graphviz_layout(G, prog="dot")
+            pos = nx.nx_agraph.graphviz_layout(graph, prog="dot")
         elif layout == "twopi":  # radial
-            pos = nx.nx_agraph.graphviz_layout(G, prog="twopi")
+            pos = nx.nx_agraph.graphviz_layout(graph, prog="twopi")
         else:
-            pos = nx.spring_layout(G, k=0.3, iterations=50)  # default fallback
+            pos = nx.spring_layout(graph, k=0.3, iterations=50)  # default fallback
     except Exception as e:
         print(f"Layout error: {e}. Falling back to spring layout.")
-        pos = nx.spring_layout(G, k=0.3, iterations=50)
+        pos = nx.spring_layout(graph, k=0.3, iterations=50)
 
-    nx.draw_networkx_edges(G, pos, alpha=0.3, width=1, arrows=True, arrowsize=5, ax=ax)
+    nx.draw_networkx_edges(
+        graph, pos, alpha=0.3, width=1, arrows=True, arrowsize=5, ax=ax
+    )
 
     nx.draw_networkx_nodes(
-        G,
+        graph,
         pos,
         node_size=node_size,
         node_color=node_colors,
@@ -223,7 +227,7 @@ def plot_plan_tree(
     )
 
     nx.draw_networkx_labels(
-        G,
+        graph,
         pos,
         labels=node_labels,
         font_size=font_size,
@@ -249,7 +253,7 @@ def plot_plan_tree(
         ),
     ]
     plt.legend(handles=legend_elements, loc="upper right", fontsize=font_size)
-    return G, pos
+    return graph, pos
 
 
 def visualize_plan_tree(

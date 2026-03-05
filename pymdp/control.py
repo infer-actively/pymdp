@@ -211,6 +211,11 @@ def update_posterior_policies(
 ) -> tuple[Array, Array]:
     """Compute posterior over policies and policy-wise negative expected free energy.
 
+    Notes
+    -----
+    The returned policy score is `neg_efe = -EFE`. In SPM-style notation this
+    same quantity is often denoted by `G`.
+
     Parameters
     ----------
     policy_matrix: Array
@@ -250,15 +255,27 @@ def update_posterior_policies(
     # policy --> n_levels_factor_f x 1
     # factor --> n_levels_factor_f x n_policies
     ## vmap across policies
-    compute_G_fixed_states = partial(compute_G_policy, qs_init, A, B, C, pA, pB, A_dependencies, B_dependencies,
-                                     use_utility=use_utility, use_states_info_gain=use_states_info_gain, use_param_info_gain=use_param_info_gain)
+    compute_neg_efe_fixed_states = partial(
+        compute_neg_efe_policy,
+        qs_init,
+        A,
+        B,
+        C,
+        pA,
+        pB,
+        A_dependencies,
+        B_dependencies,
+        use_utility=use_utility,
+        use_states_info_gain=use_states_info_gain,
+        use_param_info_gain=use_param_info_gain,
+    )
 
     # only in the case of policy-dependent qs_inits
     # in_axes_list = (1,) * n_factors
-    # all_efe_of_policies = vmap(compute_G_policy, in_axes=(in_axes_list, 0))(qs_init_pi, policy_matrix)
+    # all_efe_of_policies = vmap(compute_neg_efe_policy, in_axes=(in_axes_list, 0))(qs_init_pi, policy_matrix)
 
     # policies needs to be an NDarray of shape (n_policies, n_timepoints, n_control_factors)
-    neg_efe_all_policies = vmap(compute_G_fixed_states)(policy_matrix)
+    neg_efe_all_policies = vmap(compute_neg_efe_fixed_states)(policy_matrix)
 
     return nn.softmax(gamma * neg_efe_all_policies + log_stable(E)), neg_efe_all_policies
 
@@ -491,7 +508,7 @@ def calc_pB_info_gain(
     infogain_pB = jtu.tree_reduce(lambda x, y: x + y, pB_infogain_per_factor)[0]
     return infogain_pB
 
-def compute_G_policy(
+def compute_neg_efe_policy(
     qs_init: list[Array],
     A: list[Array],
     B: list[Array],
@@ -506,6 +523,12 @@ def compute_G_policy(
     use_param_info_gain: bool = False,
 ) -> Array:
     """Compute policy-wise negative expected free energy for one policy.
+
+    Notes
+    -----
+    This function computes `neg_efe = -EFE` for a single policy. The function
+    name follows SPM-style notation where this policy score is commonly called
+    `G`.
 
     Parameters
     ----------
@@ -542,7 +565,7 @@ def compute_G_policy(
 
     def scan_body(carry: tuple[list[Array], Array], t: Array) -> tuple[tuple[list[Array], Array], None]:
 
-        qs, neg_G = carry
+        qs, neg_efe = carry
 
         qs_next = compute_expected_state(qs, B, policy_i[t], B_dependencies)
 
@@ -555,17 +578,17 @@ def compute_G_policy(
         param_info_gain = calc_pA_info_gain(pA, qo, qs_next, A_dependencies) if use_param_info_gain else 0.
         param_info_gain += calc_pB_info_gain(pB, qs_next, qs, B_dependencies, policy_i[t]) if use_param_info_gain else 0.
 
-        neg_G += info_gain + utility + param_info_gain
+        neg_efe += info_gain + utility + param_info_gain
 
-        return (qs_next, neg_G), None
+        return (qs_next, neg_efe), None
 
     qs = qs_init
-    neg_G = 0.
-    final_state, _ = lax.scan(scan_body, (qs, neg_G), jnp.arange(policy_i.shape[0]))
-    qs_final, neg_G = final_state
-    return neg_G
+    neg_efe = 0.
+    final_state, _ = lax.scan(scan_body, (qs, neg_efe), jnp.arange(policy_i.shape[0]))
+    qs_final, neg_efe = final_state
+    return neg_efe
 
-def compute_G_policy_inductive(
+def compute_neg_efe_policy_inductive(
     qs_init: list[Array],
     A: list[Array],
     B: list[Array],
@@ -584,6 +607,12 @@ def compute_G_policy_inductive(
 ) -> Array:
     """
     Compute policy-wise negative expected free energy with inductive planning.
+
+    Notes
+    -----
+    This function computes `neg_efe = -EFE` for a single policy with optional
+    inductive-value terms. The function name follows SPM-style notation where
+    this score is commonly called `G`.
 
     Parameters
     ----------
@@ -626,7 +655,7 @@ def compute_G_policy_inductive(
 
     def scan_body(carry: tuple[list[Array], Array], t: Array) -> tuple[tuple[list[Array], Array], None]:
 
-        qs, neg_G = carry
+        qs, neg_efe = carry
 
         qs_next = compute_expected_state(qs, B, policy_i[t], B_dependencies)
 
@@ -644,15 +673,15 @@ def compute_G_policy_inductive(
         if pB is not None:
             param_info_gain += calc_pB_info_gain(pB, qs_next, qs, B_dependencies, policy_i[t]) if use_param_info_gain else 0.
 
-        neg_G += info_gain + utility - param_info_gain + inductive_value
+        neg_efe += info_gain + utility - param_info_gain + inductive_value
 
-        return (qs_next, neg_G), None
+        return (qs_next, neg_efe), None
 
     qs = qs_init
-    neg_G = 0.
-    final_state, _ = lax.scan(scan_body, (qs, neg_G), jnp.arange(policy_i.shape[0]))
-    _, neg_G = final_state
-    return neg_G
+    neg_efe = 0.
+    final_state, _ = lax.scan(scan_body, (qs, neg_efe), jnp.arange(policy_i.shape[0]))
+    _, neg_efe = final_state
+    return neg_efe
 
 def update_posterior_policies_inductive(
     policy_matrix: Array,
@@ -675,6 +704,11 @@ def update_posterior_policies_inductive(
 ) -> tuple[Array, Array]:
     """
     Compute policy posterior and expected free energy with optional inductive terms.
+
+    Notes
+    -----
+    The returned policy score is `neg_efe = -EFE`. In SPM-style notation this
+    same quantity is often denoted by `G`.
 
     Parameters
     ----------
@@ -723,15 +757,30 @@ def update_posterior_policies_inductive(
     # policy --> n_levels_factor_f x 1
     # factor --> n_levels_factor_f x n_policies
     ## vmap across policies
-    compute_G_fixed_states = partial(compute_G_policy_inductive, qs_init, A, B, C, pA, pB, A_dependencies, B_dependencies, I, inductive_epsilon=inductive_epsilon,
-                                     use_utility=use_utility,  use_states_info_gain=use_states_info_gain, use_param_info_gain=use_param_info_gain, use_inductive=use_inductive)
+    compute_neg_efe_fixed_states = partial(
+        compute_neg_efe_policy_inductive,
+        qs_init,
+        A,
+        B,
+        C,
+        pA,
+        pB,
+        A_dependencies,
+        B_dependencies,
+        I,
+        inductive_epsilon=inductive_epsilon,
+        use_utility=use_utility,
+        use_states_info_gain=use_states_info_gain,
+        use_param_info_gain=use_param_info_gain,
+        use_inductive=use_inductive,
+    )
 
     # only in the case of policy-dependent qs_inits
     # in_axes_list = (1,) * n_factors
-    # all_efe_of_policies = vmap(compute_G_policy, in_axes=(in_axes_list, 0))(qs_init_pi, policy_matrix)
+    # all_efe_of_policies = vmap(compute_neg_efe_policy, in_axes=(in_axes_list, 0))(qs_init_pi, policy_matrix)
 
     # policies needs to be an NDarray of shape (n_policies, n_timepoints, n_control_factors)
-    neg_efe_all_policies = vmap(compute_G_fixed_states)(policy_matrix)
+    neg_efe_all_policies = vmap(compute_neg_efe_fixed_states)(policy_matrix)
 
     return nn.softmax(gamma * neg_efe_all_policies + log_stable(E)), neg_efe_all_policies
 
@@ -842,5 +891,5 @@ def calc_inductive_value_t(
 #     policy_matrix = jnp.stack([policy_1, policy_2]) # 2 x 2 x 2 tensor
     
 #     qs_init = [jnp.ones(2)/2, jnp.ones(2)/2]
-#     neg_G_all_policies = jit(update_posterior_policies)(policy_matrix, qs_init, A, B, C)
-#     print(neg_G_all_policies)
+#     neg_efe_all_policies = jit(update_posterior_policies)(policy_matrix, qs_init, A, B, C)
+#     print(neg_efe_all_policies)

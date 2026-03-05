@@ -35,7 +35,7 @@ def predict_fn(agent: Any, qs: list[jnp.ndarray]) -> tuple[list[jnp.ndarray], li
     -------
     tuple[list[jnp.ndarray], list[jnp.ndarray], jnp.ndarray]
         Predicted next-state beliefs, predicted next-observation beliefs, and
-        policy scores (`G`) for each policy.
+        policy scores (`neg_efe = -EFE`) for each policy.
     """
     policies = agent.policies.policy_arr
 
@@ -51,13 +51,13 @@ def predict_fn(agent: Any, qs: list[jnp.ndarray]) -> tuple[list[jnp.ndarray], li
     qs, qo, u, ig = jax.vmap(
         lambda policy: jax.vmap(_step)(qs, policy)
     )(policies)
-    G = u + ig
+    neg_efe = u + ig
     # jax.debug.print("qs: {qs}", qs=qs)
     # jax.debug.print("qo: {qo}", qo=qo)
     # jax.debug.print("u: {u}", u=u)
     # jax.debug.print("ig: {ig}", ig=ig)
-    # jax.debug.print("G from step fn: {G}", G=G)
-    return qs, qo, G
+    # jax.debug.print("neg_efe from step fn: {neg_efe}", neg_efe=neg_efe)
+    return qs, qo, neg_efe
 
 
 def infer_fn(agent: Any, obs: list[jnp.ndarray], qs: list[jnp.ndarray]) -> list[jnp.ndarray]:
@@ -220,10 +220,10 @@ class Tree(eqx.Module):
     policy: jnp.ndarray
     # Observation expected if an observation node
     observation: jnp.ndarray
-    # Node G estimates
-    # - for a policy node: G of that policy at that timestep
-    # - for an observation node: recursively aggregated G of all children
-    G: jnp.ndarray
+    # Node neg_efe estimates.
+    # - for a policy node: neg_efe of that policy at that timestep
+    # - for an observation node: recursively aggregated neg_efe of all children
+    neg_efe: jnp.ndarray
 
     # Tree structure bookkeeping
     # Wheter a node is used or not (n_nodes, 1)
@@ -253,9 +253,9 @@ class Tree(eqx.Module):
         self.observation = -jnp.ones(
             (batch_size, max_nodes, num_observation_modalities), dtype=jnp.int32
         )
-        self.G = jnp.zeros((batch_size, max_nodes, 1))
+        self.neg_efe = jnp.zeros((batch_size, max_nodes, 1))
 
-        self.G = self.G.at[:, -1, :].set(-prune_penalty)
+        self.neg_efe = self.neg_efe.at[:, -1, :].set(-prune_penalty)
 
         self.used = jnp.zeros((batch_size, max_nodes, 1), dtype=jnp.bool)
         self.horizon = jnp.zeros((batch_size, max_nodes, 1), dtype=jnp.int32)
@@ -277,7 +277,7 @@ class Tree(eqx.Module):
         node = {
             "idx": index,
             "qs": jtu.tree_map(lambda x: x[index : index + 1], self.qs),
-            "G": self.G[index, 0],
+            "neg_efe": self.neg_efe[index, 0],
             "horizon": self.horizon[index, 0],
         }
 
@@ -347,7 +347,7 @@ def _update_node(
     qs: list[jnp.ndarray] | None = None,
     policy: jnp.ndarray | None = None,
     observation: jnp.ndarray | None = None,
-    G: jnp.ndarray | None = None,
+    neg_efe: jnp.ndarray | None = None,
     horizon: int | None = None,
     children_indices: jnp.ndarray | None = None,
     children_probs: jnp.ndarray | None = None,
@@ -364,7 +364,7 @@ def _update_node(
         qs: list[jnp.ndarray] | None,
         policy: jnp.ndarray | None,
         observation: jnp.ndarray | None,
-        G: jnp.ndarray | None,
+        neg_efe: jnp.ndarray | None,
         horizon: int | None,
         children_indices: jnp.ndarray | None,
         children_probs: jnp.ndarray | None,
@@ -386,7 +386,9 @@ def _update_node(
             policy = tree.policy
             observation = tree.observation
 
-        G = tree.G.at[idx].set(G) if G is not None else tree.G
+        neg_efe_vals = (
+            tree.neg_efe.at[idx].set(neg_efe) if neg_efe is not None else tree.neg_efe
+        )
         horizon = (
             tree.horizon.at[idx].set(horizon) if horizon is not None else tree.horizon
         )
@@ -421,7 +423,7 @@ def _update_node(
                 x.qs,
                 x.policy,
                 x.observation,
-                x.G,
+                x.neg_efe,
                 x.used,
                 x.horizon,
                 x.children_indices,
@@ -432,7 +434,7 @@ def _update_node(
                 qs,
                 policy,
                 observation,
-                G,
+                neg_efe_vals,
                 used,
                 horizon,
                 children_indices,
@@ -447,7 +449,7 @@ def _update_node(
         qs: list[jnp.ndarray] | None,
         policy: jnp.ndarray | None,
         observation: jnp.ndarray | None,
-        G: jnp.ndarray | None,
+        neg_efe: jnp.ndarray | None,
         horizon: int | None,
         children_indices: jnp.ndarray | None,
         children_probs: jnp.ndarray | None,
@@ -467,7 +469,7 @@ def _update_node(
         qs,
         policy,
         observation,
-        G,
+        neg_efe,
         horizon,
         children_indices,
         children_probs,
@@ -653,7 +655,8 @@ def optimized_tree_search(
     infer_fn : Callable, optional
         Function used to infer posterior states from candidate observations.
     predict_fn : Callable, optional
-        Function used to predict next-state/observation beliefs and policy scores.
+        Function used to predict next-state/observation beliefs and policy
+        scores (`neg_efe = -EFE`).
 
     Returns
     -------
@@ -766,7 +769,7 @@ def optimized_tree_search(
                             qs=qs_post,
                             observation=observation,
                             horizon=t.horizon[policy_node_idx, 0],
-                            G=0,
+                            neg_efe=0,
                             children_indices=jnp.empty((0,), dtype=jnp.int32),
                             children_probs=jnp.empty((0,), dtype=jnp.float32),
                         )
@@ -852,7 +855,8 @@ def optimized_tree_search(
         """
         Given an observation node at `idx`, expand into new policy nodes.
 
-        This will calculate the expected states, observations and free energy for all policies,
+        This will calculate the expected states, observations and negative
+        expected free energy for all policies,
         and then expand the tree with new policy nodes.
 
         For each policy that is above the `policy_prune_threshold`, it will
@@ -860,33 +864,33 @@ def optimized_tree_search(
         """
 
         # jax.debug.print("Expand policies of node {idx} at horizon {h}", idx=idx, h=t.horizon[idx, 0])
-        # calculate expected states, observations and free energy for all policies
+        # calculate expected states, observations and neg_efe for all policies
         qs_current = jtu.tree_map(lambda x: x[idx], t.qs)
-        qs_next, qo, G = predict_fn(agent, qs_current)
-        q_pi = nn.softmax(G * gamma, axis=0)
+        qs_next, qo, neg_efe = predict_fn(agent, qs_current)
+        q_pi = nn.softmax(neg_efe * gamma, axis=0)
 
         # expand policy nodes
         def add_policy_node(
             tree: Tree, data: tuple[jnp.ndarray, list[jnp.ndarray], jnp.ndarray, jnp.ndarray]
         ) -> tuple[Tree, jnp.ndarray]:
-            policy, qs_next, prob, G = data
+            policy, qs_next, prob, neg_efe = data
 
             def really_add(
-                tree: Tree, policy: jnp.ndarray, qs_next: list[jnp.ndarray], G: jnp.ndarray
+                tree: Tree, policy: jnp.ndarray, qs_next: list[jnp.ndarray], neg_efe: jnp.ndarray
             ) -> tuple[Tree, jnp.ndarray]:
                 new_idx = jnp.where(
                     ~tree.used[:, 0], jnp.arange(tree.size), tree.size
                 ).min()
 
                 # jax.debug.print("Add policy node {x}", x=new_idx)
-                # jax.debug.print("G: {G}", G=G)
+                # jax.debug.print("neg_efe: {neg_efe}", neg_efe=neg_efe)
 
                 tree = _update_node(
                     tree,
                     new_idx,
                     qs=qs_next,
                     policy=policy,
-                    G=G,
+                    neg_efe=neg_efe,
                     horizon=tree.horizon[idx, 0] + 1,
                     children_indices=jnp.empty((0,), dtype=jnp.int32),
                     children_probs=jnp.empty((0,), dtype=jnp.float32),
@@ -894,7 +898,7 @@ def optimized_tree_search(
                 return tree, new_idx
 
             def skip_add(
-                tree: Tree, policy: jnp.ndarray, qs_next: list[jnp.ndarray], G: jnp.ndarray
+                tree: Tree, policy: jnp.ndarray, qs_next: list[jnp.ndarray], neg_efe: jnp.ndarray
             ) -> tuple[Tree, jnp.ndarray]:
                 # jax.debug.print("skip add policy node {p} as the prob is {pr}", p=policy, pr=prob[0])
                 return tree, -1
@@ -906,11 +910,13 @@ def optimized_tree_search(
                 tree,
                 policy,
                 qs_next,
-                G,
+                neg_efe,
             )
 
         # policies is of shape (n_policies, timesteps (=1), n_actions)
-        t, policy_indices = lax.scan(add_policy_node, t, (policies[:, 0, :], qs_next, q_pi, G))
+        t, policy_indices = lax.scan(
+            add_policy_node, t, (policies[:, 0, :], qs_next, q_pi, neg_efe)
+        )
         # jax.debug.print("q_pi: {q_pi}", q_pi=q_pi)
 
         # update parent with child indices
@@ -956,17 +962,18 @@ def optimized_tree_search(
         Run a backward pass on an observation node at `idx`.
 
         Will iterate over all policy children of this observation node,
-        gather their G values and probabilities, and recursively
-        aggregate them to calculate the G value for this observation node.
+        gather their neg_efe values and probabilities, and recursively
+        aggregate them to calculate the neg_efe value for this observation
+        node.
         """
         # jax.debug.print("Backward node {idx}", idx=idx)
 
-        def recursive_G(t: Tree, policy_idx: jnp.ndarray) -> tuple[Tree, jnp.ndarray]:
+        def recursive_neg_efe(t: Tree, policy_idx: jnp.ndarray) -> tuple[Tree, jnp.ndarray]:
             observation_nodes = t.children_indices[policy_idx]
             probabilities = t.children_probs[policy_idx]
 
             def sum_over_obs(carry: jnp.ndarray, obs_idx: jnp.ndarray, p: jnp.ndarray) -> jnp.ndarray:
-                carry += t.G[obs_idx, 0] * p
+                carry += t.neg_efe[obs_idx, 0] * p
                 return carry
 
             def zero(carry: jnp.ndarray, obs_idx: jnp.ndarray, p: jnp.ndarray) -> jnp.ndarray:
@@ -979,40 +986,40 @@ def optimized_tree_search(
                     None,
                 )
 
-            # accumulate G for all observation nodes
-            G_acc, _ = lax.scan(accumulate_g, 0.0, (observation_nodes, probabilities))
+            # accumulate neg_efe for all observation nodes
+            neg_efe_acc, _ = lax.scan(accumulate_g, 0.0, (observation_nodes, probabilities))
 
-            # and also add G of this policy timestep
-            G_acc += t.G[policy_idx, 0]
+            # and also add neg_efe of this policy timestep
+            neg_efe_acc += t.neg_efe[policy_idx, 0]
 
-            return t, G_acc
+            return t, neg_efe_acc
 
         def add_prune_penalty(t: Tree, policy_idx: jnp.ndarray) -> tuple[Tree, jnp.ndarray]:
             return t, jnp.asarray(-prune_penalty, dtype=jnp.float32)
 
         def backward(t: Tree, idx: jnp.ndarray) -> tuple[Tree, jnp.ndarray]:
             return lax.cond(
-                # only accumulate G if it is a policy node with children, use prune penalty otherwise
+                # only accumulate neg_efe if it is a policy node with children, use prune penalty otherwise
                 (idx >= 0) & (jnp.any(t.children_indices[idx] >= 0)),
-                recursive_G,
+                recursive_neg_efe,
                 add_prune_penalty,
                 t,
                 idx,
             )
 
         # iterate over all policy children
-        tree, G_recursive = lax.scan(backward, tree, tree.children_indices[idx])
+        tree, neg_efe_recursive = lax.scan(backward, tree, tree.children_indices[idx])
 
-        # calculate new q_pi and recursive G
-        q_pi = nn.softmax(G_recursive * gamma, axis=0)
-        G_recursive = jnp.dot(q_pi, G_recursive)
+        # calculate new q_pi and recursive neg_efe
+        q_pi = nn.softmax(neg_efe_recursive * gamma, axis=0)
+        neg_efe_recursive = jnp.dot(q_pi, neg_efe_recursive)
 
-        # update G for this observation node
+        # update neg_efe for this observation node
         # jax.debug.print(
-        #     "Update node {idx} with G {G_recursive}", idx=idx, G_recursive=G_recursive
+        #     "Update node {idx} with neg_efe {neg_efe_recursive}", idx=idx, neg_efe_recursive=neg_efe_recursive
         # )
 
-        # jax.debug.print("G in backward: {G_recursive}", G_recursive=G_recursive)
+        # jax.debug.print("neg_efe in backward: {neg_efe_recursive}", neg_efe_recursive=neg_efe_recursive)
         # jax.debug.print("q_pi in backward: {q_pi}", q_pi=q_pi)
 
         # prune children if their q_pi is below the threshold
@@ -1027,12 +1034,18 @@ def optimized_tree_search(
         # remaining_qpis = jnp.sum(q_pi * (1 - prune_mask))
         # q_pi = jnp.where(prune_mask, 0.0, q_pi / remaining_qpis)
 
-        tree = _update_node(tree, idx, G=G_recursive, children_indices=children_indices, children_probs=q_pi)
+        tree = _update_node(
+            tree,
+            idx,
+            neg_efe=neg_efe_recursive,
+            children_indices=children_indices,
+            children_probs=q_pi,
+        )
         return tree
 
     def _tree_backward(tree: Tree, h: int) -> tuple[Tree, int]:
         """
-        Calculate the new recursive G value for all nodes at horizon h
+        Calculate the new recursive neg_efe value for all nodes at horizon h
         """
 
         # jax.debug.print("Go backward at horizon {h}", h=h)
@@ -1049,7 +1062,7 @@ def optimized_tree_search(
             )
             return tree, None
 
-        # update G for all nodes at this horizon
+        # update neg_efe for all nodes at this horizon
         tree, _ = lax.scan(
             _do_backward, tree, jnp.arange(tree.used.shape[0] - 1, -1, -1)
         )
@@ -1061,7 +1074,8 @@ def optimized_tree_search(
     def _expand_horizon(tree: Tree, agent: Any, h: int) -> tuple[Tree, Any, int]:
         """
         Expand the planning tree at a given horizon by expanding all nodes at that horizon.
-        After expanding, it will also perform a backward pass to recursively update the G values
+        After expanding, it will also perform a backward pass to recursively update the
+        neg_efe values
         """
 
         # jax.debug.print("Expanding horizon {h}", h=h)
@@ -1107,13 +1121,13 @@ def optimized_tree_search(
 
         # jax.debug.print("horizon {h} out of {max_h}, entropy={e:.3f}, entropy threshold = {et}, halted_entropy={estop}, efe={g:.3f}, efe threshold = {efet}, halted_efe={efestop}, jnp.all(q_pi == 0) = {qpi}",
         #                 h=h, max_h=horizon, e=entropy, et=entropy_stop_threshold,
-        #                 estop=entropy <= entropy_stop_threshold, g=tree.G[tree.root_idx(), 0], efet=efe_stop_threshold,
-        #                 efestop=tree.G[tree.root_idx(), 0] >= efe_stop_threshold, qpi=jnp.all(q_pi == 0))
+        #                 estop=entropy <= entropy_stop_threshold, g=tree.neg_efe[tree.root_idx(), 0], efet=efe_stop_threshold,
+        #                 efestop=tree.neg_efe[tree.root_idx(), 0] >= efe_stop_threshold, qpi=jnp.all(q_pi == 0))
 
         return (
             (h < horizon)
             & (jnp.all(q_pi == 0) | (entropy > entropy_stop_threshold))
-            & (tree.G[root_idx(tree), 0] < efe_stop_threshold)
+            & (tree.neg_efe[root_idx(tree), 0] < efe_stop_threshold)
         )
 
     def scan_step(

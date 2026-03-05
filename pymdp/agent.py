@@ -29,7 +29,7 @@ class Agent(Module):
         my_agent = Agent(A=A, B=B, C=C, <more_params>)
         observation = env.step(initial_action)
         qs = my_agent.infer_states(observation, empirical_prior=my_agent.D)
-        q_pi, G = my_agent.infer_policies(qs)
+        q_pi, neg_efe = my_agent.infer_policies(qs)
         keys = jr.split(rng_key, my_agent.batch_size + 1)
         next_action = my_agent.sample_action(q_pi, rng_key=keys[1:])
         next_observation = env.step(next_action)
@@ -838,8 +838,11 @@ class Agent(Module):
     def infer_policies(self, qs: list[Array]) -> tuple[Array, Array]:
         """
         Perform policy inference by optimizing a posterior (categorical) distribution over policies.
-        This distribution is computed as the softmax of `G * gamma + lnE` where `G` is the negative expected
-        free energy of policies, `gamma` is a policy precision and `lnE` is the (log) prior probability of policies.
+        This distribution is computed as the softmax of `neg_efe * gamma + lnE` where
+        `neg_efe` is the negative expected free energy of policies, `gamma` is a policy
+        precision and `lnE` is the (log) prior probability of policies.
+        In SPM-style notation this same quantity is often written as `G`, with
+        `G = neg_efe = -EFE`.
         This function returns the posterior over policies as well as the negative expected free energy of each policy.
 
         Parameters
@@ -853,7 +856,7 @@ class Agent(Module):
         q_pi: Array
             Posterior beliefs over policies with shape
             `(batch_size, num_policies)`.
-        G: Array
+        neg_efe: Array
             Negative expected free energies of policies with shape
             `(batch_size, num_policies)`.
         """
@@ -870,7 +873,7 @@ class Agent(Module):
             use_inductive=self.use_inductive
         )
 
-        q_pi, G = vmap(infer_policies)(
+        q_pi, neg_efe = vmap(infer_policies)(
             latest_belief, 
             self.A,
             self.B,
@@ -883,7 +886,7 @@ class Agent(Module):
             inductive_epsilon=self.inductive_epsilon
         )
 
-        return q_pi, G
+        return q_pi, neg_efe
     
     def multiaction_probabilities(self, q_pi: Array) -> Array:
         """

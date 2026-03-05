@@ -389,11 +389,11 @@ class TestCategoricalObservationsControl(unittest.TestCase):
 
         obs = [jnp.array([[[0.6, 0.3, 0.1]]])]  # Shape (1, 1, 3)
         qs = agent.infer_states(obs, agent.D)
-        q_pi, G = agent.infer_policies(qs)
+        q_pi, neg_efe = agent.infer_policies(qs)
 
         self.assertTrue(jnp.allclose(q_pi.sum(), 1.0, atol=1e-5))
-        # G has shape (batch, num_policies), so check the last dimension
-        self.assertEqual(G.shape[-1], len(agent.policies))
+        # neg_efe has shape (batch, num_policies), so check the last dimension
+        self.assertEqual(neg_efe.shape[-1], len(agent.policies))
 
     def test_info_gain_with_categorical_obs(self):
         """Test epistemic value (info gain) computation with categorical observations"""
@@ -417,7 +417,7 @@ class TestCategoricalObservationsControl(unittest.TestCase):
         ]
 
         qs = agent.infer_states(obs, agent.D)
-        q_pi, G = agent.infer_policies(qs)
+        q_pi, neg_efe = agent.infer_policies(qs)
 
         self.assertTrue(jnp.allclose(q_pi.sum(), 1.0, atol=1e-5))
 
@@ -443,7 +443,7 @@ class TestCategoricalObservationsControl(unittest.TestCase):
 
         obs = [jnp.array([[[0.5, 0.3, 0.2]]])]  # Shape (1, 1, 3)
         qs = agent.infer_states(obs, agent.D)
-        q_pi, G = agent.infer_policies(qs)
+        q_pi, neg_efe = agent.infer_policies(qs)
 
         self.assertTrue(jnp.allclose(q_pi.sum(), 1.0, atol=1e-5))
 

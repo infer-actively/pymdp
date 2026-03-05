@@ -402,7 +402,7 @@ class TestAgentJax(unittest.TestCase):
         prior = agent.update_empirical_prior(action, qs_hist)
         qs = agent.infer_states(observation, prior)
 
-        q_pi, G = agent.infer_policies(qs)
+        q_pi, neg_efe = agent.infer_policies(qs)
         action = agent.sample_action(q_pi)
         action_multi = agent.decode_multi_actions(action)
         action_reconstruct = agent.encode_multi_actions(action_multi)
@@ -439,7 +439,7 @@ class TestAgentJax(unittest.TestCase):
             prior = agent.update_empirical_prior(action, qs_hist)
             qs = agent.infer_states(observation, prior)
 
-            q_pi, G = agent.infer_policies(qs)
+            q_pi, neg_efe = agent.infer_policies(qs)
             action = agent.sample_action(q_pi)
             action_multi = agent.decode_multi_actions(action)
             action_reconstruct = agent.encode_multi_actions(action_multi)
@@ -448,6 +448,34 @@ class TestAgentJax(unittest.TestCase):
 
         action, action_multi, action_reconstruct, agent = construct_and_run_agent(a_key, b_key, obs_key, action_key)
         self.assertTrue(jnp.allclose(action, action_reconstruct))
+
+    def test_infer_policies_neg_efe_sign_convention(self):
+        """Policy posterior should be computed from neg_efe (= -EFE)."""
+
+        key_a, key_b = jr.split(jr.PRNGKey(112), 2)
+        num_obs = [3]
+        num_states = [3]
+        num_controls = [3]
+
+        A = utils.random_A_array(key_a, num_obs, num_states)
+        B = utils.random_B_array(key_b, num_states, num_controls)
+        C = [jnp.array([0.3, -0.2, 0.1])]
+
+        agent = Agent(A=A, B=B, C=C, policy_len=2)
+        obs = [jnp.array([[1]])]
+        qs = agent.infer_states(obs, empirical_prior=agent.D)
+
+        q_pi, neg_efe = agent.infer_policies(qs)
+
+        logits_neg_efe = agent.gamma[..., None] * neg_efe + log_stable(agent.E)
+        q_pi_from_neg_efe = nn.softmax(logits_neg_efe, axis=-1)
+
+        efe = -neg_efe
+        logits_efe = -agent.gamma[..., None] * efe + log_stable(agent.E)
+        q_pi_from_efe = nn.softmax(logits_efe, axis=-1)
+
+        self.assertTrue(jnp.allclose(q_pi, q_pi_from_neg_efe, atol=1e-6))
+        self.assertTrue(jnp.allclose(q_pi, q_pi_from_efe, atol=1e-6))
     
     def test_agent_validate_normalization_ok(self):
         """
@@ -739,7 +767,7 @@ class TestAgentJax(unittest.TestCase):
             qs = agent.infer_states(observations, empirical_prior=D)
 
             # infer policies
-            q_pi, G = agent.infer_policies(qs)
+            q_pi, neg_efe = agent.infer_policies(qs)
 
             # compute multi-action log-probabilities
             multiaction_probs = agent.multiaction_probabilities(q_pi)
@@ -784,7 +812,7 @@ class TestAgentJax(unittest.TestCase):
             )
 
             # infer policies
-            q_pi, G = agent.infer_policies(qs)
+            q_pi, neg_efe = agent.infer_policies(qs)
 
             # compute multi-action log-probabilities
             multiaction_probs = agent.multiaction_probabilities(q_pi)

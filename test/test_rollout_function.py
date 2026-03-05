@@ -576,9 +576,11 @@ class TestRolloutFunction(unittest.TestCase):
             self.assertEqual(actions.shape[0], agent.batch_size)
             self.assertEqual(actions.shape[1], num_steps + 1)
 
-            G = np.asarray(info["G"])
-            self.assertEqual(G.shape[0], agent.batch_size)
-            self.assertEqual(G.shape[1], num_steps + 1)
+            self.assertIn("neg_efe", info)
+            self.assertNotIn("G", info)
+            neg_efe = np.asarray(info["neg_efe"])
+            self.assertEqual(neg_efe.shape[0], agent.batch_size)
+            self.assertEqual(neg_efe.shape[1], num_steps + 1)
 
     def test_rollout_modes_for_ovf_and_exact(self):
         modes = (
