@@ -117,7 +117,8 @@ def si_policy_search(
         Stop-expansion threshold on root policy entropy.
     neg_efe_stop_threshold : float, default=1e10
         Stop-expansion threshold on root negative expected free energy
-        (`neg_efe = -EFE`).
+        (`neg_efe = -EFE`). Expansion stops when root `neg_efe` is greater
+        than or equal to this threshold.
     kl_threshold : float, default=-1
         Optional KL threshold for node reuse.
     prune_penalty : float, default=512
@@ -626,7 +627,8 @@ def optimized_tree_search(
 
     - planning horizon is reached
     - root policy entropy drops below `entropy_stop_threshold`
-    - root negative expected free energy drops below `neg_efe_stop_threshold`
+    - root negative expected free energy reaches or exceeds
+      `neg_efe_stop_threshold`
 
     Parameters
     ----------
@@ -644,7 +646,8 @@ def optimized_tree_search(
         Root-policy entropy threshold used as an early-stop criterion.
     neg_efe_stop_threshold : float, default=1e10
         Root negative expected free energy threshold used as an early-stop
-        criterion (`neg_efe = -EFE`).
+        criterion (`neg_efe = -EFE`). Expansion stops when root `neg_efe` is
+        greater than or equal to this threshold.
     kl_threshold : float, default=-1
         KL threshold for reusing existing observation nodes with similar beliefs.
         A value of `-1` disables node reuse.
