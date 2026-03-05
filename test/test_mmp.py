@@ -24,7 +24,7 @@ class MMP(unittest.TestCase):
     def test_mmp_a(self):
         """
         Testing our SPM-ified version of `run_MMP` with
-            1 hidden state factor & 1 outcome modality, at a random fixed
+            1 hidden state factor & 1 observation modality, at a random fixed
             timestep during the generative process
         """
 
@@ -63,7 +63,7 @@ class MMP(unittest.TestCase):
    
     def test_mmp_b(self):
         """ Testing our SPM-ified version of `run_MMP` with
-        2 hidden state factors & 2 outcome modalities, at a random fixed
+        2 hidden state factors & 2 observation modalities, at a random fixed
         timestep during the generative process"""
 
         array_path = os.path.join(os.getcwd(), DATA_PATH + "mmp_b.mat")
@@ -96,7 +96,7 @@ class MMP(unittest.TestCase):
 
     def test_mmp_c(self):
         """ Testing our SPM-ified version of `run_MMP` with
-         2 hidden state factors & 2 outcome modalities, at the very first
+         2 hidden state factors & 2 observation modalities, at the very first
          timestep of the generative process (boundary condition test). So there 
          are no previous actions"""
 
@@ -130,7 +130,7 @@ class MMP(unittest.TestCase):
     
     def test_mmp_d(self):
         """ Testing our SPM-ified version of `run_MMP` with
-        2 hidden state factors & 2 outcome modalities, at the final
+        2 hidden state factors & 2 observation modalities, at the final
         timestep of the generative process (boundary condition test)
         @NOTE: mmp_d.mat test has issues with the prediction errors. But the future messages are 
         totally fine (even at the last timestep of variational iteration."""

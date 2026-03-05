@@ -106,7 +106,7 @@ def test_pybefit_tmaze_predictive_smoke():
     samples = pred(subkey)
 
     assert "outcomes" in samples
-    outcomes = samples["outcomes"]
-    assert len(outcomes) == 3
-    # Outcomes include the initial observation plus one per trial.
-    assert outcomes[0].shape == (1, num_blocks, num_agents, num_trials + 1)
+    observations = samples["outcomes"]
+    assert len(observations) == 3
+    # Observations include the initial observation plus one per trial.
+    assert observations[0].shape == (1, num_blocks, num_agents, num_trials + 1)

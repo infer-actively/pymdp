@@ -19,27 +19,27 @@ def _build_single_cue_model():
     num_reward_states = 2  # 0: reward on left, 1: reward on right
 
     cue_obs = jnp.zeros((5, num_locations, num_reward_states), dtype=jnp.float32)
-    outcome_obs = jnp.zeros((3, num_locations, num_reward_states), dtype=jnp.float32)
+    reward_obs = jnp.zeros((3, num_locations, num_reward_states), dtype=jnp.float32)
 
     for loc in range(num_locations):
         for reward_state in range(num_reward_states):
             if loc == 0:
                 cue_obs = cue_obs.at[0, loc, reward_state].set(1.0)
-                outcome_obs = outcome_obs.at[0, loc, reward_state].set(1.0)
+                reward_obs = reward_obs.at[0, loc, reward_state].set(1.0)
             elif loc == 3:
                 cue_idx = 3 if reward_state == 0 else 4
                 cue_obs = cue_obs.at[cue_idx, loc, reward_state].set(1.0)
-                outcome_obs = outcome_obs.at[0, loc, reward_state].set(1.0)
+                reward_obs = reward_obs.at[0, loc, reward_state].set(1.0)
             elif loc == 1:
                 cue_obs = cue_obs.at[1, loc, reward_state].set(1.0)
-                outcome_idx = 1 if reward_state == 0 else 2
-                outcome_obs = outcome_obs.at[outcome_idx, loc, reward_state].set(1.0)
+                observation_idx = 1 if reward_state == 0 else 2
+                reward_obs = reward_obs.at[observation_idx, loc, reward_state].set(1.0)
             elif loc == 2:
                 cue_obs = cue_obs.at[2, loc, reward_state].set(1.0)
-                outcome_idx = 1 if reward_state == 1 else 2
-                outcome_obs = outcome_obs.at[outcome_idx, loc, reward_state].set(1.0)
+                observation_idx = 1 if reward_state == 1 else 2
+                reward_obs = reward_obs.at[observation_idx, loc, reward_state].set(1.0)
 
-    A = [cue_obs, outcome_obs]
+    A = [cue_obs, reward_obs]
     A_dependencies = [[0, 1], [0, 1]]
 
     B_loc = utils.create_controllable_B(num_locations, num_locations)[0]
@@ -76,11 +76,11 @@ def _build_dual_cue_model():
                 cue_a_obs = cue_a_obs.at[0, loc, reward_state].set(1.0)
 
             if loc == 3:
-                outcome_idx = 1 if reward_state == 0 else 2
-                reward_obs = reward_obs.at[outcome_idx, loc, reward_state].set(1.0)
+                observation_idx = 1 if reward_state == 0 else 2
+                reward_obs = reward_obs.at[observation_idx, loc, reward_state].set(1.0)
             elif loc == 4:
-                outcome_idx = 1 if reward_state == 1 else 2
-                reward_obs = reward_obs.at[outcome_idx, loc, reward_state].set(1.0)
+                observation_idx = 1 if reward_state == 1 else 2
+                reward_obs = reward_obs.at[observation_idx, loc, reward_state].set(1.0)
             else:
                 reward_obs = reward_obs.at[0, loc, reward_state].set(1.0)
 

@@ -89,7 +89,7 @@ def run_factorized_fpi(
     distr_obs: bool = True,
 ) -> list[Array]:
     """
-    Run the fixed point iteration algorithm with sparse dependencies between factors and outcomes (stored in `A_dependencies`)
+    Run the fixed point iteration algorithm with sparse dependencies between factors and observations (stored in `A_dependencies`)
     """
 
     # Exact one-pass update for single-factor models.

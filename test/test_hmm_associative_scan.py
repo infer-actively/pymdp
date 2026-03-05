@@ -809,11 +809,11 @@ class TestAssociativeScanHMM(unittest.TestCase):
         self.assertEqual(prior_next[0].shape, (1, K))
         self.assertTrue(bool(jnp.allclose(prior_next[0].sum(-1), 1.0, atol=1e-5)))
 
-        outcomes_window = [jnp.expand_dims(obs_idx[-horizon:], 0)]
+        observations_window = [jnp.expand_dims(obs_idx[-horizon:], 0)]
         actions_window = action_hist[:, -(horizon - 1):, :]
         pA_before = agent.pA[0]
         pB_before = agent.pB[0]
-        agent_updated = agent.infer_parameters(qs_hist, outcomes_window, actions_window)
+        agent_updated = agent.infer_parameters(qs_hist, observations_window, actions_window)
 
         self.assertFalse(bool(jnp.allclose(agent_updated.pA[0], pA_before)))
         self.assertFalse(bool(jnp.allclose(agent_updated.pB[0], pB_before)))

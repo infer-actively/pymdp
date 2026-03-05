@@ -320,7 +320,7 @@ class TestControl(unittest.TestCase):
     def test_expected_utility(self):
         """
         Test for the expected utility function, for a simple single factor generative model 
-        where there are imbalances in the preferences for different outcomes. Test for both single
+        where there are imbalances in the preferences for different observations. Test for both single
         timestep policy horizons and multiple timestep policy horizons (planning)
         """
 

@@ -177,7 +177,7 @@ def si_policy_search(
         )
 
         # vmapping a jax.lax.cond() turns it into a jax.lax.select(),
-        # which runs all paths and selects the outcome of the condition
+        # which runs all paths and selects the result of the condition
         # this makes it terribly slow for planning trees
         # so we use a scan to iterate over the tree nodes instead
         # tree = jax.vmap(partial_tree_search)(
@@ -852,7 +852,7 @@ def optimized_tree_search(
         """
         Given an observation node at `idx`, expand into new policy nodes.
 
-        This will calculate the expected states, outcomes and free energy for all policies,
+        This will calculate the expected states, observations and free energy for all policies,
         and then expand the tree with new policy nodes.
 
         For each policy that is above the `policy_prune_threshold`, it will
@@ -860,7 +860,7 @@ def optimized_tree_search(
         """
 
         # jax.debug.print("Expand policies of node {idx} at horizon {h}", idx=idx, h=t.horizon[idx, 0])
-        # calculate expected states, outcomes and free energy for all policies
+        # calculate expected states, observations and free energy for all policies
         qs_current = jtu.tree_map(lambda x: x[idx], t.qs)
         qs_next, qo, G = predict_fn(agent, qs_current)
         q_pi = nn.softmax(G * gamma, axis=0)

@@ -37,7 +37,7 @@ def _select_current_obs(obs: list[Array] | Array, distr_obs: bool) -> list[Array
         if x.ndim == 0:
             return x
         if distr_obs:
-            # Distributional observations use the last axis for outcomes, so
+            # Distributional observations use the last axis for observations, so
             # 1D leaves are already a single-time-step observation.
             return x if x.ndim == 1 else x[-1]
         return x[-1]
