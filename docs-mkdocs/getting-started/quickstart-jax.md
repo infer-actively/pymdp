@@ -28,7 +28,7 @@ obs = [1, 2]
 
 # Use agent.D as the initial empirical prior
 qs = agent.infer_states(obs, empirical_prior=agent.D)
-q_pi, G = agent.infer_policies(qs)
+q_pi, neg_efe = agent.infer_policies(qs)
 
 sample_keys = jr.split(keys[2], agent.batch_size + 1)
 action = agent.sample_action(q_pi, rng_key=sample_keys[1:])

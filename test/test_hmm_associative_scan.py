@@ -801,9 +801,9 @@ class TestAssociativeScanHMM(unittest.TestCase):
                 action_t = action_hist[:, t, :]
                 empirical_prior = agent.update_empirical_prior(action_t, qs_hist)
 
-        q_pi, G = agent.infer_policies(qs_hist)
+        q_pi, neg_efe = agent.infer_policies(qs_hist)
         self.assertTrue(bool(jnp.allclose(q_pi.sum(-1), 1.0, atol=1e-5)))
-        self.assertTrue(bool(jnp.all(jnp.isfinite(G))))
+        self.assertTrue(bool(jnp.all(jnp.isfinite(neg_efe))))
 
         prior_next = agent.update_empirical_prior(action_hist[:, -1, :], qs_hist)
         self.assertEqual(prior_next[0].shape, (1, K))

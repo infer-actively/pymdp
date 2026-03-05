@@ -20,7 +20,10 @@ This guide is for users moving from `pymdp.legacy` (NumPy/object-array style) to
         q_pi, G = agent.infer_policies()
 
         # JAX
-        q_pi, G = agent.infer_policies(qs)
+        q_pi, neg_efe = agent.infer_policies(qs)
+
+   Note: in SPM-style notation this same policy score is often called `G`
+   (`G = neg_efe = -EFE`).
 
 2. Stochastic functions require explicit random keys. Common examples in
    `pymdp` include action/policy sampling (for example
@@ -169,7 +172,7 @@ B = utils.random_B_array(keys[1], [2], [2])
 agent = Agent(A=A, B=B)
 obs = [1]
 qs = agent.infer_states(obs, empirical_prior=agent.D)
-q_pi, G = agent.infer_policies(qs)
+q_pi, neg_efe = agent.infer_policies(qs)
 action_keys = jr.split(keys[2], agent.batch_size + 1)
 action = agent.sample_action(q_pi, rng_key=action_keys[1:])
 ```
