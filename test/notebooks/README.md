@@ -25,6 +25,7 @@ The nightly tier is currently locked to:
 - `examples/advanced/pymdp_with_neural_encoder.ipynb`
 - `examples/learning/learning_gridworld.ipynb`
 - `examples/model_fitting/fitting_with_pybefit.ipynb`
+- `examples/sparse/sparse_benchmark.ipynb`
 
 All other non-legacy notebooks in `examples/` belong to the CI tier.
 

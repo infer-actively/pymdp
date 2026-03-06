@@ -14,4 +14,3 @@ examples/experimental/sophisticated_inference/si_tmaze_SIvalidation.ipynb
 examples/inductive_inference/inductive_inference_example.ipynb
 examples/inductive_inference/inductive_inference_gridworld.ipynb
 examples/inference_and_learning/inference_methods_comparison.ipynb
-examples/sparse/sparse_benchmark.ipynb
