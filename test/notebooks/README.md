@@ -1,36 +1,52 @@
-# Developer Guide: Writing Testable Notebooks
+# Notebook Test Manifests
 
-This guide explains how to write Jupyter notebooks that work well with the automated testing infrastructure.
+This directory contains the notebook manifests for the `v1.0.0_alpha` release-closure work.
+They are the source of truth for how `examples/` notebooks are split between the lighter PR CI tier and the heavier nightly tier.
 
-## Overview
+## Manifest Files
 
-All notebooks in the `examples/` directory are automatically tested using `nbval`, a pytest plugin that executes notebooks and validates their outputs.
+- `ci_notebooks.txt`: notebooks intended for pull-request CI.
+- `nightly_notebooks.txt`: notebooks reserved for nightly coverage because they are heavier or have extra environment requirements.
 
-## Tips for writing testable (and useful!) notebooks
-1. Keep your notebooks small and tightly defined
-2. Avoid printing massive outputs
+Both manifests are:
+
+1. repo-relative
+2. explicitly enumerated
+3. sorted for stable diffs
+
+## Current Scope
+
+The manifests cover all non-legacy notebooks under `examples/`.
+
+`examples/legacy/` remains intentionally excluded from these manifests because the current pytest configuration ignores that directory and those notebooks are not part of the release gating scope.
+
+The nightly tier is currently locked to:
+
+- `examples/advanced/pymdp_with_neural_encoder.ipynb`
+- `examples/learning/learning_gridworld.ipynb`
+- `examples/model_fitting/fitting_with_pybefit.ipynb`
+- `examples/sparse/sparse_benchmark.ipynb`
+
+All other non-legacy notebooks in `examples/` belong to the CI tier.
 
 ## Running Notebook Tests Locally
 
-### Basic Commands
-
-:warning: `nbval` does not play nicely with `pytest-xdist` running tests in parallel. `nbval` tests must be called with a single worker (-n 1).
+`nbval` does not play well with `pytest-xdist` in parallel notebook execution. Keep notebook runs to a single worker.
 
 ```bash
-# Test all non-legacy notebooks (execution only, no output validation, will only fail if an exception is raised)
-uv run pytest --nbval-lax examples/
+# Execute the PR-CI notebook tier without strict output matching
+uv run pytest --nbval-lax $(cat test/notebooks/ci_notebooks.txt)
 
-# Test specific directory
-uv run pytest --nbval-lax examples/api/
+# Execute the nightly notebook tier without strict output matching
+uv run pytest --nbval-lax $(cat test/notebooks/nightly_notebooks.txt)
 
-# Test with full output cell validation
-uv run pytest --nbval examples/api/
-
-# Test specific notebook
-uv run pytest --nbval examples/api/model_construction_tutorial.ipynb -v
+# Strictly validate saved outputs for the PR-CI tier
+uv run pytest --nbval $(cat test/notebooks/ci_notebooks.txt)
 ```
 
-:warning: For now, notebook tests are opt-in, i.e. running `uv run pytest test` will *not* check notebooks.
-This tool is currently intended to help test notebooks locally, and eventually we will move them into CI if we can keep execution times low.
+## Authoring Notes
 
-The legacy notebooks are not tested.
+1. Keep notebooks focused and reasonably small.
+2. Avoid massive printed outputs.
+3. If a notebook is meant to stay in the CI tier, rerun and save it in a state compatible with `nbval`.
+4. Workflow wiring is intentionally separate from these manifests and will be handled downstream.
