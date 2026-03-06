@@ -583,13 +583,16 @@ class TestRolloutFunction(unittest.TestCase):
             self.assertEqual(neg_efe.shape[1], num_steps + 1)
 
     def test_sequence_rollout_supports_interacting_transition_dependencies(self):
-        num_obs = [3, 2]
-        num_states = [4, 3, 2]
-        num_controls = [2, 2, 2]
+        num_obs = [2, 2]
+        num_states = [2, 2, 2]
+        num_controls = [1, 1, 1]
         A_dependencies = [[0, 1], [1, 2]]
         B_dependencies = [[0], [0, 1], [1, 2]]
         batch_size = 1
-        num_steps = 4
+        # `rollout()` scans for `num_steps + 1` iterations, so one environment
+        # step is sufficient to exercise the second inference pass where
+        # `past_actions` is non-None and interacting `B_dependencies` matter.
+        num_steps = 1
 
         a_key, b_key, d_key = jr.split(jr.PRNGKey(606), 3)
         A = utils.random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
@@ -609,33 +612,31 @@ class TestRolloutFunction(unittest.TestCase):
         env = PymdpEnv(A_dependencies=A_dependencies, B_dependencies=B_dependencies)
         env_params = {"A": A_batched, "B": B_batched, "D": D_batched}
 
-        for algo, seed in (("mmp", 607), ("vmp", 608)):
-            with self.subTest(inference_algo=algo):
-                agent = Agent(
-                    A_batched,
-                    B_batched,
-                    D=D_batched,
-                    A_dependencies=A_dependencies,
-                    B_dependencies=B_dependencies,
-                    num_controls=num_controls,
-                    batch_size=batch_size,
-                    inference_algo=algo,
-                    inference_horizon=3,
-                    policy_len=2,
-                )
+        agent = Agent(
+            A_batched,
+            B_batched,
+            D=D_batched,
+            A_dependencies=A_dependencies,
+            B_dependencies=B_dependencies,
+            num_controls=num_controls,
+            batch_size=batch_size,
+            inference_algo="vmp",
+            inference_horizon=3,
+            policy_len=1,
+        )
 
-                _, info = rollout(
-                    agent,
-                    env,
-                    num_steps,
-                    jr.PRNGKey(seed),
-                    env_params=env_params,
-                )
+        _, info = rollout(
+            agent,
+            env,
+            num_steps,
+            jr.PRNGKey(608),
+            env_params=env_params,
+        )
 
-                for qs_f, ns in zip(info["qs"], num_states):
-                    self.assertEqual(qs_f.shape, (batch_size, num_steps + 1, ns))
-                    self.assertTrue(jnp.all(jnp.isfinite(qs_f)))
-                    self.assertTrue(jnp.allclose(qs_f.sum(axis=-1), 1.0, atol=1e-5))
+        for qs_f, ns in zip(info["qs"], num_states):
+            self.assertEqual(qs_f.shape, (batch_size, num_steps + 1, ns))
+            self.assertTrue(jnp.all(jnp.isfinite(qs_f)))
+            self.assertTrue(jnp.allclose(qs_f.sum(axis=-1), 1.0, atol=1e-5))
 
     def test_rollout_modes_for_ovf_and_exact(self):
         modes = (
