@@ -18,7 +18,8 @@ from pymdp.algos import run_vanilla_fpi as fpi_jax
 from pymdp.algos import run_factorized_fpi as fpi_jax_factorized
 from pymdp.legacy.algos import run_vanilla_fpi as fpi_numpy
 from pymdp.algos import run_mmp as mmp_jax
-from pymdp.utils import random_factorized_categorical, random_A_array, make_A_full
+from pymdp.algos import run_vmp as vmp_jax
+from pymdp.utils import random_factorized_categorical, random_A_array, random_B_array, make_A_full
 from pymdp.legacy import utils
 
 from typing import List, Dict
@@ -199,6 +200,68 @@ class TestMessagePassing(unittest.TestCase):
             qs_out = mmp(A, B_seq, obs, prior, A_deps, B_deps)
 
             self.assertTrue(qs_out[0].shape[0] == obs[0].shape[1])
+
+    def test_variational_message_passing_with_transition_dependencies(self):
+        num_states = [4, 3, 2]
+        num_obs = [3, 2]
+        num_controls = [2, 2, 2]
+        A_dependencies = [[0, 1], [1, 2]]
+        B_dependencies = [[0], [0, 1], [1, 2]]
+        T = 5
+
+        a_key, b_key, d_key, obs_key, action_key = jr.split(jr.PRNGKey(123), 5)
+
+        A = random_A_array(a_key, num_obs, num_states, A_dependencies=A_dependencies)
+        B = random_B_array(b_key, num_states, num_controls, B_dependencies=B_dependencies)
+        prior = random_factorized_categorical(d_key, num_states)
+
+        obs_keys = jr.split(obs_key, len(num_obs))
+        obs = [
+            nn.one_hot(jr.randint(k, shape=(T,), minval=0, maxval=no), no)
+            for k, no in zip(obs_keys, num_obs)
+        ]
+
+        action_keys = jr.split(action_key, len(num_controls))
+        policy = jnp.stack(
+            [
+                jr.randint(k, shape=(T - 1,), minval=0, maxval=nc)
+                for k, nc in zip(action_keys, num_controls)
+            ],
+            axis=-1,
+        )
+        B_policy = [
+            jnp.moveaxis(b[..., policy[:, f]], -1, 0)
+            for f, b in enumerate(B)
+        ]
+
+        qs_vmp = vmp_jax(
+            A,
+            B_policy,
+            obs,
+            prior,
+            A_dependencies,
+            B_dependencies,
+            num_iter=8,
+            tau=1.0,
+        )
+        qs_mmp = mmp_jax(
+            A,
+            B_policy,
+            obs,
+            prior,
+            A_dependencies,
+            B_dependencies,
+            num_iter=8,
+            tau=1.0,
+        )
+
+        for qs_vmp_f, qs_mmp_f, ns in zip(qs_vmp, qs_mmp, num_states):
+            self.assertEqual(qs_vmp_f.shape, (T, ns))
+            self.assertEqual(qs_mmp_f.shape, (T, ns))
+            self.assertTrue(jnp.all(jnp.isfinite(qs_vmp_f)))
+            self.assertTrue(jnp.all(jnp.isfinite(qs_mmp_f)))
+            self.assertTrue(jnp.allclose(qs_vmp_f.sum(axis=-1), 1.0, atol=1e-5))
+            self.assertTrue(jnp.allclose(qs_mmp_f.sum(axis=-1), 1.0, atol=1e-5))
 
     # def test_variational_message_passing(self):
 

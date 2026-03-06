@@ -286,28 +286,8 @@ def get_vmp_messages(
     
     num_factors = len(qs)
     factors = list(range(num_factors))
-    get_deps = lambda x, f_idx: [x[f] for f in f_idx] # function that effectively "slices" a list with a set of indices `f_idx`
-
-    # make a list of lists, where each list contains all dependencies of a factor except itself
-    all_deps_except_f = jtu.tree_map( 
-        lambda f: [d for d in B_dependencies[f] if d != f], 
-        factors
-    )
-
-    # make list of integers, where each integer is the position of the self-factor in its dependencies list
-    position = jtu.tree_map(
-        lambda f: B_dependencies[f].index(f),
-        factors
-    )
-
-    if ln_B is not None:
-        ln_B_marg = jtu.tree_map( # this is a list of matrices, where each matrix is the marginal transition tensor for factor f
-            lambda b, f: factor_dot(b, get_deps(qs, all_deps_except_f[f]), keep_dims=(0, 1, 2 + position[f])), 
-            ln_B, 
-            factors
-        )  # shape = (T, states_f_{t+1}, states_f_{t})
-    else:
-        ln_B_marg = None
+    get_deps_forw = lambda x, f_idx: [x[f][:-1] for f in f_idx]
+    get_deps_back = lambda x, f_idx: [x[f][1:] for f in f_idx]
 
     T = qs[0].shape[0]
     if transition_valid_mask is None:
@@ -318,8 +298,9 @@ def get_vmp_messages(
         axis=0,
     )
 
-    def forward(ln_b: Array, q: Array, ln_prior: Array) -> Array:
-        msg = vmap(lambda x, y: y @ x)(q[:-1], ln_b) # ln_b has shape (num_states, num_states) qs[:-1] has shape (T-1, num_states)
+    def forward(ln_b: Array, ln_prior: Array, f: int) -> Array:
+        dims = tuple((0, 2 + i) for i in range(len(B_dependencies[f])))
+        msg = factor_dot_flex(ln_b, get_deps_forw(qs, B_dependencies[f]), dims, keep_dims=(0, 1))
         msg = jnp.where(transition_valid_mask[:, None], msg, 0.0)
         # Append the prior as the t=0 forward message so the result has length T.
         # With window masks, start_mask also resets masked boundary timesteps to the prior.
@@ -327,15 +308,47 @@ def get_vmp_messages(
         prior_msg = jnp.broadcast_to(jnp.expand_dims(ln_prior, 0), msg.shape)
         return jnp.where(start_mask[:, None], prior_msg, msg)
     
-    def backward(ln_b: Array, q: Array) -> Array:
-        # q_i B_ij
-        msg = vmap(lambda x, y: x @ y)(q[1:], ln_b)
+    def backward(ln_bs: list[Array], xs: list[Array]) -> Array:
+        msg = 0.0
+        for ln_b, x in zip(ln_bs, xs):
+            msg += vmap(lambda q, b: q @ b)(x, ln_b)
+
         msg = jnp.where(transition_valid_mask[:, None], msg, 0.0)
         return jnp.pad(msg, ((0, 1), (0, 0)))
 
-    if ln_B_marg is not None:
-        lnB_future = jtu.tree_map(forward, ln_B_marg, qs, ln_prior)
-        lnB_past = jtu.tree_map(backward, ln_B_marg, qs)
+    def marg(inv_deps: list[int], f: int) -> list[Array]:
+        ln_B_marg = []
+        for i in inv_deps:
+            idxs = []
+            dims = []
+            for j, d in enumerate(B_dependencies[i]):
+                if d != f:
+                    idxs.append(d)
+                    dims.append((0, 2 + j))
+
+            if idxs:
+                keep_dims = (0, 1, 2 + B_dependencies[i].index(f))
+                ln_B_marg.append(
+                    factor_dot_flex(
+                        ln_B[i],
+                        get_deps_forw(qs, idxs),
+                        tuple(dims),
+                        keep_dims=keep_dims,
+                    )
+                )
+            else:
+                ln_B_marg.append(ln_B[i])
+
+        return ln_B_marg
+
+    if ln_B is not None:
+        inv_B_deps = [[i for i, deps in enumerate(B_dependencies) if f in deps] for f in factors]
+        ln_B_marg = jtu.tree_map(lambda f: marg(inv_B_deps[f], f), factors)
+        lnB_future = jtu.tree_map(forward, ln_B, ln_prior, factors)
+        lnB_past = jtu.tree_map(
+            lambda f: backward(ln_B_marg[f], get_deps_back(qs, inv_B_deps[f])),
+            factors,
+        )
     else:
         lnB_future = jtu.tree_map(lambda x: 0., qs)
         lnB_past = jtu.tree_map(lambda x: 0., qs)
