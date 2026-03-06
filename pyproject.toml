@@ -35,6 +35,12 @@ dependencies = [
 ]
 
 [dependency-groups]
+dev = [
+    "nbformat>=5.10.4",
+    "nbstripout>=0.8.2",
+    "pre-commit>=4.2.0",
+]
+
 test = [
     # Keep ipykernel<7 while mkdocs-jupyter requires ipykernel>6,<7.
     "ipykernel>=6.29.0,<7",

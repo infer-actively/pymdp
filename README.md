@@ -140,9 +140,19 @@ source .venv/bin/activate
 uv sync --group test
 ```
 
+Recommended contributor hooks:
+
+```bash
+uv sync --group dev
+uv run --group dev pre-commit install
+```
+
 Useful variants:
 
 ```bash
+# tests + contributor hooks
+uv sync --group test --group dev
+
 # docs work
 uv sync --group test --extra docs
 

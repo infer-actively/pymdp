@@ -106,6 +106,21 @@ directory in your machine can be `push`ed into your fork. Once it is in
 your fork you can then request one of the organizers to `pull` from your
 fork into the upstream repository (by submitting a 'pull request'). More on this later!
 
+## Recommended local hooks
+
+If you edit notebooks, install the local hooks after syncing the dev tooling:
+
+```
+uv sync --group dev
+uv run --group dev pre-commit install
+uv run --group dev pre-commit run --all-files
+```
+
+The notebook hook reads the manifests in `test/notebooks/`:
+
+* CI-tier notebooks keep execution counts so strict `nbval` remains valid.
+* Nightly-tier notebooks are sanitized with `nbstripout --keep-output` to remove noisy metadata and execution-count churn while keeping saved outputs.
+
 
 ## Before you start coding
 
