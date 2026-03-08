@@ -587,8 +587,11 @@ def compute_neg_efe_policy(
 
         utility = compute_expected_utility(qo, C, t) if use_utility else 0.
 
-        neg_param_info_gain = calc_negative_pA_info_gain(pA, qo, qs_next, A_dependencies) if use_param_info_gain else 0.
-        neg_param_info_gain += calc_negative_pB_info_gain(pB, qs_next, qs, B_dependencies, policy_i[t]) if use_param_info_gain else 0.
+        neg_param_info_gain = 0.
+        if pA is not None:
+            neg_param_info_gain += calc_negative_pA_info_gain(pA, qo, qs_next, A_dependencies) if use_param_info_gain else 0.
+        if pB is not None:
+            neg_param_info_gain += calc_negative_pB_info_gain(pB, qs_next, qs, B_dependencies, policy_i[t]) if use_param_info_gain else 0.
 
         neg_efe += info_gain + utility - neg_param_info_gain
 
