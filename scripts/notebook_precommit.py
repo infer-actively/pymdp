@@ -37,11 +37,12 @@ def to_repo_relative(path_str: str) -> str | None:
         return None
 
 
-def classify_notebooks(path_args: list[str]) -> tuple[list[Path], list[Path]]:
+def classify_notebooks(path_args: list[str]) -> tuple[list[Path], list[Path], list[str]]:
     ci_manifest = load_manifest(CI_MANIFEST)
     nightly_manifest = load_manifest(NIGHTLY_MANIFEST)
     ci_paths: list[Path] = []
     nightly_paths: list[Path] = []
+    unclassified_paths: list[str] = []
 
     for path_arg in path_args:
         rel_path = to_repo_relative(path_arg)
@@ -52,12 +53,31 @@ def classify_notebooks(path_args: list[str]) -> tuple[list[Path], list[Path]]:
         if not file_path.exists():
             continue
 
+        if not rel_path.startswith("examples/"):
+            continue
+
         if rel_path in ci_manifest:
             ci_paths.append(file_path)
         elif rel_path in nightly_manifest:
             nightly_paths.append(file_path)
+        else:
+            unclassified_paths.append(rel_path)
 
-    return ci_paths, nightly_paths
+    return ci_paths, nightly_paths, sorted(set(unclassified_paths))
+
+
+def report_unclassified_notebooks(paths: list[str]) -> int:
+    if not paths:
+        return 0
+
+    print(
+        "Every source notebook under examples/ must be listed in either "
+        "test/notebooks/ci_notebooks.txt or test/notebooks/nightly_notebooks.txt."
+    )
+    print("Update the notebook manifests before committing these files:")
+    for rel_path in paths:
+        print(f"  - {rel_path}")
+    return 1
 
 
 def sanitize_ci_notebooks(paths: list[Path]) -> list[str]:
@@ -111,7 +131,10 @@ def validate_ci_notebooks(paths: list[Path]) -> list[str]:
 
 
 def run_sanitize(path_args: list[str]) -> int:
-    ci_paths, nightly_paths = classify_notebooks(path_args)
+    ci_paths, nightly_paths, unclassified_paths = classify_notebooks(path_args)
+    if unclassified_paths:
+        return report_unclassified_notebooks(unclassified_paths)
+
     ci_modified = sanitize_ci_notebooks(ci_paths)
     sanitize_nightly_notebooks(nightly_paths)
 
@@ -129,7 +152,10 @@ def run_sanitize(path_args: list[str]) -> int:
 
 
 def run_validate_ci(path_args: list[str]) -> int:
-    ci_paths, _ = classify_notebooks(path_args)
+    ci_paths, _, unclassified_paths = classify_notebooks(path_args)
+    if unclassified_paths:
+        return report_unclassified_notebooks(unclassified_paths)
+
     violations = validate_ci_notebooks(ci_paths)
 
     if not violations:
