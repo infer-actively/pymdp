@@ -47,8 +47,10 @@ class GridWorld(PymdpEnv):
         Probability (in [0, 1]) that a movement action succeeds and moves to its intended neighbor.
         The remaining probability (1 - success_prob) results in staying in place.
         Invalid moves (out-of-bounds or into walls) always result in staying put with probability 1.
-    batch_size : int
-        Number of parallel environments.
+    categorical_obs : bool
+        If ``True``, ``reset()`` and ``step()`` emit one-hot categorical
+        observation vectors with shape ``(1, num_obs)``. If ``False``, they
+        emit discrete observation indices with shape ``(1,)``.
 
     Notes
     -----
@@ -75,6 +77,7 @@ class GridWorld(PymdpEnv):
         initial_position: Optional[Tuple[int, int] | int] = None,
         include_stay: bool = True,
         success_prob: float = 1.0,
+        categorical_obs: bool = False,
     ) -> None:
         rows, cols = shape
         assert rows >= 1 and cols >= 1, "Grid shape must be positive."
@@ -96,6 +99,7 @@ class GridWorld(PymdpEnv):
             D=[D],
             A_dependencies=A_dependencies,
             B_dependencies=B_dependencies,
+            categorical_obs=categorical_obs,
         )
 
     # ---------------------------------------------------------------------

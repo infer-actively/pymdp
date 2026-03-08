@@ -358,11 +358,30 @@ class GeneralizedTMazeEnv(PymdpEnv):
     similar to the original T-maze.
     """
 
-    def __init__(self, env_info: dict[str, Any]) -> None:
+    def __init__(self, env_info: dict[str, Any], categorical_obs: bool = False) -> None:
+        """Initialize the generalized T-maze environment.
+
+        Parameters
+        ----------
+        env_info : dict[str, Any]
+            Environment specification used to construct the maze dynamics.
+        categorical_obs : bool, default=False
+            If ``True``, ``reset()`` and ``step()`` emit one-hot categorical
+            observation vectors with shape ``(1, num_obs_m)`` for each
+            modality. If ``False``, they emit discrete observation indices with
+            shape ``(1,)``.
+        """
         A, A_dependencies = generate_A(env_info)
         B, B_dependencies = generate_B(env_info)
         D = generate_D(env_info)
-        super().__init__(A, B, D, A_dependencies, B_dependencies)
+        super().__init__(
+            A,
+            B,
+            D,
+            A_dependencies,
+            B_dependencies,
+            categorical_obs=categorical_obs,
+        )
         self.env_info = env_info
 
     def render(self, states: list[jnp.ndarray], mode: str = "human") -> jnp.ndarray | None:
@@ -508,4 +527,3 @@ class GeneralizedTMazeEnv(PymdpEnv):
             plt.close(fig) 
             return img
     
-

@@ -48,6 +48,7 @@ class BaseTMaze(PymdpEnv):
         cue_validity: float = 0.95,
         reward_condition: Optional[int] = None,
         dependent_outcomes: bool = False,
+        categorical_obs: bool = False,
         *,
         num_locations: int,
         cue_mode: str,
@@ -57,17 +58,38 @@ class BaseTMaze(PymdpEnv):
     ) -> None:
         """
         Initialize a configurable T-Maze environment.
-        Args:
-            reward_probability: Probability of receiving reward when choosing the correct arm
-            punishment_probability: Probability of receiving punishment when choosing the incorrect arm
-            cue_validity: Probability that the cue correctly indicates the reward location
-            reward_condition: If specified, fixes reward to left (0) or right (1) arm, otherwise random
-            dependent_outcomes: If True, punishment occurs as a function of reward probability (i.e., if reward probability is 0.8, then 20% punishment). If False, punishment occurs with set probability (i.e., 20% no outcome and punishment will only occur in the other (non-rewarding) arm)
-            num_locations: Number of locations in the maze (4 or 5)
-            cue_mode: 'separate' for separate cue modality, 'embedded' for embedded cue observations
-            connectivity: 'fully_connected' or 'adjacent' for location transitions
-            has_middle: If True, includes a middle location between arms
-            location_obs_size: Size of location observation modality (required for embedded cue mode)
+
+        Parameters
+        ----------
+        reward_probability : float, optional
+            Probability of receiving reward when choosing the correct arm.
+        punishment_probability : float, optional
+            Probability of receiving punishment when choosing the incorrect arm.
+        cue_validity : float, optional
+            Probability that the cue correctly indicates the reward location.
+        reward_condition : int | None, optional
+            If specified, fixes reward to left (0) or right (1) arm, otherwise random.
+        dependent_outcomes : bool, optional
+            If ``True``, punishment occurs as a function of reward probability.
+            If ``False``, punishment occurs with the fixed
+            ``punishment_probability``.
+        categorical_obs : bool, default=False
+            If ``True``, ``reset()`` and ``step()`` emit one-hot categorical
+            observation vectors with shape ``(1, num_obs_m)`` for each modality.
+            If ``False``, they emit discrete observation indices with shape
+            ``(1,)``.
+        num_locations : int
+            Number of locations in the maze (4 or 5).
+        cue_mode : str
+            ``"separate"`` for a separate cue modality or ``"embedded"`` for
+            cue information embedded in the location modality.
+        connectivity : str
+            ``"fully_connected"`` or ``"adjacent"`` transition structure.
+        has_middle : bool
+            If ``True``, includes a middle location between arms.
+        location_obs_size : int | None, optional
+            Size of the location observation modality. Required for embedded cue
+            mode when overriding the default.
         """
         self.reward_probability = reward_probability
         self.punishment_probability = punishment_probability
@@ -107,7 +129,14 @@ class BaseTMaze(PymdpEnv):
         B, B_dependencies = self.generate_B()
         D = self.generate_D()
 
-        super().__init__(A=A, B=B, D=D, A_dependencies=A_dependencies, B_dependencies=B_dependencies)
+        super().__init__(
+            A=A,
+            B=B,
+            D=D,
+            A_dependencies=A_dependencies,
+            B_dependencies=B_dependencies,
+            categorical_obs=categorical_obs,
+        )
 
     def _set_reward_outcome(self, A_reward: jnp.ndarray, loc: int, reward_condition: int) -> jnp.ndarray:
         if loc == (reward_condition + 1):
@@ -303,7 +332,13 @@ class BaseTMaze(PymdpEnv):
 
         plt.clf()
 
-       # create n x n subplots for the batch_size
+        def _decode_obs(modality: int, batch_idx: int) -> int:
+            obs_value = observations[modality][batch_idx, 0]
+            if obs_value.size > 1:
+                return int(jnp.argmax(obs_value))
+            return int(jnp.squeeze(obs_value))
+
+        # create n x n subplots for the batch_size
         n = math.ceil(math.sqrt(batch_size))
         fig, axes = plt.subplots(n, n, figsize=(6, 6))
         if title:
@@ -367,13 +402,13 @@ class BaseTMaze(PymdpEnv):
                 )
             )
 
-            loc_obs = int(observations[0][i, 0])
-            reward_obs = int(observations[1][i, 0])
+            loc_obs = _decode_obs(0, i)
+            reward_obs = _decode_obs(1, i)
             if self.cue_mode == "embedded":
                 cue_obs = self._cue_obs_from_loc_obs[loc_obs]
                 loc = self._loc_obs_to_location[loc_obs]
             else:
-                cue_obs = int(observations[2][i, 0])
+                cue_obs = _decode_obs(2, i)
                 loc = loc_obs
 
             if cue_obs == 0:
@@ -468,6 +503,7 @@ class TMaze(BaseTMaze):
         cue_validity: float = 0.95,
         reward_condition: Optional[int] = None,
         dependent_outcomes: bool = False,
+        categorical_obs: bool = False,
     ) -> None:
         super().__init__(
             reward_probability=reward_probability,
@@ -475,6 +511,7 @@ class TMaze(BaseTMaze):
             cue_validity=cue_validity,
             reward_condition=reward_condition,
             dependent_outcomes=dependent_outcomes,
+            categorical_obs=categorical_obs,
             num_locations=5,
             cue_mode="separate",
             connectivity="adjacent",
@@ -494,6 +531,7 @@ class SimplifiedTMaze(BaseTMaze):
         reward_probability: float = 1.0,
         dependent_outcomes: bool = False,
         punishment_probability: float = 1.0,
+        categorical_obs: bool = False,
     ) -> None:
         super().__init__(
             reward_probability=reward_probability,
@@ -501,6 +539,7 @@ class SimplifiedTMaze(BaseTMaze):
             cue_validity=cue_validity,
             reward_condition=reward_condition,
             dependent_outcomes=dependent_outcomes,
+            categorical_obs=categorical_obs,
             num_locations=4,
             cue_mode="embedded",
             connectivity="fully_connected",

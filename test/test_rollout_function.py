@@ -13,6 +13,7 @@ import jax.tree_util as jtu
 from jax import lax, vmap
 
 from pymdp.agent import Agent
+from pymdp.envs import TMaze
 from pymdp.envs.env import PymdpEnv
 from pymdp.envs.rollout import (
     rollout,
@@ -43,6 +44,8 @@ class TestRolloutFunction(unittest.TestCase):
         inference_horizon=None,
         policy_len=1,
         seed=0,
+        categorical_obs=False,
+        env_categorical_obs=False,
     ):
         
         A_key, B_key, D_key = jr.split(jr.PRNGKey(seed), 3)
@@ -82,10 +85,15 @@ class TestRolloutFunction(unittest.TestCase):
             inference_algo=inference_algo,
             inference_horizon=inference_horizon,
             policy_len=policy_len,
+            categorical_obs=categorical_obs,
         )
 
         env_params = {"A": A_batched, "B": B_batched, "D": D_batched}
-        env = PymdpEnv(A_dependencies=self.A_dependencies, B_dependencies=self.B_dependencies)
+        env = PymdpEnv(
+            A_dependencies=self.A_dependencies,
+            B_dependencies=self.B_dependencies,
+            categorical_obs=env_categorical_obs,
+        )
 
         initial = {
             "pA": [np.array(val) for val in (agent.pA if learn_A else [])],
@@ -581,6 +589,85 @@ class TestRolloutFunction(unittest.TestCase):
             neg_efe = np.asarray(info["neg_efe"])
             self.assertEqual(neg_efe.shape[0], agent.batch_size)
             self.assertEqual(neg_efe.shape[1], num_steps + 1)
+
+    def test_rollout_categorical_obs_matches_discrete_semantics(self):
+        num_steps = 3
+        seed = 701
+
+        discrete_agent, env, env_params, _ = self.build_agent_env(
+            policy_len=2,
+            seed=seed,
+            categorical_obs=False,
+            env_categorical_obs=False,
+        )
+        categorical_agent, _, _, _ = self.build_agent_env(
+            policy_len=2,
+            seed=seed,
+            categorical_obs=True,
+            env_categorical_obs=True,
+        )
+        key = jr.PRNGKey(seed)
+
+        _, discrete_info = rollout(discrete_agent, env, num_steps, key, env_params=env_params)
+        categorical_env = PymdpEnv(
+            A_dependencies=self.A_dependencies,
+            B_dependencies=self.B_dependencies,
+            categorical_obs=True,
+        )
+        _, categorical_info = rollout(
+            categorical_agent,
+            categorical_env,
+            num_steps,
+            key,
+            env_params=env_params,
+        )
+
+        np.testing.assert_array_equal(
+            np.asarray(categorical_info["action"]),
+            np.asarray(discrete_info["action"]),
+        )
+        np.testing.assert_allclose(
+            np.asarray(categorical_info["qpi"]),
+            np.asarray(discrete_info["qpi"]),
+            atol=1e-5,
+        )
+        np.testing.assert_allclose(
+            np.asarray(categorical_info["neg_efe"]),
+            np.asarray(discrete_info["neg_efe"]),
+            atol=1e-5,
+        )
+        for qs_cat, qs_disc in zip(categorical_info["qs"], discrete_info["qs"]):
+            np.testing.assert_allclose(np.asarray(qs_cat), np.asarray(qs_disc), atol=1e-5)
+
+    def test_tmaze_rollout_supports_categorical_observations(self):
+        batch_size = 2
+        num_steps = 3
+        env = TMaze(categorical_obs=True)
+        env_params = env.generate_env_params(batch_size=batch_size)
+
+        agent = Agent(
+            env_params["A"],
+            env_params["B"],
+            D=env_params["D"],
+            A_dependencies=env.A_dependencies,
+            B_dependencies=env.B_dependencies,
+            batch_size=batch_size,
+            policy_len=2,
+            categorical_obs=True,
+        )
+
+        _, info = rollout(agent, env, num_steps, jr.PRNGKey(702), env_params=env_params)
+
+        self.assertEqual(info["observation"][0].shape, (batch_size, num_steps + 1, 1, 5))
+        self.assertEqual(info["observation"][1].shape, (batch_size, num_steps + 1, 1, 3))
+        self.assertEqual(info["observation"][2].shape, (batch_size, num_steps + 1, 1, 3))
+        for obs_m in info["observation"]:
+            self.assertTrue(jnp.allclose(obs_m.sum(axis=-1), 1.0, atol=1e-5))
+
+        for qs_f, ns in zip(info["qs"], (5, 2)):
+            self.assertEqual(qs_f.shape, (batch_size, num_steps + 1, ns))
+            self.assertTrue(jnp.all(jnp.isfinite(qs_f)))
+            self.assertTrue(jnp.allclose(qs_f.sum(axis=-1), 1.0, atol=1e-5))
 
     def test_sequence_rollout_supports_interacting_transition_dependencies(self):
         num_obs = [2, 2]

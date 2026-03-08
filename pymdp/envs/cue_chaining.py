@@ -51,6 +51,7 @@ class CueChainingEnv(PymdpEnv):
         reward_condition: int | None = None,
         cue2_names: Sequence[str] | None = None,
         reward_condition_names: Sequence[str] | None = None,
+        categorical_obs: bool = False,
     ) -> None:
         """Initialize the cue-chaining environment.
 
@@ -76,6 +77,11 @@ class CueChainingEnv(PymdpEnv):
             Labels for cue-2 states. Defaults to ``("L1", "L2", ...)``.
         reward_condition_names : sequence[str] | None, optional
             Labels for reward conditions. Defaults to ``("TOP", "BOTTOM")``.
+        categorical_obs : bool, default=False
+            If ``True``, ``reset()`` and ``step()`` emit one-hot categorical
+            observation vectors with shape ``(1, num_obs_m)`` for each
+            modality. If ``False``, they emit discrete observation indices with
+            shape ``(1,)``.
         """
         rows, cols = grid_shape
         if rows <= 0 or cols <= 0:
@@ -142,7 +148,14 @@ class CueChainingEnv(PymdpEnv):
         B, B_dependencies = self._generate_B()
         D = self._generate_D(cue2_state=cue2_state, reward_condition=reward_condition)
 
-        super().__init__(A=A, B=B, D=D, A_dependencies=A_dependencies, B_dependencies=B_dependencies)
+        super().__init__(
+            A=A,
+            B=B,
+            D=D,
+            A_dependencies=A_dependencies,
+            B_dependencies=B_dependencies,
+            categorical_obs=categorical_obs,
+        )
 
     def coords_to_index(self, coord: tuple[int, int]) -> int:
         """Convert ``(row, col)`` coordinates to a flattened location index."""
