@@ -57,11 +57,11 @@ def test_exact_wnorm_mathematical_correctness():
 # -----------------------------------------------------------------------------
 
 @pytest.mark.parametrize("seed", [0, 1, 2, 3, 42])
-def test_calc_pA_info_gain_precision(seed):
+def test_calc_negative_pA_info_gain_precision(seed):
     """Scaling Dirichlet counts upward (more precise prior) should *reduce* the magnitude of (negative) information gain."""
     
     import jax.random as jr
-    from pymdp.control import calc_pA_info_gain
+    from pymdp.control import calc_negative_pA_info_gain
     
     MINVAL = jnp.finfo(float).eps
 
@@ -105,11 +105,10 @@ def test_calc_pA_info_gain_precision(seed):
     pA_precise = [a * scalar for a in pA_uncertain]
 
     # Negative information gain for each prior
-    neg_ig_uncertain = calc_pA_info_gain(pA_uncertain, qo, qs, A_dependencies)
-    neg_ig_precise = calc_pA_info_gain(pA_precise, qo, qs, A_dependencies)
+    neg_ig_uncertain = calc_negative_pA_info_gain(pA_uncertain, qo, qs, A_dependencies)
+    neg_ig_precise = calc_negative_pA_info_gain(pA_precise, qo, qs, A_dependencies)
 
-    # Remember: calc_pA_info_gain returns a *negative* quantity (due to historical sign convention).
+    # `calc_negative_pA_info_gain` returns a *negative* quantity by design.
     # A larger (less negative) value corresponds to *lower* expected information gain.
     assert neg_ig_precise > neg_ig_uncertain, "Increasing Dirichlet counts should make (negative) information gain less negative"
-    
     
