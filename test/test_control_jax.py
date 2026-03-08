@@ -253,5 +253,39 @@ class TestControlJax(unittest.TestCase):
                 use_inductive=False,
             )
 
+        with self.assertRaisesRegex(ValueError, error_msg):
+            ctl_jax.compute_neg_efe_policy(
+                qs,
+                A,
+                B,
+                C,
+                None,
+                None,
+                A_dependencies,
+                B_dependencies,
+                policy_matrix[0],
+                use_utility=False,
+                use_states_info_gain=False,
+                use_param_info_gain=True,
+            )
+
+        with self.assertRaisesRegex(ValueError, error_msg):
+            ctl_jax.compute_neg_efe_policy_inductive(
+                qs,
+                A,
+                B,
+                C,
+                None,
+                None,
+                A_dependencies,
+                B_dependencies,
+                I,
+                policy_matrix[0],
+                use_utility=False,
+                use_states_info_gain=False,
+                use_param_info_gain=True,
+                use_inductive=False,
+            )
+
 if __name__ == "__main__":
     unittest.main()

@@ -571,9 +571,11 @@ def compute_neg_efe_policy(
     C: list[Array]
         Prior preferences over observations.
     pA: list[Array] | None
-        Posterior Dirichlet parameters for `A`.
+        Optional posterior Dirichlet parameters for `A`. When
+        `use_param_info_gain=True`, provide `pA`, `pB`, or both.
     pB: list[Array] | None
-        Posterior Dirichlet parameters for `B`.
+        Optional posterior Dirichlet parameters for `B`. When
+        `use_param_info_gain=True`, provide `pA`, `pB`, or both.
     A_dependencies: list[list[int]]
         Observation dependencies between modalities and hidden-state factors.
     B_dependencies: list[list[int]]
@@ -592,6 +594,10 @@ def compute_neg_efe_policy(
     Array
         Scalar negative expected free energy for `policy_i`.
     """
+    if use_param_info_gain and pA is None and pB is None:
+        raise ValueError(
+            "use_param_info_gain=True requires at least one of pA or pB."
+        )
 
     def scan_body(carry: tuple[list[Array], Array], t: Array) -> tuple[tuple[list[Array], Array], None]:
 
@@ -658,9 +664,11 @@ def compute_neg_efe_policy_inductive(
     C: list[Array]
         Prior preferences over observations.
     pA: list[Array] | None
-        Posterior Dirichlet parameters for `A`.
+        Optional posterior Dirichlet parameters for `A`. When
+        `use_param_info_gain=True`, provide `pA`, `pB`, or both.
     pB: list[Array] | None
-        Posterior Dirichlet parameters for `B`.
+        Optional posterior Dirichlet parameters for `B`. When
+        `use_param_info_gain=True`, provide `pA`, `pB`, or both.
     A_dependencies: list[list[int]]
         Observation dependencies between modalities and hidden-state factors.
     B_dependencies: list[list[int]]
@@ -685,6 +693,10 @@ def compute_neg_efe_policy_inductive(
     Array
         Scalar negative expected free energy for `policy_i`.
     """
+    if use_param_info_gain and pA is None and pB is None:
+        raise ValueError(
+            "use_param_info_gain=True requires at least one of pA or pB."
+        )
 
     def scan_body(carry: tuple[list[Array], Array], t: Array) -> tuple[tuple[list[Array], Array], None]:
 
