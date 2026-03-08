@@ -391,8 +391,8 @@ class PymdpEnv(Env):
         if self.categorical_obs:
             new_obs = [
                 jnp.expand_dims(
-                    nn.one_hot(jnp.asarray(obs_m, dtype=jnp.int32), probs_m.shape[0]),
-                    axis=0,
+                    nn.one_hot(jnp.asarray(obs_m, dtype=jnp.int32), probs_m.shape[-1]),
+                    axis=-2,
                 )
                 for obs_m, probs_m in zip(obs_idx, obs_probs)
             ]
