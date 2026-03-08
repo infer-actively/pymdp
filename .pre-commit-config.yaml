@@ -5,11 +5,11 @@ repos:
         name: sanitize notebooks by tier
         entry: uv run --group dev python scripts/notebook_precommit.py sanitize
         language: system
-        files: ^examples/.*\.ipynb$
+        files: ^examples/(?!legacy/).+\.ipynb$
         pass_filenames: true
       - id: validate-ci-notebooks
         name: validate CI notebook execution counts
         entry: uv run --group dev python scripts/notebook_precommit.py validate-ci
         language: system
-        files: ^examples/.*\.ipynb$
+        files: ^examples/(?!legacy/).+\.ipynb$
         pass_filenames: true

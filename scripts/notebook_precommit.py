@@ -14,6 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_DIR = REPO_ROOT / "test" / "notebooks"
 CI_MANIFEST = MANIFEST_DIR / "ci_notebooks.txt"
 NIGHTLY_MANIFEST = MANIFEST_DIR / "nightly_notebooks.txt"
+LEGACY_NOTEBOOK_PREFIX = "examples/legacy/"
 TOP_LEVEL_METADATA_KEYS = ("kernelspec", "language_info")
 NBSTRIPOUT_EXTRA_KEYS = "metadata.kernelspec metadata.language_info"
 
@@ -53,7 +54,9 @@ def classify_notebooks(path_args: list[str]) -> tuple[list[Path], list[Path], li
         if not file_path.exists():
             continue
 
-        if not rel_path.startswith("examples/"):
+        if not rel_path.startswith("examples/") or rel_path.startswith(
+            LEGACY_NOTEBOOK_PREFIX
+        ):
             continue
 
         if rel_path in ci_manifest:
@@ -71,7 +74,7 @@ def report_unclassified_notebooks(paths: list[str]) -> int:
         return 0
 
     print(
-        "Every source notebook under examples/ must be listed in either "
+        "Every non-legacy source notebook under examples/ must be listed in either "
         "test/notebooks/ci_notebooks.txt or test/notebooks/nightly_notebooks.txt."
     )
     print("Update the notebook manifests before committing these files:")

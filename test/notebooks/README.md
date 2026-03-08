@@ -59,6 +59,8 @@ The hook behavior is tier-aware and reads the manifests above:
 1. CI-tier notebooks keep execution counts and saved outputs, but strip noisy top-level `kernelspec` / `language_info` metadata.
 2. Nightly-tier notebooks run through `nbstripout --keep-output`, which strips execution-count churn and top-level notebook metadata while preserving outputs.
 3. CI-tier notebooks fail the hook if any code cell has saved outputs with `execution_count: null`, because that breaks strict `nbval`.
+4. Non-legacy notebooks under `examples/` must appear in one of the two manifests or the hook fails with an instruction to update them.
+5. `examples/legacy/` remains excluded from both pytest notebook gating and these hooks.
 
 ## Authoring Notes
 
