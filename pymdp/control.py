@@ -231,9 +231,11 @@ def update_posterior_policies(
     E: Array
         Prior over policies.
     pA: list[Array] | None
-        Posterior Dirichlet parameters for `A` (required when `use_param_info_gain=True`).
+        Optional posterior Dirichlet parameters for `A`. When
+        `use_param_info_gain=True`, provide `pA`, `pB`, or both.
     pB: list[Array] | None
-        Posterior Dirichlet parameters for `B` (required when `use_param_info_gain=True`).
+        Optional posterior Dirichlet parameters for `B`. When
+        `use_param_info_gain=True`, provide `pA`, `pB`, or both.
     A_dependencies: list[list[int]]
         Observation dependencies between modalities and hidden-state factors.
     B_dependencies: list[list[int]]
@@ -741,9 +743,11 @@ def update_posterior_policies_inductive(
     E: Array
         Policy prior over the policy space.
     pA: list[Array] | None
-        Optional posterior Dirichlet parameters for `A`.
+        Optional posterior Dirichlet parameters for `A`. When
+        `use_param_info_gain=True`, provide `pA`, `pB`, or both.
     pB: list[Array] | None
-        Optional posterior Dirichlet parameters for `B`.
+        Optional posterior Dirichlet parameters for `B`. When
+        `use_param_info_gain=True`, provide `pA`, `pB`, or both.
     A_dependencies: list[list[int]]
         Observation dependencies between modalities and state factors.
     B_dependencies: list[list[int]]
