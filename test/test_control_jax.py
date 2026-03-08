@@ -15,7 +15,12 @@ import jax.tree_util as jtu
 import pymdp.control as ctl_jax
 import pymdp.legacy.control as ctl_np
 
-from pymdp.utils import random_factorized_categorical, random_A_array
+from pymdp.utils import (
+    list_array_zeros,
+    random_A_array,
+    random_B_array,
+    random_factorized_categorical,
+)
 from pymdp.legacy import utils
 
 cfg = {"source_key": 0, "num_models": 4}
@@ -138,6 +143,72 @@ class TestControlJax(unittest.TestCase):
             info_gain_validation = ctl_np.calc_states_info_gain_factorized(A_np, [qs_numpy],  A_deps)
 
             self.assertTrue(np.allclose(info_gain, info_gain_validation, atol=1e-4))
+
+    def test_update_posterior_policies_matches_inductive_when_induction_disabled(self):
+        """Standalone policy scoring should match the inductive path when only parameter info gain is enabled."""
+
+        num_states = [3, 2]
+        num_obs = [4, 3]
+        num_controls = [2, 1]
+        A_dependencies = [[0, 1], [1]]
+        B_dependencies = [[0], [1]]
+
+        key = jr.PRNGKey(7)
+        key_A, key_B, key_qs, key_pA, key_pB = jr.split(key, 5)
+
+        A = random_A_array(key_A, num_obs, num_states, A_dependencies=A_dependencies)
+        B = random_B_array(key_B, num_states, num_controls, B_dependencies=B_dependencies)
+        qs = random_factorized_categorical(key_qs, num_states)
+
+        pA = [
+            jr.uniform(k, a_m.shape, minval=0.5, maxval=2.0)
+            for a_m, k in zip(A, jr.split(key_pA, len(A)))
+        ]
+        pB = [
+            jr.uniform(k, b_f.shape, minval=0.5, maxval=2.0)
+            for b_f, k in zip(B, jr.split(key_pB, len(B)))
+        ]
+
+        policy_matrix = ctl_jax.construct_policies(num_states, num_controls, policy_len=2)
+        C = list_array_zeros(num_obs)
+        E = jnp.ones(policy_matrix.shape[0]) / policy_matrix.shape[0]
+        I = [jnp.zeros(ns) for ns in num_states]
+
+        q_pi, neg_efe = ctl_jax.update_posterior_policies(
+            policy_matrix,
+            qs,
+            A,
+            B,
+            C,
+            E,
+            pA,
+            pB,
+            A_dependencies,
+            B_dependencies,
+            use_utility=False,
+            use_states_info_gain=False,
+            use_param_info_gain=True,
+        )
+        q_pi_inductive, neg_efe_inductive = ctl_jax.update_posterior_policies_inductive(
+            policy_matrix,
+            qs,
+            A,
+            B,
+            C,
+            E,
+            pA,
+            pB,
+            A_dependencies,
+            B_dependencies,
+            I,
+            use_utility=False,
+            use_states_info_gain=False,
+            use_param_info_gain=True,
+            use_inductive=False,
+        )
+
+        self.assertTrue(np.allclose(neg_efe, neg_efe_inductive))
+        self.assertTrue(np.allclose(q_pi, q_pi_inductive))
     
 
 if __name__ == "__main__":
