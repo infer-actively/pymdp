@@ -447,9 +447,9 @@ def calc_negative_pA_info_gain(
 
     Notes
     -----
-    This helper preserves the historical negative-sign convention used by the
-    JAX policy-scoring code. Subtract its return value when adding parameter
-    epistemic value to `neg_efe`.
+    This helper returns the negative of the parameter epistemic-value term.
+    Subtract its return value when adding parameter information gain to
+    `neg_efe`.
 
     Parameters
     ----------
@@ -516,28 +516,6 @@ def calc_negative_pB_info_gain(
     pB_neg_infogain_per_factor = jtu.tree_map(lambda pb, qs, f: qs.dot(fd(wB(pb[..., u_t_minus_1[f]]), f)), pB, qs_t, list(range(len(qs_t))))
     neg_infogain_pB = jtu.tree_reduce(lambda x, y: x + y, pB_neg_infogain_per_factor)[0]
     return neg_infogain_pB
-
-
-def calc_pA_info_gain(
-    pA: list[Array], qo: list[Array], qs: list[Array], A_dependencies: list[list[int]]
-) -> Array:
-    """Backward-compatible alias for `calc_negative_pA_info_gain`."""
-
-    return calc_negative_pA_info_gain(pA, qo, qs, A_dependencies)
-
-
-def calc_pB_info_gain(
-    pB: list[Array],
-    qs_t: list[Array],
-    qs_t_minus_1: list[Array],
-    B_dependencies: list[list[int]],
-    u_t_minus_1: Array | Sequence[int],
-) -> Array:
-    """Backward-compatible alias for `calc_negative_pB_info_gain`."""
-
-    return calc_negative_pB_info_gain(
-        pB, qs_t, qs_t_minus_1, B_dependencies, u_t_minus_1
-    )
 
 def compute_neg_efe_policy(
     qs_init: list[Array],
