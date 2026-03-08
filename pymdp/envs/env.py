@@ -11,7 +11,7 @@ from functools import partial
 from typing import Any, Sequence
 
 import jax.numpy as jnp
-from jax import jit, random as jr, tree_util as jtu, vmap
+from jax import jit, nn, random as jr, tree_util as jtu, vmap
 from jaxtyping import Array
 
 from pymdp.distribution import Distribution, get_dependencies
@@ -240,6 +240,7 @@ class PymdpEnv(Env):
         D: Sequence[Array] | Sequence[Distribution] | None = None,
         A_dependencies: list[list[int]] | None = None,
         B_dependencies: list[list[int]] | None = None,
+        categorical_obs: bool = False,
         **kwargs: Any,
     ) -> None:
         """Initialize `PymdpEnv`.
@@ -256,10 +257,15 @@ class PymdpEnv(Env):
             Modality-to-state dependencies for `A`.
         B_dependencies : list[list[int]] | None, optional
             State-to-state dependencies for `B`.
+        categorical_obs : bool, default=False
+            If `True`, emit one-hot categorical observation vectors with shape
+            `(1, num_obs)` per modality. Otherwise emit discrete indices with
+            shape `(1,)`.
         **kwargs : Any
             Accepted for forward compatibility.
         """
         del kwargs
+        self.categorical_obs = categorical_obs
 
         if A_dependencies is not None:
             self.A_dependencies = A_dependencies
@@ -380,6 +386,17 @@ class PymdpEnv(Env):
         obs_probs = jtu.tree_map(_select_probs, A, self.A_dependencies)
 
         keys = list(jr.split(key, len(obs_probs)))
-        new_obs = jtu.tree_map(cat_sample, keys, obs_probs)
-        new_obs = jtu.tree_map(lambda x: jnp.expand_dims(x, -1), new_obs)
+        obs_idx = jtu.tree_map(cat_sample, keys, obs_probs)
+
+        if self.categorical_obs:
+            new_obs = [
+                jnp.expand_dims(
+                    nn.one_hot(jnp.asarray(obs_m, dtype=jnp.int32), probs_m.shape[0]),
+                    axis=0,
+                )
+                for obs_m, probs_m in zip(obs_idx, obs_probs)
+            ]
+            return new_obs
+
+        new_obs = jtu.tree_map(lambda x: jnp.expand_dims(x, -1), obs_idx)
         return new_obs

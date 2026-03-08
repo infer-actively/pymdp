@@ -75,6 +75,7 @@ class GridWorld(PymdpEnv):
         initial_position: Optional[Tuple[int, int] | int] = None,
         include_stay: bool = True,
         success_prob: float = 1.0,
+        categorical_obs: bool = False,
     ) -> None:
         rows, cols = shape
         assert rows >= 1 and cols >= 1, "Grid shape must be positive."
@@ -96,6 +97,7 @@ class GridWorld(PymdpEnv):
             D=[D],
             A_dependencies=A_dependencies,
             B_dependencies=B_dependencies,
+            categorical_obs=categorical_obs,
         )
 
     # ---------------------------------------------------------------------

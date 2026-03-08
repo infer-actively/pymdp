@@ -48,6 +48,7 @@ class BaseTMaze(PymdpEnv):
         cue_validity: float = 0.95,
         reward_condition: Optional[int] = None,
         dependent_outcomes: bool = False,
+        categorical_obs: bool = False,
         *,
         num_locations: int,
         cue_mode: str,
@@ -107,7 +108,14 @@ class BaseTMaze(PymdpEnv):
         B, B_dependencies = self.generate_B()
         D = self.generate_D()
 
-        super().__init__(A=A, B=B, D=D, A_dependencies=A_dependencies, B_dependencies=B_dependencies)
+        super().__init__(
+            A=A,
+            B=B,
+            D=D,
+            A_dependencies=A_dependencies,
+            B_dependencies=B_dependencies,
+            categorical_obs=categorical_obs,
+        )
 
     def _set_reward_outcome(self, A_reward: jnp.ndarray, loc: int, reward_condition: int) -> jnp.ndarray:
         if loc == (reward_condition + 1):
@@ -303,7 +311,13 @@ class BaseTMaze(PymdpEnv):
 
         plt.clf()
 
-       # create n x n subplots for the batch_size
+        def _decode_obs(modality: int, batch_idx: int) -> int:
+            obs_value = observations[modality][batch_idx, 0]
+            if jnp.ndim(obs_value) > 0:
+                return int(jnp.argmax(obs_value))
+            return int(obs_value)
+
+        # create n x n subplots for the batch_size
         n = math.ceil(math.sqrt(batch_size))
         fig, axes = plt.subplots(n, n, figsize=(6, 6))
         if title:
@@ -367,13 +381,13 @@ class BaseTMaze(PymdpEnv):
                 )
             )
 
-            loc_obs = int(observations[0][i, 0])
-            reward_obs = int(observations[1][i, 0])
+            loc_obs = _decode_obs(0, i)
+            reward_obs = _decode_obs(1, i)
             if self.cue_mode == "embedded":
                 cue_obs = self._cue_obs_from_loc_obs[loc_obs]
                 loc = self._loc_obs_to_location[loc_obs]
             else:
-                cue_obs = int(observations[2][i, 0])
+                cue_obs = _decode_obs(2, i)
                 loc = loc_obs
 
             if cue_obs == 0:
@@ -468,6 +482,7 @@ class TMaze(BaseTMaze):
         cue_validity: float = 0.95,
         reward_condition: Optional[int] = None,
         dependent_outcomes: bool = False,
+        categorical_obs: bool = False,
     ) -> None:
         super().__init__(
             reward_probability=reward_probability,
@@ -475,6 +490,7 @@ class TMaze(BaseTMaze):
             cue_validity=cue_validity,
             reward_condition=reward_condition,
             dependent_outcomes=dependent_outcomes,
+            categorical_obs=categorical_obs,
             num_locations=5,
             cue_mode="separate",
             connectivity="adjacent",
@@ -494,6 +510,7 @@ class SimplifiedTMaze(BaseTMaze):
         reward_probability: float = 1.0,
         dependent_outcomes: bool = False,
         punishment_probability: float = 1.0,
+        categorical_obs: bool = False,
     ) -> None:
         super().__init__(
             reward_probability=reward_probability,
@@ -501,6 +518,7 @@ class SimplifiedTMaze(BaseTMaze):
             cue_validity=cue_validity,
             reward_condition=reward_condition,
             dependent_outcomes=dependent_outcomes,
+            categorical_obs=categorical_obs,
             num_locations=4,
             cue_mode="embedded",
             connectivity="fully_connected",

@@ -51,6 +51,7 @@ class CueChainingEnv(PymdpEnv):
         reward_condition: int | None = None,
         cue2_names: Sequence[str] | None = None,
         reward_condition_names: Sequence[str] | None = None,
+        categorical_obs: bool = False,
     ) -> None:
         """Initialize the cue-chaining environment.
 
@@ -142,7 +143,14 @@ class CueChainingEnv(PymdpEnv):
         B, B_dependencies = self._generate_B()
         D = self._generate_D(cue2_state=cue2_state, reward_condition=reward_condition)
 
-        super().__init__(A=A, B=B, D=D, A_dependencies=A_dependencies, B_dependencies=B_dependencies)
+        super().__init__(
+            A=A,
+            B=B,
+            D=D,
+            A_dependencies=A_dependencies,
+            B_dependencies=B_dependencies,
+            categorical_obs=categorical_obs,
+        )
 
     def coords_to_index(self, coord: tuple[int, int]) -> int:
         """Convert ``(row, col)`` coordinates to a flattened location index."""

@@ -34,6 +34,7 @@ class GraphEnv(PymdpEnv):
         object_location: Optional[int] = None,
         agent_location: Optional[int] = None,
         key: Optional[PRNGKeyArray] = None,
+        categorical_obs: bool = False,
     ) -> None:
 
         A, A_dependencies = self.generate_A(graph)
@@ -50,7 +51,14 @@ class GraphEnv(PymdpEnv):
 
         D = self.generate_D(graph, object_location, agent_location)
 
-        super().__init__(A=A, B=B, D=D, A_dependencies=A_dependencies, B_dependencies=B_dependencies)
+        super().__init__(
+            A=A,
+            B=B,
+            D=D,
+            A_dependencies=A_dependencies,
+            B_dependencies=B_dependencies,
+            categorical_obs=categorical_obs,
+        )
 
     def generate_A(self, graph: nx.Graph) -> tuple[list[jnp.ndarray], list[list[int]]]:
         A = []
