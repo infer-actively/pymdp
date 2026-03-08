@@ -464,9 +464,9 @@ def calc_negative_pA_info_gain(
 
     Returns
     -------
-    neg_infogain_pA: float
-        Negative expected information gain for the pair of predictive
-        distributions `qo` and `qs`.
+    neg_infogain_pA: Array
+        Negative expected information gain (scalar JAX array) for the pair of
+        predictive distributions `qo` and `qs`.
     """
 
     def infogain_per_modality(pa_m: Array, qo_m: Array, m: int) -> Array:
@@ -501,13 +501,17 @@ def calc_negative_pB_info_gain(
     qs_t_minus_1: list[Array]
         Posterior over hidden states at time `t-1` (before receiving
         observations).
+    B_dependencies: list[list[int]]
+        For each state factor, indices of the state factors that its
+        transition model depends on.
     u_t_minus_1: Array | Sequence[int]
         Actions in time step t-1 for each factor.
 
     Returns
     -------
-    neg_infogain_pB: float
-        Negative expected information gain under the policy in question.
+    neg_infogain_pB: Array
+        Negative expected information gain (scalar JAX array) under the
+        policy in question.
     """
     
     wB = lambda pb:  spm_wnorm(pb) * (pb > 0.)
