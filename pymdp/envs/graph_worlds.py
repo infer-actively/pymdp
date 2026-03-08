@@ -36,6 +36,24 @@ class GraphEnv(PymdpEnv):
         key: Optional[PRNGKeyArray] = None,
         categorical_obs: bool = False,
     ) -> None:
+        """Initialize the graph environment.
+
+        Parameters
+        ----------
+        graph : nx.Graph
+            Connectivity graph for agent movement.
+        object_location : int | None, optional
+            Fixed initial object location. If ``None``, sampled randomly.
+        agent_location : int | None, optional
+            Fixed initial agent location. If ``None``, sampled randomly.
+        key : PRNGKeyArray | None, optional
+            Random key used when initial locations are sampled.
+        categorical_obs : bool, default=False
+            If ``True``, ``reset()`` and ``step()`` emit one-hot categorical
+            observation vectors with shape ``(1, num_obs_m)`` for each
+            modality. If ``False``, they emit discrete observation indices with
+            shape ``(1,)``.
+        """
 
         A, A_dependencies = self.generate_A(graph)
         B, B_dependencies = self.generate_B(graph)

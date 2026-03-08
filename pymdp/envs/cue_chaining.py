@@ -77,6 +77,11 @@ class CueChainingEnv(PymdpEnv):
             Labels for cue-2 states. Defaults to ``("L1", "L2", ...)``.
         reward_condition_names : sequence[str] | None, optional
             Labels for reward conditions. Defaults to ``("TOP", "BOTTOM")``.
+        categorical_obs : bool, default=False
+            If ``True``, ``reset()`` and ``step()`` emit one-hot categorical
+            observation vectors with shape ``(1, num_obs_m)`` for each
+            modality. If ``False``, they emit discrete observation indices with
+            shape ``(1,)``.
         """
         rows, cols = grid_shape
         if rows <= 0 or cols <= 0:

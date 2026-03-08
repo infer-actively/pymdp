@@ -58,17 +58,38 @@ class BaseTMaze(PymdpEnv):
     ) -> None:
         """
         Initialize a configurable T-Maze environment.
-        Args:
-            reward_probability: Probability of receiving reward when choosing the correct arm
-            punishment_probability: Probability of receiving punishment when choosing the incorrect arm
-            cue_validity: Probability that the cue correctly indicates the reward location
-            reward_condition: If specified, fixes reward to left (0) or right (1) arm, otherwise random
-            dependent_outcomes: If True, punishment occurs as a function of reward probability (i.e., if reward probability is 0.8, then 20% punishment). If False, punishment occurs with set probability (i.e., 20% no outcome and punishment will only occur in the other (non-rewarding) arm)
-            num_locations: Number of locations in the maze (4 or 5)
-            cue_mode: 'separate' for separate cue modality, 'embedded' for embedded cue observations
-            connectivity: 'fully_connected' or 'adjacent' for location transitions
-            has_middle: If True, includes a middle location between arms
-            location_obs_size: Size of location observation modality (required for embedded cue mode)
+
+        Parameters
+        ----------
+        reward_probability : float, optional
+            Probability of receiving reward when choosing the correct arm.
+        punishment_probability : float, optional
+            Probability of receiving punishment when choosing the incorrect arm.
+        cue_validity : float, optional
+            Probability that the cue correctly indicates the reward location.
+        reward_condition : int | None, optional
+            If specified, fixes reward to left (0) or right (1) arm, otherwise random.
+        dependent_outcomes : bool, optional
+            If ``True``, punishment occurs as a function of reward probability.
+            If ``False``, punishment occurs with the fixed
+            ``punishment_probability``.
+        categorical_obs : bool, default=False
+            If ``True``, ``reset()`` and ``step()`` emit one-hot categorical
+            observation vectors with shape ``(1, num_obs_m)`` for each modality.
+            If ``False``, they emit discrete observation indices with shape
+            ``(1,)``.
+        num_locations : int
+            Number of locations in the maze (4 or 5).
+        cue_mode : str
+            ``"separate"`` for a separate cue modality or ``"embedded"`` for
+            cue information embedded in the location modality.
+        connectivity : str
+            ``"fully_connected"`` or ``"adjacent"`` transition structure.
+        has_middle : bool
+            If ``True``, includes a middle location between arms.
+        location_obs_size : int | None, optional
+            Size of the location observation modality. Required for embedded cue
+            mode when overriding the default.
         """
         self.reward_probability = reward_probability
         self.punishment_probability = punishment_probability
