@@ -214,7 +214,8 @@ class TestControlJax(unittest.TestCase):
         policy_matrix = ctl_jax.construct_policies(num_states, num_controls, policy_len=2)
         C = list_array_zeros(num_obs)
         E = jnp.ones(policy_matrix.shape[0]) / policy_matrix.shape[0]
-        I = [jnp.zeros(ns) for ns in num_states]
+        depth = 1
+        I = [jnp.zeros((depth, ns)) for ns in num_states]
         error_msg = "use_param_info_gain=True requires at least one of pA or pB."
 
         with self.assertRaisesRegex(ValueError, error_msg):
