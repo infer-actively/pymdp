@@ -473,7 +473,8 @@ def calc_negative_pA_info_gain(
 
     def infogain_per_modality(pa_m: Array, qo_m: Array, m: int) -> Array:
         wa_m = spm_wnorm(pa_m) * (pa_m > 0.)
-        fd = factor_dot(wa_m, [s for f, s in enumerate(qs) if f in A_dependencies[m]], keep_dims=(0,))[..., None]
+        relevant_factors = [qs[idx] for idx in A_dependencies[m]]
+        fd = factor_dot(wa_m, relevant_factors, keep_dims=(0,))[..., None]
         return qo_m.dot(fd)
 
     pA_neg_infogain_per_modality = jtu.tree_map(
@@ -517,7 +518,11 @@ def calc_negative_pB_info_gain(
     """
     
     wB = lambda pb:  spm_wnorm(pb) * (pb > 0.)
-    fd = lambda x, i: factor_dot(x, [s for f, s in enumerate(qs_t_minus_1) if f in B_dependencies[i]], keep_dims=(0,))[..., None]
+    fd = lambda x, i: factor_dot(
+        x,
+        [qs_t_minus_1[idx] for idx in B_dependencies[i]],
+        keep_dims=(0,),
+    )[..., None]
     
     pB_neg_infogain_per_factor = jtu.tree_map(lambda pb, qs, f: qs.dot(fd(wB(pb[..., u_t_minus_1[f]]), f)), pB, qs_t, list(range(len(qs_t))))
     neg_infogain_pB = jtu.tree_reduce(lambda x, y: x + y, pB_neg_infogain_per_factor)[0]
