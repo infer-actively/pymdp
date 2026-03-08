@@ -254,6 +254,11 @@ def update_posterior_policies(
     tuple[Array, Array]
         `(q_pi, neg_efe_all_policies)` where `q_pi` is the posterior over policies.
     """
+    if use_param_info_gain and pA is None and pB is None:
+        raise ValueError(
+            "use_param_info_gain=True requires at least one of pA or pB."
+        )
+
     # policy --> n_levels_factor_f x 1
     # factor --> n_levels_factor_f x n_policies
     ## vmap across policies
@@ -785,6 +790,11 @@ def update_posterior_policies_inductive(
     neg_efe_all_policies: Array
         Policy-wise negative expected free energies.
     """
+    if use_param_info_gain and pA is None and pB is None:
+        raise ValueError(
+            "use_param_info_gain=True requires at least one of pA or pB."
+        )
+
     # policy --> n_levels_factor_f x 1
     # factor --> n_levels_factor_f x n_policies
     ## vmap across policies

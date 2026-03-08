@@ -195,5 +195,63 @@ class TestControlJax(unittest.TestCase):
             self.assertTrue(np.isclose(np.array(q_pi).sum(), 1.0))
             self.assertTrue(np.all(np.isfinite(np.array(neg_efe))))
 
+    def test_update_posterior_policies_requires_param_posterior_when_enabled(self):
+        """Enabling parameter epistemic value without pA or pB should fail fast."""
+
+        num_states = [3, 2]
+        num_obs = [4, 3]
+        num_controls = [2, 1]
+        A_dependencies = [[0, 1], [1]]
+        B_dependencies = [[0], [1]]
+
+        key = jr.PRNGKey(11)
+        key_A, key_B, key_qs = jr.split(key, 3)
+
+        A = random_A_array(key_A, num_obs, num_states, A_dependencies=A_dependencies)
+        B = random_B_array(key_B, num_states, num_controls, B_dependencies=B_dependencies)
+        qs = random_factorized_categorical(key_qs, num_states)
+
+        policy_matrix = ctl_jax.construct_policies(num_states, num_controls, policy_len=2)
+        C = list_array_zeros(num_obs)
+        E = jnp.ones(policy_matrix.shape[0]) / policy_matrix.shape[0]
+        I = [jnp.zeros(ns) for ns in num_states]
+        error_msg = "use_param_info_gain=True requires at least one of pA or pB."
+
+        with self.assertRaisesRegex(ValueError, error_msg):
+            ctl_jax.update_posterior_policies(
+                policy_matrix,
+                qs,
+                A,
+                B,
+                C,
+                E,
+                None,
+                None,
+                A_dependencies,
+                B_dependencies,
+                use_utility=False,
+                use_states_info_gain=False,
+                use_param_info_gain=True,
+            )
+
+        with self.assertRaisesRegex(ValueError, error_msg):
+            ctl_jax.update_posterior_policies_inductive(
+                policy_matrix,
+                qs,
+                A,
+                B,
+                C,
+                E,
+                None,
+                None,
+                A_dependencies,
+                B_dependencies,
+                I,
+                use_utility=False,
+                use_states_info_gain=False,
+                use_param_info_gain=True,
+                use_inductive=False,
+            )
+
 if __name__ == "__main__":
     unittest.main()
