@@ -494,6 +494,12 @@ def calc_negative_pB_info_gain(
     """
     Compute the negative expected Dirichlet information gain about `pB`.
 
+    Notes
+    -----
+    This helper returns the negative of the parameter epistemic-value term.
+    Subtract its return value when adding parameter information gain to
+    `neg_efe`.
+
     Parameters
     ----------
     pB: list[Array]
