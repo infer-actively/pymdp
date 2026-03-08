@@ -22,7 +22,7 @@ def load_manifest(path: Path) -> set[str]:
     return {
         line.strip()
         for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.startswith("#")
+        if line.strip() and not line.strip().startswith("#")
     }
 
 
