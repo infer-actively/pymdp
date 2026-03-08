@@ -131,3 +131,23 @@ class TestTMazeVariants(unittest.TestCase):
         self.assertTrue(bool(jnp.isclose(B_loc[3, 3, 3], 1.0)))
 
         self.assertTrue(bool(jnp.allclose(jnp.sum(B_loc, axis=0), 1.0)))
+
+    def test_render_accepts_singleton_discrete_and_categorical_observations(self):
+        env = TMaze()
+
+        discrete_obs = [
+            jnp.array([[[0]]], dtype=jnp.int32),
+            jnp.array([[[0]]], dtype=jnp.int32),
+            jnp.array([[[0]]], dtype=jnp.int32),
+        ]
+        categorical_obs = [
+            jnp.array([[[1.0, 0.0, 0.0, 0.0, 0.0]]]),
+            jnp.array([[[1.0, 0.0, 0.0]]]),
+            jnp.array([[[1.0, 0.0, 0.0]]]),
+        ]
+
+        discrete_img = env.render(discrete_obs, mode="rgb_array")
+        categorical_img = env.render(categorical_obs, mode="rgb_array")
+
+        self.assertIsNotNone(discrete_img)
+        self.assertIsNotNone(categorical_img)

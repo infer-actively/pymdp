@@ -334,9 +334,9 @@ class BaseTMaze(PymdpEnv):
 
         def _decode_obs(modality: int, batch_idx: int) -> int:
             obs_value = observations[modality][batch_idx, 0]
-            if jnp.ndim(obs_value) > 0:
+            if obs_value.size > 1:
                 return int(jnp.argmax(obs_value))
-            return int(obs_value)
+            return int(jnp.squeeze(obs_value))
 
         # create n x n subplots for the batch_size
         n = math.ceil(math.sqrt(batch_size))
