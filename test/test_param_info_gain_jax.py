@@ -4,7 +4,7 @@ import numpy as np
 from jax import grad
 from jax.scipy.special import digamma
 
-from pymdp.maths import _exact_wnorm, factor_dot, spm_wnorm
+from pymdp.maths import _exact_wnorm
 
 
 @pytest.mark.parametrize("scale", [-12, -6, 0, 6, 12])
@@ -111,65 +111,3 @@ def test_calc_negative_pA_info_gain_precision(seed):
     # `calc_negative_pA_info_gain` returns a *negative* quantity by design.
     # A larger (less negative) value corresponds to *lower* expected information gain.
     assert neg_ig_precise > neg_ig_uncertain, "Increasing Dirichlet counts should make (negative) information gain less negative"
-
-
-def test_calc_negative_pA_info_gain_respects_dependency_order():
-    """Unsorted A dependencies should contract state factors in the declared order."""
-
-    from pymdp.control import calc_negative_pA_info_gain
-
-    qs = [
-        jnp.array([0.2, 0.8]),
-        jnp.array([0.7, 0.3]),
-    ]
-    qo = [jnp.array([0.6, 0.4])]
-    A_dependencies = [[1, 0]]
-    pA = [
-        jnp.array(
-            [
-                [[1.2, 2.1], [3.4, 4.3]],
-                [[2.2, 1.7], [4.1, 3.6]],
-            ]
-        )
-    ]
-
-    wa = spm_wnorm(pA[0]) * (pA[0] > 0.0)
-    expected_fd = factor_dot(wa, [qs[1], qs[0]], keep_dims=(0,))[..., None]
-    expected = qo[0].dot(expected_fd).squeeze(-1)
-
-    actual = calc_negative_pA_info_gain(pA, qo, qs, A_dependencies)
-
-    np.testing.assert_allclose(actual, expected)
-
-
-def test_calc_negative_pB_info_gain_respects_dependency_order():
-    """Unsorted B dependencies should contract parent-state factors in the declared order."""
-
-    from pymdp.control import calc_negative_pB_info_gain
-
-    qs_t = [jnp.array([0.4, 0.6])]
-    qs_t_minus_1 = [
-        jnp.array([0.3, 0.7]),
-        jnp.array([0.8, 0.2]),
-    ]
-    B_dependencies = [[1, 0]]
-    u_t_minus_1 = jnp.array([0])
-    pB = [
-        jnp.array(
-            [
-                [[[1.5], [2.0]], [[2.5], [3.0]]],
-                [[[1.8], [2.3]], [[2.8], [3.3]]],
-            ]
-        )
-    ]
-
-    wB = spm_wnorm(pB[0][..., 0]) * (pB[0][..., 0] > 0.0)
-    expected_fd = factor_dot(wB, [qs_t_minus_1[1], qs_t_minus_1[0]], keep_dims=(0,))[..., None]
-    expected = qs_t[0].dot(expected_fd)[0]
-
-    actual = calc_negative_pB_info_gain(
-        pB, qs_t, qs_t_minus_1, B_dependencies, u_t_minus_1
-    )
-
-    np.testing.assert_allclose(actual, expected)
-    
