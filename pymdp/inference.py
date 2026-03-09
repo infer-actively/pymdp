@@ -19,6 +19,7 @@ from pymdp.algos import (
     run_vmp,
     hmm_smoother_from_filtered_colstoch,
 )
+from pymdp.maths import calc_vfe
 from jax import tree_util as jtu, lax
 from jax.experimental.sparse._base import JAXSparse
 from jax.experimental import sparse
@@ -173,7 +174,8 @@ def update_posterior_states(
     distr_obs: bool = True,
     inference_horizon: int | None = None,
     valid_steps: int | Array | None = None,
-) -> list[Array]:
+    return_info: bool = False,
+) -> list[Array] | tuple[list[Array], dict[str, Array]]:
     """Infer posterior beliefs over hidden states from observations.
 
     Parameters
@@ -209,14 +211,21 @@ def update_posterior_states(
         Optional truncation horizon for sequence inference.
     valid_steps : int | Array | None, optional
         Number of valid (unpadded) timesteps for fixed-window sequence inputs.
+    return_info : bool, default=False
+        If `True`, also return an info dictionary containing canonical VFE
+        diagnostics (`vfe_t`, `vfe`, and component terms).
 
     Returns
     -------
-    list[Array]
+    list[Array] or tuple[list[Array], dict[str, Array]]
         Posterior state beliefs, with shape semantics depending on `method`:
         one-step methods return/append a time axis, sequence methods return full
-        sequence posteriors.
+        sequence posteriors. If `return_info=True`, a second return value
+        contains canonical VFE diagnostics.
     """
+    B_for_vfe = B
+    info = None
+
     if method in SEQUENCE_METHODS:
         obs, past_actions = _truncate_for_horizon(obs, past_actions, inference_horizon)
 
@@ -304,6 +313,41 @@ def update_posterior_states(
         else:
             qs_hist = qs
 
+    if return_info:
+        if method in ONE_STEP_METHODS:
+            vfe_t, vfe, decomposition = calc_vfe(
+                qs,
+                prior,
+                obs=curr_obs,
+                A=A,
+                A_dependencies=A_dependencies,
+                distr_obs=distr_obs,
+                return_decomposition=True,
+            )
+        else:
+            vfe_t, vfe, decomposition = calc_vfe(
+                qs,
+                prior,
+                obs=obs,
+                A=A,
+                B=B_for_vfe if past_actions is not None else None,
+                past_actions=past_actions,
+                A_dependencies=A_dependencies,
+                B_dependencies=B_dependencies,
+                obs_valid_mask=obs_valid_mask,
+                transition_valid_mask=transition_valid_mask,
+                distr_obs=distr_obs,
+                return_decomposition=True,
+            )
+
+        info = {
+            "vfe_t": vfe_t,
+            "vfe": vfe,
+            "vfe_components": decomposition,
+        }
+
+    if return_info:
+        return qs_hist, info
     return qs_hist
 
 def _joint_dist_factor(

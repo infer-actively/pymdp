@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from functools import partial
 from typing import Optional, Tuple, Sequence
 from jax import tree_util, nn, jit, vmap, lax
-from jax.scipy.special import xlogy, digamma
+from jax.scipy.special import xlogy, digamma, gammaln
 from opt_einsum import contract
 from multimethod import multimethod
 from jaxtyping import ArrayLike
@@ -286,7 +286,96 @@ def compute_log_likelihood_per_modality(
     return ll_all
 
 
-def compute_accuracy(qs: list[ArrayLike], obs: list[ArrayLike], A: list[ArrayLike]) -> ArrayLike:
+def _default_a_dependencies(
+    num_factors: int,
+    num_modalities: int,
+    A_dependencies: list[list[int]] | None = None,
+) -> list[list[int]]:
+    if A_dependencies is None:
+        return [list(range(num_factors)) for _ in range(num_modalities)]
+    return A_dependencies
+
+
+def _default_b_dependencies(
+    num_factors: int,
+    B_dependencies: list[list[int]] | None = None,
+) -> list[list[int]]:
+    if B_dependencies is None:
+        return [[f] for f in range(num_factors)]
+    return B_dependencies
+
+
+def _to_dense_if_sparse(x: ArrayLike) -> ArrayLike:
+    if isinstance(x, jsparse.BCOO):
+        return jsparse.todense(x)
+    return x
+
+
+def _expected_log_prob(log_prob: ArrayLike, marginals: list[ArrayLike]) -> ArrayLike:
+    log_prob = _to_dense_if_sparse(log_prob)
+    if len(marginals) == 0:
+        return jnp.asarray(log_prob).sum()
+    return (multidimensional_outer(marginals) * log_prob).sum()
+
+
+def _ensure_vfe_action_history_shape(
+    past_actions: ArrayLike | None,
+    num_factors: int,
+) -> ArrayLike | None:
+    if past_actions is None:
+        return None
+
+    past_actions = jnp.asarray(past_actions)
+    if past_actions.ndim == 1:
+        if num_factors == 1:
+            return jnp.expand_dims(past_actions, -1)
+        if past_actions.shape[0] == num_factors:
+            return jnp.expand_dims(past_actions, 0)
+        raise ValueError(
+            "1D `past_actions` must either represent a single-factor action "
+            "history or a single timestep over all factors"
+        )
+
+    if past_actions.ndim != 2:
+        raise ValueError("`past_actions` must have shape (T-1, num_factors)")
+
+    if past_actions.shape[1] != num_factors:
+        raise ValueError(
+            f"`past_actions` has second dimension {past_actions.shape[1]}, "
+            f"expected {num_factors}"
+        )
+
+    return past_actions
+
+
+def _sum_dirichlet_kl(
+    q_dir: list[ArrayLike] | None,
+    p_dir: list[ArrayLike] | None,
+    *,
+    event_dim: int = 0,
+) -> ArrayLike:
+    if q_dir is None and p_dir is None:
+        return jnp.array(0.0)
+    if q_dir is None or p_dir is None:
+        raise ValueError("Dirichlet KL terms require both posterior and prior parameters")
+    if len(q_dir) != len(p_dir):
+        raise ValueError("Dirichlet posterior/prior lists must have the same length")
+
+    total = jnp.array(0.0)
+    for q_arr, p_arr in zip(q_dir, p_dir):
+        if q_arr is None or p_arr is None:
+            continue
+        total = total + dirichlet_kl_divergence(q_arr, p_arr, event_dim=event_dim)
+    return total
+
+
+def compute_accuracy(
+    qs: list[ArrayLike],
+    obs: list[ArrayLike],
+    A: list[ArrayLike],
+    A_dependencies: list[list[int]] | None = None,
+    distr_obs: bool = True,
+) -> ArrayLike:
     """Compute the accuracy portion of variational free energy.
 
     Parameters
@@ -297,25 +386,33 @@ def compute_accuracy(qs: list[ArrayLike], obs: list[ArrayLike], A: list[ArrayLik
         Observations for each modality.
     A: list[ArrayLike]
         Likelihood tensors for each modality.
+    A_dependencies: list[list[int]] | None, optional
+        Sparse modality-to-factor dependency mapping.
+    distr_obs: bool, default=True
+        Whether observations are already categorical distributions.
 
     Returns
     -------
     ArrayLike
         Expected log-likelihood term.
     """
+    A_dependencies = _default_a_dependencies(len(qs), len(A), A_dependencies)
+    log_likelihoods = compute_log_likelihood_per_modality(obs, A, distr_obs=distr_obs)
+    accuracy = 0.0
 
-    log_likelihood = compute_log_likelihood(obs, A)
+    for ll_m, deps_m in zip(log_likelihoods, A_dependencies):
+        accuracy += _expected_log_prob(ll_m, [qs[f] for f in deps_m])
 
-    x = qs[0]
-    for q in qs[1:]:
-        x = jnp.expand_dims(x, -1) * q
-
-    joint = log_likelihood * x
-    return joint.sum()
+    return accuracy
 
 
 def compute_free_energy(
-    qs: list[ArrayLike], prior: list[ArrayLike], obs: list[ArrayLike], A: list[ArrayLike]
+    qs: list[ArrayLike],
+    prior: list[ArrayLike],
+    obs: list[ArrayLike],
+    A: list[ArrayLike],
+    A_dependencies: list[list[int]] | None = None,
+    distr_obs: bool = True,
 ) -> ArrayLike:
     """
     Calculate variational free energy by breaking its computation down into three steps:
@@ -335,22 +432,293 @@ def compute_free_energy(
         Observations for each modality.
     A: list[ArrayLike]
         Likelihood tensors per modality.
+    A_dependencies: list[list[int]] | None, optional
+        Sparse modality-to-factor dependency mapping.
+    distr_obs: bool, default=True
+        Whether observations are already categorical distributions.
 
     Returns
     -------
     ArrayLike
         Variational free energy value.
     """
-
-    vfe = 0.0  # initialize variational free energy
-    for q, p in zip(qs, prior):
-        negH_qs = - stable_entropy(q)
-        xH_qp = stable_cross_entropy(q, p)
-        vfe += (negH_qs + xH_qp)
-    
-    vfe -= compute_accuracy(qs, obs, A)
-
+    _, vfe = calc_vfe(
+        qs,
+        prior,
+        obs=obs,
+        A=A,
+        A_dependencies=A_dependencies,
+        distr_obs=distr_obs,
+    )
     return vfe
+
+
+def dirichlet_kl_divergence(
+    q_dir: ArrayLike,
+    p_dir: ArrayLike,
+    event_dim: int = 0,
+) -> ArrayLike:
+    """Compute KL divergence between two Dirichlet distributions.
+
+    Parameters
+    ----------
+    q_dir: ArrayLike
+        Posterior Dirichlet concentration parameters.
+    p_dir: ArrayLike
+        Prior Dirichlet concentration parameters.
+    event_dim: int, default=0
+        Axis containing the categorical event dimension.
+
+    Returns
+    -------
+    ArrayLike
+        Scalar KL divergence summed over all conditional contexts.
+    """
+    q_dir = jnp.clip(_to_dense_if_sparse(q_dir), min=MINVAL)
+    p_dir = jnp.clip(_to_dense_if_sparse(p_dir), min=MINVAL)
+
+    event_dim = event_dim % q_dir.ndim
+    q_sum = q_dir.sum(axis=event_dim)
+    p_sum = p_dir.sum(axis=event_dim)
+    digamma_q_sum = jnp.expand_dims(digamma(q_sum), axis=event_dim)
+
+    kl = (
+        gammaln(q_sum)
+        - gammaln(p_sum)
+        - gammaln(q_dir).sum(axis=event_dim)
+        + gammaln(p_dir).sum(axis=event_dim)
+        + ((q_dir - p_dir) * (digamma(q_dir) - digamma_q_sum)).sum(axis=event_dim)
+    )
+
+    return kl.sum()
+
+
+def calc_vfe(
+    qs: list[ArrayLike],
+    prior: list[ArrayLike],
+    *,
+    obs: list[ArrayLike] | None = None,
+    A: list[ArrayLike] | None = None,
+    B: list[ArrayLike] | None = None,
+    past_actions: ArrayLike | None = None,
+    A_dependencies: list[list[int]] | None = None,
+    B_dependencies: list[list[int]] | None = None,
+    qA: list[ArrayLike] | None = None,
+    pA: list[ArrayLike] | None = None,
+    qB: list[ArrayLike] | None = None,
+    pB: list[ArrayLike] | None = None,
+    obs_valid_mask: ArrayLike | None = None,
+    transition_valid_mask: ArrayLike | None = None,
+    distr_obs: bool = True,
+    return_decomposition: bool = False,
+) -> tuple[ArrayLike, ArrayLike] | tuple[ArrayLike, ArrayLike, dict[str, ArrayLike]]:
+    """Compute canonical variational free energy from a model/posterior pair.
+
+    This function supports both:
+    - single-step posteriors, where each `qs[f]` has shape `(num_states_f,)`, and
+    - sequence posteriors, where each `qs[f]` has shape `(T, num_states_f)`.
+
+    In the sequence case, transition contributions are assigned to the timestep
+    they terminate at, so `vfe_t[t]` contains the `q(s_t)` entropy, the
+    observation accuracy for `o_t`, and either the initial-prior term (at
+    sequence starts) or the transition-model cross-entropy from `t-1 -> t`.
+
+    Parameters
+    ----------
+    qs: list[ArrayLike]
+        Posterior state marginals.
+    prior: list[ArrayLike]
+        Prior over initial hidden states (or single-step empirical prior).
+    obs: list[ArrayLike] | None, optional
+        Observations in distributional or discrete-index form.
+    A: list[ArrayLike] | None, optional
+        Likelihood tensors.
+    B: list[ArrayLike] | None, optional
+        Transition tensors.
+    past_actions: ArrayLike | None, optional
+        Action history with shape `(T-1, num_factors)` for sequence VFE.
+    A_dependencies: list[list[int]] | None, optional
+        Sparse modality-to-factor dependency mapping.
+    B_dependencies: list[list[int]] | None, optional
+        Sparse transition-factor dependency mapping.
+    qA, pA, qB, pB: list[ArrayLike] | None, optional
+        Optional posterior/prior Dirichlet parameter pairs. When provided, the
+        corresponding KL terms are added to the total `vfe`.
+    obs_valid_mask: ArrayLike | None, optional
+        Validity mask for padded observation windows.
+    transition_valid_mask: ArrayLike | None, optional
+        Validity mask for transitions in padded sequence windows.
+    distr_obs: bool, default=True
+        Whether observations are already categorical distributions.
+    return_decomposition: bool, default=False
+        If `True`, also return a dictionary of component terms.
+
+    Returns
+    -------
+    tuple
+        `(vfe_t, vfe)` by default. `vfe_t` has shape `(T,)` for sequences or
+        scalar shape `()` for single-step posteriors. `vfe` is always scalar.
+        When `return_decomposition=True`, a third element is returned with
+        component arrays and optional parameter KL terms.
+    """
+    num_factors = len(qs)
+    if len(prior) != num_factors:
+        raise ValueError("`prior` must have one entry per hidden-state factor")
+
+    if A is not None and obs is None:
+        raise ValueError("`obs` must be provided when `A` is provided")
+    if obs is not None and A is None:
+        raise ValueError("`A` must be provided when `obs` is provided")
+
+    A_dependencies = (
+        None if A is None else _default_a_dependencies(num_factors, len(A), A_dependencies)
+    )
+    B_dependencies = (
+        None if B is None else _default_b_dependencies(num_factors, B_dependencies)
+    )
+
+    is_sequence = qs[0].ndim > 1
+
+    def _state_prior_term(qs_t: list[ArrayLike]) -> ArrayLike:
+        value = 0.0
+        for q_f, p_f in zip(qs_t, prior):
+            value += stable_cross_entropy(q_f, p_f)
+        return value
+
+    def _neg_entropy_term(qs_t: list[ArrayLike]) -> ArrayLike:
+        value = 0.0
+        for q_f in qs_t:
+            value += -stable_entropy(q_f)
+        return value
+
+    def _accuracy_term(qs_t: list[ArrayLike], obs_t: list[ArrayLike] | None) -> ArrayLike:
+        if A is None or obs_t is None:
+            return jnp.array(0.0)
+        return compute_accuracy(
+            qs_t,
+            obs_t,
+            A,
+            A_dependencies=A_dependencies,
+            distr_obs=distr_obs,
+        )
+
+    if not is_sequence:
+        neg_entropy_t = _neg_entropy_term(qs)
+        prior_cross_entropy_t = _state_prior_term(qs)
+        accuracy_t = _accuracy_term(qs, obs)
+        transition_cross_entropy_t = jnp.array(0.0)
+        vfe_t = neg_entropy_t + prior_cross_entropy_t - accuracy_t
+    else:
+        T = qs[0].shape[0]
+        past_actions = _ensure_vfe_action_history_shape(past_actions, num_factors)
+
+        if obs_valid_mask is None:
+            obs_valid_mask = jnp.ones((T,), dtype=bool)
+        else:
+            obs_valid_mask = jnp.asarray(obs_valid_mask, dtype=bool)
+
+        if transition_valid_mask is None:
+            if T <= 1:
+                transition_valid_mask = jnp.zeros((0,), dtype=bool)
+            else:
+                transition_valid_mask = obs_valid_mask[:-1] & obs_valid_mask[1:]
+                if past_actions is not None:
+                    transition_valid_mask = transition_valid_mask & jnp.all(
+                        past_actions >= 0, axis=-1
+                    )
+        else:
+            transition_valid_mask = jnp.asarray(transition_valid_mask, dtype=bool)
+
+        start_mask = obs_valid_mask
+        if B is not None:
+            start_mask = obs_valid_mask & jnp.concatenate(
+                [jnp.ones((1,), dtype=bool), jnp.logical_not(transition_valid_mask)],
+                axis=0,
+            )
+
+        neg_entropy_terms = []
+        prior_cross_entropy_terms = []
+        transition_cross_entropy_terms = []
+        accuracy_terms = []
+        vfe_terms = []
+
+        for t in range(T):
+            qs_t = tree_util.tree_map(lambda q: q[t], qs)
+            obs_t = None if obs is None else tree_util.tree_map(lambda o: o[t], obs)
+
+            valid_scale = obs_valid_mask[t].astype(jnp.result_type(*qs_t))
+            neg_entropy_term_t = _neg_entropy_term(qs_t) * valid_scale
+            prior_term_t = _state_prior_term(qs_t) * valid_scale
+            accuracy_term_t = _accuracy_term(qs_t, obs_t) * valid_scale
+
+            if B is None or t == 0:
+                transition_term_t = jnp.array(0.0, dtype=neg_entropy_term_t.dtype)
+            else:
+                transition_term_t = 0.0
+                for f, deps_f in enumerate(B_dependencies):
+                    B_f = _to_dense_if_sparse(B[f])
+                    if past_actions is None:
+                        if B_f.shape[-1] != 1:
+                            raise ValueError(
+                                "`past_actions` is required to compute sequence VFE "
+                                "when transition tensors have more than one control state"
+                            )
+                        B_f_t = B_f[..., 0]
+                    else:
+                        action_f = past_actions[t - 1, f].astype(jnp.int32)
+                        safe_action_f = jnp.where(action_f < 0, 0, action_f)
+                        B_f_t = jnp.take(B_f, safe_action_f, axis=-1)
+
+                    transition_term_t += -_expected_log_prob(
+                        log_stable(B_f_t),
+                        [qs_t[f]] + [qs[d][t - 1] for d in deps_f],
+                    )
+
+                transition_term_t = (
+                    transition_term_t
+                    * transition_valid_mask[t - 1].astype(neg_entropy_term_t.dtype)
+                )
+
+            if B is None:
+                dynamics_term_t = prior_term_t
+                prior_cross_entropy_term_t = prior_term_t
+            else:
+                prior_cross_entropy_term_t = (
+                    prior_term_t * start_mask[t].astype(neg_entropy_term_t.dtype)
+                )
+                dynamics_term_t = prior_cross_entropy_term_t + transition_term_t
+
+            neg_entropy_terms.append(neg_entropy_term_t)
+            prior_cross_entropy_terms.append(prior_cross_entropy_term_t)
+            transition_cross_entropy_terms.append(transition_term_t)
+            accuracy_terms.append(accuracy_term_t)
+            vfe_terms.append(neg_entropy_term_t + dynamics_term_t - accuracy_term_t)
+
+        neg_entropy_t = jnp.stack(neg_entropy_terms)
+        prior_cross_entropy_t = jnp.stack(prior_cross_entropy_terms)
+        transition_cross_entropy_t = jnp.stack(transition_cross_entropy_terms)
+        accuracy_t = jnp.stack(accuracy_terms)
+        vfe_t = jnp.stack(vfe_terms)
+
+    parameter_kl_A = _sum_dirichlet_kl(qA, pA, event_dim=0)
+    parameter_kl_B = _sum_dirichlet_kl(qB, pB, event_dim=0)
+    parameter_kl = parameter_kl_A + parameter_kl_B
+    vfe = vfe_t.sum() + parameter_kl
+
+    if not return_decomposition:
+        return vfe_t, vfe
+
+    decomposition = {
+        "neg_entropy_t": neg_entropy_t,
+        "prior_cross_entropy_t": prior_cross_entropy_t,
+        "transition_cross_entropy_t": transition_cross_entropy_t,
+        "accuracy_t": accuracy_t,
+        "state_vfe": vfe_t.sum(),
+        "parameter_kl_A": parameter_kl_A,
+        "parameter_kl_B": parameter_kl_B,
+        "parameter_kl": parameter_kl,
+    }
+    return vfe_t, vfe, decomposition
 
 
 def multidimensional_outer(arrs: list[ArrayLike]) -> ArrayLike:

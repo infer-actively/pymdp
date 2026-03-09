@@ -680,7 +680,8 @@ class Agent(Module):
         valid_steps: int | Array | None = None,
         mask: list[Array] | None = None,
         preprocess_fn: Callable | None = None,
-    ) -> list[Array]:
+        return_info: bool = False,
+    ) -> list[Array] | tuple[list[Array], dict[str, Any]]:
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
@@ -722,6 +723,10 @@ class Agent(Module):
             If None, defaults to `self.process_obs`. The callable should accept
             `observations` and return distributional observations.
 
+        return_info: bool, default=False
+            If `True`, also return canonical VFE diagnostics for the inferred
+            posterior (`vfe_t`, `vfe`, and component terms).
+
         Notes
         -----
         `categorical_obs` is no longer an argument to `infer_states`. Set it when
@@ -731,13 +736,14 @@ class Agent(Module):
 
         Returns
         -------
-        qs: list[Array]
+        qs: list[Array] or tuple[list[Array], dict[str, Any]]
             Posterior beliefs over hidden states. Depending on the inference algorithm chosen,
             the resulting `qs` variable will have additional sub-structure to reflect whether
             beliefs are additionally conditioned on timepoint and policy.
             For example, in case the `self.inference_algo == 'MMP'` indexing structure is
             policy->timepoint->factor, so that `qs[p_idx][t_idx][f_idx]` refers to beliefs
             about marginal factor `f_idx` expected under policy `p_idx` at timepoint `t_idx`.
+            If `return_info=True`, a second return value contains VFE diagnostics.
 
         Examples
         --------
@@ -784,6 +790,7 @@ class Agent(Module):
             method=self.inference_algo,
             distr_obs=True,  # Always True because o_vec is expected to be distributional
             inference_horizon=self.inference_horizon,
+            return_info=return_info,
         )
 
         if valid_steps is not None:
