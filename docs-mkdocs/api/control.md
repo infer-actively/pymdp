@@ -15,8 +15,8 @@
         - compute_expected_obs
         - compute_info_gain
         - compute_expected_utility
-        - calc_pA_info_gain
-        - calc_pB_info_gain
+        - calc_negative_pA_info_gain
+        - calc_negative_pB_info_gain
         - compute_neg_efe_policy
         - compute_neg_efe_policy_inductive
         - generate_I_matrix

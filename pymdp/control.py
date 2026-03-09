@@ -231,9 +231,11 @@ def update_posterior_policies(
     E: Array
         Prior over policies.
     pA: list[Array] | None
-        Posterior Dirichlet parameters for `A` (required when `use_param_info_gain=True`).
+        Optional posterior Dirichlet parameters for `A`. When
+        `use_param_info_gain=True`, provide `pA`, `pB`, or both.
     pB: list[Array] | None
-        Posterior Dirichlet parameters for `B` (required when `use_param_info_gain=True`).
+        Optional posterior Dirichlet parameters for `B`. When
+        `use_param_info_gain=True`, provide `pA`, `pB`, or both.
     A_dependencies: list[list[int]]
         Observation dependencies between modalities and hidden-state factors.
     B_dependencies: list[list[int]]
@@ -252,6 +254,11 @@ def update_posterior_policies(
     tuple[Array, Array]
         `(q_pi, neg_efe_all_policies)` where `q_pi` is the posterior over policies.
     """
+    if use_param_info_gain and pA is None and pB is None:
+        raise ValueError(
+            "use_param_info_gain=True requires at least one of pA or pB."
+        )
+
     # policy --> n_levels_factor_f x 1
     # factor --> n_levels_factor_f x n_policies
     ## vmap across policies
@@ -439,42 +446,50 @@ def compute_expected_utility(qo: list[Array], C: list[Array], t: int = 0) -> Arr
     
     return util
 
-def calc_pA_info_gain(
+def calc_negative_pA_info_gain(
     pA: list[Array], qo: list[Array], qs: list[Array], A_dependencies: list[list[int]]
 ) -> Array:
     """
-    Compute expected Dirichlet information gain about parameters `pA` for a given posterior predictive distribution over observations `qo` and states `qs`.
+    Compute the negative expected Dirichlet information gain about `pA`.
+
+    Notes
+    -----
+    This helper returns the negative of the parameter epistemic-value term.
+    Subtract its return value when adding parameter information gain to
+    `neg_efe`.
 
     Parameters
     ----------
     pA: list[Array]
-        Dirichlet parameters over observation model (same shape as `A`)
+        Dirichlet parameters over observation model (same shape as `A`).
     qo: list[Array]
         Predictive posterior beliefs over observations; stores the beliefs about
-        observations expected under the policy at some arbitrary time `t`
+        observations expected under the policy at some arbitrary time `t`.
     qs: list[Array]
         Predictive posterior beliefs over hidden states, stores the beliefs about
-        hidden states expected under the policy at some arbitrary time `t`
+        hidden states expected under the policy at some arbitrary time `t`.
 
     Returns
     -------
-    infogain_pA: float
-        Surprise (about Dirichlet parameters) expected for the pair of posterior predictive distributions `qo` and `qs`
+    neg_infogain_pA: Array
+        Negative expected information gain (scalar JAX array) for the pair of
+        predictive distributions `qo` and `qs`.
     """
 
     def infogain_per_modality(pa_m: Array, qo_m: Array, m: int) -> Array:
         wa_m = spm_wnorm(pa_m) * (pa_m > 0.)
-        fd = factor_dot(wa_m, [s for f, s in enumerate(qs) if f in A_dependencies[m]], keep_dims=(0,))[..., None]
+        relevant_factors = [qs[idx] for idx in A_dependencies[m]]
+        fd = factor_dot(wa_m, relevant_factors, keep_dims=(0,))[..., None]
         return qo_m.dot(fd)
 
-    pA_infogain_per_modality = jtu.tree_map(
+    pA_neg_infogain_per_modality = jtu.tree_map(
         infogain_per_modality, pA, qo, list(range(len(qo)))
     )
     
-    infogain_pA = jtu.tree_reduce(lambda x, y: x + y, pA_infogain_per_modality)
-    return infogain_pA.squeeze(-1)
+    neg_infogain_pA = jtu.tree_reduce(lambda x, y: x + y, pA_neg_infogain_per_modality)
+    return neg_infogain_pA.squeeze(-1)
 
-def calc_pB_info_gain(
+def calc_negative_pB_info_gain(
     pB: list[Array],
     qs_t: list[Array],
     qs_t_minus_1: list[Array],
@@ -482,31 +497,47 @@ def calc_pB_info_gain(
     u_t_minus_1: Array | Sequence[int],
 ) -> Array:
     """
-    Compute expected Dirichlet information gain about parameters `pB` under a given policy
+    Compute the negative expected Dirichlet information gain about `pB`.
+
+    Notes
+    -----
+    This helper returns the negative of the parameter epistemic-value term.
+    Subtract its return value when adding parameter information gain to
+    `neg_efe`.
 
     Parameters
     ----------
     pB: list[Array]
-        Dirichlet parameters over transition model (same shape as `B`)
+        Dirichlet parameters over transition model (same shape as `B`).
     qs_t: list[Array]
-        Predictive posterior beliefs over hidden states expected under the policy at time `t`
+        Predictive posterior beliefs over hidden states expected under the
+        policy at time `t`.
     qs_t_minus_1: list[Array]
-        Posterior over hidden states at time `t-1` (before receiving observations)
+        Posterior over hidden states at time `t-1` (before receiving
+        observations).
+    B_dependencies: list[list[int]]
+        For each state factor, indices of the state factors that its
+        transition model depends on.
     u_t_minus_1: Array | Sequence[int]
-        Actions in time step t-1 for each factor
+        Actions in time step t-1 for each factor.
 
     Returns
     -------
-    infogain_pB: float
-        Surprise (about Dirichlet parameters) expected under the policy in question
+    neg_infogain_pB: Array
+        Negative expected information gain (scalar JAX array) under the
+        policy in question.
     """
     
     wB = lambda pb:  spm_wnorm(pb) * (pb > 0.)
-    fd = lambda x, i: factor_dot(x, [s for f, s in enumerate(qs_t_minus_1) if f in B_dependencies[i]], keep_dims=(0,))[..., None]
+    fd = lambda x, i: factor_dot(
+        x,
+        [qs_t_minus_1[idx] for idx in B_dependencies[i]],
+        keep_dims=(0,),
+    )[..., None]
     
-    pB_infogain_per_factor = jtu.tree_map(lambda pb, qs, f: qs.dot(fd(wB(pb[..., u_t_minus_1[f]]), f)), pB, qs_t, list(range(len(qs_t))))
-    infogain_pB = jtu.tree_reduce(lambda x, y: x + y, pB_infogain_per_factor)[0]
-    return infogain_pB
+    pB_neg_infogain_per_factor = jtu.tree_map(lambda pb, qs, f: qs.dot(fd(wB(pb[..., u_t_minus_1[f]]), f)), pB, qs_t, list(range(len(qs_t))))
+    neg_infogain_pB = jtu.tree_reduce(lambda x, y: x + y, pB_neg_infogain_per_factor)[0]
+    return neg_infogain_pB
 
 def compute_neg_efe_policy(
     qs_init: list[Array],
@@ -540,9 +571,11 @@ def compute_neg_efe_policy(
     C: list[Array]
         Prior preferences over observations.
     pA: list[Array] | None
-        Posterior Dirichlet parameters for `A`.
+        Optional posterior Dirichlet parameters for `A`. When
+        `use_param_info_gain=True`, provide `pA`, `pB`, or both.
     pB: list[Array] | None
-        Posterior Dirichlet parameters for `B`.
+        Optional posterior Dirichlet parameters for `B`. When
+        `use_param_info_gain=True`, provide `pA`, `pB`, or both.
     A_dependencies: list[list[int]]
         Observation dependencies between modalities and hidden-state factors.
     B_dependencies: list[list[int]]
@@ -561,6 +594,10 @@ def compute_neg_efe_policy(
     Array
         Scalar negative expected free energy for `policy_i`.
     """
+    if use_param_info_gain and pA is None and pB is None:
+        raise ValueError(
+            "use_param_info_gain=True requires at least one of pA or pB."
+        )
 
     def scan_body(carry: tuple[list[Array], Array], t: Array) -> tuple[tuple[list[Array], Array], None]:
 
@@ -574,10 +611,13 @@ def compute_neg_efe_policy(
 
         utility = compute_expected_utility(qo, C, t) if use_utility else 0.
 
-        param_info_gain = calc_pA_info_gain(pA, qo, qs_next, A_dependencies) if use_param_info_gain else 0.
-        param_info_gain += calc_pB_info_gain(pB, qs_next, qs, B_dependencies, policy_i[t]) if use_param_info_gain else 0.
+        neg_param_info_gain = 0.
+        if pA is not None:
+            neg_param_info_gain += calc_negative_pA_info_gain(pA, qo, qs_next, A_dependencies) if use_param_info_gain else 0.
+        if pB is not None:
+            neg_param_info_gain += calc_negative_pB_info_gain(pB, qs_next, qs, B_dependencies, policy_i[t]) if use_param_info_gain else 0.
 
-        neg_efe += info_gain + utility + param_info_gain
+        neg_efe += info_gain + utility - neg_param_info_gain
 
         return (qs_next, neg_efe), None
 
@@ -624,9 +664,11 @@ def compute_neg_efe_policy_inductive(
     C: list[Array]
         Prior preferences over observations.
     pA: list[Array] | None
-        Posterior Dirichlet parameters for `A`.
+        Optional posterior Dirichlet parameters for `A`. When
+        `use_param_info_gain=True`, provide `pA`, `pB`, or both.
     pB: list[Array] | None
-        Posterior Dirichlet parameters for `B`.
+        Optional posterior Dirichlet parameters for `B`. When
+        `use_param_info_gain=True`, provide `pA`, `pB`, or both.
     A_dependencies: list[list[int]]
         Observation dependencies between modalities and hidden-state factors.
     B_dependencies: list[list[int]]
@@ -651,6 +693,10 @@ def compute_neg_efe_policy_inductive(
     Array
         Scalar negative expected free energy for `policy_i`.
     """
+    if use_param_info_gain and pA is None and pB is None:
+        raise ValueError(
+            "use_param_info_gain=True requires at least one of pA or pB."
+        )
 
     def scan_body(carry: tuple[list[Array], Array], t: Array) -> tuple[tuple[list[Array], Array], None]:
 
@@ -666,13 +712,13 @@ def compute_neg_efe_policy_inductive(
 
         inductive_value = calc_inductive_value_t(qs_init, qs_next, I, epsilon=inductive_epsilon) if use_inductive else 0.
 
-        param_info_gain = 0.
+        neg_param_info_gain = 0.
         if pA is not None:
-            param_info_gain += calc_pA_info_gain(pA, qo, qs_next, A_dependencies) if use_param_info_gain else 0.
+            neg_param_info_gain += calc_negative_pA_info_gain(pA, qo, qs_next, A_dependencies) if use_param_info_gain else 0.
         if pB is not None:
-            param_info_gain += calc_pB_info_gain(pB, qs_next, qs, B_dependencies, policy_i[t]) if use_param_info_gain else 0.
+            neg_param_info_gain += calc_negative_pB_info_gain(pB, qs_next, qs, B_dependencies, policy_i[t]) if use_param_info_gain else 0.
 
-        neg_efe += info_gain + utility - param_info_gain + inductive_value
+        neg_efe += info_gain + utility - neg_param_info_gain + inductive_value
 
         return (qs_next, neg_efe), None
 
@@ -725,9 +771,11 @@ def update_posterior_policies_inductive(
     E: Array
         Policy prior over the policy space.
     pA: list[Array] | None
-        Optional posterior Dirichlet parameters for `A`.
+        Optional posterior Dirichlet parameters for `A`. When
+        `use_param_info_gain=True`, provide `pA`, `pB`, or both.
     pB: list[Array] | None
-        Optional posterior Dirichlet parameters for `B`.
+        Optional posterior Dirichlet parameters for `B`. When
+        `use_param_info_gain=True`, provide `pA`, `pB`, or both.
     A_dependencies: list[list[int]]
         Observation dependencies between modalities and state factors.
     B_dependencies: list[list[int]]
@@ -754,6 +802,11 @@ def update_posterior_policies_inductive(
     neg_efe_all_policies: Array
         Policy-wise negative expected free energies.
     """
+    if use_param_info_gain and pA is None and pB is None:
+        raise ValueError(
+            "use_param_info_gain=True requires at least one of pA or pB."
+        )
+
     # policy --> n_levels_factor_f x 1
     # factor --> n_levels_factor_f x n_policies
     ## vmap across policies
