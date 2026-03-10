@@ -213,7 +213,12 @@ def update_posterior_states(
         Number of valid (unpadded) timesteps for fixed-window sequence inputs.
     return_info : bool, default=False
         If `True`, also return an info dictionary containing canonical VFE
-        diagnostics (`vfe_t`, `vfe`, and component terms).
+        diagnostics (`vfe_t`, `vfe`, and component terms). For forward-only
+        methods (`fpi`, `ovf`, `exact`) this reports the current posterior /
+        history returned by the inference call; if you need a full smoothed
+        sequence VFE for `ovf` or `exact`, first run `smoothing_ovf(...)` or
+        `smoothing_exact(...)` and then call `pymdp.maths.calc_vfe(...,
+        joint_qs=...)`.
 
     Returns
     -------

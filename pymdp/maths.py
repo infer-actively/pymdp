@@ -503,6 +503,7 @@ def calc_vfe(
     past_actions: ArrayLike | None = None,
     A_dependencies: list[list[int]] | None = None,
     B_dependencies: list[list[int]] | None = None,
+    joint_qs: list[ArrayLike] | None = None,
     qA: list[ArrayLike] | None = None,
     pA: list[ArrayLike] | None = None,
     qB: list[ArrayLike] | None = None,
@@ -541,6 +542,13 @@ def calc_vfe(
         Sparse modality-to-factor dependency mapping.
     B_dependencies: list[list[int]] | None, optional
         Sparse transition-factor dependency mapping.
+    joint_qs: list[ArrayLike] | None, optional
+        Optional pairwise posterior beliefs for sequence models. Each
+        `joint_qs[f]` should have shape
+        `(T-1, num_states[f], *[num_states[d] for d in B_dependencies[f]])`.
+        When provided, the state-dependent terms of sequence VFE are computed
+        from the full smoothed chain posterior rather than the mean-field
+        product of adjacent marginals.
     qA, pA, qB, pB: list[ArrayLike] | None, optional
         Optional posterior/prior Dirichlet parameter pairs. When provided, the
         corresponding KL terms are added to the total `vfe`.
@@ -578,6 +586,12 @@ def calc_vfe(
     )
 
     is_sequence = qs[0].ndim > 1
+
+    if joint_qs is not None:
+        if not is_sequence:
+            raise ValueError("`joint_qs` is only valid when `qs` is a sequence posterior")
+        if len(joint_qs) != num_factors:
+            raise ValueError("`joint_qs` must have one entry per hidden-state factor")
 
     def _state_prior_term(qs_t: list[ArrayLike]) -> ArrayLike:
         value = 0.0
@@ -636,6 +650,14 @@ def calc_vfe(
                 axis=0,
             )
 
+        if joint_qs is not None:
+            for f, joint_f in enumerate(joint_qs):
+                if joint_f.shape[0] != max(T - 1, 0):
+                    raise ValueError(
+                        f"`joint_qs[{f}]` has leading dimension {joint_f.shape[0]}, "
+                        f"expected {max(T - 1, 0)}"
+                    )
+
         neg_entropy_terms = []
         prior_cross_entropy_terms = []
         transition_cross_entropy_terms = []
@@ -647,9 +669,25 @@ def calc_vfe(
             obs_t = None if obs is None else tree_util.tree_map(lambda o: o[t], obs)
 
             valid_scale = obs_valid_mask[t].astype(jnp.result_type(*qs_t))
-            neg_entropy_term_t = _neg_entropy_term(qs_t) * valid_scale
+            start_scale = start_mask[t].astype(valid_scale.dtype)
             prior_term_t = _state_prior_term(qs_t) * valid_scale
             accuracy_term_t = _accuracy_term(qs_t, obs_t) * valid_scale
+
+            if joint_qs is None or t == 0:
+                neg_entropy_term_t = _neg_entropy_term(qs_t) * valid_scale
+            else:
+                neg_entropy_cond_t = 0.0
+                for f, joint_f in enumerate(joint_qs):
+                    neg_entropy_cond_t += (
+                        stable_xlogx(_to_dense_if_sparse(joint_f[t - 1])).sum()
+                        - stable_xlogx(qs[f][t - 1]).sum()
+                    )
+                neg_entropy_cond_t = neg_entropy_cond_t * valid_scale
+                neg_entropy_marginal_t = _neg_entropy_term(qs_t) * valid_scale
+                neg_entropy_term_t = (
+                    start_scale * neg_entropy_marginal_t
+                    + (1.0 - start_scale) * neg_entropy_cond_t
+                )
 
             if B is None or t == 0:
                 transition_term_t = jnp.array(0.0, dtype=neg_entropy_term_t.dtype)
@@ -669,14 +707,24 @@ def calc_vfe(
                         safe_action_f = jnp.where(action_f < 0, 0, action_f)
                         B_f_t = jnp.take(B_f, safe_action_f, axis=-1)
 
-                    transition_term_t += -_expected_log_prob(
-                        log_stable(B_f_t),
-                        [qs_t[f]] + [qs[d][t - 1] for d in deps_f],
-                    )
+                    if joint_qs is None:
+                        transition_term_t += -_expected_log_prob(
+                            log_stable(B_f_t),
+                            [qs_t[f]] + [qs[d][t - 1] for d in deps_f],
+                        )
+                    else:
+                        joint_f_t = _to_dense_if_sparse(joint_qs[f][t - 1])
+                        if joint_f_t.shape != B_f_t.shape:
+                            raise ValueError(
+                                f"`joint_qs[{f}][{t - 1}]` has shape {joint_f_t.shape}, "
+                                f"expected {B_f_t.shape} to match the conditioned transition tensor"
+                            )
+                        transition_term_t += -(joint_f_t * log_stable(B_f_t)).sum()
 
                 transition_term_t = (
                     transition_term_t
                     * transition_valid_mask[t - 1].astype(neg_entropy_term_t.dtype)
+                    * (1.0 - start_scale)
                 )
 
             if B is None:

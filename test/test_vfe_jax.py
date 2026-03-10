@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import unittest
+from itertools import product
 
 import numpy as np
 from jax import grad, nn
@@ -26,6 +27,58 @@ def _manual_dirichlet_kl(q_dir: np.ndarray, p_dir: np.ndarray) -> float:
         + ((q_dir - p_dir) * (digamma(q_dir) - digamma_q_sum)).sum(axis=0)
     )
     return float(np.asarray(kl).sum())
+
+
+def _bruteforce_sequence_vfe(
+    prior: np.ndarray,
+    A: np.ndarray,
+    B: np.ndarray,
+    obs_idx: np.ndarray,
+    actions: np.ndarray,
+) -> float:
+    trajectories = np.array(list(product(range(prior.shape[0]), repeat=len(obs_idx))), dtype=int)
+    log_joint = np.zeros((trajectories.shape[0],), dtype=float)
+
+    for i, traj in enumerate(trajectories):
+        log_prob = np.log(prior[traj[0]])
+        log_prob += np.log(A[obs_idx[0], traj[0]])
+        for t in range(1, len(obs_idx)):
+            log_prob += np.log(B[traj[t], traj[t - 1], actions[t - 1]])
+            log_prob += np.log(A[obs_idx[t], traj[t]])
+        log_joint[i] = log_prob
+
+    log_norm = np.logaddexp.reduce(log_joint)
+    posterior = np.exp(log_joint - log_norm)
+    return float(np.sum(posterior * (np.log(posterior) - log_joint)))
+
+
+def _filtered_history_single_factor(
+    method: str,
+    A: list[jnp.ndarray],
+    B: list[jnp.ndarray],
+    prior: list[jnp.ndarray],
+    obs: list[jnp.ndarray],
+    actions: jnp.ndarray,
+) -> list[jnp.ndarray]:
+    qs_hist = None
+    prior_t = prior
+    for t in range(obs[0].shape[0]):
+        qs_hist = inference.update_posterior_states(
+            A=A,
+            B=B,
+            obs=[obs[0][t : t + 1]],
+            past_actions=None,
+            prior=prior_t,
+            qs_hist=qs_hist,
+            A_dependencies=[[0]],
+            B_dependencies=[[0]],
+            method=method,
+            distr_obs=True,
+            inference_horizon=obs[0].shape[0],
+        )
+        if t < obs[0].shape[0] - 1:
+            prior_t = [B[0][..., int(actions[t])] @ qs_hist[0][-1]]
+    return qs_hist
 
 
 class TestCanonicalVFE(unittest.TestCase):
@@ -294,6 +347,84 @@ class TestCanonicalVFE(unittest.TestCase):
         self.assertEqual(info["vfe_t"].shape, (3,))
         self.assertTrue(bool(jnp.all(jnp.isfinite(info["vfe_t"]))))
         self.assertTrue(bool(jnp.isfinite(info["vfe"])))
+
+    def test_calc_vfe_with_smoothed_exact_posterior_matches_bruteforce_sequence_vfe(self):
+        prior = [jnp.array([0.55, 0.45])]
+        A = [jnp.array([[0.92, 0.12], [0.08, 0.88]])]
+        B = [
+            jnp.array(
+                [
+                    [[0.85, 0.30], [0.20, 0.65]],
+                    [[0.15, 0.70], [0.80, 0.35]],
+                ]
+            )
+        ]
+        obs_idx = jnp.array([0, 1, 1])
+        obs = [nn.one_hot(obs_idx, 2)]
+        actions = jnp.array([0, 1])
+
+        filtered_qs = _filtered_history_single_factor("exact", A, B, prior, obs, actions)
+        smoothed_qs, joint_qs = inference.smoothing_exact(filtered_qs, B, actions)
+        _, vfe = maths.calc_vfe(
+            smoothed_qs,
+            prior,
+            obs=obs,
+            A=A,
+            B=B,
+            past_actions=actions,
+            A_dependencies=[[0]],
+            B_dependencies=[[0]],
+            joint_qs=joint_qs,
+        )
+
+        expected_vfe = _bruteforce_sequence_vfe(
+            np.asarray(prior[0]),
+            np.asarray(A[0]),
+            np.asarray(B[0]),
+            np.asarray(obs_idx),
+            np.asarray(actions),
+        )
+
+        np.testing.assert_allclose(np.asarray(vfe), expected_vfe, atol=1e-6)
+
+    def test_calc_vfe_with_smoothed_ovf_posterior_matches_bruteforce_sequence_vfe(self):
+        prior = [jnp.array([0.55, 0.45])]
+        A = [jnp.array([[0.92, 0.12], [0.08, 0.88]])]
+        B = [
+            jnp.array(
+                [
+                    [[0.85, 0.30], [0.20, 0.65]],
+                    [[0.15, 0.70], [0.80, 0.35]],
+                ]
+            )
+        ]
+        obs_idx = jnp.array([0, 1, 1])
+        obs = [nn.one_hot(obs_idx, 2)]
+        actions = jnp.array([0, 1])
+
+        filtered_qs = _filtered_history_single_factor("ovf", A, B, prior, obs, actions)
+        smoothed_qs, joint_qs = inference.smoothing_ovf(filtered_qs, B, actions)
+        _, vfe = maths.calc_vfe(
+            smoothed_qs,
+            prior,
+            obs=obs,
+            A=A,
+            B=B,
+            past_actions=actions,
+            A_dependencies=[[0]],
+            B_dependencies=[[0]],
+            joint_qs=joint_qs,
+        )
+
+        expected_vfe = _bruteforce_sequence_vfe(
+            np.asarray(prior[0]),
+            np.asarray(A[0]),
+            np.asarray(B[0]),
+            np.asarray(obs_idx),
+            np.asarray(actions),
+        )
+
+        np.testing.assert_allclose(np.asarray(vfe), expected_vfe, atol=1e-6)
 
 
 if __name__ == "__main__":

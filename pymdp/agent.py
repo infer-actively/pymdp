@@ -725,7 +725,12 @@ class Agent(Module):
 
         return_info: bool, default=False
             If `True`, also return canonical VFE diagnostics for the inferred
-            posterior (`vfe_t`, `vfe`, and component terms).
+            posterior (`vfe_t`, `vfe`, and component terms). For `ovf` / `exact`
+            this remains a forward-filtering diagnostic; to score the full
+            smoothed sequence, call `pymdp.inference.smoothing_ovf(...)` or
+            `pymdp.inference.smoothing_exact(...)` explicitly and then pass the
+            resulting pairwise joints into `pymdp.maths.calc_vfe(...,
+            joint_qs=...)`.
 
         Notes
         -----
