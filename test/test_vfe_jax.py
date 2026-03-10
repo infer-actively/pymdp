@@ -7,9 +7,11 @@ from itertools import product
 import numpy as np
 from jax import grad, nn
 from jax import numpy as jnp
+from jax import tree_util as jtu
 from jax.scipy.special import digamma, gammaln
 
 from pymdp import inference, maths
+from pymdp.algos import all_marginal_log_likelihood, run_factorized_fpi
 from pymdp.agent import Agent
 from pymdp.legacy import maths as legacy_maths
 from pymdp.legacy import utils as legacy_utils
@@ -79,6 +81,54 @@ def _filtered_history_single_factor(
         if t < obs[0].shape[0] - 1:
             prior_t = [B[0][..., int(actions[t])] @ qs_hist[0][-1]]
     return qs_hist
+
+
+def _factorized_fpi_vfe_history(
+    A: list[jnp.ndarray],
+    obs: list[jnp.ndarray],
+    prior: list[jnp.ndarray],
+    A_dependencies: list[list[int]],
+    *,
+    num_iter: int,
+    distr_obs: bool = True,
+) -> tuple[list[list[jnp.ndarray]], jnp.ndarray]:
+    log_likelihoods = maths.compute_log_likelihood_per_modality(obs, A, distr_obs=distr_obs)
+    log_prior = jtu.tree_map(maths.log_stable, prior)
+    log_q = jtu.tree_map(jnp.zeros_like, prior)
+
+    qs_history = []
+    vfe_history = []
+
+    for _ in range(num_iter):
+        qs = jtu.tree_map(nn.softmax, log_q)
+        qs_history.append(qs)
+        vfe_history.append(
+            maths.calc_vfe(
+                qs,
+                prior,
+                obs=obs,
+                A=A,
+                A_dependencies=A_dependencies,
+                distr_obs=distr_obs,
+            )[1]
+        )
+        marginal_ll = all_marginal_log_likelihood(qs, log_likelihoods, A_dependencies)
+        log_q = jtu.tree_map(lambda ll, lp: ll + lp, marginal_ll, log_prior)
+
+    qs = jtu.tree_map(nn.softmax, log_q)
+    qs_history.append(qs)
+    vfe_history.append(
+        maths.calc_vfe(
+            qs,
+            prior,
+            obs=obs,
+            A=A,
+            A_dependencies=A_dependencies,
+            distr_obs=distr_obs,
+        )[1]
+    )
+
+    return qs_history, jnp.stack(vfe_history)
 
 
 class TestCanonicalVFE(unittest.TestCase):
@@ -225,6 +275,153 @@ class TestCanonicalVFE(unittest.TestCase):
 
         gradients = grad(scalar_vfe)(jnp.array([[0.5, -0.1], [0.2, 0.4]]))
         self.assertTrue(bool(jnp.all(jnp.isfinite(gradients))))
+
+    def test_calc_vfe_sequence_gradients_are_finite_without_joint_qs(self):
+        qs = [jnp.array([[0.70, 0.30], [0.40, 0.60], [0.65, 0.35]])]
+        prior = [jnp.array([0.55, 0.45])]
+        obs = [jnp.array([[1.0, 0.0], [0.0, 1.0], [0.25, 0.75]])]
+        actions = jnp.array([0, 1])
+        base_a_logits = jnp.array([[0.9, 0.2], [0.1, 0.8]])
+        base_b_logits = jnp.array(
+            [
+                [[0.8, 0.3], [0.2, 0.7]],
+                [[0.2, 0.7], [0.8, 0.3]],
+            ]
+        )
+
+        def scalar_vfe_from_A(a_logits: jnp.ndarray) -> jnp.ndarray:
+            A = [nn.softmax(a_logits, axis=0)]
+            B = [nn.softmax(base_b_logits, axis=0)]
+            return maths.calc_vfe(
+                qs,
+                prior,
+                obs=obs,
+                A=A,
+                B=B,
+                past_actions=actions,
+                A_dependencies=[[0]],
+                B_dependencies=[[0]],
+            )[1]
+
+        def scalar_vfe_from_B(b_logits: jnp.ndarray) -> jnp.ndarray:
+            A = [nn.softmax(base_a_logits, axis=0)]
+            B = [nn.softmax(b_logits, axis=0)]
+            return maths.calc_vfe(
+                qs,
+                prior,
+                obs=obs,
+                A=A,
+                B=B,
+                past_actions=actions,
+                A_dependencies=[[0]],
+                B_dependencies=[[0]],
+            )[1]
+
+        gradients_A = grad(scalar_vfe_from_A)(jnp.array([[0.5, -0.1], [0.2, 0.4]]))
+        gradients_B = grad(scalar_vfe_from_B)(base_b_logits)
+
+        self.assertTrue(bool(jnp.all(jnp.isfinite(gradients_A))))
+        self.assertTrue(bool(jnp.all(jnp.isfinite(gradients_B))))
+
+    def test_calc_vfe_sequence_gradients_are_finite_with_joint_qs(self):
+        qs = [jnp.array([[0.70, 0.30], [0.40, 0.60], [0.65, 0.35]])]
+        joint_qs = [
+            jnp.array(
+                [
+                    [[0.30, 0.10], [0.40, 0.20]],
+                    [[0.25, 0.40], [0.15, 0.20]],
+                ]
+            )
+        ]
+        prior = [jnp.array([0.55, 0.45])]
+        obs = [jnp.array([[1.0, 0.0], [0.0, 1.0], [0.25, 0.75]])]
+        actions = jnp.array([0, 1])
+        base_a_logits = jnp.array([[0.9, 0.2], [0.1, 0.8]])
+        base_b_logits = jnp.array(
+            [
+                [[0.8, 0.3], [0.2, 0.7]],
+                [[0.2, 0.7], [0.8, 0.3]],
+            ]
+        )
+
+        def scalar_vfe_from_A(a_logits: jnp.ndarray) -> jnp.ndarray:
+            A = [nn.softmax(a_logits, axis=0)]
+            B = [nn.softmax(base_b_logits, axis=0)]
+            return maths.calc_vfe(
+                qs,
+                prior,
+                obs=obs,
+                A=A,
+                B=B,
+                past_actions=actions,
+                A_dependencies=[[0]],
+                B_dependencies=[[0]],
+                joint_qs=joint_qs,
+            )[1]
+
+        def scalar_vfe_from_B(b_logits: jnp.ndarray) -> jnp.ndarray:
+            A = [nn.softmax(base_a_logits, axis=0)]
+            B = [nn.softmax(b_logits, axis=0)]
+            return maths.calc_vfe(
+                qs,
+                prior,
+                obs=obs,
+                A=A,
+                B=B,
+                past_actions=actions,
+                A_dependencies=[[0]],
+                B_dependencies=[[0]],
+                joint_qs=joint_qs,
+            )[1]
+
+        gradients_A = grad(scalar_vfe_from_A)(jnp.array([[0.5, -0.1], [0.2, 0.4]]))
+        gradients_B = grad(scalar_vfe_from_B)(base_b_logits)
+
+        self.assertTrue(bool(jnp.all(jnp.isfinite(gradients_A))))
+        self.assertTrue(bool(jnp.all(jnp.isfinite(gradients_B))))
+
+    def test_factorized_fpi_vfe_decreases_monotonically(self):
+        prior = [
+            jnp.array([0.55, 0.45]),
+            jnp.array([0.30, 0.70]),
+        ]
+        obs = [jnp.array([0.0, 1.0, 0.0])]
+        A = [
+            jnp.array(
+                [
+                    [[0.80, 0.20], [0.30, 0.10]],
+                    [[0.15, 0.30], [0.30, 0.20]],
+                    [[0.05, 0.50], [0.40, 0.70]],
+                ]
+            )
+        ]
+        A_dependencies = [[0, 1]]
+        num_iter = 8
+
+        qs_history, vfe_history = _factorized_fpi_vfe_history(
+            A,
+            obs,
+            prior,
+            A_dependencies,
+            num_iter=num_iter,
+        )
+        qs_final = run_factorized_fpi(
+            A,
+            obs,
+            prior,
+            A_dependencies,
+            num_iter=num_iter,
+        )
+
+        self.assertEqual(len(vfe_history), num_iter + 1)
+        self.assertTrue(bool(jnp.all(jnp.diff(vfe_history) <= 1e-6)))
+
+        for qs_hist_f, qs_final_f in zip(qs_history[-1], qs_final):
+            np.testing.assert_allclose(
+                np.asarray(qs_hist_f),
+                np.asarray(qs_final_f),
+                atol=1e-6,
+            )
 
     def test_update_posterior_states_return_info_includes_vfe(self):
         A = [jnp.array([[0.9, 0.2], [0.1, 0.8]])]

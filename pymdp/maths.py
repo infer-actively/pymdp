@@ -312,10 +312,19 @@ def _to_dense_if_sparse(x: ArrayLike) -> ArrayLike:
 
 
 def _expected_log_prob(log_prob: ArrayLike, marginals: list[ArrayLike]) -> ArrayLike:
-    log_prob = _to_dense_if_sparse(log_prob)
     if len(marginals) == 0:
-        return jnp.asarray(log_prob).sum()
-    return (multidimensional_outer(marginals) * log_prob).sum()
+        return jnp.asarray(_to_dense_if_sparse(log_prob)).sum()
+    return factor_dot(log_prob, marginals)
+
+
+def _expected_log_prob_tensor(log_prob: ArrayLike, belief: ArrayLike) -> ArrayLike:
+    log_prob = jnp.asarray(_to_dense_if_sparse(log_prob))
+    belief = jnp.asarray(_to_dense_if_sparse(belief))
+    return factor_dot_flex(
+        log_prob,
+        [belief],
+        dims=(tuple(range(log_prob.ndim)),),
+    )
 
 
 def _ensure_vfe_action_history_shape(
@@ -678,9 +687,13 @@ def calc_vfe(
             else:
                 neg_entropy_cond_t = 0.0
                 for f, joint_f in enumerate(joint_qs):
+                    joint_f_t = _to_dense_if_sparse(joint_f[t - 1])
+                    parent_marginal_t = joint_f_t.sum(axis=0)
                     neg_entropy_cond_t += (
-                        stable_xlogx(_to_dense_if_sparse(joint_f[t - 1])).sum()
-                        - stable_xlogx(qs[f][t - 1]).sum()
+                        _expected_log_prob_tensor(log_stable(joint_f_t), joint_f_t)
+                        - _expected_log_prob_tensor(
+                            log_stable(parent_marginal_t), parent_marginal_t
+                        )
                     )
                 neg_entropy_cond_t = neg_entropy_cond_t * valid_scale
                 neg_entropy_marginal_t = _neg_entropy_term(qs_t) * valid_scale
@@ -719,7 +732,9 @@ def calc_vfe(
                                 f"`joint_qs[{f}][{t - 1}]` has shape {joint_f_t.shape}, "
                                 f"expected {B_f_t.shape} to match the conditioned transition tensor"
                             )
-                        transition_term_t += -(joint_f_t * log_stable(B_f_t)).sum()
+                        transition_term_t += -_expected_log_prob_tensor(
+                            log_stable(B_f_t), joint_f_t
+                        )
 
                 transition_term_t = (
                     transition_term_t
