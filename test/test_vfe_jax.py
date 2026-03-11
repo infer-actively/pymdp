@@ -258,6 +258,87 @@ class TestCanonicalVFE(unittest.TestCase):
             atol=1e-6,
         )
 
+    def test_calc_vfe_rejects_multifactor_1d_past_actions(self):
+        prior = [jnp.array([0.55, 0.45]), jnp.array([0.30, 0.70])]
+        qs = [jnp.array([[0.6, 0.4], [0.5, 0.5]]), jnp.array([[0.4, 0.6], [0.7, 0.3]])]
+        obs = [jnp.array([[1.0, 0.0], [0.0, 1.0]])]
+        A = [
+            jnp.array(
+                [
+                    [[0.90, 0.20], [0.10, 0.30]],
+                    [[0.10, 0.80], [0.90, 0.70]],
+                ]
+            )
+        ]
+        B = [
+            jnp.array([[[0.8], [0.3]], [[0.2], [0.7]]]),
+            jnp.array([[[0.7], [0.4]], [[0.3], [0.6]]]),
+        ]
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "1D `past_actions` is only supported for single-factor action histories",
+        ):
+            maths.calc_vfe(
+                qs,
+                prior,
+                obs=obs,
+                A=A,
+                B=B,
+                past_actions=jnp.array([0, 0]),
+                A_dependencies=[[0, 1]],
+                B_dependencies=[[0], [1]],
+            )
+
+    def test_calc_vfe_rejects_mismatched_past_action_history_length_when_transitions_used(self):
+        prior = [jnp.array([0.65, 0.35])]
+        qs = [jnp.array([[0.80, 0.20], [0.25, 0.75], [0.60, 0.40]])]
+        obs = [jnp.array([[1.0, 0.0], [0.0, 1.0], [0.40, 0.60]])]
+        A = [jnp.array([[0.90, 0.15], [0.10, 0.85]])]
+        B = [
+            jnp.array(
+                [
+                    [[0.85, 0.30], [0.20, 0.65]],
+                    [[0.15, 0.70], [0.80, 0.35]],
+                ]
+            )
+        ]
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "`past_actions` has leading dimension 1, expected 2",
+        ):
+            maths.calc_vfe(
+                qs,
+                prior,
+                obs=obs,
+                A=A,
+                B=B,
+                past_actions=jnp.array([0]),
+                A_dependencies=[[0]],
+                B_dependencies=[[0]],
+            )
+
+    def test_calc_vfe_accepts_mismatched_past_action_history_when_no_transitions_used(self):
+        prior = [jnp.array([0.65, 0.35])]
+        qs = [jnp.array([[0.80, 0.20], [0.25, 0.75], [0.60, 0.40]])]
+        obs = [jnp.array([[1.0, 0.0], [0.0, 1.0], [0.40, 0.60]])]
+        A = [jnp.array([[0.90, 0.15], [0.10, 0.85]])]
+
+        vfe_t, vfe = maths.calc_vfe(
+            qs,
+            prior,
+            obs=obs,
+            A=A,
+            B=None,
+            past_actions=jnp.array([0]),
+            A_dependencies=[[0]],
+        )
+
+        self.assertEqual(vfe_t.shape, (3,))
+        self.assertTrue(bool(jnp.all(jnp.isfinite(vfe_t))))
+        self.assertTrue(bool(jnp.isfinite(vfe)))
+
     def test_calc_vfe_gradients_are_finite(self):
         qs = [jnp.array([0.60, 0.40])]
         prior = [jnp.array([0.55, 0.45])]

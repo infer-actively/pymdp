@@ -338,11 +338,10 @@ def _ensure_vfe_action_history_shape(
     if past_actions.ndim == 1:
         if num_factors == 1:
             return jnp.expand_dims(past_actions, -1)
-        if past_actions.shape[0] == num_factors:
-            return jnp.expand_dims(past_actions, 0)
         raise ValueError(
-            "1D `past_actions` must either represent a single-factor action "
-            "history or a single timestep over all factors"
+            "1D `past_actions` is only supported for single-factor action "
+            "histories; multi-factor action histories must have shape "
+            "(T-1, num_factors)"
         )
 
     if past_actions.ndim != 2:
@@ -634,6 +633,13 @@ def calc_vfe(
     else:
         T = qs[0].shape[0]
         past_actions = _ensure_vfe_action_history_shape(past_actions, num_factors)
+        if B is not None and past_actions is not None:
+            expected_history_len = max(T - 1, 0)
+            if past_actions.shape[0] != expected_history_len:
+                raise ValueError(
+                    "`past_actions` has leading dimension "
+                    f"{past_actions.shape[0]}, expected {expected_history_len}"
+                )
 
         if obs_valid_mask is None:
             obs_valid_mask = jnp.ones((T,), dtype=bool)
