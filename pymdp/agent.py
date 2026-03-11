@@ -703,9 +703,10 @@ class Agent(Module):
             the resulting `empirical_prior` variable may be a matrix (or list[Array]).
             of additional dimensions to encode extra conditioning variables like timepoint and policy.
 
-        past_actions: list[int] or tuple[int], optional
-            The action input. Each entry `past_actions[f]` stores indices representing the actions
-            for control factor `f`.
+        past_actions: Array, optional
+            Action history aligned to time. For single-batch sequence inference
+            this should be shaped `(T-1, num_factors)`. For batched calls it
+            should be shaped `(batch, T-1, num_factors)`.
 
         qs_hist: list[Array] or tuple[Array], optional
             History of posterior beliefs over hidden states.

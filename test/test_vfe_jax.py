@@ -400,6 +400,95 @@ class TestCanonicalVFE(unittest.TestCase):
                 distr_obs=True,
             )
 
+    def test_sequence_inference_uses_singleton_control_transitions_without_past_actions(self):
+        prior = [jnp.array([0.65, 0.35])]
+        obs = [jnp.array([[1.0, 0.0], [0.0, 1.0], [0.40, 0.60]])]
+        A = [jnp.array([[0.90, 0.15], [0.10, 0.85]])]
+        B = [
+            jnp.array(
+                [
+                    [[0.85], [0.20]],
+                    [[0.15], [0.80]],
+                ]
+            )
+        ]
+
+        qs_hist = inference.update_posterior_states(
+            A=A,
+            B=B,
+            obs=obs,
+            past_actions=None,
+            prior=prior,
+            A_dependencies=[[0]],
+            B_dependencies=[[0]],
+            method="mmp",
+            distr_obs=True,
+        )
+
+        self.assertEqual(qs_hist[0].shape, (3, 2))
+        self.assertTrue(bool(jnp.all(jnp.isfinite(qs_hist[0]))))
+
+    def test_sequence_return_info_uses_singleton_control_transitions_without_past_actions(self):
+        A = [jnp.array([[0.90, 0.15], [0.10, 0.85]])]
+        B = [
+            jnp.array(
+                [
+                    [[0.85], [0.20]],
+                    [[0.15], [0.80]],
+                ]
+            )
+        ]
+        prior = [jnp.array([0.60, 0.40])]
+        obs = [jnp.array([[1.0, 0.0], [0.0, 1.0], [0.0, 1.0]])]
+
+        qs_hist, info = inference.update_posterior_states(
+            A=A,
+            B=B,
+            obs=obs,
+            past_actions=None,
+            prior=prior,
+            A_dependencies=[[0]],
+            B_dependencies=[[0]],
+            method="mmp",
+            distr_obs=True,
+            return_info=True,
+        )
+
+        expected_vfe_t, expected_vfe = maths.calc_vfe(
+            qs_hist,
+            prior,
+            obs=obs,
+            A=A,
+            B=B,
+            past_actions=None,
+            A_dependencies=[[0]],
+            B_dependencies=[[0]],
+        )
+
+        np.testing.assert_allclose(np.asarray(info["vfe_t"]), np.asarray(expected_vfe_t), atol=1e-6)
+        np.testing.assert_allclose(np.asarray(info["vfe"]), np.asarray(expected_vfe), atol=1e-6)
+
+    def test_return_info_requires_prior(self):
+        A = [jnp.array([[0.9, 0.2], [0.1, 0.8]])]
+        obs = [jnp.array([[0.0, 1.0]])]
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "`prior` must be provided when `return_info=True`",
+        ):
+            inference.update_posterior_states(
+                A=A,
+                B=None,
+                obs=obs,
+                past_actions=None,
+                prior=None,
+                A_dependencies=[[0]],
+                B_dependencies=[[0]],
+                method="fpi",
+                distr_obs=True,
+                return_info=True,
+            )
+
     def test_calc_vfe_gradients_are_finite(self):
         qs = [jnp.array([0.60, 0.40])]
         prior = [jnp.array([0.55, 0.45])]
@@ -734,8 +823,8 @@ class TestCanonicalVFE(unittest.TestCase):
         B = [
             jnp.array(
                 [
-                    [[0.85, 0.30], [0.20, 0.65]],
-                    [[0.15, 0.70], [0.80, 0.35]],
+                    [[0.85], [0.20]],
+                    [[0.15], [0.80]],
                 ]
             )
         ]
@@ -759,6 +848,36 @@ class TestCanonicalVFE(unittest.TestCase):
         self.assertEqual(info["vfe_t"].shape, (3,))
         self.assertTrue(bool(jnp.all(jnp.isfinite(info["vfe_t"]))))
         self.assertTrue(bool(jnp.isfinite(info["vfe"])))
+
+    def test_sequence_inference_requires_past_actions_for_multiaction_transitions(self):
+        A = [jnp.array([[0.90, 0.15], [0.10, 0.85]])]
+        B = [
+            jnp.array(
+                [
+                    [[0.85, 0.30], [0.20, 0.65]],
+                    [[0.15, 0.70], [0.80, 0.35]],
+                ]
+            )
+        ]
+        prior = [jnp.array([0.60, 0.40])]
+        obs = [jnp.array([[1.0, 0.0], [0.0, 1.0], [0.0, 1.0]])]
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "requires `past_actions` when transition tensors have more than one control state",
+        ):
+            inference.update_posterior_states(
+                A=A,
+                B=B,
+                obs=obs,
+                past_actions=None,
+                prior=prior,
+                A_dependencies=[[0]],
+                B_dependencies=[[0]],
+                method="mmp",
+                distr_obs=True,
+                return_info=True,
+            )
 
     def test_calc_vfe_with_smoothed_exact_posterior_matches_bruteforce_sequence_vfe(self):
         prior = [jnp.array([0.55, 0.45])]

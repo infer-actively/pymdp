@@ -209,14 +209,14 @@ def _run_sequence_inference(
 
     obs_valid_mask = None
     transition_valid_mask = None
+    history_len = max(obs[0].shape[0] - 1, 0)
 
     if past_actions is not None:
         past_actions = _ensure_action_history_shape(past_actions, len(B))
-        expected_history_len = max(obs[0].shape[0] - 1, 0)
-        if past_actions.shape[0] != expected_history_len:
+        if past_actions.shape[0] != history_len:
             raise ValueError(
                 "`past_actions` has leading dimension "
-                f"{past_actions.shape[0]}, expected {expected_history_len}"
+                f"{past_actions.shape[0]}, expected {history_len}"
             )
 
     if valid_steps is not None:
@@ -227,6 +227,18 @@ def _run_sequence_inference(
     conditioned_B = None
     if past_actions is not None:
         conditioned_B = _condition_transitions_on_actions(B, past_actions)
+    elif history_len > 0:
+        conditioned_B = []
+        for b_f in B:
+            if b_f.shape[-1] != 1:
+                raise ValueError(
+                    f"Sequence inference method `{method}` requires `past_actions` "
+                    "when transition tensors have more than one control state"
+                )
+            single_transition = b_f[..., 0]
+            conditioned_B.append(
+                jnp.broadcast_to(single_transition, (history_len,) + single_transition.shape)
+            )
 
     if method == "vmp":
         qs = run_vmp(
@@ -313,7 +325,7 @@ def _assemble_vfe_kwargs(
         "prior": prior,
         "obs": obs,
         "A": A,
-        "B": B_for_vfe if past_actions is not None else None,
+        "B": B_for_vfe,
         "past_actions": past_actions,
         "A_dependencies": A_dependencies,
         "B_dependencies": B_dependencies,
@@ -355,7 +367,8 @@ def update_posterior_states(
         Action history with shape `(T-1, num_factors)` for sequence methods.
         Can be `None` when no valid history is available.
     prior : list[Array], optional
-        Prior beliefs over hidden states.
+        Prior beliefs over hidden states. Required when `return_info=True`
+        so canonical VFE diagnostics can be computed.
     qs_hist : list[Array], optional
         Existing posterior history buffer. If provided, one-step updates append
         to this history.
@@ -395,6 +408,9 @@ def update_posterior_states(
     curr_obs = None
     obs_valid_mask = None
     transition_valid_mask = None
+
+    if return_info and prior is None:
+        raise ValueError("`prior` must be provided when `return_info=True`")
 
     if method in SEQUENCE_METHODS:
         obs, past_actions = _truncate_for_horizon(obs, past_actions, inference_horizon)
