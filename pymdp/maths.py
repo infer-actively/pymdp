@@ -10,6 +10,7 @@ from jaxtyping import ArrayLike
 from jax.experimental import sparse
 from jax.experimental.sparse._base import JAXSparse
 import jax.experimental.sparse as jsparse
+from pymdp.utils import resolve_a_dependencies, resolve_b_dependencies
 
 MINVAL = jnp.finfo(float).eps
 
@@ -286,25 +287,6 @@ def compute_log_likelihood_per_modality(
     return ll_all
 
 
-def _default_a_dependencies(
-    num_factors: int,
-    num_modalities: int,
-    A_dependencies: list[list[int]] | None = None,
-) -> list[list[int]]:
-    if A_dependencies is None:
-        return [list(range(num_factors)) for _ in range(num_modalities)]
-    return A_dependencies
-
-
-def _default_b_dependencies(
-    num_factors: int,
-    B_dependencies: list[list[int]] | None = None,
-) -> list[list[int]]:
-    if B_dependencies is None:
-        return [[f] for f in range(num_factors)]
-    return B_dependencies
-
-
 def _to_dense_if_sparse(x: ArrayLike) -> ArrayLike:
     if isinstance(x, jsparse.BCOO):
         return jsparse.todense(x)
@@ -325,6 +307,12 @@ def _expected_log_prob_tensor(log_prob: ArrayLike, belief: ArrayLike) -> ArrayLi
         [belief],
         dims=(tuple(range(log_prob.ndim)),),
     )
+
+
+def _pad_sequence_with_initial_zeros(x: ArrayLike) -> ArrayLike:
+    x = jnp.asarray(_to_dense_if_sparse(x))
+    pad = jnp.zeros((1,) + x.shape[1:], dtype=x.dtype)
+    return jnp.concatenate([pad, x], axis=0)
 
 
 def _ensure_vfe_action_history_shape(
@@ -404,7 +392,7 @@ def compute_accuracy(
     ArrayLike
         Expected log-likelihood term.
     """
-    A_dependencies = _default_a_dependencies(len(qs), len(A), A_dependencies)
+    A_dependencies = resolve_a_dependencies(len(qs), len(A), A_dependencies)
     log_likelihoods = compute_log_likelihood_per_modality(obs, A, distr_obs=distr_obs)
     accuracy = 0.0
 
@@ -422,13 +410,7 @@ def compute_free_energy(
     A_dependencies: list[list[int]] | None = None,
     distr_obs: bool = True,
 ) -> ArrayLike:
-    """
-    Calculate variational free energy by breaking its computation down into three steps:
-    1. computation of the negative entropy of the posterior -H[Q(s)]
-    2. computation of the cross entropy of the posterior with the prior H_{Q(s)}[P(s)]
-    3. computation of the accuracy E_{Q(s)}[lnP(o|s)]
-
-    Then add them all together -- except subtract the accuracy
+    """Compatibility wrapper around :func:`calc_vfe` for single-step state VFE.
 
     Parameters
     ----------
@@ -587,10 +569,10 @@ def calc_vfe(
         raise ValueError("`A` must be provided when `obs` is provided")
 
     A_dependencies = (
-        None if A is None else _default_a_dependencies(num_factors, len(A), A_dependencies)
+        None if A is None else resolve_a_dependencies(num_factors, len(A), A_dependencies)
     )
     B_dependencies = (
-        None if B is None else _default_b_dependencies(num_factors, B_dependencies)
+        None if B is None else resolve_b_dependencies(num_factors, B_dependencies)
     )
 
     is_sequence = qs[0].ndim > 1
@@ -673,13 +655,37 @@ def calc_vfe(
                         f"expected {max(T - 1, 0)}"
                     )
 
-        neg_entropy_terms = []
-        prior_cross_entropy_terms = []
-        transition_cross_entropy_terms = []
-        accuracy_terms = []
-        vfe_terms = []
+        if B is not None and past_actions is None and T > 1:
+            for B_f in B:
+                if B_f.shape[-1] != 1:
+                    raise ValueError(
+                        "`past_actions` is required to compute sequence VFE "
+                        "when transition tensors have more than one control state"
+                    )
 
-        for t in range(T):
+        padded_past_actions = (
+            None if past_actions is None else _pad_sequence_with_initial_zeros(past_actions)
+        )
+        padded_joint_qs = (
+            None
+            if joint_qs is None
+            else tree_util.tree_map(_pad_sequence_with_initial_zeros, joint_qs)
+        )
+        padded_prev_qs = tree_util.tree_map(
+            lambda q: _pad_sequence_with_initial_zeros(q[:-1]),
+            qs,
+        )
+        padded_transition_valid_mask = jnp.concatenate(
+            [jnp.zeros((1,), dtype=bool), transition_valid_mask],
+            axis=0,
+        )
+
+        def _scan_step(
+            carry: None, t: ArrayLike
+        ) -> tuple[
+            None,
+            tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike, ArrayLike],
+        ]:
             qs_t = tree_util.tree_map(lambda q: q[t], qs)
             obs_t = None if obs is None else tree_util.tree_map(lambda o: o[t], obs)
 
@@ -688,12 +694,13 @@ def calc_vfe(
             prior_term_t = _state_prior_term(qs_t) * valid_scale
             accuracy_term_t = _accuracy_term(qs_t, obs_t) * valid_scale
 
-            if joint_qs is None or t == 0:
-                neg_entropy_term_t = _neg_entropy_term(qs_t) * valid_scale
+            neg_entropy_marginal_t = _neg_entropy_term(qs_t) * valid_scale
+            if padded_joint_qs is None:
+                neg_entropy_term_t = neg_entropy_marginal_t
             else:
+                joint_qs_t = tree_util.tree_map(lambda q: q[t], padded_joint_qs)
                 neg_entropy_cond_t = 0.0
-                for f, joint_f in enumerate(joint_qs):
-                    joint_f_t = _to_dense_if_sparse(joint_f[t - 1])
+                for joint_f_t in joint_qs_t:
                     parent_marginal_t = joint_f_t.sum(axis=0)
                     neg_entropy_cond_t += (
                         _expected_log_prob_tensor(log_stable(joint_f_t), joint_f_t)
@@ -702,40 +709,35 @@ def calc_vfe(
                         )
                     )
                 neg_entropy_cond_t = neg_entropy_cond_t * valid_scale
-                neg_entropy_marginal_t = _neg_entropy_term(qs_t) * valid_scale
                 neg_entropy_term_t = (
                     start_scale * neg_entropy_marginal_t
                     + (1.0 - start_scale) * neg_entropy_cond_t
                 )
 
-            if B is None or t == 0:
+            if B is None:
                 transition_term_t = jnp.array(0.0, dtype=neg_entropy_term_t.dtype)
             else:
                 transition_term_t = 0.0
+                actions_t = None if padded_past_actions is None else padded_past_actions[t]
                 for f, deps_f in enumerate(B_dependencies):
                     B_f = _to_dense_if_sparse(B[f])
-                    if past_actions is None:
-                        if B_f.shape[-1] != 1:
-                            raise ValueError(
-                                "`past_actions` is required to compute sequence VFE "
-                                "when transition tensors have more than one control state"
-                            )
+                    if actions_t is None:
                         B_f_t = B_f[..., 0]
                     else:
-                        action_f = past_actions[t - 1, f].astype(jnp.int32)
+                        action_f = actions_t[f].astype(jnp.int32)
                         safe_action_f = jnp.where(action_f < 0, 0, action_f)
                         B_f_t = jnp.take(B_f, safe_action_f, axis=-1)
 
-                    if joint_qs is None:
+                    if padded_joint_qs is None:
                         transition_term_t += -_expected_log_prob(
                             log_stable(B_f_t),
-                            [qs_t[f]] + [qs[d][t - 1] for d in deps_f],
+                            [qs_t[f]] + [padded_prev_qs[d][t] for d in deps_f],
                         )
                     else:
-                        joint_f_t = _to_dense_if_sparse(joint_qs[f][t - 1])
+                        joint_f_t = _to_dense_if_sparse(padded_joint_qs[f][t])
                         if joint_f_t.shape != B_f_t.shape:
                             raise ValueError(
-                                f"`joint_qs[{f}][{t - 1}]` has shape {joint_f_t.shape}, "
+                                f"`joint_qs[{f}]` has per-timestep shape {joint_f_t.shape}, "
                                 f"expected {B_f_t.shape} to match the conditioned transition tensor"
                             )
                         transition_term_t += -_expected_log_prob_tensor(
@@ -744,30 +746,35 @@ def calc_vfe(
 
                 transition_term_t = (
                     transition_term_t
-                    * transition_valid_mask[t - 1].astype(neg_entropy_term_t.dtype)
+                    * padded_transition_valid_mask[t].astype(neg_entropy_term_t.dtype)
                     * (1.0 - start_scale)
                 )
 
             if B is None:
-                dynamics_term_t = prior_term_t
                 prior_cross_entropy_term_t = prior_term_t
+                dynamics_term_t = prior_term_t
             else:
-                prior_cross_entropy_term_t = (
-                    prior_term_t * start_mask[t].astype(neg_entropy_term_t.dtype)
-                )
+                prior_cross_entropy_term_t = prior_term_t * start_scale
                 dynamics_term_t = prior_cross_entropy_term_t + transition_term_t
 
-            neg_entropy_terms.append(neg_entropy_term_t)
-            prior_cross_entropy_terms.append(prior_cross_entropy_term_t)
-            transition_cross_entropy_terms.append(transition_term_t)
-            accuracy_terms.append(accuracy_term_t)
-            vfe_terms.append(neg_entropy_term_t + dynamics_term_t - accuracy_term_t)
+            vfe_term_t = neg_entropy_term_t + dynamics_term_t - accuracy_term_t
 
-        neg_entropy_t = jnp.stack(neg_entropy_terms)
-        prior_cross_entropy_t = jnp.stack(prior_cross_entropy_terms)
-        transition_cross_entropy_t = jnp.stack(transition_cross_entropy_terms)
-        accuracy_t = jnp.stack(accuracy_terms)
-        vfe_t = jnp.stack(vfe_terms)
+            return None, (
+                neg_entropy_term_t,
+                prior_cross_entropy_term_t,
+                transition_term_t,
+                accuracy_term_t,
+                vfe_term_t,
+            )
+
+        _, scan_outputs = lax.scan(_scan_step, None, jnp.arange(T))
+        (
+            neg_entropy_t,
+            prior_cross_entropy_t,
+            transition_cross_entropy_t,
+            accuracy_t,
+            vfe_t,
+        ) = scan_outputs
 
     parameter_kl_A = _sum_dirichlet_kl(qA, pA, event_dim=0)
     parameter_kl_B = _sum_dirichlet_kl(qB, pB, event_dim=0)

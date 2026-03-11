@@ -16,6 +16,7 @@ from jaxtyping import Array
 import equinox as eqx
 
 from pymdp.maths import factor_dot, log_stable, stable_entropy, stable_xlogx, spm_wnorm
+from pymdp import utils
 
 class Policies(eqx.Module):
     """ 
@@ -316,7 +317,7 @@ def compute_expected_state(
     # we will have empirical priors with codependent factors. 
     assert len(u_t) == len(B)
     if B_dependencies is None:
-        B_dependencies = [[f] for f in range(len(B))]
+        B_dependencies = utils.resolve_b_dependencies(len(B))
     qs_next = []
     for B_f, u_f, deps in zip(B, u_t, B_dependencies):
         relevant_factors = [qs_prior[idx] for idx in deps]

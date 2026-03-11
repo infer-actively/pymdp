@@ -1062,20 +1062,22 @@ class Agent(Module):
         elif isinstance(A[0], Distribution) and isinstance(B[0], Distribution):
             A_dependencies, _ = get_dependencies(A, B)
         else:
-            A_dependencies = [list(range(self.num_factors)) for _ in range(self.num_modalities)]
+            A_dependencies = utils.resolve_a_dependencies(
+                self.num_factors, self.num_modalities
+            )
 
         if B_dependencies is not None:
             B_dependencies = B_dependencies
         elif isinstance(A[0], Distribution) and isinstance(B[0], Distribution):
             _, B_dependencies = get_dependencies(A, B)
         else:
-            B_dependencies = [[f] for f in range(self.num_factors)]
+            B_dependencies = utils.resolve_b_dependencies(self.num_factors)
 
         """TODO: check B action shape"""
         if B_action_dependencies is not None:
             B_action_dependencies = B_action_dependencies
         else:
-            B_action_dependencies = [[f] for f in range(self.num_factors)]
+            B_action_dependencies = utils.resolve_b_action_dependencies(self.num_factors)
         return A_dependencies, B_dependencies, B_action_dependencies
 
     def _flatten_B_action_dims(

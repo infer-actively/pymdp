@@ -54,6 +54,37 @@ def list_array_norm_dist(dist_list: list[Array]) -> list[Array]:
     """
     return jtu.tree_map(lambda dist: norm_dist(dist), dist_list)
 
+
+def resolve_a_dependencies(
+    num_factors: int,
+    num_modalities: int,
+    A_dependencies: list[list[int]] | None = None,
+) -> list[list[int]]:
+    """Return modality-to-factor dependencies, filling in the fully connected default."""
+    if A_dependencies is None:
+        return [list(range(num_factors)) for _ in range(num_modalities)]
+    return A_dependencies
+
+
+def resolve_b_dependencies(
+    num_factors: int,
+    B_dependencies: list[list[int]] | None = None,
+) -> list[list[int]]:
+    """Return factor-to-factor transition dependencies, filling in local defaults."""
+    if B_dependencies is None:
+        return [[f] for f in range(num_factors)]
+    return B_dependencies
+
+
+def resolve_b_action_dependencies(
+    num_factors: int,
+    B_action_dependencies: list[list[int]] | None = None,
+) -> list[list[int]]:
+    """Return control-factor dependencies, filling in the per-factor default."""
+    if B_action_dependencies is None:
+        return [[f] for f in range(num_factors)]
+    return B_action_dependencies
+
 def validate_normalization(tensor: Array, axis: int = 1, tensor_name: str = "tensor") -> None:
     """
     Validate that a probability tensor has normalized distributions along a given axis.
@@ -132,9 +163,7 @@ def random_A_array(
     num_states = [num_states] if isinstance(num_states, int) else num_states
     num_modalities = len(num_obs)
 
-    if A_dependencies is None:
-        num_factors = len(num_states)
-        A_dependencies = [list(range(num_factors))] * num_modalities
+    A_dependencies = resolve_a_dependencies(len(num_states), num_modalities, A_dependencies)
 
     keys = jr.split(key, num_modalities)
     A = []
@@ -178,15 +207,14 @@ def random_B_array(
     num_controls = [num_controls] if isinstance(num_controls, int) else num_controls
     num_factors = len(num_states)
 
-    if B_dependencies is None:
-        B_dependencies = [[f] for f in range(num_factors)]
+    B_dependencies = resolve_b_dependencies(num_factors, B_dependencies)
 
     if B_action_dependencies is None:
         assert len(num_controls) == len(num_states)
-        B_action_dependencies = [[f] for f in range(num_factors)]
     else:
         unique_controls = list(set(sum(B_action_dependencies, [])))        
         assert unique_controls == list(range(len(num_controls)))
+    B_action_dependencies = resolve_b_action_dependencies(num_factors, B_action_dependencies)
 
     keys = jr.split(key, num_factors)
     B = []

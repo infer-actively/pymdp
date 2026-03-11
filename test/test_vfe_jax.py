@@ -5,7 +5,7 @@ import unittest
 from itertools import product
 
 import numpy as np
-from jax import grad, nn
+from jax import grad, jit, nn
 from jax import numpy as jnp
 from jax import tree_util as jtu
 from jax.scipy.special import digamma, gammaln
@@ -339,6 +339,67 @@ class TestCanonicalVFE(unittest.TestCase):
         self.assertTrue(bool(jnp.all(jnp.isfinite(vfe_t))))
         self.assertTrue(bool(jnp.isfinite(vfe)))
 
+    def test_update_posterior_states_rejects_multifactor_1d_past_actions(self):
+        prior = [jnp.array([0.55, 0.45]), jnp.array([0.30, 0.70])]
+        obs = [jnp.array([[1.0, 0.0], [0.0, 1.0]])]
+        A = [
+            jnp.array(
+                [
+                    [[0.90, 0.20], [0.10, 0.30]],
+                    [[0.10, 0.80], [0.90, 0.70]],
+                ]
+            )
+        ]
+        B = [
+            jnp.array([[[0.8], [0.3]], [[0.2], [0.7]]]),
+            jnp.array([[[0.7], [0.4]], [[0.3], [0.6]]]),
+        ]
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "1D `past_actions` is only supported for single-factor action histories",
+        ):
+            inference.update_posterior_states(
+                A=A,
+                B=B,
+                obs=obs,
+                past_actions=jnp.array([0, 0]),
+                prior=prior,
+                A_dependencies=[[0, 1]],
+                B_dependencies=[[0], [1]],
+                method="mmp",
+                distr_obs=True,
+            )
+
+    def test_update_posterior_states_rejects_mismatched_past_action_history_length(self):
+        prior = [jnp.array([0.65, 0.35])]
+        obs = [jnp.array([[1.0, 0.0], [0.0, 1.0], [0.40, 0.60]])]
+        A = [jnp.array([[0.90, 0.15], [0.10, 0.85]])]
+        B = [
+            jnp.array(
+                [
+                    [[0.85], [0.20]],
+                    [[0.15], [0.80]],
+                ]
+            )
+        ]
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "`past_actions` has leading dimension 1, expected 2",
+        ):
+            inference.update_posterior_states(
+                A=A,
+                B=B,
+                obs=obs,
+                past_actions=jnp.array([0]),
+                prior=prior,
+                A_dependencies=[[0]],
+                B_dependencies=[[0]],
+                method="mmp",
+                distr_obs=True,
+            )
+
     def test_calc_vfe_gradients_are_finite(self):
         qs = [jnp.array([0.60, 0.40])]
         prior = [jnp.array([0.55, 0.45])]
@@ -404,6 +465,39 @@ class TestCanonicalVFE(unittest.TestCase):
         self.assertTrue(bool(jnp.all(jnp.isfinite(gradients_A))))
         self.assertTrue(bool(jnp.all(jnp.isfinite(gradients_B))))
 
+    def test_calc_vfe_sequence_is_jittable_without_joint_qs(self):
+        qs = [jnp.array([[0.70, 0.30], [0.40, 0.60], [0.65, 0.35]])]
+        prior = [jnp.array([0.55, 0.45])]
+        obs = [jnp.array([[1.0, 0.0], [0.0, 1.0], [0.25, 0.75]])]
+        actions = jnp.array([0, 1])
+        B = [
+            jnp.array(
+                [
+                    [[0.8, 0.3], [0.2, 0.7]],
+                    [[0.2, 0.7], [0.8, 0.3]],
+                ]
+            )
+        ]
+
+        @jit
+        def compiled_vfe(a_logits: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray, dict[str, jnp.ndarray]]:
+            A = [nn.softmax(a_logits, axis=0)]
+            return maths.calc_vfe(
+                qs,
+                prior,
+                obs=obs,
+                A=A,
+                B=B,
+                past_actions=actions,
+                A_dependencies=[[0]],
+                B_dependencies=[[0]],
+                return_decomposition=True,
+            )
+
+        _, vfe, decomposition = compiled_vfe(jnp.array([[0.5, -0.1], [0.2, 0.4]]))
+        self.assertTrue(bool(jnp.isfinite(vfe)))
+        self.assertTrue(bool(jnp.isfinite(decomposition["state_vfe"])))
+
     def test_calc_vfe_sequence_gradients_are_finite_with_joint_qs(self):
         qs = [jnp.array([[0.70, 0.30], [0.40, 0.60], [0.65, 0.35]])]
         joint_qs = [
@@ -460,6 +554,46 @@ class TestCanonicalVFE(unittest.TestCase):
 
         self.assertTrue(bool(jnp.all(jnp.isfinite(gradients_A))))
         self.assertTrue(bool(jnp.all(jnp.isfinite(gradients_B))))
+
+    def test_calc_vfe_sequence_is_jittable_with_joint_qs(self):
+        qs = [jnp.array([[0.70, 0.30], [0.40, 0.60], [0.65, 0.35]])]
+        joint_qs = [
+            jnp.array(
+                [
+                    [[0.30, 0.10], [0.40, 0.20]],
+                    [[0.25, 0.40], [0.15, 0.20]],
+                ]
+            )
+        ]
+        prior = [jnp.array([0.55, 0.45])]
+        obs = [jnp.array([[1.0, 0.0], [0.0, 1.0], [0.25, 0.75]])]
+        actions = jnp.array([0, 1])
+        B = [
+            jnp.array(
+                [
+                    [[0.8, 0.3], [0.2, 0.7]],
+                    [[0.2, 0.7], [0.8, 0.3]],
+                ]
+            )
+        ]
+
+        @jit
+        def compiled_vfe(a_logits: jnp.ndarray) -> jnp.ndarray:
+            A = [nn.softmax(a_logits, axis=0)]
+            return maths.calc_vfe(
+                qs,
+                prior,
+                obs=obs,
+                A=A,
+                B=B,
+                past_actions=actions,
+                A_dependencies=[[0]],
+                B_dependencies=[[0]],
+                joint_qs=joint_qs,
+            )[1]
+
+        vfe = compiled_vfe(jnp.array([[0.5, -0.1], [0.2, 0.4]]))
+        self.assertTrue(bool(jnp.isfinite(vfe)))
 
     def test_factorized_fpi_vfe_decreases_monotonically(self):
         prior = [
