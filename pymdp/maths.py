@@ -402,47 +402,6 @@ def compute_accuracy(
     return accuracy
 
 
-def compute_free_energy(
-    qs: list[ArrayLike],
-    prior: list[ArrayLike],
-    obs: list[ArrayLike],
-    A: list[ArrayLike],
-    A_dependencies: list[list[int]] | None = None,
-    distr_obs: bool = True,
-) -> ArrayLike:
-    """Compatibility wrapper around :func:`calc_vfe` for single-step state VFE.
-
-    Parameters
-    ----------
-    qs: list[ArrayLike]
-        Marginal state beliefs per factor.
-    prior: list[ArrayLike]
-        Prior distributions per factor.
-    obs: list[ArrayLike]
-        Observations for each modality.
-    A: list[ArrayLike]
-        Likelihood tensors per modality.
-    A_dependencies: list[list[int]] | None, optional
-        Sparse modality-to-factor dependency mapping.
-    distr_obs: bool, default=True
-        Whether observations are already categorical distributions.
-
-    Returns
-    -------
-    ArrayLike
-        Variational free energy value.
-    """
-    _, vfe = calc_vfe(
-        qs,
-        prior,
-        obs=obs,
-        A=A,
-        A_dependencies=A_dependencies,
-        distr_obs=distr_obs,
-    )
-    return vfe
-
-
 def dirichlet_kl_divergence(
     q_dir: ArrayLike,
     p_dir: ArrayLike,
