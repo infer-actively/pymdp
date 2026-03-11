@@ -212,8 +212,8 @@ def random_B_array(
     if B_action_dependencies is None:
         assert len(num_controls) == len(num_states)
     else:
-        unique_controls = list(set(sum(B_action_dependencies, [])))        
-        assert unique_controls == list(range(len(num_controls)))
+        unique_controls = set(sum(B_action_dependencies, []))
+        assert unique_controls == set(range(len(num_controls)))
     B_action_dependencies = resolve_b_action_dependencies(num_factors, B_action_dependencies)
 
     keys = jr.split(key, num_factors)

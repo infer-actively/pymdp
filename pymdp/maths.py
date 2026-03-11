@@ -394,6 +394,11 @@ def compute_accuracy(
         Expected log-likelihood term.
     """
     A_dependencies = resolve_a_dependencies(len(qs), len(A), A_dependencies)
+    if len(A_dependencies) != len(A):
+        raise ValueError(
+            "`A_dependencies` must have one entry per observation modality; "
+            f"got {len(A_dependencies)} entries for {len(A)} modalities"
+        )
     log_likelihoods = compute_log_likelihood_per_modality(obs, A, distr_obs=distr_obs)
     accuracy = 0.0
 
@@ -534,6 +539,11 @@ def calc_vfe(
     B_dependencies = (
         None if B is None else resolve_b_dependencies(num_factors, B_dependencies)
     )
+    if B_dependencies is not None and len(B_dependencies) != num_factors:
+        raise ValueError(
+            "`B_dependencies` must have one entry per hidden-state factor; "
+            f"got {len(B_dependencies)} entries for {num_factors} factors"
+        )
 
     is_sequence = qs[0].ndim > 1
 

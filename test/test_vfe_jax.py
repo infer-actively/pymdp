@@ -381,6 +381,77 @@ class TestCanonicalVFE(unittest.TestCase):
         self.assertTrue(bool(jnp.all(jnp.isfinite(vfe_t))))
         self.assertTrue(bool(jnp.isfinite(vfe)))
 
+    def test_compute_accuracy_rejects_mismatched_A_dependencies_length(self):
+        qs = [jnp.array([0.55, 0.45]), jnp.array([0.30, 0.70])]
+        obs = [jnp.array([1.0, 0.0]), jnp.array([0.0, 1.0])]
+        A = [
+            jnp.array(
+                [
+                    [[0.90, 0.20], [0.10, 0.30]],
+                    [[0.10, 0.80], [0.90, 0.70]],
+                ]
+            ),
+            jnp.array(
+                [
+                    [[0.75, 0.40], [0.20, 0.15]],
+                    [[0.25, 0.60], [0.80, 0.85]],
+                ]
+            ),
+        ]
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "`A_dependencies` must have one entry per observation modality",
+        ):
+            maths.compute_accuracy(
+                qs,
+                obs,
+                A,
+                A_dependencies=[[0, 1]],
+            )
+
+    def test_calc_vfe_rejects_mismatched_B_dependencies_length(self):
+        prior = [jnp.array([0.55, 0.45]), jnp.array([0.30, 0.70])]
+        qs = [jnp.array([[0.6, 0.4], [0.5, 0.5]]), jnp.array([[0.4, 0.6], [0.7, 0.3]])]
+        obs = [jnp.array([[1.0, 0.0], [0.0, 1.0]])]
+        A = [
+            jnp.array(
+                [
+                    [[0.90, 0.20], [0.10, 0.30]],
+                    [[0.10, 0.80], [0.90, 0.70]],
+                ]
+            )
+        ]
+        B = [
+            jnp.array(
+                [
+                    [[0.8, 0.6], [0.3, 0.4]],
+                    [[0.2, 0.4], [0.7, 0.6]],
+                ]
+            ),
+            jnp.array(
+                [
+                    [[0.7, 0.5], [0.4, 0.3]],
+                    [[0.3, 0.5], [0.6, 0.7]],
+                ]
+            ),
+        ]
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "`B_dependencies` must have one entry per hidden-state factor",
+        ):
+            maths.calc_vfe(
+                qs,
+                prior,
+                obs=obs,
+                A=A,
+                B=B,
+                past_actions=jnp.array([[0, 1]]),
+                A_dependencies=[[0, 1]],
+                B_dependencies=[[0]],
+            )
+
     def test_update_posterior_states_rejects_multifactor_1d_past_actions(self):
         prior = [jnp.array([0.55, 0.45]), jnp.array([0.30, 0.70])]
         obs = [jnp.array([[1.0, 0.0], [0.0, 1.0]])]
