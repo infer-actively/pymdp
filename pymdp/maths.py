@@ -329,7 +329,8 @@ def _ensure_vfe_action_history_shape(
         raise ValueError(
             "1D `past_actions` is only supported for single-factor action "
             "histories; multi-factor action histories must have shape "
-            "(T-1, num_factors)"
+            "(T-1, num_factors). For a single timestep across factors, use "
+            "`past_actions[None, :]`."
         )
 
     if past_actions.ndim != 2:
