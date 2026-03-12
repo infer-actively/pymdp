@@ -394,15 +394,12 @@ def compute_accuracy(
         Expected log-likelihood term.
     """
     A_dependencies = resolve_a_dependencies(len(qs), len(A), A_dependencies)
-    if len(A_dependencies) != len(A):
-        raise ValueError(
-            "`A_dependencies` must have one entry per observation modality; "
-            f"got {len(A_dependencies)} entries for {len(A)} modalities"
-        )
     log_likelihoods = compute_log_likelihood_per_modality(obs, A, distr_obs=distr_obs)
     accuracy = 0.0
 
-    for ll_m, deps_m in zip(log_likelihoods, A_dependencies):
+    for m in range(max(len(log_likelihoods), len(A_dependencies))):
+        ll_m = log_likelihoods[m]
+        deps_m = A_dependencies[m]
         accuracy += _expected_log_prob(ll_m, [qs[f] for f in deps_m])
 
     return accuracy
@@ -539,11 +536,6 @@ def calc_vfe(
     B_dependencies = (
         None if B is None else resolve_b_dependencies(num_factors, B_dependencies)
     )
-    if B_dependencies is not None and len(B_dependencies) != num_factors:
-        raise ValueError(
-            "`B_dependencies` must have one entry per hidden-state factor; "
-            f"got {len(B_dependencies)} entries for {num_factors} factors"
-        )
 
     is_sequence = qs[0].ndim > 1
 
@@ -689,8 +681,9 @@ def calc_vfe(
             else:
                 transition_term_t = 0.0
                 actions_t = None if padded_past_actions is None else padded_past_actions[t]
-                for f, deps_f in enumerate(B_dependencies):
+                for f in range(max(len(B), len(B_dependencies))):
                     B_f = _to_dense_if_sparse(B[f])
+                    deps_f = B_dependencies[f]
                     if actions_t is None:
                         B_f_t = B_f[..., 0]
                     else:
