@@ -146,7 +146,7 @@ class TestUtils(unittest.TestCase):
         )
 
         self.assertEqual(B[0].shape, (num_states[0], num_states[0], num_controls[1]))
-        self.assertEqual(B[1].shape, (num_states[1], num_states[1], num_controls[0], num_controls[1]))
+        self.assertEqual(B[1].shape, (num_states[1], num_states[1], num_controls[1], num_controls[0]))
 
     def test_norm_dist_list_version(self):
         """"

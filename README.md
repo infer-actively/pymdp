@@ -90,7 +90,7 @@ pip install inferactively-pymdp
 Once in Python, you can then directly import `pymdp`, its sub-packages, and functions.
 
 ```python
-from jax import random as jr
+from jax import numpy as jnp, random as jr
 from pymdp import utils
 from pymdp.agent import Agent
 
@@ -105,10 +105,12 @@ A = utils.random_A_array(keys[0], num_obs, num_states)
 B = utils.random_B_array(keys[1], num_states, num_controls)
 C = utils.list_array_uniform([[no] for no in num_obs])
 
-agent = Agent(A=A, B=B, C=C)
-observation = [1, 4]
+agent = Agent(A=A, B=B, C=C, batch_size=1)
+observation = [jnp.array([1]), jnp.array([4])]
 
-qs = agent.infer_states(observation, empirical_prior=agent.D)
+qs, info = agent.infer_states(observation, empirical_prior=agent.D, return_info=True)
+# Optional diagnostic: current variational free energy for each batch element.
+vfe = info["vfe"]
 q_pi, neg_efe = agent.infer_policies(qs)
 
 action_keys = jr.split(keys[2], agent.batch_size + 1)

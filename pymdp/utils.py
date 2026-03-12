@@ -219,8 +219,8 @@ def random_B_array(
     keys = jr.split(key, num_factors)
     B = []
     for f, ns in enumerate(num_states):
-        lagging_shape = [ns_f for i, ns_f in enumerate(num_states) if i in B_dependencies[f]]
-        control_shape = [na_f for i, na_f in enumerate(num_controls) if i in B_action_dependencies[f]]
+        lagging_shape = [num_states[d] for d in B_dependencies[f]]
+        control_shape = [num_controls[d] for d in B_action_dependencies[f]]
         # Sample Dirichlet with batch_shape=lagging_shape+control_shape; returns shape = lagging_shape + control_shape + (ns,)
         B_f = jr.dirichlet(keys[f], alpha=jnp.ones(ns), shape=lagging_shape+control_shape)
         # Move event/state dim to the front -> (ns, *lagging_shape, *control_shape)
