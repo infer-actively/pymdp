@@ -127,7 +127,27 @@ class TestUtils(unittest.TestCase):
                 self.assertEqual(B_f.shape, expected_shape)
                 marginal_sums = B_f.sum(axis=0)
                 self.assertTrue(bool(jnp.allclose(marginal_sums, jnp.ones_like(marginal_sums))))
-    
+
+    def test_random_B_array_accepts_out_of_order_control_dependency_lists(self):
+        """`random_B_array` should validate control coverage independent of list ordering"""
+
+        key = jr.PRNGKey(17)
+        num_states = [3, 2]
+        num_controls = [2, 3]
+        B_dependencies = [[0], [1]]
+        B_action_dependencies = [[1], [1, 0]]
+
+        B = jax_utils.random_B_array(
+            key,
+            num_states,
+            num_controls,
+            B_dependencies=B_dependencies,
+            B_action_dependencies=B_action_dependencies,
+        )
+
+        self.assertEqual(B[0].shape, (num_states[0], num_states[0], num_controls[1]))
+        self.assertEqual(B[1].shape, (num_states[1], num_states[1], num_controls[1], num_controls[0]))
+
     def test_norm_dist_list_version(self):
         """"
         Test `list_array_norm_dist`

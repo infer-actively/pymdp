@@ -13,12 +13,14 @@ work with batched agent execution (`vmap`) and fixed-window sequence buffers.
 """
 
 import jax.numpy as jnp
+from typing import Any, TypedDict
 from pymdp.algos import (
     run_factorized_fpi,
     run_mmp,
     run_vmp,
     hmm_smoother_from_filtered_colstoch,
 )
+from pymdp.maths import calc_vfe
 from jax import tree_util as jtu, lax
 from jax.experimental.sparse._base import JAXSparse
 from jax.experimental import sparse
@@ -30,6 +32,12 @@ EXACT_METHOD = "exact"
 ONE_STEP_METHODS = {"fpi", "ovf", EXACT_METHOD}
 SEQUENCE_METHODS = {"mmp", "vmp"}
 SMOOTHING_METHODS = {"ovf", EXACT_METHOD}
+
+
+class VFEInfo(TypedDict):
+    vfe_t: ArrayLike
+    vfe: ArrayLike
+    vfe_components: dict[str, ArrayLike]
 
 
 def _select_current_obs(obs: list[Array] | Array, distr_obs: bool) -> list[Array] | Array:
@@ -72,11 +80,11 @@ def _ensure_action_history_shape(past_actions: Array | None, num_factors: int) -
     if past_actions.ndim == 1:
         if num_factors == 1:
             return jnp.expand_dims(past_actions, -1)
-        if past_actions.shape[0] == num_factors:
-            return jnp.expand_dims(past_actions, 0)
         raise ValueError(
-            "1D `past_actions` must either represent a single-factor action history "
-            "or a single timestep over all factors"
+            "1D `past_actions` is only supported for single-factor action "
+            "histories; multi-factor action histories must have shape "
+            "(T-1, num_factors). For a single timestep across factors, use "
+            "`past_actions[None, :]`."
         )
 
     if past_actions.ndim != 2:
@@ -159,6 +167,174 @@ def _condition_transitions_on_actions(
         for b, action_idx in zip(B, actions_tree)
     ]
 
+
+def _run_one_step_inference(
+    A: list[Array],
+    obs: list[Array],
+    prior: list[Array] | None,
+    A_dependencies: list[list[int]] | None,
+    *,
+    method: str,
+    num_iter: int,
+    distr_obs: bool,
+) -> tuple[list[Array], list[Array] | Array]:
+    curr_obs = _select_current_obs(obs, distr_obs)
+    fpi_num_iter = 1 if method == EXACT_METHOD else num_iter
+    qs = run_factorized_fpi(
+        A,
+        curr_obs,
+        prior,
+        A_dependencies,
+        num_iter=fpi_num_iter,
+        distr_obs=distr_obs,
+    )
+    return qs, curr_obs
+
+
+def _run_sequence_inference(
+    A: list[Array],
+    B: list[Array] | None,
+    obs: list[Array],
+    past_actions: Array | None,
+    prior: list[Array] | None,
+    A_dependencies: list[list[int]] | None,
+    B_dependencies: list[list[int]] | None,
+    *,
+    method: str,
+    num_iter: int,
+    distr_obs: bool,
+    valid_steps: int | Array | None,
+) -> tuple[list[Array], Array | None, Array | None]:
+    if B is None:
+        raise ValueError(f"Sequence inference method `{method}` requires `B`.")
+
+    obs_valid_mask = None
+    transition_valid_mask = None
+    history_len = max(obs[0].shape[0] - 1, 0)
+
+    if past_actions is not None:
+        past_actions = _ensure_action_history_shape(past_actions, len(B))
+        if past_actions.shape[0] != history_len:
+            raise ValueError(
+                "`past_actions` has leading dimension "
+                f"{past_actions.shape[0]}, expected {history_len}"
+            )
+
+    if valid_steps is not None:
+        obs_valid_mask, transition_valid_mask = _build_sequence_validity_masks(
+            obs, past_actions, valid_steps
+        )
+
+    conditioned_B = None
+    if past_actions is not None:
+        conditioned_B = _condition_transitions_on_actions(B, past_actions)
+    elif history_len > 0:
+        conditioned_B = []
+        for b_f in B:
+            if b_f.shape[-1] != 1:
+                raise ValueError(
+                    f"Sequence inference method `{method}` requires `past_actions` "
+                    "when transition tensors have more than one control state"
+                )
+            single_transition = b_f[..., 0]
+            conditioned_B.append(
+                jnp.broadcast_to(single_transition, (history_len,) + single_transition.shape)
+            )
+
+    if method == "vmp":
+        qs = run_vmp(
+            A,
+            conditioned_B,
+            obs,
+            prior,
+            A_dependencies,
+            B_dependencies,
+            num_iter=num_iter,
+            distr_obs=distr_obs,
+            obs_valid_mask=obs_valid_mask,
+            transition_valid_mask=transition_valid_mask,
+        )
+    else:
+        qs = run_mmp(
+            A,
+            conditioned_B,
+            obs,
+            prior,
+            A_dependencies,
+            B_dependencies,
+            num_iter=num_iter,
+            distr_obs=distr_obs,
+            obs_valid_mask=obs_valid_mask,
+            transition_valid_mask=transition_valid_mask,
+        )
+
+    return qs, obs_valid_mask, transition_valid_mask
+
+
+def _update_qs_history(
+    qs_hist: list[Array] | None,
+    qs: list[Array],
+    *,
+    method: str,
+    inference_horizon: int | None,
+) -> list[Array]:
+    if qs_hist is not None:
+        if method in ONE_STEP_METHODS:
+            qs_hist = jtu.tree_map(
+                lambda x, y: jnp.concatenate([x, jnp.expand_dims(y, 0)], 0),
+                qs_hist,
+                qs,
+            )
+            if inference_horizon is not None:
+                qs_hist = jtu.tree_map(lambda x: x[-inference_horizon:], qs_hist)
+            return qs_hist
+        return qs
+
+    if method in ONE_STEP_METHODS:
+        return jtu.tree_map(lambda x: jnp.expand_dims(x, 0), qs)
+    return qs
+
+
+def _assemble_vfe_kwargs(
+    *,
+    method: str,
+    qs: list[Array],
+    prior: list[Array] | None,
+    A: list[Array],
+    B_for_vfe: list[Array] | None,
+    curr_obs: list[Array] | Array | None,
+    obs: list[Array],
+    past_actions: Array | None,
+    A_dependencies: list[list[int]] | None,
+    B_dependencies: list[list[int]] | None,
+    obs_valid_mask: Array | None,
+    transition_valid_mask: Array | None,
+    distr_obs: bool,
+) -> dict[str, Any]:
+    if method in ONE_STEP_METHODS:
+        return {
+            "qs": qs,
+            "prior": prior,
+            "obs": curr_obs,
+            "A": A,
+            "A_dependencies": A_dependencies,
+            "distr_obs": distr_obs,
+        }
+
+    return {
+        "qs": qs,
+        "prior": prior,
+        "obs": obs,
+        "A": A,
+        "B": B_for_vfe,
+        "past_actions": past_actions,
+        "A_dependencies": A_dependencies,
+        "B_dependencies": B_dependencies,
+        "obs_valid_mask": obs_valid_mask,
+        "transition_valid_mask": transition_valid_mask,
+        "distr_obs": distr_obs,
+    }
+
 def update_posterior_states(
     A: list[Array],
     B: list[Array] | None,
@@ -173,7 +349,8 @@ def update_posterior_states(
     distr_obs: bool = True,
     inference_horizon: int | None = None,
     valid_steps: int | Array | None = None,
-) -> list[Array]:
+    return_info: bool = False,
+) -> list[Array] | tuple[list[Array], VFEInfo]:
     """Infer posterior beliefs over hidden states from observations.
 
     Parameters
@@ -191,7 +368,8 @@ def update_posterior_states(
         Action history with shape `(T-1, num_factors)` for sequence methods.
         Can be `None` when no valid history is available.
     prior : list[Array], optional
-        Prior beliefs over hidden states.
+        Prior beliefs over hidden states. Required when `return_info=True`
+        so canonical VFE diagnostics can be computed.
     qs_hist : list[Array], optional
         Existing posterior history buffer. If provided, one-step updates append
         to this history.
@@ -209,101 +387,101 @@ def update_posterior_states(
         Optional truncation horizon for sequence inference.
     valid_steps : int | Array | None, optional
         Number of valid (unpadded) timesteps for fixed-window sequence inputs.
+    return_info : bool, default=False
+        If `True`, also return an info dictionary containing canonical VFE
+        diagnostics (`vfe_t`, `vfe`, and component terms). For forward-only
+        methods (`fpi`, `ovf`, `exact`) this reports the current posterior /
+        history returned by the inference call; if you need a full smoothed
+        sequence VFE for `ovf` or `exact`, first run `smoothing_ovf(...)` or
+        `smoothing_exact(...)` and then call `pymdp.maths.calc_vfe(...,
+        joint_qs=...)`.
 
     Returns
     -------
-    list[Array]
+    list[Array] or tuple[list[Array], VFEInfo]
         Posterior state beliefs, with shape semantics depending on `method`:
         one-step methods return/append a time axis, sequence methods return full
-        sequence posteriors.
+        sequence posteriors. If `return_info=True`, a second return value
+        contains canonical VFE diagnostics.
     """
+    B_for_vfe = B
+    info = None
+    curr_obs = None
+    obs_valid_mask = None
+    transition_valid_mask = None
+
+    if return_info and prior is None:
+        raise ValueError("`prior` must be provided when `return_info=True`")
+
     if method in SEQUENCE_METHODS:
         obs, past_actions = _truncate_for_horizon(obs, past_actions, inference_horizon)
 
     if method in ONE_STEP_METHODS:
-        # format obs to select only last observation
-        curr_obs = _select_current_obs(obs, distr_obs)
-        fpi_num_iter = 1 if method == EXACT_METHOD else num_iter
-        qs = run_factorized_fpi(
+        qs, curr_obs = _run_one_step_inference(
             A,
-            curr_obs,
+            obs,
             prior,
             A_dependencies,
-            num_iter=fpi_num_iter,
+            method=method,
+            num_iter=num_iter,
             distr_obs=distr_obs,
         )
     elif method in SEQUENCE_METHODS:
-        obs_valid_mask = None
-        transition_valid_mask = None
-
-        if past_actions is not None:
-            past_actions = _ensure_action_history_shape(past_actions, len(B))
-
-        if valid_steps is not None:
-            obs_valid_mask, transition_valid_mask = _build_sequence_validity_masks(
-                obs, past_actions, valid_steps
-            )
-
-        # format B matrices using action sequences here
-        # TODO: past_actions can be None
-        if past_actions is not None:
-            # move time steps to the leading axis (leftmost)
-            # this assumes that a policy is always specified as the rightmost axis of Bs
-            B = _condition_transitions_on_actions(B, past_actions)
-        else:
-            B = None
-
-        # outputs of both VMP and MMP should be a list of hidden state factors, where each qs[f].shape = (T, batch_dim, num_states_f)
-        if method == "vmp":
-            qs = run_vmp(
-                A,
-                B,
-                obs,
-                prior,
-                A_dependencies,
-                B_dependencies,
-                num_iter=num_iter,
-                distr_obs=distr_obs,
-                obs_valid_mask=obs_valid_mask,
-                transition_valid_mask=transition_valid_mask,
-            )
-        if method == "mmp":
-            qs = run_mmp(
-                A,
-                B,
-                obs,
-                prior,
-                A_dependencies,
-                B_dependencies,
-                num_iter=num_iter,
-                distr_obs=distr_obs,
-                obs_valid_mask=obs_valid_mask,
-                transition_valid_mask=transition_valid_mask,
-            )
+        qs, obs_valid_mask, transition_valid_mask = _run_sequence_inference(
+            A,
+            B,
+            obs,
+            past_actions,
+            prior,
+            A_dependencies,
+            B_dependencies,
+            method=method,
+            num_iter=num_iter,
+            distr_obs=distr_obs,
+            valid_steps=valid_steps,
+        )
     else:
         raise ValueError(
             f"Unsupported inference method `{method}`. "
             "Expected one of {'fpi', 'ovf', 'mmp', 'vmp', 'exact'}."
         )
 
-    if qs_hist is not None:
-        if method in ONE_STEP_METHODS:
-            qs_hist = jtu.tree_map(
-                lambda x, y: jnp.concatenate([x, jnp.expand_dims(y, 0)], 0),
-                qs_hist,
-                qs,
-            )
-            if inference_horizon is not None:
-                qs_hist = jtu.tree_map(lambda x: x[-inference_horizon:], qs_hist)
-        else:
-            # TODO: return entire history of beliefs
-            qs_hist = qs
-    else:
-        if method in ONE_STEP_METHODS:
-            qs_hist = jtu.tree_map(lambda x: jnp.expand_dims(x, 0), qs)
-        else:
-            qs_hist = qs
+    qs_hist = _update_qs_history(
+        qs_hist,
+        qs,
+        method=method,
+        inference_horizon=inference_horizon,
+    )
 
+    if return_info:
+        vfe_kwargs = _assemble_vfe_kwargs(
+            method=method,
+            qs=qs,
+            prior=prior,
+            A=A,
+            B_for_vfe=B_for_vfe,
+            curr_obs=curr_obs,
+            obs=obs,
+            past_actions=past_actions,
+            A_dependencies=A_dependencies,
+            B_dependencies=B_dependencies,
+            obs_valid_mask=obs_valid_mask,
+            transition_valid_mask=transition_valid_mask,
+            distr_obs=distr_obs,
+        )
+        vfe_t, vfe, decomposition = calc_vfe(
+            **vfe_kwargs,
+            return_decomposition=True,
+        )
+
+        info = {
+            "vfe_t": vfe_t,
+            "vfe": vfe,
+            "vfe_components": decomposition,
+        }
+
+    if return_info:
+        return qs_hist, info
     return qs_hist
 
 def _joint_dist_factor(

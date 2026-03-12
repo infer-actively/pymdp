@@ -680,7 +680,8 @@ class Agent(Module):
         valid_steps: int | Array | None = None,
         mask: list[Array] | None = None,
         preprocess_fn: Callable | None = None,
-    ) -> list[Array]:
+        return_info: bool = False,
+    ) -> list[Array] | tuple[list[Array], dict[str, Any]]:
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
@@ -702,9 +703,10 @@ class Agent(Module):
             the resulting `empirical_prior` variable may be a matrix (or list[Array]).
             of additional dimensions to encode extra conditioning variables like timepoint and policy.
 
-        past_actions: list[int] or tuple[int], optional
-            The action input. Each entry `past_actions[f]` stores indices representing the actions
-            for control factor `f`.
+        past_actions: Array, optional
+            Action history aligned to time. For single-batch sequence inference
+            this should be shaped `(T-1, num_factors)`. For batched calls it
+            should be shaped `(batch, T-1, num_factors)`.
 
         qs_hist: list[Array] or tuple[Array], optional
             History of posterior beliefs over hidden states.
@@ -722,6 +724,15 @@ class Agent(Module):
             If None, defaults to `self.process_obs`. The callable should accept
             `observations` and return distributional observations.
 
+        return_info: bool, default=False
+            If `True`, also return canonical VFE diagnostics for the inferred
+            posterior (`vfe_t`, `vfe`, and component terms). For `ovf` / `exact`
+            this remains a forward-filtering diagnostic; to score the full
+            smoothed sequence, call `pymdp.inference.smoothing_ovf(...)` or
+            `pymdp.inference.smoothing_exact(...)` explicitly and then pass the
+            resulting pairwise joints into `pymdp.maths.calc_vfe(...,
+            joint_qs=...)`.
+
         Notes
         -----
         `categorical_obs` is no longer an argument to `infer_states`. Set it when
@@ -731,13 +742,14 @@ class Agent(Module):
 
         Returns
         -------
-        qs: list[Array]
+        qs: list[Array] or tuple[list[Array], dict[str, Any]]
             Posterior beliefs over hidden states. Depending on the inference algorithm chosen,
             the resulting `qs` variable will have additional sub-structure to reflect whether
             beliefs are additionally conditioned on timepoint and policy.
             For example, in case the `self.inference_algo == 'MMP'` indexing structure is
             policy->timepoint->factor, so that `qs[p_idx][t_idx][f_idx]` refers to beliefs
             about marginal factor `f_idx` expected under policy `p_idx` at timepoint `t_idx`.
+            If `return_info=True`, a second return value contains VFE diagnostics.
 
         Examples
         --------
@@ -784,6 +796,7 @@ class Agent(Module):
             method=self.inference_algo,
             distr_obs=True,  # Always True because o_vec is expected to be distributional
             inference_horizon=self.inference_horizon,
+            return_info=return_info,
         )
 
         if valid_steps is not None:
@@ -1050,20 +1063,22 @@ class Agent(Module):
         elif isinstance(A[0], Distribution) and isinstance(B[0], Distribution):
             A_dependencies, _ = get_dependencies(A, B)
         else:
-            A_dependencies = [list(range(self.num_factors)) for _ in range(self.num_modalities)]
+            A_dependencies = utils.resolve_a_dependencies(
+                self.num_factors, self.num_modalities
+            )
 
         if B_dependencies is not None:
             B_dependencies = B_dependencies
         elif isinstance(A[0], Distribution) and isinstance(B[0], Distribution):
             _, B_dependencies = get_dependencies(A, B)
         else:
-            B_dependencies = [[f] for f in range(self.num_factors)]
+            B_dependencies = utils.resolve_b_dependencies(self.num_factors)
 
         """TODO: check B action shape"""
         if B_action_dependencies is not None:
             B_action_dependencies = B_action_dependencies
         else:
-            B_action_dependencies = [[f] for f in range(self.num_factors)]
+            B_action_dependencies = utils.resolve_b_action_dependencies(self.num_factors)
         return A_dependencies, B_dependencies, B_action_dependencies
 
     def _flatten_B_action_dims(

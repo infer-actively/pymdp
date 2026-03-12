@@ -3,13 +3,14 @@ import jax.numpy as jnp
 from functools import partial
 from typing import Optional, Tuple, Sequence
 from jax import tree_util, nn, jit, vmap, lax
-from jax.scipy.special import xlogy, digamma
+from jax.scipy.special import xlogy, digamma, gammaln
 from opt_einsum import contract
 from multimethod import multimethod
 from jaxtyping import ArrayLike
 from jax.experimental import sparse
 from jax.experimental.sparse._base import JAXSparse
 import jax.experimental.sparse as jsparse
+from pymdp.utils import resolve_a_dependencies, resolve_b_dependencies
 
 MINVAL = jnp.finfo(float).eps
 
@@ -286,7 +287,92 @@ def compute_log_likelihood_per_modality(
     return ll_all
 
 
-def compute_accuracy(qs: list[ArrayLike], obs: list[ArrayLike], A: list[ArrayLike]) -> ArrayLike:
+def _to_dense_if_sparse(x: ArrayLike) -> ArrayLike:
+    if isinstance(x, jsparse.BCOO):
+        return jsparse.todense(x)
+    return x
+
+
+def _expected_log_prob(log_prob: ArrayLike, marginals: list[ArrayLike]) -> ArrayLike:
+    if len(marginals) == 0:
+        return jnp.asarray(_to_dense_if_sparse(log_prob)).sum()
+    return factor_dot(log_prob, marginals)
+
+
+def _expected_log_prob_tensor(log_prob: ArrayLike, belief: ArrayLike) -> ArrayLike:
+    log_prob = jnp.asarray(_to_dense_if_sparse(log_prob))
+    belief = jnp.asarray(_to_dense_if_sparse(belief))
+    return factor_dot_flex(
+        log_prob,
+        [belief],
+        dims=(tuple(range(log_prob.ndim)),),
+    )
+
+
+def _pad_sequence_with_initial_zeros(x: ArrayLike) -> ArrayLike:
+    x = jnp.asarray(_to_dense_if_sparse(x))
+    pad = jnp.zeros((1,) + x.shape[1:], dtype=x.dtype)
+    return jnp.concatenate([pad, x], axis=0)
+
+
+def _ensure_vfe_action_history_shape(
+    past_actions: ArrayLike | None,
+    num_factors: int,
+) -> ArrayLike | None:
+    if past_actions is None:
+        return None
+
+    past_actions = jnp.asarray(past_actions)
+    if past_actions.ndim == 1:
+        if num_factors == 1:
+            return jnp.expand_dims(past_actions, -1)
+        raise ValueError(
+            "1D `past_actions` is only supported for single-factor action "
+            "histories; multi-factor action histories must have shape "
+            "(T-1, num_factors). For a single timestep across factors, use "
+            "`past_actions[None, :]`."
+        )
+
+    if past_actions.ndim != 2:
+        raise ValueError("`past_actions` must have shape (T-1, num_factors)")
+
+    if past_actions.shape[1] != num_factors:
+        raise ValueError(
+            f"`past_actions` has second dimension {past_actions.shape[1]}, "
+            f"expected {num_factors}"
+        )
+
+    return past_actions
+
+
+def _sum_dirichlet_kl(
+    q_dir: list[ArrayLike] | None,
+    p_dir: list[ArrayLike] | None,
+    *,
+    event_dim: int = 0,
+) -> ArrayLike:
+    if q_dir is None and p_dir is None:
+        return jnp.array(0.0)
+    if q_dir is None or p_dir is None:
+        raise ValueError("Dirichlet KL terms require both posterior and prior parameters")
+    if len(q_dir) != len(p_dir):
+        raise ValueError("Dirichlet posterior/prior lists must have the same length")
+
+    total = jnp.array(0.0)
+    for q_arr, p_arr in zip(q_dir, p_dir):
+        if q_arr is None or p_arr is None:
+            continue
+        total = total + dirichlet_kl_divergence(q_arr, p_arr, event_dim=event_dim)
+    return total
+
+
+def compute_accuracy(
+    qs: list[ArrayLike],
+    obs: list[ArrayLike],
+    A: list[ArrayLike],
+    A_dependencies: list[list[int]] | None = None,
+    distr_obs: bool = True,
+) -> ArrayLike:
     """Compute the accuracy portion of variational free energy.
 
     Parameters
@@ -297,60 +383,381 @@ def compute_accuracy(qs: list[ArrayLike], obs: list[ArrayLike], A: list[ArrayLik
         Observations for each modality.
     A: list[ArrayLike]
         Likelihood tensors for each modality.
+    A_dependencies: list[list[int]] | None, optional
+        Sparse modality-to-factor dependency mapping.
+    distr_obs: bool, default=True
+        Whether observations are already categorical distributions.
 
     Returns
     -------
     ArrayLike
         Expected log-likelihood term.
     """
+    A_dependencies = resolve_a_dependencies(len(qs), len(A), A_dependencies)
+    log_likelihoods = compute_log_likelihood_per_modality(obs, A, distr_obs=distr_obs)
+    accuracy = 0.0
 
-    log_likelihood = compute_log_likelihood(obs, A)
+    for m in range(max(len(log_likelihoods), len(A_dependencies))):
+        ll_m = log_likelihoods[m]
+        deps_m = A_dependencies[m]
+        accuracy += _expected_log_prob(ll_m, [qs[f] for f in deps_m])
 
-    x = qs[0]
-    for q in qs[1:]:
-        x = jnp.expand_dims(x, -1) * q
-
-    joint = log_likelihood * x
-    return joint.sum()
+    return accuracy
 
 
-def compute_free_energy(
-    qs: list[ArrayLike], prior: list[ArrayLike], obs: list[ArrayLike], A: list[ArrayLike]
+def dirichlet_kl_divergence(
+    q_dir: ArrayLike,
+    p_dir: ArrayLike,
+    event_dim: int = 0,
 ) -> ArrayLike:
-    """
-    Calculate variational free energy by breaking its computation down into three steps:
-    1. computation of the negative entropy of the posterior -H[Q(s)]
-    2. computation of the cross entropy of the posterior with the prior H_{Q(s)}[P(s)]
-    3. computation of the accuracy E_{Q(s)}[lnP(o|s)]
-
-    Then add them all together -- except subtract the accuracy
+    """Compute KL divergence between two Dirichlet distributions.
 
     Parameters
     ----------
-    qs: list[ArrayLike]
-        Marginal state beliefs per factor.
-    prior: list[ArrayLike]
-        Prior distributions per factor.
-    obs: list[ArrayLike]
-        Observations for each modality.
-    A: list[ArrayLike]
-        Likelihood tensors per modality.
+    q_dir: ArrayLike
+        Posterior Dirichlet concentration parameters.
+    p_dir: ArrayLike
+        Prior Dirichlet concentration parameters.
+    event_dim: int, default=0
+        Axis containing the categorical event dimension.
 
     Returns
     -------
     ArrayLike
-        Variational free energy value.
+        Scalar KL divergence summed over all conditional contexts.
     """
+    q_dir = jnp.clip(_to_dense_if_sparse(q_dir), min=MINVAL)
+    p_dir = jnp.clip(_to_dense_if_sparse(p_dir), min=MINVAL)
 
-    vfe = 0.0  # initialize variational free energy
-    for q, p in zip(qs, prior):
-        negH_qs = - stable_entropy(q)
-        xH_qp = stable_cross_entropy(q, p)
-        vfe += (negH_qs + xH_qp)
-    
-    vfe -= compute_accuracy(qs, obs, A)
+    event_dim = event_dim % q_dir.ndim
+    q_sum = q_dir.sum(axis=event_dim)
+    p_sum = p_dir.sum(axis=event_dim)
+    digamma_q_sum = jnp.expand_dims(digamma(q_sum), axis=event_dim)
 
-    return vfe
+    kl = (
+        gammaln(q_sum)
+        - gammaln(p_sum)
+        - gammaln(q_dir).sum(axis=event_dim)
+        + gammaln(p_dir).sum(axis=event_dim)
+        + ((q_dir - p_dir) * (digamma(q_dir) - digamma_q_sum)).sum(axis=event_dim)
+    )
+
+    return kl.sum()
+
+
+def calc_vfe(
+    qs: list[ArrayLike],
+    prior: list[ArrayLike],
+    *,
+    obs: list[ArrayLike] | None = None,
+    A: list[ArrayLike] | None = None,
+    B: list[ArrayLike] | None = None,
+    past_actions: ArrayLike | None = None,
+    A_dependencies: list[list[int]] | None = None,
+    B_dependencies: list[list[int]] | None = None,
+    joint_qs: list[ArrayLike] | None = None,
+    qA: list[ArrayLike] | None = None,
+    pA: list[ArrayLike] | None = None,
+    qB: list[ArrayLike] | None = None,
+    pB: list[ArrayLike] | None = None,
+    obs_valid_mask: ArrayLike | None = None,
+    transition_valid_mask: ArrayLike | None = None,
+    distr_obs: bool = True,
+    return_decomposition: bool = False,
+) -> tuple[ArrayLike, ArrayLike] | tuple[ArrayLike, ArrayLike, dict[str, ArrayLike]]:
+    """Compute canonical variational free energy from a model/posterior pair.
+
+    This function supports both:
+    - single-step posteriors, where each `qs[f]` has shape `(num_states_f,)`, and
+    - sequence posteriors, where each `qs[f]` has shape `(T, num_states_f)`.
+
+    In the sequence case, transition contributions are assigned to the timestep
+    they terminate at, so `vfe_t[t]` contains the `q(s_t)` entropy, the
+    observation accuracy for `o_t`, and either the initial-prior term (at
+    sequence starts) or the transition-model cross-entropy from `t-1 -> t`.
+
+    Parameters
+    ----------
+    qs: list[ArrayLike]
+        Posterior state marginals.
+    prior: list[ArrayLike]
+        Prior over initial hidden states (or single-step empirical prior).
+    obs: list[ArrayLike] | None, optional
+        Observations in distributional or discrete-index form.
+    A: list[ArrayLike] | None, optional
+        Likelihood tensors.
+    B: list[ArrayLike] | None, optional
+        Transition tensors.
+    past_actions: ArrayLike | None, optional
+        Action history with shape `(T-1, num_factors)` for sequence VFE.
+    A_dependencies: list[list[int]] | None, optional
+        Sparse modality-to-factor dependency mapping.
+    B_dependencies: list[list[int]] | None, optional
+        Sparse transition-factor dependency mapping.
+    joint_qs: list[ArrayLike] | None, optional
+        Optional pairwise posterior beliefs for sequence models. Each
+        `joint_qs[f]` should have shape
+        `(T-1, num_states[f], *[num_states[d] for d in B_dependencies[f]])`.
+        When provided, the state-dependent terms of sequence VFE are computed
+        from the full smoothed chain posterior rather than the mean-field
+        product of adjacent marginals.
+    qA, pA, qB, pB: list[ArrayLike] | None, optional
+        Optional posterior/prior Dirichlet parameter pairs. When provided, the
+        corresponding KL terms are added to the total `vfe`.
+    obs_valid_mask: ArrayLike | None, optional
+        Validity mask for padded observation windows.
+    transition_valid_mask: ArrayLike | None, optional
+        Validity mask for transitions in padded sequence windows.
+    distr_obs: bool, default=True
+        Whether observations are already categorical distributions.
+    return_decomposition: bool, default=False
+        If `True`, also return a dictionary of component terms.
+
+    Returns
+    -------
+    tuple
+        `(vfe_t, vfe)` by default. `vfe_t` has shape `(T,)` for sequences or
+        scalar shape `()` for single-step posteriors. `vfe` is always scalar.
+        When `return_decomposition=True`, a third element is returned with
+        component arrays and optional parameter KL terms.
+    """
+    num_factors = len(qs)
+    if len(prior) != num_factors:
+        raise ValueError("`prior` must have one entry per hidden-state factor")
+
+    if A is not None and obs is None:
+        raise ValueError("`obs` must be provided when `A` is provided")
+    if obs is not None and A is None:
+        raise ValueError("`A` must be provided when `obs` is provided")
+
+    A_dependencies = (
+        None if A is None else resolve_a_dependencies(num_factors, len(A), A_dependencies)
+    )
+    B_dependencies = (
+        None if B is None else resolve_b_dependencies(num_factors, B_dependencies)
+    )
+
+    is_sequence = qs[0].ndim > 1
+
+    if joint_qs is not None:
+        if not is_sequence:
+            raise ValueError("`joint_qs` is only valid when `qs` is a sequence posterior")
+        if len(joint_qs) != num_factors:
+            raise ValueError("`joint_qs` must have one entry per hidden-state factor")
+
+    def _state_prior_term(qs_t: list[ArrayLike]) -> ArrayLike:
+        value = 0.0
+        for q_f, p_f in zip(qs_t, prior):
+            value += stable_cross_entropy(q_f, p_f)
+        return value
+
+    def _neg_entropy_term(qs_t: list[ArrayLike]) -> ArrayLike:
+        value = 0.0
+        for q_f in qs_t:
+            value += -stable_entropy(q_f)
+        return value
+
+    def _accuracy_term(qs_t: list[ArrayLike], obs_t: list[ArrayLike] | None) -> ArrayLike:
+        if A is None or obs_t is None:
+            return jnp.array(0.0)
+        return compute_accuracy(
+            qs_t,
+            obs_t,
+            A,
+            A_dependencies=A_dependencies,
+            distr_obs=distr_obs,
+        )
+
+    if not is_sequence:
+        neg_entropy_t = _neg_entropy_term(qs)
+        prior_cross_entropy_t = _state_prior_term(qs)
+        accuracy_t = _accuracy_term(qs, obs)
+        transition_cross_entropy_t = jnp.array(0.0)
+        vfe_t = neg_entropy_t + prior_cross_entropy_t - accuracy_t
+    else:
+        T = qs[0].shape[0]
+        past_actions = _ensure_vfe_action_history_shape(past_actions, num_factors)
+        if B is not None and past_actions is not None:
+            expected_history_len = max(T - 1, 0)
+            if past_actions.shape[0] != expected_history_len:
+                raise ValueError(
+                    "`past_actions` has leading dimension "
+                    f"{past_actions.shape[0]}, expected {expected_history_len}"
+                )
+
+        if obs_valid_mask is None:
+            obs_valid_mask = jnp.ones((T,), dtype=bool)
+        else:
+            obs_valid_mask = jnp.asarray(obs_valid_mask, dtype=bool)
+
+        if transition_valid_mask is None:
+            if T <= 1:
+                transition_valid_mask = jnp.zeros((0,), dtype=bool)
+            else:
+                transition_valid_mask = obs_valid_mask[:-1] & obs_valid_mask[1:]
+                if past_actions is not None:
+                    transition_valid_mask = transition_valid_mask & jnp.all(
+                        past_actions >= 0, axis=-1
+                    )
+        else:
+            transition_valid_mask = jnp.asarray(transition_valid_mask, dtype=bool)
+
+        start_mask = obs_valid_mask
+        if B is not None:
+            start_mask = obs_valid_mask & jnp.concatenate(
+                [jnp.ones((1,), dtype=bool), jnp.logical_not(transition_valid_mask)],
+                axis=0,
+            )
+
+        if joint_qs is not None:
+            for f, joint_f in enumerate(joint_qs):
+                if joint_f.shape[0] != max(T - 1, 0):
+                    raise ValueError(
+                        f"`joint_qs[{f}]` has leading dimension {joint_f.shape[0]}, "
+                        f"expected {max(T - 1, 0)}"
+                    )
+
+        if B is not None and past_actions is None and T > 1:
+            for B_f in B:
+                if B_f.shape[-1] != 1:
+                    raise ValueError(
+                        "`past_actions` is required to compute sequence VFE "
+                        "when transition tensors have more than one control state"
+                    )
+
+        padded_past_actions = (
+            None if past_actions is None else _pad_sequence_with_initial_zeros(past_actions)
+        )
+        padded_joint_qs = (
+            None
+            if joint_qs is None
+            else tree_util.tree_map(_pad_sequence_with_initial_zeros, joint_qs)
+        )
+        padded_prev_qs = tree_util.tree_map(
+            lambda q: _pad_sequence_with_initial_zeros(q[:-1]),
+            qs,
+        )
+        padded_transition_valid_mask = jnp.concatenate(
+            [jnp.zeros((1,), dtype=bool), transition_valid_mask],
+            axis=0,
+        )
+
+        def _scan_step(
+            carry: None, t: ArrayLike
+        ) -> tuple[
+            None,
+            tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike, ArrayLike],
+        ]:
+            qs_t = tree_util.tree_map(lambda q: q[t], qs)
+            obs_t = None if obs is None else tree_util.tree_map(lambda o: o[t], obs)
+
+            valid_scale = obs_valid_mask[t].astype(jnp.result_type(*qs_t))
+            start_scale = start_mask[t].astype(valid_scale.dtype)
+            prior_term_t = _state_prior_term(qs_t) * valid_scale
+            accuracy_term_t = _accuracy_term(qs_t, obs_t) * valid_scale
+
+            neg_entropy_marginal_t = _neg_entropy_term(qs_t) * valid_scale
+            if padded_joint_qs is None:
+                neg_entropy_term_t = neg_entropy_marginal_t
+            else:
+                joint_qs_t = tree_util.tree_map(lambda q: q[t], padded_joint_qs)
+                neg_entropy_cond_t = 0.0
+                for joint_f_t in joint_qs_t:
+                    parent_marginal_t = joint_f_t.sum(axis=0)
+                    neg_entropy_cond_t += (
+                        _expected_log_prob_tensor(log_stable(joint_f_t), joint_f_t)
+                        - _expected_log_prob_tensor(
+                            log_stable(parent_marginal_t), parent_marginal_t
+                        )
+                    )
+                neg_entropy_cond_t = neg_entropy_cond_t * valid_scale
+                neg_entropy_term_t = (
+                    start_scale * neg_entropy_marginal_t
+                    + (1.0 - start_scale) * neg_entropy_cond_t
+                )
+
+            if B is None:
+                transition_term_t = jnp.array(0.0, dtype=neg_entropy_term_t.dtype)
+            else:
+                transition_term_t = 0.0
+                actions_t = None if padded_past_actions is None else padded_past_actions[t]
+                for f in range(max(len(B), len(B_dependencies))):
+                    B_f = _to_dense_if_sparse(B[f])
+                    deps_f = B_dependencies[f]
+                    if actions_t is None:
+                        B_f_t = B_f[..., 0]
+                    else:
+                        action_f = actions_t[f].astype(jnp.int32)
+                        safe_action_f = jnp.where(action_f < 0, 0, action_f)
+                        B_f_t = jnp.take(B_f, safe_action_f, axis=-1)
+
+                    if padded_joint_qs is None:
+                        transition_term_t += -_expected_log_prob(
+                            log_stable(B_f_t),
+                            [qs_t[f]] + [padded_prev_qs[d][t] for d in deps_f],
+                        )
+                    else:
+                        joint_f_t = _to_dense_if_sparse(padded_joint_qs[f][t])
+                        if joint_f_t.shape != B_f_t.shape:
+                            raise ValueError(
+                                f"`joint_qs[{f}]` has per-timestep shape {joint_f_t.shape}, "
+                                f"expected {B_f_t.shape} to match the conditioned transition tensor"
+                            )
+                        transition_term_t += -_expected_log_prob_tensor(
+                            log_stable(B_f_t), joint_f_t
+                        )
+
+                transition_term_t = (
+                    transition_term_t
+                    * padded_transition_valid_mask[t].astype(neg_entropy_term_t.dtype)
+                    * (1.0 - start_scale)
+                )
+
+            if B is None:
+                prior_cross_entropy_term_t = prior_term_t
+                dynamics_term_t = prior_term_t
+            else:
+                prior_cross_entropy_term_t = prior_term_t * start_scale
+                dynamics_term_t = prior_cross_entropy_term_t + transition_term_t
+
+            vfe_term_t = neg_entropy_term_t + dynamics_term_t - accuracy_term_t
+
+            return None, (
+                neg_entropy_term_t,
+                prior_cross_entropy_term_t,
+                transition_term_t,
+                accuracy_term_t,
+                vfe_term_t,
+            )
+
+        _, scan_outputs = lax.scan(_scan_step, None, jnp.arange(T))
+        (
+            neg_entropy_t,
+            prior_cross_entropy_t,
+            transition_cross_entropy_t,
+            accuracy_t,
+            vfe_t,
+        ) = scan_outputs
+
+    parameter_kl_A = _sum_dirichlet_kl(qA, pA, event_dim=0)
+    parameter_kl_B = _sum_dirichlet_kl(qB, pB, event_dim=0)
+    parameter_kl = parameter_kl_A + parameter_kl_B
+    vfe = vfe_t.sum() + parameter_kl
+
+    if not return_decomposition:
+        return vfe_t, vfe
+
+    decomposition = {
+        "neg_entropy_t": neg_entropy_t,
+        "prior_cross_entropy_t": prior_cross_entropy_t,
+        "transition_cross_entropy_t": transition_cross_entropy_t,
+        "accuracy_t": accuracy_t,
+        "state_vfe": vfe_t.sum(),
+        "parameter_kl_A": parameter_kl_A,
+        "parameter_kl_B": parameter_kl_B,
+        "parameter_kl": parameter_kl,
+    }
+    return vfe_t, vfe, decomposition
 
 
 def multidimensional_outer(arrs: list[ArrayLike]) -> ArrayLike:
