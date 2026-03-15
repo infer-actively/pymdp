@@ -214,8 +214,8 @@ def update_posterior_policies(
 
     Notes
     -----
-    The returned policy score is `neg_efe = -EFE`. In SPM-style notation this
-    same quantity is often denoted by `G`.
+    The returned policy score is `neg_efe = -EFE`. This same quantity is
+    often denoted by `G`.
 
     Parameters
     ----------
@@ -558,8 +558,8 @@ def compute_neg_efe_policy(
 
     Notes
     -----
-    This function computes `neg_efe = -EFE` for a single policy. In SPM-style
-    notation, this policy score (`neg_efe`) is commonly denoted `G`.
+    This function computes `neg_efe = -EFE` for a single policy. This policy
+    score (`neg_efe`) is commonly denoted `G`.
 
     Parameters
     ----------
@@ -651,8 +651,8 @@ def compute_neg_efe_policy_inductive(
     Notes
     -----
     This function computes `neg_efe = -EFE` for a single policy with optional
-    inductive-value terms. In SPM-style notation, this score is commonly
-    denoted `G`, so here `G = neg_efe = -EFE`.
+    inductive-value terms. This score is commonly denoted `G`, so here
+    `G = neg_efe = -EFE`.
 
     Parameters
     ----------
@@ -754,8 +754,8 @@ def update_posterior_policies_inductive(
 
     Notes
     -----
-    The returned policy score is `neg_efe = -EFE`. In SPM-style notation this
-    same quantity is often denoted by `G`.
+    The returned policy score is `neg_efe = -EFE`. This same quantity is
+    often denoted by `G`.
 
     Parameters
     ----------
@@ -840,7 +840,10 @@ def update_posterior_policies_inductive(
 
 def generate_I_matrix(H: list[Array], B: list[Array], threshold: float, depth: int) -> list[Array]:
     """ 
-    Generates the `I` matrices used in inductive planning. These matrices stores the probability of reaching the goal state backwards from state j (columns) after i (rows) steps.
+    Generate inductive reachability matrices using backward state reachability.
+
+    These matrices store whether state `j` (columns) can still reach the
+    intended state set after `i` backward steps (rows).
     Parameters
     ----------    
     H: list[Array]
@@ -868,16 +871,19 @@ def generate_I_matrix(H: list[Array], B: list[Array], threshold: float, depth: i
         For each factor, we need to compute the probability of reaching the goal state
         """
 
-        # If there exists an action that allows transitioning 
-        # from state to next_state, with probability larger than threshold
-        # set b_reachable[current_state, previous_state] to 1
-        b_reachable = jnp.where(B[f] > threshold, 1.0, 0.0).sum(axis=-1)
-        b_reachable = jnp.where(b_reachable > 0., 1.0, 0.0)
+        # If there exists an action that allows transitioning from
+        # previous_state to next_state with probability above threshold,
+        # set reachable_next_prev[next_state, previous_state] to 1.
+        reachable_next_prev = jnp.where(B[f] > threshold, 1.0, 0.0).sum(axis=-1)
+        reachable_next_prev = jnp.where(reachable_next_prev > 0.0, 1.0, 0.0)
+        predecessor_reachable = jnp.swapaxes(reachable_next_prev, 0, 1)
 
-        def step_fn(carry: Array, i: Array) -> tuple[Array, Array]:
+        def step_fn(carry: Array, _: Array) -> tuple[Array, Array]:
             I_prev = carry
-            I_next = jnp.dot(b_reachable, I_prev)
-            I_next = jnp.where(I_next > 0.1, 1.0, 0.0) # clamp I_next to 1.0 if it's above 0.1, 0 otherwise
+            # Predecessor states are allowed if they can reach any currently
+            # allowed successor state.
+            I_next = jnp.dot(predecessor_reachable, I_prev)
+            I_next = jnp.where(I_next > 0.0, 1.0, 0.0)
             return I_next, I_next
     
         _, I_f = lax.scan(step_fn, H[f], jnp.arange(depth-1))
