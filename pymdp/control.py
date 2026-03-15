@@ -860,16 +860,15 @@ def generate_I_matrix(H: list[Array], B: list[Array], threshold: float, depth: i
     Returns
     ----------
     I: list[Array]
-        For each state factor, contains a 2D array whose element i,j yields the probability
-        of reaching the goal state backwards from state j after i steps.
+        For each state factor, contains a 2D indicator array whose element
+        `i, j` is `1` when state `j` can still reach the intended state set
+        after `i` backward steps, and `0` otherwise.
     """
     
     num_factors = len(H)
     I = []
     for f in range(num_factors):
-        """
-        For each factor, we need to compute the probability of reaching the goal state
-        """
+        # Compute backward reachability separately for each hidden-state factor.
 
         # If there exists an action that allows transitioning from
         # previous_state to next_state with probability above threshold,
