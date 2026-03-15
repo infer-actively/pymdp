@@ -693,6 +693,36 @@ class TestAgentJax(unittest.TestCase):
         for f in range(agent.num_factors):
             self.assertTrue(jnp.array_equal(agent.I[f], expected_I[f]))
 
+    def test_inductive_depth_validation_only_applies_when_inductive_enabled(self):
+        num_obs = [2]
+        num_states = [2]
+        num_controls = [2]
+
+        a_key, b_key = jr.split(jr.PRNGKey(778), 2)
+        A = utils.random_A_array(a_key, num_obs, num_states)
+        B = utils.random_B_array(b_key, num_states, num_controls)
+
+        agent = Agent(
+            A,
+            B,
+            num_controls=num_controls,
+            use_inductive=False,
+            inductive_depth=0,
+        )
+        self.assertIsInstance(agent, Agent)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "`inductive_depth` must be >= 1 when `use_inductive` is True",
+        ):
+            Agent(
+                A,
+                B,
+                num_controls=num_controls,
+                use_inductive=True,
+                inductive_depth=0,
+            )
+
     def test_valid_gradients_one_step_ahead(self):
         """
         This unit test checks that gradients can be computed through a single time step of
