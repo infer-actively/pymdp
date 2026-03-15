@@ -866,6 +866,8 @@ def generate_I_matrix(H: list[Array], B: list[Array], threshold: float, depth: i
         `i, j` is `1` when state `j` can still reach the intended state set
         after `i` backward steps, and `0` otherwise.
     """
+    if depth < 1:
+        raise ValueError("`depth` must be >= 1")
     
     num_factors = len(H)
     I = []

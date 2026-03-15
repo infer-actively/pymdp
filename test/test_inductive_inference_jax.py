@@ -52,6 +52,13 @@ def _manual_chain_I() -> list[jnp.ndarray]:
 
 class TestInductiveInferenceJax(unittest.TestCase):
 
+    def test_generate_I_matrix_rejects_nonpositive_depth(self):
+        H = [jnp.array([0.0, 1.0], dtype=jnp.float32)]
+        B = [jnp.zeros((2, 2, 1), dtype=jnp.float32)]
+
+        with self.assertRaisesRegex(ValueError, "`depth` must be >= 1"):
+            ctl_jax.generate_I_matrix(H, B, threshold=0.5, depth=0)
+
     def test_generate_I_matrix_matches_chain_reachability(self):
         H = [jnp.array([0.0, 0.0, 1.0], dtype=jnp.float32)]
         B = [_chain_transition(3)]

@@ -277,6 +277,8 @@ class Agent(Module):
 
         if self.inference_horizon is not None and self.inference_horizon < 1:
             raise ValueError("`inference_horizon` must be >= 1 when provided")
+        if self.inductive_depth < 1:
+            raise ValueError("`inductive_depth` must be >= 1")
 
         # policy parameters
         self.policy_len = policy_len
