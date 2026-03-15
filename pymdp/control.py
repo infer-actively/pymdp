@@ -711,6 +711,8 @@ def compute_neg_efe_policy_inductive(
 
         utility = compute_expected_utility(qo, C, t) if use_utility else 0.
 
+        # Keep inductive admissibility anchored to the starting-state belief
+        # across the rollout to preserve current policy-scoring semantics.
         inductive_value = calc_inductive_value_t(qs_init, qs_next, I, epsilon=inductive_epsilon) if use_inductive else 0.
 
         neg_param_info_gain = 0.

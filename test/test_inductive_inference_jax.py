@@ -6,6 +6,7 @@
 import unittest
 
 import numpy as np
+from jax.nn import one_hot
 import jax.numpy as jnp
 
 import pymdp.control as ctl_jax
@@ -48,11 +49,6 @@ def _manual_chain_I() -> list[jnp.ndarray]:
             dtype=jnp.float32,
         )
     ]
-
-
-def _one_hot(index: int, size: int) -> jnp.ndarray:
-    return jnp.eye(size, dtype=jnp.float32)[index]
-
 
 class TestInductiveInferenceJax(unittest.TestCase):
 
@@ -110,22 +106,22 @@ class TestInductiveInferenceJax(unittest.TestCase):
 
     def test_calc_inductive_value_on_path_zero_and_off_path_logeps(self):
         I = _manual_chain_I()
-        qs = [_one_hot(0, 3)]
-        log_eps = float(np.log(1e-3))
+        qs = [one_hot(0, 3)]
+        log_eps = float(jnp.log(1e-3))
 
-        on_path = ctl_jax.calc_inductive_value_t(qs, [_one_hot(1, 3)], I, epsilon=1e-3)
-        off_path = ctl_jax.calc_inductive_value_t(qs, [_one_hot(0, 3)], I, epsilon=1e-3)
+        on_path = ctl_jax.calc_inductive_value_t(qs, [one_hot(1, 3)], I, epsilon=1e-3)
+        off_path = ctl_jax.calc_inductive_value_t(qs, [one_hot(0, 3)], I, epsilon=1e-3)
 
         self.assertAlmostEqual(float(on_path), 0.0, places=6)
         self.assertAlmostEqual(float(off_path), log_eps, places=6)
 
     def test_calc_inductive_value_scales_with_off_path_mass(self):
         I = _manual_chain_I()
-        qs = [_one_hot(0, 3)]
+        qs = [one_hot(0, 3)]
         qs_next = [jnp.array([0.25, 0.75, 0.0], dtype=jnp.float32)]
 
         value = ctl_jax.calc_inductive_value_t(qs, qs_next, I, epsilon=1e-3)
-        expected = 0.25 * float(np.log(1e-3))
+        expected = 0.25 * float(jnp.log(1e-3))
 
         self.assertAlmostEqual(float(value), expected, places=6)
 
@@ -140,7 +136,7 @@ class TestInductiveInferenceJax(unittest.TestCase):
                 dtype=jnp.float32,
             )
         ]
-        qs = [_one_hot(0, 3)]
+        qs = [one_hot(0, 3)]
         qs_next = [jnp.array([0.4, 0.6, 0.0], dtype=jnp.float32)]
 
         value = ctl_jax.calc_inductive_value_t(qs, qs_next, I_unreachable, epsilon=1e-3)
@@ -160,14 +156,14 @@ class TestInductiveInferenceJax(unittest.TestCase):
         value_c = ctl_jax.calc_inductive_value_t(qs_c, qs_next, I, epsilon=1e-3)
 
         self.assertAlmostEqual(float(value_a), float(value_b), places=6)
-        self.assertAlmostEqual(float(value_c), float(np.log(1e-3)), places=6)
+        self.assertAlmostEqual(float(value_c), float(jnp.log(1e-3)), places=6)
 
     def test_one_step_policy_ranking_prefers_goal_directed_action(self):
         A = [jnp.eye(3, dtype=jnp.float32)]
         B = [_advance_or_stay_transition()]
         C = [jnp.zeros((3,), dtype=jnp.float32)]
         E = jnp.array([0.5, 0.5], dtype=jnp.float32)
-        qs_init = [_one_hot(0, 3)]
+        qs_init = [one_hot(0, 3)]
         I = _manual_chain_I()
         policy_matrix = jnp.array([[[0]], [[1]]], dtype=jnp.int32)
 
@@ -191,7 +187,7 @@ class TestInductiveInferenceJax(unittest.TestCase):
             use_inductive=True,
         )
 
-        expected_neg_efe = np.array([0.0, np.log(1e-3)], dtype=np.float32)
+        expected_neg_efe = np.array([0.0, jnp.log(1e-3)], dtype=np.float32)
         expected_q_pi = np.array([1.0 / (1.0 + 1e-3), 1e-3 / (1.0 + 1e-3)], dtype=np.float32)
 
         self.assertTrue(np.allclose(np.array(neg_efe), expected_neg_efe, atol=1e-6))
@@ -201,7 +197,7 @@ class TestInductiveInferenceJax(unittest.TestCase):
         A = [jnp.eye(3, dtype=jnp.float32)]
         B = [_advance_or_stay_transition()]
         C = [jnp.array([0.0, 0.5, 1.0], dtype=jnp.float32)]
-        qs_init = [_one_hot(0, 3)]
+        qs_init = [one_hot(0, 3)]
         policy = jnp.array([[0]], dtype=jnp.int32)
         I = _manual_chain_I()
 
@@ -242,7 +238,7 @@ class TestInductiveInferenceJax(unittest.TestCase):
         A = [jnp.eye(3, dtype=jnp.float32)]
         B = [_advance_or_stay_transition()]
         C = [jnp.zeros((3,), dtype=jnp.float32)]
-        qs_init = [_one_hot(0, 3)]
+        qs_init = [one_hot(0, 3)]
         I = _manual_chain_I()
 
         advance_then_stay = jnp.array([[0], [1]], dtype=jnp.int32)
