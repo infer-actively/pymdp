@@ -24,10 +24,13 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y graphviz-dev
+          sudo apt-get install -y graphviz libgraphviz-dev pkg-config build-essential python3-dev
       - name: Install dependencies
         run: |
           uv sync --group test
       - name: Running nightly-marked tests
         run: |
           uv run pytest test -n 2 -m nightly
+      - name: Running nightly-tier notebook tests
+        run: |
+          uv run python scripts/run_notebook_manifest.py test/notebooks/nightly_notebooks.txt

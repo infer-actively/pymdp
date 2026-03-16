@@ -1,6 +1,6 @@
 # Notebook Test Manifests
 
-This directory contains the notebook manifests for the `v1.0.0_alpha` release-closure work.
+This directory contains the notebook manifests used for `pymdp` release gating.
 They are the source of truth for how `examples/` notebooks are split between the lighter PR CI tier and the heavier nightly tier.
 
 ## Manifest Files
@@ -35,13 +35,13 @@ All other non-legacy notebooks in `examples/` belong to the CI tier.
 
 ```bash
 # Execute the PR-CI notebook tier without strict output matching
-uv run pytest --nbval-lax $(cat test/notebooks/ci_notebooks.txt)
+uv run python scripts/run_notebook_manifest.py test/notebooks/ci_notebooks.txt
 
 # Execute the nightly notebook tier without strict output matching
-uv run pytest --nbval-lax $(cat test/notebooks/nightly_notebooks.txt)
+uv run python scripts/run_notebook_manifest.py test/notebooks/nightly_notebooks.txt
 
 # Strictly validate saved outputs for the PR-CI tier
-uv run pytest --nbval $(cat test/notebooks/ci_notebooks.txt)
+uv run python scripts/run_notebook_manifest.py test/notebooks/ci_notebooks.txt --strict-output
 ```
 
 ## Pre-commit Hooks
@@ -67,4 +67,4 @@ The hook behavior is tier-aware and reads the manifests above:
 1. Keep notebooks focused and reasonably small.
 2. Avoid massive printed outputs.
 3. If a notebook is meant to stay in the CI tier, rerun and save it in a state compatible with `nbval`.
-4. Workflow wiring is intentionally separate from these manifests and will be handled downstream.
+4. CI wiring consumes these manifests directly through `scripts/run_notebook_manifest.py`.

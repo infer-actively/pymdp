@@ -17,4 +17,6 @@ venv/
 coverage.xml
 htmlcov/
 site/
+build/
+dist/
 uv.lock

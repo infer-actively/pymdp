@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -13,12 +13,12 @@ authors = [
     { name = "Dimitrije Markovic", email="dimitrije.markovic@tu-dresden.de"}
 ]
 readme = "README.md"
-license = {file = "LICENSE"}
+license = "MIT"
+license-files = ["LICENSE"]
 classifiers=[
-    'Development Status :: 4 - Beta',
+    'Development Status :: 5 - Production/Stable',
     'Intended Audience :: Developers',
     'Topic :: Scientific/Engineering :: Artificial Intelligence',
-    'License :: OSI Approved :: MIT License',
     'Programming Language :: Python :: 3',
 ]
 requires-python = ">=3.10"
@@ -58,7 +58,6 @@ test = [
 [project.optional-dependencies]
 gpu = [
     'jax[cuda12]>=0.3.4',
-    'jaxlib[cuda12]>=0.3.4',
 ]
 docs = [
     # MkDocs 2.x currently emits incompatibility warnings with Material.

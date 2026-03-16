@@ -1,13 +1,15 @@
 # Release Notes
 
-## 1.0.0 (in progress)
+## 1.0.0
 
-- Breaking (JAX API): `rollout()` extras now use `info["neg_efe"]` instead of
-  `info["G"]`.
-- Breaking (SI planning): threshold keyword in `si_policy_search()` and
-  `optimized_tree_search()` renamed from `efe_stop_threshold` to
-  `neg_efe_stop_threshold`.
-- JAX examples and docs now use `q_pi, neg_efe = agent.infer_policies(qs)` for
-  policy-score outputs.
-- SPM notation mapping is now explicit in docs: SPM's `G` corresponds to
-  `neg_efe = -EFE`.
+- JAX is now the default backend for the primary docs, examples, and release
+  surface.
+- `Agent.infer_states(..., return_info=True)` and the lower-level inference API
+  expose canonical variational free energy diagnostics.
+- `rollout()` extras now use `info["neg_efe"]` instead of `info["G"]`, and SI
+  planning threshold keywords now use `neg_efe_stop_threshold`.
+- The notebook test split is now enforced in CI: PR coverage runs the
+  `test/notebooks/ci_notebooks.txt` tier and nightly coverage runs
+  `test/notebooks/nightly_notebooks.txt`.
+- Installation docs now include explicit `pygraphviz` troubleshooting for macOS
+  and Ubuntu contributors.
