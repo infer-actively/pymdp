@@ -30,6 +30,10 @@ uv sync --group test
 
 `pygraphviz` is only needed for Graphviz-backed notebook visualizations such as the MCTS graph-world demo, but it is included in the current `test` and `nb` dependency sets. On many machines `uv sync --group test` works without any extra steps; if it fails while building `pygraphviz`, use the troubleshooting notes below and then rerun the sync command.
 
+Notebook cells that call `mediapy.show_video(...)` also require a system `ffmpeg`
+binary. If those cells fail with `Program 'ffmpeg' is not found`, install
+`ffmpeg` with your package manager before rerunning the notebook.
+
 Common `uv` sync patterns:
 
 ```bash
@@ -64,6 +68,12 @@ Install Graphviz with Homebrew before syncing dependencies:
 brew install graphviz
 ```
 
+If you need notebook video rendering through `mediapy`, also install:
+
+```bash
+brew install ffmpeg
+```
+
 If `pygraphviz` still fails to build, install it explicitly with Homebrew's include and library paths:
 
 ```bash
@@ -88,11 +98,11 @@ uv sync --extra nb
 
 ### Ubuntu / Debian
 
-Install the Graphviz runtime, Graphviz development headers, `pkg-config`, and the compiler toolchain before syncing dependencies:
+Install the notebook/video runtime plus the Graphviz runtime, Graphviz development headers, `pkg-config`, and the compiler toolchain before syncing dependencies:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y graphviz libgraphviz-dev pkg-config build-essential
+sudo apt-get install -y ffmpeg graphviz libgraphviz-dev pkg-config build-essential
 ```
 
 Install Python development headers that match the interpreter in your environment:

@@ -24,7 +24,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y graphviz libgraphviz-dev pkg-config build-essential python3-dev
+          sudo apt-get install -y ffmpeg graphviz libgraphviz-dev pkg-config build-essential python3-dev
       - name: Install dependencies
         run: |
           uv sync --group test
