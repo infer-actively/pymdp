@@ -18,6 +18,11 @@ from pymdp.maths import compute_log_likelihood, compute_log_likelihood_per_modal
 def add(x: Array, y: Array) -> Array:
     return x + y
 
+
+def _matmul_high_precision(lhs: Array, rhs: Array) -> Array:
+    """Use the highest available matmul precision on accelerator backends."""
+    return jnp.matmul(lhs, rhs, precision=lax.Precision.HIGHEST)
+
 def marginal_log_likelihood(qs: list[Array], log_likelihood: Array, i: int) -> Array:
     xs = [q for j, q in enumerate(qs) if j != i]
     return factor_dot(log_likelihood, xs, keep_dims=(i,))
@@ -780,7 +785,7 @@ def _hmm_filter_scan_row_oriented(
     ) -> FilterMessage:
         # Combine segment i->j with segment j->k by summing out the intermediate state.
         A_ij_cond, lognorm = _condition_on(m_ij.A, m_jk.log_b)
-        A_ik = A_ij_cond @ m_jk.A
+        A_ik = _matmul_high_precision(A_ij_cond, m_jk.A)
         log_b_ik = m_ij.log_b + lognorm
         return FilterMessage(A=A_ik, log_b=log_b_ik)
 
@@ -803,7 +808,7 @@ def _hmm_filter_scan_row_oriented(
     if T == 1:
         predicted_probs = initial_probs[None, :]
     else:
-        pred_next = vmap(lambda q, A: q @ A)(filtered_probs[:-1], transition_mats)
+        pred_next = vmap(_matmul_high_precision)(filtered_probs[:-1], transition_mats)
         predicted_probs = jnp.concatenate([initial_probs[None, :], pred_next], axis=0)
 
     return marginal_loglik, filtered_probs, predicted_probs
@@ -868,11 +873,11 @@ def _hmm_smoother_scan_row_oriented(
 
         def op(x: Array, y: Array) -> Array:
             # batched matmul works; associative_scan may call this with leading batch dims
-            return y @ x
+            return _matmul_high_precision(y, x)
 
         # suffix-style associative scan via reverse + reverse-back
         beta = lax.associative_scan(op, M[::-1])[::-1]
-        beta = vmap(lambda P_t: P_t @ jnp.ones((K,)))(beta)
+        beta = vmap(lambda P_t: _matmul_high_precision(P_t, jnp.ones((K,))))(beta)
         beta = jnp.concatenate([beta, jnp.ones((1, K))], axis=0)
 
     # p(s_t | o_{1:T}) = p(s_t | o_{1:t}) * beta_t
@@ -983,20 +988,32 @@ def hmm_smoother_scan_colstoch(
         If `True`, returns
         `(marginal_loglik, filtered_probs, predicted_probs, smoothed_probs, trans_probs, cond_probs)`.
     """
-    smoothed = _hmm_smoother_scan_row_oriented(
+    marginal_loglik, filtered_probs, predicted_probs = hmm_filter_scan_colstoch(
         initial_probs,
-        jnp.swapaxes(B_mats, -1, -2),
+        B_mats,
         log_likelihoods,
+    )
+    smoothed_probs, _, cond_probs, trans_probs = hmm_smoother_from_filtered_colstoch(
+        filtered_probs,
+        B_mats,
+        return_trans_probs=True,
     )
 
     if return_trans_probs:
-        return smoothed
+        return (
+            marginal_loglik,
+            filtered_probs,
+            predicted_probs,
+            smoothed_probs,
+            trans_probs,
+            cond_probs,
+        )
     return (
-        smoothed[0],
-        smoothed[1],
-        smoothed[2],
-        smoothed[3],
-        smoothed[5],
+        marginal_loglik,
+        filtered_probs,
+        predicted_probs,
+        smoothed_probs,
+        cond_probs,
     )
 
 
@@ -1055,7 +1072,7 @@ def hmm_smoother_from_filtered_colstoch(
             return smoothed, joint_next_curr, cond_probs, trans_probs
         return smoothed, joint_next_curr, cond_probs
 
-    predicted_next = vmap(lambda B_t, q_t: B_t @ q_t)(B_mats, filtered_probs[:-1])  # (T-1, K_next)
+    predicted_next = vmap(_matmul_high_precision)(B_mats, filtered_probs[:-1])  # (T-1, K_next)
 
     cond_probs = (
         B_mats * filtered_probs[:-1][:, None, :]
@@ -1066,13 +1083,13 @@ def hmm_smoother_from_filtered_colstoch(
     R = M[::-1]
 
     def op(x: Array, y: Array) -> Array:
-        return y @ x
+        return _matmul_high_precision(y, x)
 
     P_rev = lax.associative_scan(op, R)  # cumulative products from the end
     P = P_rev[::-1]
 
     q_last = filtered_probs[-1]
-    smoothed_prefix = vmap(lambda P_t: P_t @ q_last)(P)  # (T-1, K)
+    smoothed_prefix = vmap(lambda P_t: _matmul_high_precision(P_t, q_last))(P)  # (T-1, K)
     smoothed = jnp.concatenate([smoothed_prefix, q_last[None, :]], axis=0)
     smoothed = smoothed / jnp.clip(jnp.sum(smoothed, axis=-1, keepdims=True), min=MINVAL)
 
