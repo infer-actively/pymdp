@@ -32,7 +32,7 @@ uv sync --group test
 
 Notebook cells that call `mediapy.show_video(...)` also require a system `ffmpeg`
 binary. If those cells fail with `Program 'ffmpeg' is not found`, install
-`ffmpeg` with your package manager before rerunning the notebook.
+`ffmpeg` using the platform-specific notes below before rerunning the notebook.
 
 Common `uv` sync patterns:
 
@@ -53,6 +53,27 @@ uv sync --group test --extra docs
 uv sync --group test --extra gpu
 ```
 
+## Notebook video rendering (`mediapy`)
+
+Notebook examples that render videos through `mediapy.show_video(...)` need a
+system `ffmpeg` binary in addition to the Python package.
+
+### macOS (Homebrew)
+
+```bash
+brew install ffmpeg
+```
+
+### Ubuntu / Debian
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ffmpeg
+```
+
+On other platforms, install `ffmpeg` with your system package manager and make
+sure the `ffmpeg` executable is available on `PATH`.
+
 ## `pygraphviz` troubleshooting
 
 If installation fails while building `pygraphviz`, the missing dependency is usually one of:
@@ -66,12 +87,6 @@ Install Graphviz with Homebrew before syncing dependencies:
 
 ```bash
 brew install graphviz
-```
-
-If you need notebook video rendering through `mediapy`, also install:
-
-```bash
-brew install ffmpeg
 ```
 
 If `pygraphviz` still fails to build, install it explicitly with Homebrew's include and library paths:
@@ -98,11 +113,11 @@ uv sync --extra nb
 
 ### Ubuntu / Debian
 
-Install the notebook/video runtime plus the Graphviz runtime, Graphviz development headers, `pkg-config`, and the compiler toolchain before syncing dependencies:
+Install the Graphviz runtime, Graphviz development headers, `pkg-config`, and the compiler toolchain before syncing dependencies:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y ffmpeg graphviz libgraphviz-dev pkg-config build-essential
+sudo apt-get install -y graphviz libgraphviz-dev pkg-config build-essential
 ```
 
 Install Python development headers that match the interpreter in your environment:
