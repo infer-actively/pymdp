@@ -101,7 +101,9 @@ def validate_normalization(tensor: Array, axis: int = 1, tensor_name: str = "ten
     Returns
     -------
     None
-        Raises `ValueError` if distributions are invalid.
+        In eager mode, raises `ValueError` if any distribution along the given
+        axis sums to zero or is not normalized. Under JAX tracing/JIT, invalid
+        distributions are signaled via `eqx.error_if`.
     """
 
     sums = jnp.sum(tensor, axis=axis)
