@@ -219,7 +219,7 @@ def run_sanitize(path_args: list[str]) -> int:
     return 0
 
 
-def run_validate_ci(path_args: list[str]) -> int:
+def run_validate_counts(path_args: list[str]) -> int:
     ci_paths, nightly_paths, unclassified_paths = classify_notebooks(path_args)
     if unclassified_paths:
         return report_unclassified_notebooks(unclassified_paths)
@@ -255,7 +255,9 @@ def main() -> int:
     args = parse_args()
     if args.command == "sanitize":
         return run_sanitize(args.paths)
-    return run_validate_ci(args.paths)
+    if args.command in {"validate-ci", "validate-counts"}:
+        return run_validate_counts(args.paths)
+    raise ValueError(f"Unsupported command: {args.command}")
 
 
 if __name__ == "__main__":
