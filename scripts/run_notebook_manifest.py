@@ -45,6 +45,13 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def has_explicit_numprocesses(pytest_args: list[str]) -> bool:
+    for arg in pytest_args:
+        if arg == "-n" or arg.startswith("-n") or arg.startswith("--numprocesses"):
+            return True
+    return False
+
+
 def main() -> int:
     args = parse_args()
     manifest_path = (REPO_ROOT / args.manifest).resolve()
@@ -60,12 +67,23 @@ def main() -> int:
         pytest_args = pytest_args[1:]
 
     nbval_flag = "--nbval" if args.strict_output else "--nbval-lax"
-    command = [sys.executable, "-m", "pytest", nbval_flag, *pytest_args, *notebooks]
+    worker_args = [] if has_explicit_numprocesses(pytest_args) else ["-n0"]
+    command = [
+        sys.executable,
+        "-m",
+        "pytest",
+        nbval_flag,
+        *worker_args,
+        *pytest_args,
+        *notebooks,
+    ]
 
     print(
         f"Running {len(notebooks)} notebook(s) from "
         f"{manifest_rel.as_posix()} with {nbval_flag}."
     )
+    if worker_args:
+        print("Notebook execution defaults to -n0 to avoid xdist/nbval conflicts.")
     for notebook in notebooks:
         print(f"  - {notebook}")
 

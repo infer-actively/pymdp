@@ -27,6 +27,53 @@ def load_manifest(path: Path) -> set[str]:
     }
 
 
+def strip_top_level_metadata(notebook: nbformat.NotebookNode) -> bool:
+    changed = False
+    for key in TOP_LEVEL_METADATA_KEYS:
+        if key in notebook.metadata:
+            del notebook.metadata[key]
+            changed = True
+    return changed
+
+
+def canonicalize_execution_counts(notebook: nbformat.NotebookNode) -> bool:
+    """
+    Normalize execution counts for output-bearing code cells.
+
+    `nbval` only needs output-bearing reference cells to have non-null execution
+    counts; the exact local kernel history is not meaningful. Canonicalizing the
+    counts keeps the notebooks stable under version control while preserving the
+    invariant that saved outputs look like they came from an executed notebook.
+    """
+
+    changed = False
+    next_count = 1
+
+    for cell in notebook.cells:
+        if cell.get("cell_type") != "code":
+            continue
+
+        outputs = cell.get("outputs", [])
+        if not outputs:
+            if cell.get("execution_count") is not None:
+                cell["execution_count"] = None
+                changed = True
+            continue
+
+        if cell.get("execution_count") != next_count:
+            cell["execution_count"] = next_count
+            changed = True
+
+        for output in outputs:
+            if "execution_count" in output and output["execution_count"] != next_count:
+                output["execution_count"] = next_count
+                changed = True
+
+        next_count += 1
+
+    return changed
+
+
 def to_repo_relative(path_str: str) -> str | None:
     path = Path(path_str)
     if not path.is_absolute():
@@ -88,11 +135,8 @@ def sanitize_ci_notebooks(paths: list[Path]) -> list[str]:
 
     for path in paths:
         notebook = nbformat.read(path, as_version=nbformat.NO_CONVERT)
-        changed = False
-        for key in TOP_LEVEL_METADATA_KEYS:
-            if key in notebook.metadata:
-                del notebook.metadata[key]
-                changed = True
+        changed = strip_top_level_metadata(notebook)
+        changed = canonicalize_execution_counts(notebook) or changed
 
         if changed:
             nbformat.write(notebook, path)
@@ -115,8 +159,15 @@ def sanitize_nightly_notebooks(paths: list[Path]) -> None:
     ]
     subprocess.run(command, cwd=REPO_ROOT, check=True)
 
+    for path in paths:
+        notebook = nbformat.read(path, as_version=nbformat.NO_CONVERT)
+        changed = strip_top_level_metadata(notebook)
+        changed = canonicalize_execution_counts(notebook) or changed
+        if changed:
+            nbformat.write(notebook, path)
 
-def validate_ci_notebooks(paths: list[Path]) -> list[str]:
+
+def validate_manifest_notebooks(paths: list[Path]) -> list[str]:
     violations: list[str] = []
 
     for path in paths:
@@ -124,11 +175,25 @@ def validate_ci_notebooks(paths: list[Path]) -> list[str]:
         for index, cell in enumerate(notebook.cells, start=1):
             if cell.get("cell_type") != "code":
                 continue
-            if cell.get("outputs") and cell.get("execution_count") is None:
+            outputs = cell.get("outputs", [])
+            if not outputs:
+                continue
+
+            if cell.get("execution_count") is None:
                 violations.append(
                     f"{path.relative_to(REPO_ROOT).as_posix()}: code cell {index} "
                     "has outputs but a null execution_count"
                 )
+                continue
+
+            for output in outputs:
+                if "execution_count" in output and output["execution_count"] != cell.get(
+                    "execution_count"
+                ):
+                    violations.append(
+                        f"{path.relative_to(REPO_ROOT).as_posix()}: code cell {index} "
+                        "has an output execution_count that does not match the cell"
+                    )
 
     return violations
 
@@ -142,7 +207,7 @@ def run_sanitize(path_args: list[str]) -> int:
     sanitize_nightly_notebooks(nightly_paths)
 
     if ci_modified:
-        print("Removed noisy top-level metadata from CI-tier notebooks:")
+        print("Sanitized CI-tier notebooks:")
         for rel_path in ci_modified:
             print(f"  - {rel_path}")
 
@@ -155,18 +220,18 @@ def run_sanitize(path_args: list[str]) -> int:
 
 
 def run_validate_ci(path_args: list[str]) -> int:
-    ci_paths, _, unclassified_paths = classify_notebooks(path_args)
+    ci_paths, nightly_paths, unclassified_paths = classify_notebooks(path_args)
     if unclassified_paths:
         return report_unclassified_notebooks(unclassified_paths)
 
-    violations = validate_ci_notebooks(ci_paths)
+    violations = validate_manifest_notebooks(ci_paths + nightly_paths)
 
     if not violations:
         return 0
 
     print(
-        "CI-tier notebooks must keep execution counts for code cells with saved "
-        "outputs so strict nbval can replay them."
+        "Manifest-tested notebooks that keep saved outputs must also keep "
+        "non-null execution counts for those cells."
     )
     for violation in violations:
         print(f"  - {violation}")
@@ -179,7 +244,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "command",
-        choices=("sanitize", "validate-ci"),
+        choices=("sanitize", "validate-ci", "validate-counts"),
         help="Hook action to execute.",
     )
     parser.add_argument("paths", nargs="*", help="Notebook paths supplied by pre-commit.")

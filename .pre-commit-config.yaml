@@ -7,9 +7,9 @@ repos:
         language: system
         files: ^examples/(?!legacy/).+\.ipynb$
         pass_filenames: true
-      - id: validate-ci-notebooks
-        name: validate CI notebook execution counts
-        entry: uv run --group dev python scripts/notebook_precommit.py validate-ci
+      - id: validate-notebook-execution-counts
+        name: validate manifest notebook execution counts
+        entry: uv run --group dev python scripts/notebook_precommit.py validate-counts
         language: system
         files: ^examples/(?!legacy/).+\.ipynb$
         pass_filenames: true
