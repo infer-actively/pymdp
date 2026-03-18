@@ -30,6 +30,10 @@ uv sync --group test
 
 `pygraphviz` is only needed for Graphviz-backed notebook visualizations such as the MCTS graph-world demo, but it is included in the current `test` and `nb` dependency sets. On many machines `uv sync --group test` works without any extra steps; if it fails while building `pygraphviz`, use the troubleshooting notes below and then rerun the sync command.
 
+Notebook cells that call `mediapy.show_video(...)` also require a system `ffmpeg`
+binary. If those cells fail with `Program 'ffmpeg' is not found`, install
+`ffmpeg` using the platform-specific notes below before rerunning the notebook.
+
 Common `uv` sync patterns:
 
 ```bash
@@ -48,6 +52,27 @@ uv sync --group test --extra docs
 # GPU workflow
 uv sync --group test --extra gpu
 ```
+
+## Notebook video rendering (`mediapy`)
+
+Notebook examples that render videos through `mediapy.show_video(...)` need a
+system `ffmpeg` binary in addition to the Python package.
+
+### macOS (Homebrew)
+
+```bash
+brew install ffmpeg
+```
+
+### Ubuntu / Debian
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ffmpeg
+```
+
+On other platforms, install `ffmpeg` with your system package manager and make
+sure the `ffmpeg` executable is available on `PATH`.
 
 ## `pygraphviz` troubleshooting
 

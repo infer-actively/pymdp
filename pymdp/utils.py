@@ -101,17 +101,48 @@ def validate_normalization(tensor: Array, axis: int = 1, tensor_name: str = "ten
     Returns
     -------
     None
-        Raises `ValueError` if distributions are invalid.
+        In eager mode, raises `ValueError` if any distribution along the given
+        axis sums to zero or is not normalized. Under JAX tracing/JIT, invalid
+        distributions are signaled via `eqx.error_if`.
     """
 
-    # sum along the specified axis
     sums = jnp.sum(tensor, axis=axis)
 
-    # check for zero-filled distributions
-    eqx.error_if(sums, jnp.any(jnp.isclose(sums,0.0)), f"Please ensure that none of the distributions along {tensor_name}'s {axis}-th axis sum to zero...")
-    
-    # check for unnormalized distributions (non-zero but not summing to 1)
-    eqx.error_if(sums, jnp.any(~jnp.isclose(sums,1.0)), f"Please ensure that all distributions along {tensor_name}'s {axis}-th axis are properly normalised and sum to 1...")
+    # When traced under JIT we still need a JAX-compatible runtime assertion.
+    # Equinox handles that case well for valid tensors, and the jittable Agent
+    # constructor tests rely on this path. The eager path below avoids the
+    # callback-based runtime error mechanism for non-jitted CUDA validation.
+    if isinstance(sums, jax.core.Tracer):
+        sums = eqx.error_if(
+            sums,
+            jnp.any(jnp.isclose(sums, 0.0)),
+            f"Please ensure that none of the distributions along {tensor_name}'s "
+            f"{axis}-th axis sum to zero...",
+        )
+        sums = eqx.error_if(
+            sums,
+            jnp.any(~jnp.isclose(sums, 1.0)),
+            f"Please ensure that all distributions along {tensor_name}'s {axis}-th "
+            "axis are properly normalised and sum to 1...",
+        )
+        return
+
+    # This validation runs during eager model construction outside JIT-compiled
+    # kernels. Using Python-side checks avoids Equinox's runtime callback path,
+    # which requires a local CPU device and fails under `JAX_PLATFORMS=cuda`.
+    has_zero = bool(jnp.any(jnp.isclose(sums, 0.0)))
+    if has_zero:
+        raise ValueError(
+            f"Please ensure that none of the distributions along {tensor_name}'s "
+            f"{axis}-th axis sum to zero..."
+        )
+
+    is_normalized = bool(jnp.all(jnp.isclose(sums, 1.0)))
+    if not is_normalized:
+        raise ValueError(
+            f"Please ensure that all distributions along {tensor_name}'s {axis}-th "
+            "axis are properly normalised and sum to 1..."
+        )
 
 def random_factorized_categorical(key: Array, dims_per_var: Sequence[int]) -> list[Array]:
     """

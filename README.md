@@ -87,7 +87,7 @@ If you prefer `pip`, use:
 pip install inferactively-pymdp
 ```
 
-If `uv sync --group test` or `uv sync --extra nb` fails while building `pygraphviz`, install Graphviz first and then retry. On macOS, install `graphviz` with Homebrew. On Ubuntu/Debian, install `graphviz libgraphviz-dev pkg-config build-essential` plus matching Python development headers if `Python.h` is missing. The full troubleshooting notes live in [`docs-mkdocs/getting-started/installation.md`](docs-mkdocs/getting-started/installation.md).
+If `uv sync --group test` or `uv sync --extra nb` fails while building `pygraphviz`, install Graphviz first and then retry. On macOS, install `graphviz` with Homebrew. On Ubuntu/Debian, install `graphviz libgraphviz-dev pkg-config build-essential python3-dev` (or the version-matched `python3.x-dev` package if needed). The full troubleshooting notes live in [`docs-mkdocs/getting-started/installation.md`](docs-mkdocs/getting-started/installation.md).
 
 Once in Python, you can then directly import `pymdp`, its sub-packages, and functions.
 

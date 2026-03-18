@@ -23,7 +23,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y graphviz-dev
+          sudo apt-get install -y ffmpeg graphviz libgraphviz-dev pkg-config build-essential python3-dev
       - name: Install dependencies
         run: |
           uv sync --group test
@@ -33,11 +33,11 @@ jobs:
       - name: Upload coverage reports as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: v1.0.0_alpha-coverage
+          name: pymdp-coverage
           path: |
             coverage.xml
             htmlcov/
           retention-days: 30
-      - name: Running notebook tests
+      - name: Running CI-tier notebook tests
         run: |
-          uv run pytest --nbval-lax examples/api/
+          uv run python scripts/run_notebook_manifest.py test/notebooks/ci_notebooks.txt
