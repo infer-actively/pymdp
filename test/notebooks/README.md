@@ -31,7 +31,7 @@ All other non-legacy notebooks in `examples/` belong to the CI tier.
 
 ## Running Notebook Tests Locally
 
-`nbval` does not play well with `pytest-xdist` in parallel notebook execution. Keep notebook runs to a single worker.
+`nbval` does not play well with `pytest-xdist` in parallel notebook execution. `scripts/run_notebook_manifest.py` therefore forces `-n0` unless you explicitly override it with your own `pytest` arguments.
 
 ```bash
 # Execute the PR-CI notebook tier without strict output matching
@@ -56,9 +56,9 @@ uv run --group dev pre-commit run --all-files
 
 The hook behavior is tier-aware and reads the manifests above:
 
-1. CI-tier notebooks keep execution counts and saved outputs, but strip noisy top-level `kernelspec` / `language_info` metadata.
-2. Nightly-tier notebooks run through `nbstripout --keep-output`, which strips execution-count churn and top-level notebook metadata while preserving outputs.
-3. CI-tier notebooks fail the hook if any code cell has saved outputs with `execution_count: null`, because that breaks strict `nbval`.
+1. CI-tier notebooks keep saved outputs, strip noisy top-level `kernelspec` / `language_info` metadata, and canonicalize execution counts for output-bearing code cells.
+2. Nightly-tier notebooks still run through `nbstripout --keep-output` to remove notebook noise, and then canonicalize execution counts for output-bearing code cells so `nbval` can execute them.
+3. Manifest-tested notebooks fail the validation hook if any code cell has saved outputs with `execution_count: null`, or if an `execute_result` output count disagrees with its parent cell.
 4. Non-legacy notebooks under `examples/` must appear in one of the two manifests or the hook fails with an instruction to update them.
 5. `examples/legacy/` remains excluded from both pytest notebook gating and these hooks.
 
@@ -66,5 +66,5 @@ The hook behavior is tier-aware and reads the manifests above:
 
 1. Keep notebooks focused and reasonably small.
 2. Avoid massive printed outputs.
-3. If a notebook is meant to stay in the CI tier, rerun and save it in a state compatible with `nbval`.
+3. If a notebook keeps saved outputs, the hook will canonicalize its execution counts so local kernel history does not create meaningless diffs.
 4. CI wiring consumes these manifests directly through `scripts/run_notebook_manifest.py`.

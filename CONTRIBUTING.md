@@ -118,8 +118,8 @@ uv run --group dev pre-commit run --all-files
 
 The notebook hook reads the manifests in `test/notebooks/`:
 
-* CI-tier notebooks keep execution counts so strict `nbval` remains valid.
-* Nightly-tier notebooks are sanitized with `nbstripout --keep-output` to remove noisy metadata and execution-count churn while keeping saved outputs.
+* Manifest-tested notebooks keep saved outputs but also keep canonical execution counts for output-bearing code cells so `nbval` can execute them reliably.
+* Nightly-tier notebooks still run through `nbstripout --keep-output`, but the hook restores canonical execution counts afterwards so the saved notebooks remain valid test inputs.
 
 
 ## Before you start coding
