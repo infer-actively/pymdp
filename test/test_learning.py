@@ -1,7 +1,7 @@
 import unittest
 
 import numpy as np
-from pymdp import utils, maths, learning
+from pymdp.legacy import utils, maths, learning
 
 from copy import deepcopy
 

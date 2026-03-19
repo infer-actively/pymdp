@@ -1,371 +1,636 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # pylint: disable=no-member
+"""State inference and smoothing utilities for modern JAX-based pymdp agents.
 
-import numpy as np
+This module provides:
+- one-step posterior updates (`fpi`, `exact`, `ovf`),
+- sequence-based inference (`mmp`, `vmp`),
+- backward smoothing utilities for transition/posterior learning.
 
-from pymdp import utils
-from pymdp.maths import get_joint_likelihood_seq, get_joint_likelihood_seq_by_modality
-from pymdp.algos import run_vanilla_fpi, run_vanilla_fpi_factorized, run_mmp, run_mmp_factorized, _run_mmp_testing
+All public functions operate on JAX arrays and pytrees and are designed to
+work with batched agent execution (`vmap`) and fixed-window sequence buffers.
+"""
 
-VANILLA = "VANILLA"
-VMP = "VMP"
-MMP = "MMP"
-BP = "BP"
-EP = "EP"
-CV = "CV"
+import jax.numpy as jnp
+from typing import Any, TypedDict
+from pymdp.algos import (
+    run_factorized_fpi,
+    run_mmp,
+    run_vmp,
+    hmm_smoother_from_filtered_colstoch,
+)
+from pymdp.maths import calc_vfe
+from jax import tree_util as jtu, lax
+from jax.experimental.sparse._base import JAXSparse
+from jax.experimental import sparse
+from jaxtyping import Array, ArrayLike
 
-def update_posterior_states_full(
-    A,
-    B,
-    prev_obs,
-    policies,
-    prev_actions=None,
-    prior=None,
-    policy_sep_prior = True,
-    **kwargs,
-):
-    """
-    Update posterior over hidden states using marginal message passing
+eps = jnp.finfo('float').eps
 
-    Parameters
-    ----------
-    A: ``numpy.ndarray`` of dtype object
-        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element ``A[m]`` of
-        stores an ``numpy.ndarray`` multidimensional array for observation modality ``m``, whose entries ``A[m][i, j, k, ...]`` store 
-        the probability of observation level ``i`` given hidden state levels ``j, k, ...``
-    B: ``numpy.ndarray`` of dtype object
-        Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
-        Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
-        of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
-    prev_obs: ``list``
-        List of observations over time. Each observation in the list can be an ``int``, a ``list`` of ints, a ``tuple`` of ints, a one-hot vector or an object array of one-hot vectors.
-    policies: ``list`` of 2D ``numpy.ndarray``
-        List that stores each policy in ``policies[p_idx]``. Shape of ``policies[p_idx]`` is ``(num_timesteps, num_factors)`` where `num_timesteps` is the temporal
-        depth of the policy and ``num_factors`` is the number of control factors.
-    prior: ``numpy.ndarray`` of dtype object, default ``None``
-        If provided, this a ``numpy.ndarray`` of dtype object, with one sub-array per hidden state factor, that stores the prior beliefs about initial states. 
-        If ``None``, this defaults to a flat (uninformative) prior over hidden states.
-    policy_sep_prior: ``Bool``, default ``True``
-        Flag determining whether the prior beliefs from the past are unconditioned on policy, or separated by /conditioned on the policy variable.
-    **kwargs: keyword arguments
-        Optional keyword arguments for the function ``algos.mmp.run_mmp``
+EXACT_METHOD = "exact"
+ONE_STEP_METHODS = {"fpi", "ovf", EXACT_METHOD}
+SEQUENCE_METHODS = {"mmp", "vmp"}
+SMOOTHING_METHODS = {"ovf", EXACT_METHOD}
 
-    Returns
-    ---------
-    qs_seq_pi: ``numpy.ndarray`` of dtype object
-        Posterior beliefs over hidden states for each policy. Nesting structure is policies, timepoints, factors,
-        where e.g. ``qs_seq_pi[p][t][f]`` stores the marginal belief about factor ``f`` at timepoint ``t`` under policy ``p``.
-    F: 1D ``numpy.ndarray``
-        Vector of variational free energies for each policy
-    """
 
-    num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A, B)
-    
-    prev_obs = utils.process_observation_seq(prev_obs, num_modalities, num_obs)
-   
-    lh_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
+class VFEInfo(TypedDict):
+    vfe_t: ArrayLike
+    vfe: ArrayLike
+    vfe_components: dict[str, ArrayLike]
 
-    if prev_actions is not None:
-        prev_actions = np.stack(prev_actions,0)
 
-    qs_seq_pi = utils.obj_array(len(policies))
-    F = np.zeros(len(policies)) # variational free energy of policies
+def _select_current_obs(obs: list[Array] | Array, distr_obs: bool) -> list[Array] | Array:
+    def _select_leaf(x: Array) -> Array:
+        if x.ndim == 0:
+            return x
+        if distr_obs:
+            # Distributional observations use the last axis for observations, so
+            # 1D leaves are already a single-time-step observation.
+            return x if x.ndim == 1 else x[-1]
+        return x[-1]
 
-    for p_idx, policy in enumerate(policies):
+    return jtu.tree_map(_select_leaf, obs)
 
-            # get sequence and the free energy for policy
-            qs_seq_pi[p_idx], F[p_idx] = run_mmp(
-                lh_seq,
-                B,
-                policy,
-                prev_actions=prev_actions,
-                prior= prior[p_idx] if policy_sep_prior else prior, 
-                **kwargs
+
+def _truncate_for_horizon(
+    obs: list[Array], past_actions: Array | None, inference_horizon: int | None
+) -> tuple[list[Array], Array | None]:
+    if inference_horizon is None:
+        return obs, past_actions
+
+    if inference_horizon < 1:
+        raise ValueError("`inference_horizon` must be >= 1 when provided")
+
+    obs = jtu.tree_map(lambda x: x[-inference_horizon:], obs)
+    if past_actions is None:
+        return obs, None
+
+    action_horizon = max(inference_horizon - 1, 0)
+    if action_horizon == 0:
+        return obs, past_actions[:0]
+
+    return obs, past_actions[-action_horizon:]
+
+
+def _ensure_action_history_shape(past_actions: Array | None, num_factors: int) -> Array | None:
+    if past_actions is None:
+        return None
+
+    if past_actions.ndim == 1:
+        if num_factors == 1:
+            return jnp.expand_dims(past_actions, -1)
+        raise ValueError(
+            "1D `past_actions` is only supported for single-factor action "
+            "histories; multi-factor action histories must have shape "
+            "(T-1, num_factors). For a single timestep across factors, use "
+            "`past_actions[None, :]`."
+        )
+
+    if past_actions.ndim != 2:
+        raise ValueError("`past_actions` must have shape (T-1, num_factors) per batch sample")
+
+    if past_actions.shape[1] != num_factors:
+        raise ValueError(
+            f"`past_actions` has second dimension {past_actions.shape[1]}, expected {num_factors}"
+        )
+
+    return past_actions
+
+
+def _build_sequence_validity_masks(
+    obs: list[Array], past_actions: Array | None, valid_steps: int | Array | None
+) -> tuple[Array, Array]:
+    T = obs[0].shape[0]
+
+    if valid_steps is None:
+        obs_valid = jnp.ones((T,), dtype=bool)
+    else:
+        valid_steps = jnp.asarray(valid_steps, dtype=jnp.int32)
+        k = jnp.clip(valid_steps, 1, T)
+        obs_valid = jnp.arange(T) >= (T - k)
+
+    if T <= 1:
+        trans_valid = jnp.zeros((0,), dtype=bool)
+    else:
+        trans_valid = obs_valid[:-1] & obs_valid[1:]
+        if past_actions is not None:
+            action_valid = jnp.all(past_actions >= 0, axis=-1)
+            trans_valid = trans_valid & action_valid
+
+    return obs_valid, trans_valid
+
+
+def _condition_transitions_on_actions(
+    B: list[ArrayLike],
+    past_actions: Array,
+    invalid_action_mode: str = "neutral",
+) -> list[Array]:
+    nf = len(B)
+    past_actions = _ensure_action_history_shape(past_actions, nf)
+    actions_tree = [past_actions[:, i] for i in range(nf)]
+
+    def _select_transitions_for_actions(b: ArrayLike, action_idx: Array) -> Array:
+        if isinstance(b, JAXSparse):
+            b = sparse.todense(b)
+
+        action_idx = action_idx.astype(jnp.int32)
+        safe_idx = jnp.where(action_idx < 0, 0, action_idx)
+        selected = jnp.moveaxis(jnp.take(b, safe_idx, axis=-1), -1, 0)
+
+        if invalid_action_mode == "neutral":
+            invalid_transition = jnp.ones_like(b[..., 0], dtype=b.dtype)
+            invalid_transition = invalid_transition / jnp.clip(
+                invalid_transition.sum(axis=0, keepdims=True), min=eps
+            )
+        elif invalid_action_mode == "identity":
+            transition = b[..., 0]
+            if transition.ndim != 2 or transition.shape[0] != transition.shape[1]:
+                raise ValueError(
+                    "`invalid_action_mode='identity'` requires square 2D transitions "
+                    "after action selection"
+                )
+            invalid_transition = jnp.eye(transition.shape[0], dtype=transition.dtype)
+        else:
+            raise ValueError(
+                f"Unsupported invalid_action_mode `{invalid_action_mode}`. "
+                "Expected one of {'neutral', 'identity'}."
             )
 
-    return qs_seq_pi, F
+        invalid_transition = jnp.broadcast_to(invalid_transition, selected.shape)
 
-def update_posterior_states_full_factorized(
-    A,
-    mb_dict,
-    B,
-    B_factor_list,
-    prev_obs,
-    policies,
-    prev_actions=None,
-    prior=None,
-    policy_sep_prior = True,
-    **kwargs,
-):
-    """
-    Update posterior over hidden states using marginal message passing
+        invalid = (action_idx < 0).reshape((action_idx.shape[0],) + (1,) * (selected.ndim - 1))
+        return jnp.where(invalid, invalid_transition, selected)
 
-    Parameters
-    ----------
-    A: ``numpy.ndarray`` of dtype object
-        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element ``A[m]`` of
-        stores an ``numpy.ndarray`` multidimensional array for observation modality ``m``, whose entries ``A[m][i, j, k, ...]`` store 
-        the probability of observation level ``i`` given hidden state levels ``j, k, ...``
-    mb_dict: ``Dict``
-        Dictionary with two keys (``A_factor_list`` and ``A_modality_list``), that stores the factor indices that influence each modality (``A_factor_list``)
-        and the modality indices influenced by each factor (``A_modality_list``).
-    B: ``numpy.ndarray`` of dtype object
-        Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
-        Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
-        of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
-    B_factor_list: ``list`` of ``list`` of ``int``
-        List of lists of hidden state factors each hidden state factor depends on. Each element ``B_factor_list[i]`` is a list of the factor indices that factor i's dynamics depend on.
-    prev_obs: ``list``
-        List of observations over time. Each observation in the list can be an ``int``, a ``list`` of ints, a ``tuple`` of ints, a one-hot vector or an object array of one-hot vectors.
-    policies: ``list`` of 2D ``numpy.ndarray``
-        List that stores each policy in ``policies[p_idx]``. Shape of ``policies[p_idx]`` is ``(num_timesteps, num_factors)`` where `num_timesteps` is the temporal
-        depth of the policy and ``num_factors`` is the number of control factors.
-    prior: ``numpy.ndarray`` of dtype object, default ``None``
-        If provided, this a ``numpy.ndarray`` of dtype object, with one sub-array per hidden state factor, that stores the prior beliefs about initial states. 
-        If ``None``, this defaults to a flat (uninformative) prior over hidden states.
-    policy_sep_prior: ``Bool``, default ``True``
-        Flag determining whether the prior beliefs from the past are unconditioned on policy, or separated by /conditioned on the policy variable.
-    **kwargs: keyword arguments
-        Optional keyword arguments for the function ``algos.mmp.run_mmp``
+    return [
+        _select_transitions_for_actions(b, action_idx)
+        for b, action_idx in zip(B, actions_tree)
+    ]
 
-    Returns
-    ---------
-    qs_seq_pi: ``numpy.ndarray`` of dtype object
-        Posterior beliefs over hidden states for each policy. Nesting structure is policies, timepoints, factors,
-        where e.g. ``qs_seq_pi[p][t][f]`` stores the marginal belief about factor ``f`` at timepoint ``t`` under policy ``p``.
-    F: 1D ``numpy.ndarray``
-        Vector of variational free energies for each policy
-    """
 
-    num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A, B)
-    
-    prev_obs = utils.process_observation_seq(prev_obs, num_modalities, num_obs)
-   
-    lh_seq = get_joint_likelihood_seq_by_modality(A, prev_obs, num_states)
+def _run_one_step_inference(
+    A: list[Array],
+    obs: list[Array],
+    prior: list[Array] | None,
+    A_dependencies: list[list[int]] | None,
+    *,
+    method: str,
+    num_iter: int,
+    distr_obs: bool,
+) -> tuple[list[Array], list[Array] | Array]:
+    curr_obs = _select_current_obs(obs, distr_obs)
+    fpi_num_iter = 1 if method == EXACT_METHOD else num_iter
+    qs = run_factorized_fpi(
+        A,
+        curr_obs,
+        prior,
+        A_dependencies,
+        num_iter=fpi_num_iter,
+        distr_obs=distr_obs,
+    )
+    return qs, curr_obs
 
-    if prev_actions is not None:
-        prev_actions = np.stack(prev_actions,0)
 
-    qs_seq_pi = utils.obj_array(len(policies))
-    F = np.zeros(len(policies)) # variational free energy of policies
+def _run_sequence_inference(
+    A: list[Array],
+    B: list[Array] | None,
+    obs: list[Array],
+    past_actions: Array | None,
+    prior: list[Array] | None,
+    A_dependencies: list[list[int]] | None,
+    B_dependencies: list[list[int]] | None,
+    *,
+    method: str,
+    num_iter: int,
+    distr_obs: bool,
+    valid_steps: int | Array | None,
+) -> tuple[list[Array], Array | None, Array | None]:
+    if B is None:
+        raise ValueError(f"Sequence inference method `{method}` requires `B`.")
 
-    for p_idx, policy in enumerate(policies):
+    obs_valid_mask = None
+    transition_valid_mask = None
+    history_len = max(obs[0].shape[0] - 1, 0)
 
-            # get sequence and the free energy for policy
-            qs_seq_pi[p_idx], F[p_idx] = run_mmp_factorized(
-                lh_seq,
-                mb_dict,
-                B,
-                B_factor_list,
-                policy,
-                prev_actions=prev_actions,
-                prior= prior[p_idx] if policy_sep_prior else prior, 
-                **kwargs
+    if past_actions is not None:
+        past_actions = _ensure_action_history_shape(past_actions, len(B))
+        if past_actions.shape[0] != history_len:
+            raise ValueError(
+                "`past_actions` has leading dimension "
+                f"{past_actions.shape[0]}, expected {history_len}"
             )
 
-    return qs_seq_pi, F
+    if valid_steps is not None:
+        obs_valid_mask, transition_valid_mask = _build_sequence_validity_masks(
+            obs, past_actions, valid_steps
+        )
 
-def _update_posterior_states_full_test(
-    A,
-    B,
-    prev_obs,
-    policies,
-    prev_actions=None,
-    prior=None,
-    policy_sep_prior = True,
-    **kwargs,
-):
-    """
-    Update posterior over hidden states using marginal message passing (TEST VERSION, with extra returns for benchmarking).
-
-    Parameters
-    ----------
-    A: ``numpy.ndarray`` of dtype object
-        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element ``A[m]`` of
-        stores an ``np.ndarray`` multidimensional array for observation modality ``m``, whose entries ``A[m][i, j, k, ...]`` store 
-        the probability of observation level ``i`` given hidden state levels ``j, k, ...``
-    B: ``numpy.ndarray`` of dtype object
-        Dynamics likelihood mapping or 'transition model', mapping from hidden states at ``t`` to hidden states at ``t+1``, given some control state ``u``.
-        Each element ``B[f]`` of this object array stores a 3-D tensor for hidden state factor ``f``, whose entries ``B[f][s, v, u]`` store the probability
-        of hidden state level ``s`` at the current time, given hidden state level ``v`` and action ``u`` at the previous time.
-    prev_obs: list
-        List of observations over time. Each observation in the list can be an ``int``, a ``list`` of ints, a ``tuple`` of ints, a one-hot vector or an object array of one-hot vectors.
-    prior: ``numpy.ndarray`` of dtype object, default None
-        If provided, this a ``numpy.ndarray`` of dtype object, with one sub-array per hidden state factor, that stores the prior beliefs about initial states. 
-        If ``None``, this defaults to a flat (uninformative) prior over hidden states.
-    policy_sep_prior: Bool, default True
-        Flag determining whether the prior beliefs from the past are unconditioned on policy, or separated by /conditioned on the policy variable.
-    **kwargs: keyword arguments
-        Optional keyword arguments for the function ``algos.mmp.run_mmp``
-
-    Returns
-    --------
-    qs_seq_pi: ``numpy.ndarray`` of dtype object
-        Posterior beliefs over hidden states for each policy. Nesting structure is policies, timepoints, factors,
-        where e.g. ``qs_seq_pi[p][t][f]`` stores the marginal belief about factor ``f`` at timepoint ``t`` under policy ``p``.
-    F: 1D ``numpy.ndarray``
-        Vector of variational free energies for each policy
-    xn_seq_pi: ``numpy.ndarray`` of dtype object
-        Posterior beliefs over hidden states for each policy, for each iteration of marginal message passing.
-        Nesting structure is policy, iteration, factor, so ``xn_seq_p[p][itr][f]`` stores the ``num_states x infer_len`` 
-        array of beliefs about hidden states at different time points of inference horizon.
-    vn_seq_pi: `numpy.ndarray`` of dtype object
-        Prediction errors over hidden states for each policy, for each iteration of marginal message passing.
-        Nesting structure is policy, iteration, factor, so ``vn_seq_p[p][itr][f]`` stores the ``num_states x infer_len`` 
-        array of beliefs about hidden states at different time points of inference horizon.
-    """
-
-    num_obs, num_states, num_modalities, num_factors = utils.get_model_dimensions(A, B)
-
-    prev_obs = utils.process_observation_seq(prev_obs, num_modalities, num_obs)
-    
-    lh_seq = get_joint_likelihood_seq(A, prev_obs, num_states)
-
-    if prev_actions is not None:
-        prev_actions = np.stack(prev_actions,0)
-
-    qs_seq_pi = utils.obj_array(len(policies))
-    xn_seq_pi = utils.obj_array(len(policies))
-    vn_seq_pi = utils.obj_array(len(policies))
-    F = np.zeros(len(policies)) # variational free energy of policies
-
-    for p_idx, policy in enumerate(policies):
-
-            # get sequence and the free energy for policy
-            qs_seq_pi[p_idx], F[p_idx], xn_seq_pi[p_idx], vn_seq_pi[p_idx] = _run_mmp_testing(
-                lh_seq,
-                B,
-                policy,
-                prev_actions=prev_actions,
-                prior=prior[p_idx] if policy_sep_prior else prior, 
-                **kwargs
+    conditioned_B = None
+    if past_actions is not None:
+        conditioned_B = _condition_transitions_on_actions(B, past_actions)
+    elif history_len > 0:
+        conditioned_B = []
+        for b_f in B:
+            if b_f.shape[-1] != 1:
+                raise ValueError(
+                    f"Sequence inference method `{method}` requires `past_actions` "
+                    "when transition tensors have more than one control state"
+                )
+            single_transition = b_f[..., 0]
+            conditioned_B.append(
+                jnp.broadcast_to(single_transition, (history_len,) + single_transition.shape)
             )
 
-    return qs_seq_pi, F, xn_seq_pi, vn_seq_pi
+    if method == "vmp":
+        qs = run_vmp(
+            A,
+            conditioned_B,
+            obs,
+            prior,
+            A_dependencies,
+            B_dependencies,
+            num_iter=num_iter,
+            distr_obs=distr_obs,
+            obs_valid_mask=obs_valid_mask,
+            transition_valid_mask=transition_valid_mask,
+        )
+    else:
+        qs = run_mmp(
+            A,
+            conditioned_B,
+            obs,
+            prior,
+            A_dependencies,
+            B_dependencies,
+            num_iter=num_iter,
+            distr_obs=distr_obs,
+            obs_valid_mask=obs_valid_mask,
+            transition_valid_mask=transition_valid_mask,
+        )
 
-def average_states_over_policies(qs_pi, q_pi):
-    """
-    This function computes a expected posterior over hidden states with respect to the posterior over policies, 
-    also known as the 'Bayesian model average of states with respect to policies'.
+    return qs, obs_valid_mask, transition_valid_mask
+
+
+def _update_qs_history(
+    qs_hist: list[Array] | None,
+    qs: list[Array],
+    *,
+    method: str,
+    inference_horizon: int | None,
+) -> list[Array]:
+    if qs_hist is not None:
+        if method in ONE_STEP_METHODS:
+            qs_hist = jtu.tree_map(
+                lambda x, y: jnp.concatenate([x, jnp.expand_dims(y, 0)], 0),
+                qs_hist,
+                qs,
+            )
+            if inference_horizon is not None:
+                qs_hist = jtu.tree_map(lambda x: x[-inference_horizon:], qs_hist)
+            return qs_hist
+        return qs
+
+    if method in ONE_STEP_METHODS:
+        return jtu.tree_map(lambda x: jnp.expand_dims(x, 0), qs)
+    return qs
+
+
+def _assemble_vfe_kwargs(
+    *,
+    method: str,
+    qs: list[Array],
+    prior: list[Array] | None,
+    A: list[Array],
+    B_for_vfe: list[Array] | None,
+    curr_obs: list[Array] | Array | None,
+    obs: list[Array],
+    past_actions: Array | None,
+    A_dependencies: list[list[int]] | None,
+    B_dependencies: list[list[int]] | None,
+    obs_valid_mask: Array | None,
+    transition_valid_mask: Array | None,
+    distr_obs: bool,
+) -> dict[str, Any]:
+    if method in ONE_STEP_METHODS:
+        return {
+            "qs": qs,
+            "prior": prior,
+            "obs": curr_obs,
+            "A": A,
+            "A_dependencies": A_dependencies,
+            "distr_obs": distr_obs,
+        }
+
+    return {
+        "qs": qs,
+        "prior": prior,
+        "obs": obs,
+        "A": A,
+        "B": B_for_vfe,
+        "past_actions": past_actions,
+        "A_dependencies": A_dependencies,
+        "B_dependencies": B_dependencies,
+        "obs_valid_mask": obs_valid_mask,
+        "transition_valid_mask": transition_valid_mask,
+        "distr_obs": distr_obs,
+    }
+
+def update_posterior_states(
+    A: list[Array],
+    B: list[Array] | None,
+    obs: list[Array],
+    past_actions: Array | None,
+    prior: list[Array] | None = None,
+    qs_hist: list[Array] | None = None,
+    A_dependencies: list[list[int]] | None = None,
+    B_dependencies: list[list[int]] | None = None,
+    num_iter: int = 16,
+    method: str = "fpi",
+    distr_obs: bool = True,
+    inference_horizon: int | None = None,
+    valid_steps: int | Array | None = None,
+    return_info: bool = False,
+) -> list[Array] | tuple[list[Array], VFEInfo]:
+    """Infer posterior beliefs over hidden states from observations.
 
     Parameters
     ----------
-    qs_pi: ``numpy.ndarray`` of dtype object
-        Posterior beliefs over hidden states for each policy. Nesting structure is policies, factors,
-        where e.g. ``qs_pi[p][f]`` stores the marginal belief about factor ``f`` under policy ``p``.
-    q_pi: ``numpy.ndarray`` of dtype object
-        Posterior beliefs about policies where ``len(q_pi) = num_policies``
+    A : list[Array]
+        Observation likelihood tensors per modality.
+    B : list[Array] | None
+        Transition model tensors per hidden-state factor. For one-step methods,
+        this can be provided unchanged. For sequence methods and non-`None`
+        `past_actions`, transitions are conditioned per timestep.
+    obs : pytree
+        Observation sequence or single-step observation in distributional form
+        (for example, one-hot vectors per modality).
+    past_actions : Array | None
+        Action history with shape `(T-1, num_factors)` for sequence methods.
+        Can be `None` when no valid history is available.
+    prior : list[Array], optional
+        Prior beliefs over hidden states. Required when `return_info=True`
+        so canonical VFE diagnostics can be computed.
+    qs_hist : list[Array], optional
+        Existing posterior history buffer. If provided, one-step updates append
+        to this history.
+    A_dependencies : list[list[int]], optional
+        Sparse modality-to-factor dependency mapping.
+    B_dependencies : list[list[int]], optional
+        Sparse transition-factor dependency mapping.
+    num_iter : int, default=16
+        Number of variational update iterations.
+    method : {"fpi", "ovf", "mmp", "vmp", "exact"}, default="fpi"
+        Inference routine to execute.
+    distr_obs : bool, default=True
+        Whether observations are already distributional.
+    inference_horizon : int | None, optional
+        Optional truncation horizon for sequence inference.
+    valid_steps : int | Array | None, optional
+        Number of valid (unpadded) timesteps for fixed-window sequence inputs.
+    return_info : bool, default=False
+        If `True`, also return an info dictionary containing canonical VFE
+        diagnostics (`vfe_t`, `vfe`, and component terms). For forward-only
+        methods (`fpi`, `ovf`, `exact`) this reports the current posterior /
+        history returned by the inference call; if you need a full smoothed
+        sequence VFE for `ovf` or `exact`, first run `smoothing_ovf(...)` or
+        `smoothing_exact(...)` and then call `pymdp.maths.calc_vfe(...,
+        joint_qs=...)`.
 
     Returns
-    ---------
-    qs_bma: ``numpy.ndarray`` of dtype object
-        Marginal posterior over hidden states for the current timepoint, 
-        averaged across policies according to their posterior probability given by ``q_pi``
+    -------
+    list[Array] or tuple[list[Array], VFEInfo]
+        Posterior state beliefs, with shape semantics depending on `method`:
+        one-step methods return/append a time axis, sequence methods return full
+        sequence posteriors. If `return_info=True`, a second return value
+        contains canonical VFE diagnostics.
     """
+    B_for_vfe = B
+    info = None
+    curr_obs = None
+    obs_valid_mask = None
+    transition_valid_mask = None
 
-    num_factors = len(qs_pi[0]) # get the number of hidden state factors using the shape of the first-policy-conditioned posterior
-    num_states = [qs_f.shape[0] for qs_f in qs_pi[0]] # get the dimensionalities of each hidden state factor 
+    if return_info and prior is None:
+        raise ValueError("`prior` must be provided when `return_info=True`")
 
-    qs_bma = utils.obj_array(num_factors)
-    for f in range(num_factors):
-        qs_bma[f] = np.zeros(num_states[f])
+    if method in SEQUENCE_METHODS:
+        obs, past_actions = _truncate_for_horizon(obs, past_actions, inference_horizon)
 
-    for p_idx, policy_weight in enumerate(q_pi):
+    if method in ONE_STEP_METHODS:
+        qs, curr_obs = _run_one_step_inference(
+            A,
+            obs,
+            prior,
+            A_dependencies,
+            method=method,
+            num_iter=num_iter,
+            distr_obs=distr_obs,
+        )
+    elif method in SEQUENCE_METHODS:
+        qs, obs_valid_mask, transition_valid_mask = _run_sequence_inference(
+            A,
+            B,
+            obs,
+            past_actions,
+            prior,
+            A_dependencies,
+            B_dependencies,
+            method=method,
+            num_iter=num_iter,
+            distr_obs=distr_obs,
+            valid_steps=valid_steps,
+        )
+    else:
+        raise ValueError(
+            f"Unsupported inference method `{method}`. "
+            "Expected one of {'fpi', 'ovf', 'mmp', 'vmp', 'exact'}."
+        )
 
-        for f in range(num_factors):
+    qs_hist = _update_qs_history(
+        qs_hist,
+        qs,
+        method=method,
+        inference_horizon=inference_horizon,
+    )
 
-            qs_bma[f] += qs_pi[p_idx][f] * policy_weight
+    if return_info:
+        vfe_kwargs = _assemble_vfe_kwargs(
+            method=method,
+            qs=qs,
+            prior=prior,
+            A=A,
+            B_for_vfe=B_for_vfe,
+            curr_obs=curr_obs,
+            obs=obs,
+            past_actions=past_actions,
+            A_dependencies=A_dependencies,
+            B_dependencies=B_dependencies,
+            obs_valid_mask=obs_valid_mask,
+            transition_valid_mask=transition_valid_mask,
+            distr_obs=distr_obs,
+        )
+        vfe_t, vfe, decomposition = calc_vfe(
+            **vfe_kwargs,
+            return_decomposition=True,
+        )
 
-    return qs_bma
+        info = {
+            "vfe_t": vfe_t,
+            "vfe": vfe,
+            "vfe_components": decomposition,
+        }
 
-def update_posterior_states(A, obs, prior=None, **kwargs):
-    """
-    Update marginal posterior over hidden states using mean-field fixed point iteration 
-    FPI or Fixed point iteration. 
+    if return_info:
+        return qs_hist, info
+    return qs_hist
 
-    See the following links for details:
-    http://www.cs.cmu.edu/~guestrin/Class/10708/recitations/r9/VI-view.pdf, slides 13- 18, and http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.137.221&rep=rep1&type=pdf, slides 24 - 38.
-    
+def _joint_dist_factor(
+    conditioned_transitions: ArrayLike, filtered_qs: list[Array]
+) -> tuple[Array, Array]:
+    qs_last = filtered_qs[-1]
+    qs_filter = filtered_qs[:-1]
+    n_transitions = conditioned_transitions.shape[0]
+
+    def step_fn(qs_smooth: Array, xs: tuple[Array, Array]) -> tuple[Array, tuple[Array, Array]]:
+        qs_f, time_b = xs
+        qs_j = time_b * qs_f
+        norm = qs_j.sum(-1, keepdims=True)
+        if isinstance(norm, JAXSparse):
+            norm = sparse.todense(norm)
+        norm = jnp.where(norm == 0, eps, norm)
+        qs_backward_cond = qs_j / norm
+        qs_joint = qs_backward_cond * jnp.expand_dims(qs_smooth, -1)
+        qs_smooth = qs_joint.sum(-2)
+        if isinstance(qs_smooth, JAXSparse):
+            qs_smooth = sparse.todense(qs_smooth)
+
+        return qs_smooth, (qs_smooth, qs_joint)
+
+    _, seq_qs = lax.scan(
+        step_fn,
+        qs_last,
+        (qs_filter, conditioned_transitions),
+        reverse=True,
+        unroll=2
+    )
+
+    qs_smooth_all = jnp.concatenate([seq_qs[0], jnp.expand_dims(qs_last, 0)], 0)
+    qs_joint_all = seq_qs[1]
+    if isinstance(qs_joint_all, JAXSparse):
+        qs_joint_all.shape = (n_transitions,) + qs_joint_all.shape
+    return qs_smooth_all, qs_joint_all
+
+
+def joint_dist_factor(
+    b: ArrayLike,
+    filtered_qs: list[Array],
+    actions: ArrayLike | None = None,
+) -> tuple[Array, Array]:
+    """Compute smoothed marginals and pairwise joints for one factor.
+
     Parameters
     ----------
-    A: ``numpy.ndarray`` of dtype object
-        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element ``A[m]`` of
-        stores an ``np.ndarray`` multidimensional array for observation modality ``m``, whose entries ``A[m][i, j, k, ...]`` store 
-        the probability of observation level ``i`` given hidden state levels ``j, k, ...``
-    obs: 1D ``numpy.ndarray``, ``numpy.ndarray`` of dtype object, int or tuple
-        The observation (generated by the environment). If single modality, this can be a 1D ``np.ndarray``
-        (one-hot vector representation) or an ``int`` (observation index)
-        If multi-modality, this can be ``np.ndarray`` of dtype object whose entries are 1D one-hot vectors,
-        or a tuple (of ``int``)
-    prior: 1D ``numpy.ndarray`` or ``numpy.ndarray`` of dtype object, default None
-        Prior beliefs about hidden states, to be integrated with the marginal likelihood to obtain
-        a posterior distribution. If not provided, prior is set to be equal to a flat categorical distribution (at the level of
-        the individual inference functions).
-    **kwargs: keyword arguments 
-        List of keyword/parameter arguments corresponding to parameter values for the fixed-point iteration
-        algorithm ``algos.fpi.run_vanilla_fpi.py``
+    b : Array
+        Either an action-conditioned transition sequence
+        `(T-1, K_next, K_curr)` or a transition tensor with action axis
+        `(..., K_next, K_curr, n_actions)`.
+    filtered_qs : list[Array]
+        Filtered posterior sequence for this factor with leading time axis.
+    actions : Array | None, optional
+        Optional action sequence to select transitions from `b`.
 
     Returns
-    ----------
-    qs: 1D ``numpy.ndarray`` or ``numpy.ndarray`` of dtype object
-        Marginal posterior beliefs over hidden states at current timepoint
+    -------
+    tuple[Array, Array]
+        `(smoothed_marginals, pairwise_joints)` where:
+        - smoothed marginals have shape `(T, K)`
+        - joints have shape `(T-1, K_next, K_curr)`
     """
+    if actions is None:
+        conditioned_transitions = b
+    else:
+        action_idx = jnp.asarray(actions).astype(jnp.int32)
+        conditioned_transitions = jnp.moveaxis(
+            jnp.take(b, action_idx, axis=-1), -1, 0
+        )
+    return _joint_dist_factor(conditioned_transitions, filtered_qs)
 
-    num_obs, num_states, num_modalities, _ = utils.get_model_dimensions(A = A)
-    
-    obs = utils.process_observation(obs, num_modalities, num_obs)
 
-    if prior is not None:
-        prior = utils.to_obj_array(prior)
+def smoothing_ovf(
+    filtered_post: list[Array], B: list[Array], past_actions: Array | None
+) -> tuple[list[Array], list[Array]]:
+    """Run backward smoothing for factorized online variational filtering history.
 
-    return run_vanilla_fpi(A, obs, num_obs, num_states, prior, **kwargs)
-
-def update_posterior_states_factorized(A, obs, num_obs, num_states, mb_dict, prior=None, **kwargs):
-    """
-    Update marginal posterior over hidden states using mean-field fixed point iteration 
-    FPI or Fixed point iteration. This version identifies the Markov blanket of each factor using `A_factor_list`
-
-    See the following links for details:
-    http://www.cs.cmu.edu/~guestrin/Class/10708/recitations/r9/VI-view.pdf, slides 13- 18, and http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.137.221&rep=rep1&type=pdf, slides 24 - 38.
-    
     Parameters
     ----------
-    A: ``numpy.ndarray`` of dtype object
-        Sensory likelihood mapping or 'observation model', mapping from hidden states to observations. Each element ``A[m]`` of
-        stores an ``np.ndarray`` multidimensional array for observation modality ``m``, whose entries ``A[m][i, j, k, ...]`` store 
-        the probability of observation level ``i`` given hidden state levels ``j, k, ...``
-    obs: 1D ``numpy.ndarray``, ``numpy.ndarray`` of dtype object, int or tuple
-        The observation (generated by the environment). If single modality, this can be a 1D ``np.ndarray``
-        (one-hot vector representation) or an ``int`` (observation index)
-        If multi-modality, this can be ``np.ndarray`` of dtype object whose entries are 1D one-hot vectors,
-        or a tuple (of ``int``)
-    num_obs: ``list`` of ``int``
-        List of dimensionalities of each observation modality
-    num_states: ``list`` of ``int``
-        List of dimensionalities of each hidden state factor
-    mb_dict: ``Dict``
-        Dictionary with two keys (``A_factor_list`` and ``A_modality_list``), that stores the factor indices that influence each modality (``A_factor_list``)
-        and the modality indices influenced by each factor (``A_modality_list``).
-    prior: 1D ``numpy.ndarray`` or ``numpy.ndarray`` of dtype object, default None
-        Prior beliefs about hidden states, to be integrated with the marginal likelihood to obtain
-        a posterior distribution. If not provided, prior is set to be equal to a flat categorical distribution (at the level of
-        the individual inference functions).
-    **kwargs: keyword arguments 
-        List of keyword/parameter arguments corresponding to parameter values for the fixed-point iteration
-        algorithm ``algos.fpi.run_vanilla_fpi.py``
+    filtered_post : list[Array]
+        Filtering posteriors per factor, each with shape `(T, K_f)` (or
+        equivalent leading-time layout for a batch element).
+    B : list[Array]
+        Transition tensors per factor.
+    past_actions : Array
+        Action history with shape `(T-1, num_factors)`.
 
     Returns
-    ----------
-    qs: 1D ``numpy.ndarray`` or ``numpy.ndarray`` of dtype object
-        Marginal posterior beliefs over hidden states at current timepoint
+    -------
+    tuple[list[Array], list[Array]]
+        `(marginals, joints)` per factor.
     """
-    
-    num_modalities = len(num_obs)
-    
-    obs = utils.process_observation(obs, num_modalities, num_obs)
+    assert len(filtered_post) == len(B)
+    nf = len(B)  # number of factors
 
-    if prior is not None:
-        prior = utils.to_obj_array(prior)
+    if past_actions is not None:
+        past_actions = _ensure_action_history_shape(past_actions, nf)
+    B_seq = _condition_transitions_on_actions(B, past_actions, invalid_action_mode="identity")
 
-    return run_vanilla_fpi_factorized(A, obs, num_obs, num_states, mb_dict, prior, **kwargs)
+    marginals_and_joints = ([], [])
+    for b_seq, qs in zip(B_seq, filtered_post):
+        marginals, joints = joint_dist_factor(b_seq, qs, actions=None)
+        marginals_and_joints[0].append(marginals)
+        marginals_and_joints[1].append(joints)
+
+    return marginals_and_joints
+
+
+def smoothing_exact(
+    filtered_post: list[Array], B: list[Array], past_actions: Array | None
+) -> tuple[list[Array], list[Array]]:
+    """
+    Exact single-factor HMM backward smoothing from online filtering history.
+
+    Parameters
+    ----------
+    filtered_post:
+        List containing one `(T, K)` array of filtering marginals.
+    B:
+        List containing one transition tensor in pymdp column-stochastic orientation.
+    past_actions:
+        `(T-1, 1)` or `(T-1,)` action history used to select transitions.
+
+    Returns
+    -------
+    (marginals, joints):
+        marginals: list with one `(T, K)` smoothed marginal array.
+        joints: list with one `(T-1, K_next, K_curr)` pairwise posterior array.
+    """
+    if len(filtered_post) != 1 or len(B) != 1:
+        raise ValueError("smoothing_exact currently supports only one hidden-state factor")
+
+    filtered = filtered_post[0]
+    B_seq = _condition_transitions_on_actions(
+        B,
+        past_actions,
+        invalid_action_mode="identity",
+    )[0]
+    
+
+    smoothed, joint_next_curr, _ = hmm_smoother_from_filtered_colstoch(
+        filtered,
+        B_seq,
+        return_trans_probs=False,
+    )
+
+    return [smoothed], [joint_next_curr]
+
+
+    

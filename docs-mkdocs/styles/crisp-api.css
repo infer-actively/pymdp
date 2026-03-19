@@ -1,0 +1,178 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap");
+
+:root {
+  --pymdp-inline-code-bg: rgba(98, 114, 164, 0.22);
+  --pymdp-inline-code-fg: #8be9fd;
+  --pymdp-inline-code-border: rgba(139, 233, 253, 0.22);
+}
+
+body {
+  font-family: "IBM Plex Sans", sans-serif;
+}
+
+pre,
+code,
+kbd,
+samp {
+  font-family: "IBM Plex Mono", "Fira Code", monospace;
+}
+
+/* API reference tables: keep mkdocstrings type signatures on one line when possible. */
+.doc .doc-contents > table {
+  table-layout: auto;
+  width: 100%;
+}
+
+.doc .doc-contents > table tr > :nth-child(2) {
+  min-width: 14rem;
+  width: 14rem;
+}
+
+.doc .doc-contents > table tr > :first-child:nth-last-child(2) {
+  min-width: 16rem;
+  width: 16rem;
+}
+
+.doc .doc-contents > table tr > :nth-child(2) code,
+.doc .doc-contents > table tr > :first-child:nth-last-child(2) code {
+  white-space: nowrap;
+}
+
+/* Override Dracula's default purple inline code chip for better contrast. */
+article p code,
+article li code,
+article td code,
+article th code,
+article dt code,
+article dd code,
+article blockquote code,
+article a code,
+article h1 code,
+article h2 code,
+article h3 code,
+article h4 code,
+article h5 code,
+article h6 code {
+  background: var(--pymdp-inline-code-bg);
+  border: 1px solid var(--pymdp-inline-code-border);
+  border-radius: 6px;
+  color: var(--pymdp-inline-code-fg);
+  font-family: "IBM Plex Mono", "Fira Code", monospace;
+  padding: 0.08rem 0.32rem;
+}
+
+/* Notebook pages: align mkdocs-jupyter output with the Dracula site shell. */
+.jupyter-wrapper {
+  margin-block: 1.5rem;
+}
+
+.jupyter-wrapper [data-jp-theme-light="false"] {
+  --jp-layout-color0: #282a36;
+  --jp-layout-color1: #21222c;
+  --jp-layout-color2: #343746;
+  --jp-layout-color3: #44475a;
+  --jp-layout-color4: #6272a4;
+  --jp-border-color0: rgba(139, 233, 253, 0.16);
+  --jp-border-color1: rgba(139, 233, 253, 0.14);
+  --jp-border-color2: rgba(139, 233, 253, 0.08);
+  --jp-border-color3: rgba(139, 233, 253, 0.06);
+  --jp-ui-font-color0: #f8f8f2;
+  --jp-ui-font-color1: rgba(248, 248, 242, 0.92);
+  --jp-ui-font-color2: rgba(248, 248, 242, 0.66);
+  --jp-content-font-color0: #f8f8f2;
+  --jp-content-font-color1: rgba(248, 248, 242, 0.92);
+  --jp-content-font-color2: rgba(248, 248, 242, 0.7);
+  --jp-content-link-color: #8be9fd;
+  --jp-cell-editor-background: #191a21;
+  --jp-cell-editor-active-background: #15161c;
+  --jp-cell-editor-border-color: rgba(139, 233, 253, 0.14);
+  --jp-rendermime-table-row-background: rgba(255, 255, 255, 0.02);
+  --jp-rendermime-table-row-hover-background: rgba(139, 233, 253, 0.05);
+  --jp-mirror-editor-keyword-color: #ff79c6;
+  --jp-mirror-editor-atom-color: #bd93f9;
+  --jp-mirror-editor-number-color: #bd93f9;
+  --jp-mirror-editor-def-color: #50fa7b;
+  --jp-mirror-editor-variable-color: #f8f8f2;
+  --jp-mirror-editor-variable-2-color: #8be9fd;
+  --jp-mirror-editor-variable-3-color: #50fa7b;
+  --jp-mirror-editor-punctuation-color: #f8f8f2;
+  --jp-mirror-editor-property-color: #8be9fd;
+  --jp-mirror-editor-operator-color: #ff79c6;
+  --jp-mirror-editor-comment-color: #6272a4;
+  --jp-mirror-editor-string-color: #f1fa8c;
+  --jp-mirror-editor-string-2-color: #f1fa8c;
+  --jp-mirror-editor-meta-color: #ff79c6;
+  --jp-mirror-editor-qualifier-color: #50fa7b;
+  --jp-mirror-editor-builtin-color: #8be9fd;
+  --jp-mirror-editor-hr-color: #44475a;
+  --jp-mirror-editor-error-color: #ff5555;
+}
+
+.jupyter-wrapper .jp-Notebook {
+  background: linear-gradient(180deg, rgba(40, 42, 54, 0.98), rgba(28, 29, 38, 0.98));
+  border: 1px solid rgba(139, 233, 253, 0.08);
+  border-radius: 18px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.26);
+  overflow: hidden;
+  padding: 1rem 1.1rem 1.25rem;
+}
+
+.jupyter-wrapper .jp-Cell {
+  margin-bottom: 1rem;
+}
+
+.jupyter-wrapper .jp-Cell:last-child {
+  margin-bottom: 0;
+}
+
+.jupyter-wrapper .jp-InputArea-editor,
+.jupyter-wrapper .jp-OutputArea-child,
+.jupyter-wrapper .jp-RenderedHTMLCommon table,
+.jupyter-wrapper .jp-RenderedText pre {
+  border-radius: 12px;
+}
+
+.jupyter-wrapper .jp-InputArea-editor {
+  border: 1px solid rgba(139, 233, 253, 0.1);
+  box-shadow: none;
+}
+
+.jupyter-wrapper .jp-OutputArea-child {
+  background: rgba(17, 18, 23, 0.38);
+  border: 1px solid rgba(139, 233, 253, 0.06);
+  padding: 0.75rem;
+}
+
+.jupyter-wrapper .jp-InputPrompt,
+.jupyter-wrapper .jp-OutputPrompt {
+  color: #8be9fd;
+  font-size: 0.78rem;
+  opacity: 0.82;
+}
+
+.jupyter-wrapper .jp-RenderedHTMLCommon p,
+.jupyter-wrapper .jp-RenderedHTMLCommon li {
+  color: var(--jp-content-font-color1);
+}
+
+.jupyter-wrapper .jp-RenderedHTMLCommon a {
+  color: #8be9fd;
+}
+
+.jupyter-wrapper .jp-RenderedHTMLCommon table {
+  background: rgba(17, 18, 23, 0.22);
+  overflow: hidden;
+}
+
+.jupyter-wrapper .jp-RenderedImage img,
+.jupyter-wrapper .jp-RenderedSVG svg {
+  border-radius: 12px;
+}
+
+.pymdp-sidebar-logo {
+  display: block;
+  margin: 0.35rem auto 1.4rem;
+  height: auto;
+  max-width: 100%;
+  width: min(240px, 100%) !important;
+}

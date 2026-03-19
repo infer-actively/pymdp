@@ -1,0 +1,132 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inferactively-pymdp"
+version = "1.0.0"
+description = "A Python package for solving Markov Decision Processes with Active Inference"
+authors = [
+    { name = "Conor Heins", email="conor.heins@gmail.com"},
+    { name = "Alexander Tschantz", email="tschantz.alec@gmail.com"},
+    { name = "Tim Verbelen", email="verbelen.tim@gmail.com"},
+    { name = "Dimitrije Markovic", email="dimitrije.markovic@tu-dresden.de"}
+]
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+classifiers=[
+    'Development Status :: 5 - Production/Stable',
+    'Intended Audience :: Developers',
+    'Topic :: Scientific/Engineering :: Artificial Intelligence',
+    'Programming Language :: Python :: 3',
+]
+requires-python = ">=3.10"
+dependencies = [
+    'numpy>=1.19.5',
+    'jax>=0.3.4',
+    'jaxlib>=0.3.4',
+    'equinox>=0.9',
+    'multimethod>=1.11',
+    'matplotlib>=3.1.3',
+    'seaborn>=0.11.1',
+    'mctx>=0.0.5',
+    'networkx>=3.3',
+]
+
+[dependency-groups]
+dev = [
+    "nbformat>=5.10.4",
+    "nbstripout>=0.8.2",
+    "pre-commit>=4.2.0",
+]
+
+test = [
+    # Keep ipykernel<7 while mkdocs-jupyter requires ipykernel>6,<7.
+    "ipykernel>=6.29.0,<7",
+    "jupyter>=1.1.1",
+    "mediapy>=1.2.4",
+    "nbval>=0.11.0",
+    "pybefit",
+    "pygraphviz>=1.14",
+    "pytest-cov>=7.0.0",
+    "pytest>=8.4.2",
+    "pytest-timeout>=2.4.0",
+    "pytest-xdist>=3.5.0",
+]
+
+[project.optional-dependencies]
+gpu = [
+    'jax[cuda12]>=0.3.4',
+]
+docs = [
+    "mkdocs>=1.6.1,<2",
+    "mkdocs-dracula-theme>=1.0.9",
+    "mkdocstrings[python]>=0.27.0",
+    "mkdocs-jupyter>=0.24.8",
+    "mkdocs-redirects>=1.2.2",
+]
+
+nb = [
+    'mediapy>=1.2.4',
+    'pygraphviz>=1.14',
+]
+
+modelfit = [
+    "pybefit",
+]
+
+[project.urls]
+Documentation = "https://pymdp-rtd.readthedocs.io/en/latest/"
+Repository = "https://github.com/infer-actively/pymdp"
+
+[tool.setuptools]
+packages = [
+    'pymdp',
+    'pymdp.envs',
+    'pymdp.envs.assets',
+    'pymdp.planning',
+    'pymdp.legacy',
+    'pymdp.legacy.algos',
+    'pymdp.legacy.envs',
+]
+
+[tool.setuptools.package-data]
+pymdp = ['envs/assets/*']
+
+[tool.black]
+line-length = 88
+
+[tool.ruff]
+line-length = 88
+lint.ignore = ["E731", "E741", "F401", "E402", "F811"]
+
+[tool.pytest.ini_options]
+minversion = "6.2.1"
+addopts = """
+    --ignore=examples/legacy
+    -n 1
+    --dist worksteal
+"""
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::FutureWarning",
+]
+markers = [
+    "nightly: long-running tests executed in nightly CI",
+]
+
+[tool.coverage.run]
+source = ["pymdp"]
+omit = [
+    "*/test/*",
+    "pymdp/legacy/*",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+
+[tool.uv.sources]
+pybefit = { git = "https://github.com/dimarkov/pybefit.git" }

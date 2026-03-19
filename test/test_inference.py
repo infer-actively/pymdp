@@ -5,13 +5,12 @@
 __author__: Conor Heins, Alexander Tschantz, Daphne Demekas, Brennan Klein
 """
 
-import os
 import unittest
 
 import numpy as np
 
-from pymdp import utils, maths
-from pymdp import inference
+from pymdp.legacy import utils, maths
+from pymdp.legacy import inference
 
 class TestInference(unittest.TestCase):
 

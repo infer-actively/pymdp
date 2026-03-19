@@ -5,20 +5,23 @@
 __author__: Dimitrije Markovic, Conor Heins
 """
 
-import os
 import unittest
-import pytest
 
 import numpy as np
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
 
-import pymdp.jax.control as ctl_jax
-import pymdp.control as ctl_np
+import pymdp.control as ctl_jax
+import pymdp.legacy.control as ctl_np
 
-from pymdp.jax.maths import factor_dot
-from pymdp import utils
+from pymdp.utils import (
+    list_array_zeros,
+    random_A_array,
+    random_B_array,
+    random_factorized_categorical,
+)
+from pymdp.legacy import utils
 
 cfg = {"source_key": 0, "num_models": 4}
 
@@ -54,14 +57,15 @@ class TestControlJax(unittest.TestCase):
         Tests the jax-ified version of computations of expected observations under some hidden states and policy
         """
         gm_params = generate_model_params()
-        num_factors_list, num_states_list, num_modalities_list, num_obs_list, A_deps_list = gm_params['nf_list'], gm_params['ns_list'], gm_params['nm_list'], gm_params['no_list'], gm_params['A_deps_list']
-        for (num_states, num_obs, A_deps) in zip(num_states_list, num_obs_list, A_deps_list):
+        _num_factors_list, num_states_list, _num_modalities_list, num_obs_list, A_deps_list = gm_params['nf_list'], gm_params['ns_list'], gm_params['nm_list'], gm_params['no_list'], gm_params['A_deps_list']
+        keys = jr.split(jr.PRNGKey(42), len(num_states_list)*2).reshape((len(num_states_list), 2, 2))
+        for (keys_per_element, num_states, num_obs, A_deps) in zip(keys, num_states_list, num_obs_list, A_deps_list):
             
-            qs_numpy = utils.random_single_categorical(num_states)
-            qs_jax = list(qs_numpy)
+            qs_jax = random_factorized_categorical(keys_per_element[0], num_states)
+            qs_numpy = utils.obj_array_from_list(qs_jax)
 
-            A_np = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_deps)
-            A_jax = jtu.tree_map(lambda x: jnp.array(x), list(A_np))   
+            A_jax = random_A_array(keys_per_element[1], num_obs, num_states, A_dependencies=A_deps)
+            A_np = [np.array(A_m) for A_m in A_jax]
 
             qo_test = ctl_jax.compute_expected_obs(qs_jax, A_jax, A_deps) 
             qo_validation = ctl_np.get_expected_obs_factorized([qs_numpy], A_np, A_deps) # need to wrap `qs` in list because `get_expected_obs_factorized` expects a list of `qs` (representing multiple timesteps)
@@ -75,8 +79,6 @@ class TestControlJax(unittest.TestCase):
         example, the state info gain is higher for the policy that leads to visiting the cue, which is higher than state info gain
         for visiting the bandit arm, which in turn is higher than the state info gain for the policy that leads to staying in the start state.
         """
-
-        np.random.seed(1234)
 
         num_states = [2, 3]  
         num_obs = [3, 3, 3]
@@ -125,14 +127,15 @@ class TestControlJax(unittest.TestCase):
         self.assertGreater(cue_info_gain, arm_info_gain)
 
         gm_params = generate_model_params()
-        num_factors_list, num_states_list, num_modalities_list, num_obs_list, A_deps_list = gm_params['nf_list'], gm_params['ns_list'], gm_params['nm_list'], gm_params['no_list'], gm_params['A_deps_list']
-        for (num_states, num_obs, A_deps) in zip(num_states_list, num_obs_list, A_deps_list):
+        _num_factors_list, num_states_list, _num_modalities_list, num_obs_list, A_deps_list = gm_params['nf_list'], gm_params['ns_list'], gm_params['nm_list'], gm_params['no_list'], gm_params['A_deps_list']
+        keys = jr.split(jr.PRNGKey(1234), len(num_states_list)*2).reshape((len(num_states_list), 2, 2))
+        for (keys_per_element, num_states, num_obs, A_deps) in zip(keys, num_states_list, num_obs_list, A_deps_list):
 
-            qs_numpy = utils.random_single_categorical(num_states)
-            qs_jax = list(qs_numpy)
+            qs_jax = random_factorized_categorical(keys_per_element[0], num_states)
+            qs_numpy = utils.obj_array_from_list(qs_jax)
 
-            A_np = utils.random_A_matrix(num_obs, num_states, A_factor_list=A_deps)
-            A_jax = jtu.tree_map(lambda x: jnp.array(x), list(A_np))   
+            A_jax = random_A_array(keys_per_element[1], num_obs, num_states, A_dependencies=A_deps)
+            A_np = [np.array(A_m) for A_m in A_jax]
 
             qo = ctl_jax.compute_expected_obs(qs_jax, A_jax, A_deps)
 
@@ -140,7 +143,149 @@ class TestControlJax(unittest.TestCase):
             info_gain_validation = ctl_np.calc_states_info_gain_factorized(A_np, [qs_numpy],  A_deps)
 
             self.assertTrue(np.allclose(info_gain, info_gain_validation, atol=1e-4))
-    
+    def test_update_posterior_policies_accepts_partial_param_posteriors(self):
+        """Parameter epistemic value should work with only pA or only pB provided."""
+
+        num_states = [3, 2]
+        num_obs = [4, 3]
+        num_controls = [2, 1]
+        A_dependencies = [[0, 1], [1]]
+        B_dependencies = [[0], [1]]
+
+        key = jr.PRNGKey(7)
+        key_A, key_B, key_qs, key_pA, key_pB = jr.split(key, 5)
+
+        A = random_A_array(key_A, num_obs, num_states, A_dependencies=A_dependencies)
+        B = random_B_array(key_B, num_states, num_controls, B_dependencies=B_dependencies)
+        qs = random_factorized_categorical(key_qs, num_states)
+
+        pA = [
+            jr.uniform(k, a_m.shape, minval=0.5, maxval=2.0)
+            for a_m, k in zip(A, jr.split(key_pA, len(A)))
+        ]
+        pB = [
+            jr.uniform(k, b_f.shape, minval=0.5, maxval=2.0)
+            for b_f, k in zip(B, jr.split(key_pB, len(B)))
+        ]
+
+        policy_matrix = ctl_jax.construct_policies(num_states, num_controls, policy_len=2)
+        C = list_array_zeros(num_obs)
+        E = jnp.ones(policy_matrix.shape[0]) / policy_matrix.shape[0]
+
+        for pA_arg, pB_arg in ((pA, None), (None, pB)):
+            q_pi, neg_efe = ctl_jax.update_posterior_policies(
+                policy_matrix,
+                qs,
+                A,
+                B,
+                C,
+                E,
+                pA_arg,
+                pB_arg,
+                A_dependencies,
+                B_dependencies,
+                use_utility=False,
+                use_states_info_gain=False,
+                use_param_info_gain=True,
+            )
+
+            self.assertEqual(q_pi.shape, (policy_matrix.shape[0],))
+            self.assertEqual(neg_efe.shape, (policy_matrix.shape[0],))
+            self.assertTrue(np.isclose(np.array(q_pi).sum(), 1.0))
+            self.assertTrue(np.all(np.isfinite(np.array(neg_efe))))
+
+    def test_update_posterior_policies_requires_param_posterior_when_enabled(self):
+        """Enabling parameter epistemic value without pA or pB should fail fast."""
+
+        num_states = [3, 2]
+        num_obs = [4, 3]
+        num_controls = [2, 1]
+        A_dependencies = [[0, 1], [1]]
+        B_dependencies = [[0], [1]]
+
+        key = jr.PRNGKey(11)
+        key_A, key_B, key_qs = jr.split(key, 3)
+
+        A = random_A_array(key_A, num_obs, num_states, A_dependencies=A_dependencies)
+        B = random_B_array(key_B, num_states, num_controls, B_dependencies=B_dependencies)
+        qs = random_factorized_categorical(key_qs, num_states)
+
+        policy_matrix = ctl_jax.construct_policies(num_states, num_controls, policy_len=2)
+        C = list_array_zeros(num_obs)
+        E = jnp.ones(policy_matrix.shape[0]) / policy_matrix.shape[0]
+        depth = 1
+        I = [jnp.zeros((depth, ns)) for ns in num_states]
+        error_msg = "use_param_info_gain=True requires at least one of pA or pB."
+
+        with self.assertRaisesRegex(ValueError, error_msg):
+            ctl_jax.update_posterior_policies(
+                policy_matrix,
+                qs,
+                A,
+                B,
+                C,
+                E,
+                None,
+                None,
+                A_dependencies,
+                B_dependencies,
+                use_utility=False,
+                use_states_info_gain=False,
+                use_param_info_gain=True,
+            )
+
+        with self.assertRaisesRegex(ValueError, error_msg):
+            ctl_jax.update_posterior_policies_inductive(
+                policy_matrix,
+                qs,
+                A,
+                B,
+                C,
+                E,
+                None,
+                None,
+                A_dependencies,
+                B_dependencies,
+                I,
+                use_utility=False,
+                use_states_info_gain=False,
+                use_param_info_gain=True,
+                use_inductive=False,
+            )
+
+        with self.assertRaisesRegex(ValueError, error_msg):
+            ctl_jax.compute_neg_efe_policy(
+                qs,
+                A,
+                B,
+                C,
+                None,
+                None,
+                A_dependencies,
+                B_dependencies,
+                policy_matrix[0],
+                use_utility=False,
+                use_states_info_gain=False,
+                use_param_info_gain=True,
+            )
+
+        with self.assertRaisesRegex(ValueError, error_msg):
+            ctl_jax.compute_neg_efe_policy_inductive(
+                qs,
+                A,
+                B,
+                C,
+                None,
+                None,
+                A_dependencies,
+                B_dependencies,
+                I,
+                policy_matrix[0],
+                use_utility=False,
+                use_states_info_gain=False,
+                use_param_info_gain=True,
+                use_inductive=False,
+            )
 
 if __name__ == "__main__":
     unittest.main()

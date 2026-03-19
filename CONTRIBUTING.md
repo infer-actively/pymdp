@@ -106,6 +106,21 @@ directory in your machine can be `push`ed into your fork. Once it is in
 your fork you can then request one of the organizers to `pull` from your
 fork into the upstream repository (by submitting a 'pull request'). More on this later!
 
+## Recommended local hooks
+
+If you edit notebooks, install the local hooks after syncing the dev tooling:
+
+```
+uv sync --group dev
+uv run --group dev pre-commit install
+uv run --group dev pre-commit run --all-files
+```
+
+The notebook hook reads the manifests in `test/notebooks/`:
+
+* Manifest-tested notebooks keep saved outputs but also keep canonical execution counts for output-bearing code cells so `nbval` can execute them reliably.
+* Nightly-tier notebooks still run through `nbstripout --keep-output`, but the hook restores canonical execution counts afterwards so the saved notebooks remain valid test inputs.
+
 
 ## Before you start coding
 
@@ -158,8 +173,8 @@ Once you have completed the above steps, you are ready to choose an algorithm to
    then `push` your changes and the updated code from your machine to your fork:
 
 	```
-	git pull upstream master
-	git push origin master
+	git pull upstream <target_branch>
+	git push origin <your_branch>
 	```
 
 	NOTE: If you edited already existing files, the `pull` may result in
@@ -172,9 +187,10 @@ Once you have completed the above steps, you are ready to choose an algorithm to
    will take you to a page titled 'Compare Changes'. Right below the title,
    click on the blue text that reads 'compare across forks'. This will show
    four buttons. Make sure that the first button reads 'base fork:
-   infer-actively/pymdp', the second button reads 'base: master', the third
+   infer-actively/pymdp', the second button reads the branch you intend to
+   merge into (for example `v1.0.0_alpha` for release work), the third
    button reads 'head fork: <your_username>/infer-actively', and the fourth button
-   reads 'compare: master'. (If everything has gone according to plan, the
+   reads the branch from your fork that contains your changes. (If everything has gone according to plan, the
    only button you should have to change is the third one - make sure you
    find your username, not someone elses.) After you find your username,
    GitHub will show a rundown of the differences that you are adding to the
@@ -182,8 +198,8 @@ Once you have completed the above steps, you are ready to choose an algorithm to
    contributing. If everything looks correct, press 'Create Pull
    Request'.
 	NOTE: Advanced git users may want to develop on branches other
-	than master on their fork. That is totally fine, we won't know
-	the difference in the end anyway.
+	than the upstream target branch on their fork. That is totally
+	fine; just make sure the PR points at the correct upstream branch.
 
 
 That's it! After you've completed these steps, maintainers will be notified 

@@ -13,9 +13,9 @@ import unittest
 import numpy as np
 from scipy.io import loadmat
 
-from pymdp.utils import get_model_dimensions, convert_observation_array
-from pymdp.algos import run_mmp
-from pymdp.maths import get_joint_likelihood_seq
+from pymdp.legacy.utils import get_model_dimensions, convert_observation_array
+from pymdp.legacy.algos import run_mmp
+from pymdp.legacy.maths import get_joint_likelihood_seq
 
 DATA_PATH = "test/matlab_crossval/output/"
 
@@ -24,7 +24,7 @@ class MMP(unittest.TestCase):
     def test_mmp_a(self):
         """
         Testing our SPM-ified version of `run_MMP` with
-            1 hidden state factor & 1 outcome modality, at a random fixed
+            1 hidden state factor & 1 observation modality, at a random fixed
             timestep during the generative process
         """
 
@@ -39,7 +39,7 @@ class MMP(unittest.TestCase):
         t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")
         prev_actions = mat_contents["previous_actions"].astype("int64") - 1
         result_spm = mat_contents["qs"][0]
-        likelihoods = mat_contents["likelihoods"][0]
+        mat_contents["likelihoods"][0]
 
         num_obs, num_states, _, num_factors = get_model_dimensions(A, B)
         prev_obs = convert_observation_array(
@@ -63,7 +63,7 @@ class MMP(unittest.TestCase):
    
     def test_mmp_b(self):
         """ Testing our SPM-ified version of `run_MMP` with
-        2 hidden state factors & 2 outcome modalities, at a random fixed
+        2 hidden state factors & 2 observation modalities, at a random fixed
         timestep during the generative process"""
 
         array_path = os.path.join(os.getcwd(), DATA_PATH + "mmp_b.mat")
@@ -77,7 +77,7 @@ class MMP(unittest.TestCase):
         t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")
         prev_actions = mat_contents["previous_actions"].astype("int64") - 1
         result_spm = mat_contents["qs"][0]
-        likelihoods = mat_contents["likelihoods"][0]
+        mat_contents["likelihoods"][0]
 
         num_obs, num_states, _, num_factors = get_model_dimensions(A, B)
         prev_obs = convert_observation_array(
@@ -96,7 +96,7 @@ class MMP(unittest.TestCase):
 
     def test_mmp_c(self):
         """ Testing our SPM-ified version of `run_MMP` with
-         2 hidden state factors & 2 outcome modalities, at the very first
+         2 hidden state factors & 2 observation modalities, at the very first
          timestep of the generative process (boundary condition test). So there 
          are no previous actions"""
 
@@ -111,7 +111,7 @@ class MMP(unittest.TestCase):
         t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")
         # prev_actions = mat_contents["previous_actions"].astype("int64") - 1
         result_spm = mat_contents["qs"][0]
-        likelihoods = mat_contents["likelihoods"][0]
+        mat_contents["likelihoods"][0]
 
         num_obs, num_states, _, num_factors = get_model_dimensions(A, B)
         prev_obs = convert_observation_array(
@@ -130,7 +130,7 @@ class MMP(unittest.TestCase):
     
     def test_mmp_d(self):
         """ Testing our SPM-ified version of `run_MMP` with
-        2 hidden state factors & 2 outcome modalities, at the final
+        2 hidden state factors & 2 observation modalities, at the final
         timestep of the generative process (boundary condition test)
         @NOTE: mmp_d.mat test has issues with the prediction errors. But the future messages are 
         totally fine (even at the last timestep of variational iteration."""
@@ -146,7 +146,7 @@ class MMP(unittest.TestCase):
         t_horizon = mat_contents["t_horizon"][0, 0].astype("int64")
         prev_actions = mat_contents["previous_actions"].astype("int64") - 1
         result_spm = mat_contents["qs"][0]
-        likelihoods = mat_contents["likelihoods"][0]
+        mat_contents["likelihoods"][0]
 
         num_obs, num_states, _, num_factors = get_model_dimensions(A, B)
         prev_obs = convert_observation_array(
@@ -170,7 +170,7 @@ class MMP(unittest.TestCase):
         for f in range(num_factors):
             self.assertTrue(np.isclose(result_spm[f].squeeze(), result_pymdp[f]).all())
     
-    """"
+    """
     @ NOTE (from Conor Heins 07.04.2021)
     Please keep this uncommented code below here. We need to figure out how to re-include optional arguments e.g. `save_vfe_seq` 
     into `run_mmp` so that important tests like these can run again some day. My only dumb solution for now would be to just have a 'UnitTest variant' of the MMP function

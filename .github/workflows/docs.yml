@@ -1,0 +1,49 @@
+name: Docs
+
+on:
+  push:
+    branches:
+      - master
+      - v1.0.0_alpha
+    paths:
+      - 'mkdocs.yml'
+      - 'docs-mkdocs/**'
+      - 'scripts/docs_*.sh'
+      - 'scripts/sync_docs_notebooks.sh'
+      - 'docs/**'
+      - '.readthedocs.yml'
+      - 'pyproject.toml'
+      - 'pymdp/**'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    paths:
+      - 'mkdocs.yml'
+      - 'docs-mkdocs/**'
+      - 'scripts/docs_*.sh'
+      - 'scripts/sync_docs_notebooks.sh'
+      - 'docs/**'
+      - '.readthedocs.yml'
+      - 'pyproject.toml'
+      - 'pymdp/**'
+      - '.github/workflows/docs.yml'
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+      - name: Install dependencies
+        run: |
+          uv sync --no-default-groups --extra docs
+      - name: Sync curated notebook docs
+        run: |
+          ./scripts/sync_docs_notebooks.sh
+      - name: Build docs (strict)
+        run: |
+          uv run --no-default-groups --extra docs mkdocs build --strict

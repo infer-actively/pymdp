@@ -5,13 +5,12 @@
 __author__: Conor Heins
 """
 
-import os
 import unittest
 
 import numpy as np
 
-from pymdp import utils, maths
-from pymdp.algos import run_vanilla_fpi, run_vanilla_fpi_factorized
+from pymdp.legacy import utils, maths
+from pymdp.legacy.algos import run_vanilla_fpi, run_vanilla_fpi_factorized
 
 class TestFPI(unittest.TestCase):
 

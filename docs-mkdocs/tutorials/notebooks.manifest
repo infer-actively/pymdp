@@ -1,0 +1,21 @@
+# One notebook path per line, relative to repository root.
+examples/advanced/complex_action_dependency.ipynb
+examples/advanced/pymdp_with_neural_encoder.ipynb
+examples/advanced/infer_states_optimization/methods_test.ipynb
+examples/api/model_construction_tutorial.ipynb
+examples/envs/cue_chaining_demo.ipynb
+examples/envs/generalized_tmaze_demo.ipynb
+examples/envs/graph_worlds_demo.ipynb
+examples/envs/knapsack_demo.ipynb
+examples/envs/tmaze_demo.ipynb
+examples/experimental/sophisticated_inference/mcts_generalized_tmaze.ipynb
+examples/experimental/sophisticated_inference/mcts_graph_world.ipynb
+examples/experimental/sophisticated_inference/si_generalized_tmaze.ipynb
+examples/experimental/sophisticated_inference/si_graph_world.ipynb
+examples/experimental/sophisticated_inference/si_tmaze_SIvalidation.ipynb
+examples/inductive_inference/inductive_inference_example.ipynb
+examples/inductive_inference/inductive_inference_gridworld.ipynb
+examples/inference_and_learning/inference_methods_comparison.ipynb
+examples/learning/learning_gridworld.ipynb
+examples/model_fitting/fitting_with_pybefit.ipynb
+examples/sparse/sparse_benchmark.ipynb

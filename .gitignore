@@ -9,3 +9,14 @@ __pycache__
 env/
 pymdp.egg-info
 inferactively_pymdp.egg-info
+venv/
+.venv
+.jax_cache
+.ruff_cache
+.coverage
+coverage.xml
+htmlcov/
+site/
+build/
+dist/
+uv.lock

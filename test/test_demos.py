@@ -4,11 +4,12 @@ import copy
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-from pymdp.agent import Agent
-from pymdp.utils import plot_beliefs, plot_likelihood
-from pymdp import utils, maths, default_models
-from pymdp import control
-from pymdp.envs import TMazeEnv, TMazeEnvNullOutcome
+from pymdp.legacy.agent import Agent
+from pymdp.legacy import utils, maths, default_models
+from pymdp.legacy import control
+from pymdp.legacy.envs import TMazeEnv, TMazeEnvNullOutcome
+from pymdp.legacy.maths import spm_log_single as log_stable 
+
 from copy import deepcopy
 
 class TestDemos(unittest.TestCase):
@@ -40,7 +41,7 @@ class TestDemos(unittest.TestCase):
         for t in range(T):
     
             # update agent
-            belief_state = agent.infer_states(observation)
+            agent.infer_states(observation)
             agent.infer_policies()
             action = agent.sample_action()
 
@@ -90,13 +91,9 @@ class TestDemos(unittest.TestCase):
         obs = env.reset() # reset the environment and get an initial observation
 
         # these are useful for displaying read-outs during the loop over time
-        reward_conditions = ["Right", "Left"]
-        location_observations = ['CENTER','RIGHT ARM','LEFT ARM','CUE LOCATION']
-        reward_observations = ['No reward','Reward!','Loss!']
-        cue_observations = ['Cue Right','Cue Left']
       
         for t in range(T):
-            qx = agent.infer_states(obs)
+            agent.infer_states(obs)
 
             q_pi, G = agent.infer_policies()
 
@@ -198,13 +195,13 @@ class TestDemos(unittest.TestCase):
         for linear_index, xy_coordinates in state_mapping.items():
             x, y = xy_coordinates
             grid[y,x] = linear_index # rows are the y-coordinate, columns are the x-coordinate -- so we index into the grid we'll be visualizing using '[y, x]'
-        fig = plt.figure(figsize = (3,3))
+        plt.figure(figsize = (3,3))
         sns.set(font_scale=1.5)
         sns.heatmap(grid, annot=True,  cbar = False, fmt='.0f', cmap='crest')
 
         A = np.eye(9)
 
-        labels = [state_mapping[i] for i in range(A.shape[1])]
+        [state_mapping[i] for i in range(A.shape[1])]
 
         # plot_likelihood(A)
 
@@ -258,13 +255,12 @@ class TestDemos(unittest.TestCase):
         This unit test runs the a concise version of the code in the `gridworld_tutorial_1.ipynb` tutorial notebook to make sure it works if things are changed
         """
 
-        from pymdp.maths import spm_log_single as log_stable # @NOTE: we use the `spm_log_single` helper function from the `maths` sub-library of pymdp. This is a numerically stable version of np.log()
 
         state_mapping = {0: (0,0), 1: (1,0), 2: (2,0), 3: (0,1), 4: (1,1), 5:(2,1), 6: (0,2), 7:(1,2), 8:(2,2)}
 
         A = np.eye(9)
        
-        labels = [state_mapping[i] for i in range(A.shape[1])]
+        [state_mapping[i] for i in range(A.shape[1])]
        
         # def plot_empirical_prior(B):
         #     fig, axes = plt.subplots(3,2, figsize=(8, 10))
@@ -369,7 +365,7 @@ class TestDemos(unittest.TestCase):
         # plot_beliefs(Qs)
 
         REWARD_LOCATION = 7
-        reward_state = state_mapping[REWARD_LOCATION]
+        state_mapping[REWARD_LOCATION]
 
         C = np.zeros(num_states)
         C[REWARD_LOCATION] = 1. 

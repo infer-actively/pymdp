@@ -8,17 +8,33 @@
 A Python package for simulating Active Inference agents in Markov Decision Process environments.
 Please see our companion paper, published in the Journal of Open Source Software: ["pymdp: A Python library for active inference in discrete state spaces"](https://joss.theoj.org/papers/10.21105/joss.04098) for an overview of the package and its motivation. For a more in-depth, tutorial-style introduction to the package and a mathematical overview of active inference in Markov Decision Processes, see the [longer arxiv version](https://arxiv.org/abs/2201.03904) of the paper.
 
+## Citing `pymdp`
+If you use `pymdp` in your work or research, please cite:
+
+```
+@article{Heins2022,
+  doi = {10.21105/joss.04098},
+  url = {https://doi.org/10.21105/joss.04098},
+  year = {2022},
+  publisher = {The Open Journal},
+  volume = {7},
+  number = {73},
+  pages = {4098},
+  author = {Conor Heins and Beren Millidge and Daphne Demekas and Brennan Klein and Karl Friston and Iain D. Couzin and Alexander Tschantz},
+  title = {pymdp: A Python library for active inference in discrete state spaces},
+  journal = {Journal of Open Source Software}
+}
+```
+
 This package is hosted on the [`infer-actively`](https://github.com/infer-actively) GitHub organization, which was built with the intention of hosting open-source active inference and free-energy-principle related software.
 
 Most of the low-level mathematical operations are [NumPy](https://github.com/numpy/numpy) ports of their equivalent functions from the `SPM` [implementation](https://www.fil.ion.ucl.ac.uk/spm/doc/) in MATLAB. We have benchmarked and validated most of these functions against their SPM counterparts.
-
-⚠️ We are currently in the process of migrating `pymdp` to a [JAX](https://github.com/jax-ml/jax) backend as part of our roadmap for a v1 release of the package. For now, check out the [`v1.0.0_alpha`](https://github.com/infer-actively/pymdp/tree/v1.0.0_alpha) branch for the best balance of new features and stability. We intend to merge these features into the master branch as soon as possible.
 
 ## Status
 
 ![status](https://img.shields.io/badge/status-active-green)
 ![PyPI version](https://img.shields.io/pypi/v/inferactively-pymdp)
-[![Documentation Status](https://readthedocs.org/projects/pymdp-rtd/badge/?version=latest)](https://pymdp-rtd.readthedocs.io/en/latest/?badge=latest)
+[![Documentation Status](https://readthedocs.org/projects/pymdp-rtd/badge/?version=v1.0.0_alpha)](https://pymdp-rtd.readthedocs.io/en/v1.0.0_alpha/)
 [![DOI](https://joss.theoj.org/papers/10.21105/joss.04098/status.svg)](https://doi.org/10.21105/joss.04098)
 
 
@@ -26,9 +42,9 @@ Most of the low-level mathematical operations are [NumPy](https://github.com/num
 
 Here's a visualization of ``pymdp`` agents in action. One of the defining features of active inference agents is the drive to maximize "epistemic value" (i.e. curiosity). Equipped with such a drive in environments with uncertain yet disclosable hidden structure, active inference can ultimately allow agents to simultaneously learn about the environment as well as maximize reward.
 
-The simulation below (see associated notebook [here](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/cue_chaining_demo.html)) demonstrates what might be called "epistemic chaining," where an agent (here, analogized to a mouse seeking food) forages for a chain of cues, each of which discloses the location of the subsequent cue in the chain. The final cue (here, "Cue 2") reveals the location a hidden reward. This is similar in spirit to "behavior chaining" used in operant conditioning, except that here, each successive action in the behavioral sequence doesn't need to be learned through instrumental conditioning. Rather, active inference agents will naturally forage the sequence of cues based on an intrinsic desire to disclose information. This ultimately leads the agent to the hidden reward source in the fewest number of moves as possible.
+The simulation below (see associated JAX notebook [here](https://pymdp-rtd.readthedocs.io/en/v1.0.0_alpha/tutorials/notebooks/examples/envs/cue_chaining_demo/)) demonstrates what might be called "epistemic chaining," where an agent (here, analogized to a mouse seeking food) forages for a chain of cues, each of which discloses the location of the subsequent cue in the chain. The final cue (here, "Cue 2") reveals the location a hidden reward. This is similar in spirit to "behavior chaining" used in operant conditioning, except that here, each successive action in the behavioral sequence doesn't need to be learned through instrumental conditioning. Rather, active inference agents will naturally forage the sequence of cues based on an intrinsic desire to disclose information. This ultimately leads the agent to the hidden reward source in the fewest number of moves as possible.
 
-You can run the code behind simulating tasks like this one and others in the **Examples** section of the [official documentation](https://pymdp-rtd.readthedocs.io/en/stable/).
+You can run the code behind simulating tasks like this one and others in the **Examples** section of the [official documentation](https://pymdp-rtd.readthedocs.io/en/v1.0.0_alpha/). The GIF generation script used for these animations is available [here](examples/envs/chained_cue_navigation.py).
 
 <!-- 
 <p align="center">
@@ -57,108 +73,130 @@ You can run the code behind simulating tasks like this one and others in the **E
 
 ## Quick-start: Installation and Usage
 
-In order to use `pymdp` to build and develop active inference agents, we recommend installing it with the the package installer [`pip`](https://pip.pypa.io/en/stable/), which will install `pymdp` locally as well as its dependencies. This can also be done in a virtual environment (e.g. with `venv`). 
+We recommend installing `pymdp` using [`uv`](https://docs.astral.sh/uv/), with an explicit virtual environment:
 
-When pip installing `pymdp`, use the package name `inferactively-pymdp`:
+```bash
+uv venv .venv
+source .venv/bin/activate
+uv pip install inferactively-pymdp
+```
+
+If you prefer `pip`, use:
 
 ```bash
 pip install inferactively-pymdp
 ```
 
+If `uv sync --group test` or `uv sync --extra nb` fails while building `pygraphviz`, install Graphviz first and then retry. On macOS, install `graphviz` with Homebrew. On Ubuntu/Debian, install `graphviz libgraphviz-dev pkg-config build-essential python3-dev` (or the version-matched `python3.x-dev` package if needed). The full troubleshooting notes live in [`docs-mkdocs/getting-started/installation.md`](docs-mkdocs/getting-started/installation.md).
+
 Once in Python, you can then directly import `pymdp`, its sub-packages, and functions.
 
-```bash
-
-import pymdp
+```python
+from jax import numpy as jnp, random as jr
 from pymdp import utils
 from pymdp.agent import Agent
 
-num_obs = [3, 5] # observation modality dimensions
-num_states = [3, 2, 2] # hidden state factor dimensions
-num_controls = [3, 1, 1] # control state factor dimensions
-A_matrix = utils.random_A_matrix(num_obs, num_states) # create sensory likelihood (A matrix)
-B_matrix = utils.random_B_matrix(num_states, num_controls) # create transition likelihood (B matrix)
+key = jr.PRNGKey(0)
+keys = jr.split(key, 3)
 
-C_vector = utils.obj_array_uniform(num_obs) # uniform preferences
+num_obs = [3, 5]
+num_states = [3, 2]
+num_controls = [3, 1]
 
-# instantiate a quick agent using your A, B and C arrays
-my_agent = Agent( A = A_matrix, B = B_matrix, C = C_vector)
+A = utils.random_A_array(keys[0], num_obs, num_states)
+B = utils.random_B_array(keys[1], num_states, num_controls)
+C = utils.list_array_uniform([[no] for no in num_obs])
 
-# give the agent a random observation and get the optimized posterior beliefs
+agent = Agent(A=A, B=B, C=C, batch_size=1)
+observation = [jnp.array([1]), jnp.array([4])]
 
-observation = [1, 4] # a list specifying the indices of the observation, for each observation modality
+qs, info = agent.infer_states(observation, empirical_prior=agent.D, return_info=True)
+# Optional diagnostic: current variational free energy for each batch element.
+vfe = info["vfe"]
+q_pi, neg_efe = agent.infer_policies(qs)
 
-qs = my_agent.infer_states(observation) # get posterior over hidden states (a multi-factor belief)
-
-# Do active inference
-
-q_pi, neg_efe = my_agent.infer_policies() # return the policy posterior and return (negative) expected free energies of each policy as well
-
-action = my_agent.sample_action() # sample an action
-
-# ... and so on ...
+action_keys = jr.split(keys[2], agent.batch_size + 1)
+action = agent.sample_action(q_pi, rng_key=action_keys[1:])
 ```
 
 ## Getting started / introductory material
 
-We recommend starting with the Installation/Usage section of the [official documentation](https://pymdp-rtd.readthedocs.io/en/stable/) for the repository, which provides a series of useful pedagogical notebooks for introducing you to active inference and how to build agents in `pymdp`.
+We recommend starting with the JAX-first [official documentation](https://pymdp-rtd.readthedocs.io/en/v1.0.0_alpha/) for the repository, which provides practical guides, curated notebooks, and generated API references.
 
 For new users to `pymdp`, we specifically recommend stepping through following three Jupyter notebooks (can also be used on Google Colab):
 
-- [`Pymdp` fundamentals](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/pymdp_fundamentals.html)
-- [Active Inference from Scratch](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/active_inference_from_scratch.html)
-- [The `Agent` API](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/using_the_agent_class.html)
+- [Quickstart (JAX)](https://pymdp-rtd.readthedocs.io/en/v1.0.0_alpha/getting-started/quickstart-jax/)
+- [NumPy/legacy to JAX migration guide](https://pymdp-rtd.readthedocs.io/en/v1.0.0_alpha/migration/numpy-to-jax/)
+- [`rollout()` active inference loop guide](https://pymdp-rtd.readthedocs.io/en/v1.0.0_alpha/guides/rollout-active-inference-loop/)
 
-Special thanks to [Beren Millidge](https://github.com/BerenMillidge) and [Daphne Demekas](https://github.com/daphnedemekas) for their help in prototyping earlier versions of the [Active Inference from Scratch](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/active_inference_from_scratch.html) tutorial, which were originally based on a grid world POMDP environment create by [Alec Tschantz](https://github.com/alec-tschantz).
-
-We also have (and are continuing to build) a series of notebooks that walk through active inference agents performing different types of tasks, such as the classic [T-Maze environment](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/tmaze_demo.html) and the newer [Epistemic Chaining](https://pymdp-rtd.readthedocs.io/en/latest/notebooks/cue_chaining_demo.html) demo.
+We also have (and are continuing to build) a series of notebooks that walk through active inference agents performing different types of tasks in the [Notebook Gallery](https://pymdp-rtd.readthedocs.io/en/v1.0.0_alpha/tutorials/notebooks/).
 
 ## Contributing
 
-This package is under active development. If you would like to contribute, please refer to [this file](CONTRIBUTING.md)
+This package is under active development. If you would like to contribute, please refer to [CONTRIBUTING.md](CONTRIBUTING.md).
 
-If you would like to contribute to this repo, we recommend using venv and pip
+Recommended local setup:
+
 ```bash
 cd <path_to_repo_fork>
-python3 -m venv env
-source env/bin/activate
-pip install -r requirements.txt
-pip install -e ./ # This will install pymdp as a local dev package
+uv venv .venv
+source .venv/bin/activate
+uv sync --group test
 ```
 
-You should then be able to run tests locally with `pytest`
+Recommended contributor hooks:
+
+```bash
+uv sync --group dev
+uv run --group dev pre-commit install
+```
+
+Useful variants:
+
+```bash
+# tests + contributor hooks
+uv sync --group test --group dev
+
+# docs work
+uv sync --group test --extra docs
+
+# notebook/media extras
+uv sync --group test --extra nb
+
+# model fitting extras
+uv sync --group test --extra modelfit
+```
+
+Run tests:
+
 ```bash
 pytest test
 ```
 
-## Citing `pymdp`
-If you use `pymdp` in your work or research, please consider citing our [paper](https://joss.theoj.org/papers/10.21105/joss.04098) (open-access) published in the Journal of Open-Source Software:
+Build docs locally:
 
-```
-@article{Heins2022,
-  doi = {10.21105/joss.04098},
-  url = {https://doi.org/10.21105/joss.04098},
-  year = {2022},
-  publisher = {The Open Journal},
-  volume = {7},
-  number = {73},
-  pages = {4098},
-  author = {Conor Heins and Beren Millidge and Daphne Demekas and Brennan Klein and Karl Friston and Iain D. Couzin and Alexander Tschantz},
-  title = {pymdp: A Python library for active inference in discrete state spaces},
-  journal = {Journal of Open Source Software}
-}
+```bash
+./scripts/docs_build.sh
 ```
 
-For a more in-depth, tutorial-style introduction to the package and a mathematical overview of active inference in Markov Decision Processes, you can also consult the [longer arxiv version](https://arxiv.org/abs/2201.03904) of the paper.
-
-## Authors
+## Contributors
 
 - Conor Heins [@conorheins](https://github.com/conorheins)
-- Alec Tschantz [@alec-tschantz](https://github.com/alec-tschantz)
-- Beren Millidge [@BerenMillidge](https://github.com/BerenMillidge)
-- Brennan Klein [@jkbren](https://github.com/jkbren)
-- Arun Niranjan [@Arun-Niranjan](https://github.com/Arun-Niranjan)
-- Daphne Demekas [@daphnedemekas](https://github.com/daphnedemekas)
-- Aswin Paul [@aswinpaul](https://github.com/aswinpaul)
 - Tim Verbelen [@tverbele](https://github.com/tverbele)
 - Dimitrije Markovic [@dimarkov](https://github.com/dimarkov)
+- Riddhi Jain Pitliya [@riddhipits](https://github.com/riddhipits)
+- Arun Niranjan [@Arun-Niranjan](https://github.com/Arun-Niranjan)
+- Toon Van de Maele [@toonvdm](https://github.com/toonvdm)
+- Ozan Catal [@OzanCatalVerses](https://github.com/OzanCatalVerses)
+- Tommaso Salvatori [@salvatomm](https://github.com/salvatomm)
+- Aswin Paul [@aswinpaul](https://github.com/aswinpaul)
+- Ran Wei [@ran-weii](https://github.com/ran-weii)
+- Alexander Tschantz [@alec-tschantz](https://github.com/alec-tschantz)
+- Miguel de Prado [@praesc](https://github.com/praesc)
+- Nikola Pižurica [@NIkolaPizurica](https://github.com/NIkolaPizurica)
+- Nikola Milović [@nikolamilovic-ft](https://github.com/nikolamilovic-ft)
+- Matteo Risso [@matteorisso](https://github.com/matteorisso)
+- Christopher Buckley [@clb27](https://github.com/clb27)
+- Beren Millidge [@BerenMillidge](https://github.com/BerenMillidge)
+- Daphne Demekas [@daphnedemekas](https://github.com/daphnedemekas)
+- Cooper Williams [@coopwilliams](https://github.com/coopwilliams)
