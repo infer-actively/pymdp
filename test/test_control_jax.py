@@ -80,8 +80,6 @@ class TestControlJax(unittest.TestCase):
         for visiting the bandit arm, which in turn is higher than the state info gain for the policy that leads to staying in the start state.
         """
 
-        np.random.seed(1234)
-
         num_states = [2, 3]  
         num_obs = [3, 3, 3]
 
