@@ -1,4 +1,4 @@
-# pymdp Documentation
+# Welcome to pymdp's documentation!
 
 `pymdp` is a Python package for simulating Active Inference agents in
 discrete-state Markov Decision Process environments. For background and

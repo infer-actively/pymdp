@@ -1,49 +1,41 @@
 @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap");
 
 :root {
-  --md-text-font: "IBM Plex Sans";
-  --md-code-font: "IBM Plex Mono";
-  --md-primary-fg-color: #0f8a80;
-  --md-primary-fg-color--light: #24a398;
-  --md-primary-fg-color--dark: #0b6f67;
-  --md-accent-fg-color: #0f9aa1;
   --pymdp-inline-code-bg: rgba(98, 114, 164, 0.22);
   --pymdp-inline-code-fg: #8be9fd;
   --pymdp-inline-code-border: rgba(139, 233, 253, 0.22);
 }
 
-.md-grid {
-  max-width: 1440px;
+body {
+  font-family: "IBM Plex Sans", sans-serif;
 }
 
-.md-content__inner {
-  max-width: 980px;
+pre,
+code,
+kbd,
+samp {
+  font-family: "IBM Plex Mono", "Fira Code", monospace;
 }
 
-.md-typeset {
-  font-size: 0.91rem;
-  line-height: 1.58;
+/* API reference tables: keep mkdocstrings type signatures on one line when possible. */
+.doc .doc-contents > table {
+  table-layout: auto;
+  width: 100%;
 }
 
-.md-typeset h1,
-.md-typeset h2,
-.md-typeset h3 {
-  font-weight: 700;
-  letter-spacing: -0.015em;
+.doc .doc-contents > table tr > :nth-child(2) {
+  min-width: 14rem;
+  width: 14rem;
 }
 
-.md-nav__title,
-.md-nav__link {
-  font-size: 0.72rem;
+.doc .doc-contents > table tr > :first-child:nth-last-child(2) {
+  min-width: 16rem;
+  width: 16rem;
 }
 
-.md-typeset pre > code {
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 8px;
-}
-
-.md-typeset table:not([class]) {
-  font-size: 0.72rem;
+.doc .doc-contents > table tr > :nth-child(2) code,
+.doc .doc-contents > table tr > :first-child:nth-last-child(2) code {
+  white-space: nowrap;
 }
 
 /* Override Dracula's default purple inline code chip for better contrast. */
