@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v1.0.0_alpha
+          ref: master
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v3
         with:
