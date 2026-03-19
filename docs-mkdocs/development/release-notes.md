@@ -138,14 +138,13 @@ If you are upgrading from the legacy NumPy backend, start with the
 ### Packaging, Testing, And Contributor Workflow
 
 - The packaging surface now centers on `pyproject.toml` and setuptools-backed
-  builds, with explicit extras and groups for `gpu`, `docs`, `nb`, and
-  `modelfit` workflows.
+  builds, with explicit optional-dependency extras for `gpu`, `docs`, `nb`,
+  and `modelfit` workflows.
 - Notebook execution is now tiered and enforced through manifests: PR CI runs
   the `test/notebooks/ci_notebooks.txt` tier, while nightly coverage runs the
   `test/notebooks/nightly_notebooks.txt` tier.
 - Contributor workflow also improved through notebook sanitation hooks, strict
-  docs builds, unit-test coverage reporting, `pytest-xdist` support, and an
-  explicit release checklist for the final `1.0.0` closeout process.
+  docs builds, unit-test coverage reporting, and `pytest-xdist` support.
 
 ### Traceability Appendix
 
