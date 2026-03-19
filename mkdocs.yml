@@ -9,11 +9,10 @@ strict: true
 validation:
   omitted_files: ignore
 theme:
-  name: material
-  features:
-    - navigation.instant
-    - navigation.sections
-    - content.code.copy
+  name: dracula
+  custom_dir: docs-mkdocs/overrides
+  logo: assets/pymdp-logo.png
+  favicon: assets/pymdp-logo.png
 markdown_extensions:
   - admonition
   - attr_list
@@ -33,6 +32,7 @@ plugins:
       execute: false
       include_source: true
       ignore_h1_titles: true
+      theme: dark
   - mkdocstrings:
       handlers:
         python:

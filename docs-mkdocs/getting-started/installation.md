@@ -26,7 +26,7 @@ uv sync --group test
 - `--extra nb`: optional notebook/media extras (`mediapy`, `pygraphviz`) when notebook visualization is needed outside test tooling.
 - `--extra modelfit`: installs `pybefit` for model-fitting workflows.
 - `--extra gpu`: installs CUDA-enabled JAX packages.
-- `--extra docs`: documentation toolchain (`mkdocs`, `mkdocs-material`, `mkdocstrings`, `mkdocs-jupyter`, `mkdocs-redirects`).
+- `--extra docs`: documentation toolchain (`mkdocs`, `mkdocs-dracula-theme`, `mkdocstrings`, `mkdocs-jupyter`, `mkdocs-redirects`).
 
 `pygraphviz` is only needed for Graphviz-backed notebook visualizations such as the MCTS graph-world demo, but it is included in the current `test` and `nb` dependency sets. On many machines `uv sync --group test` works without any extra steps; if it fails while building `pygraphviz`, use the troubleshooting notes below and then rerun the sync command.
 

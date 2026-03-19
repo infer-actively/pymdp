@@ -29,4 +29,5 @@ This documentation focuses on the JAX backend (the default backend since the 1.0
 
 ## Legacy docs
 Legacy/NumPy material is preserved under an archive path:
+
 - [Legacy/NumPy archive](legacy/index.md)

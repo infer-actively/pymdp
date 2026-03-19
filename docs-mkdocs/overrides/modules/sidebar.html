@@ -1,0 +1,20 @@
+<nav id="sidebar" class="sidebar drac-bg-black">
+    <div class="custom-menu">
+        <button type="button" id="sidebarCollapse" class="btn btn-primary">
+            <i class="fa fa-bars"></i>
+            <span class="sr-only">Menu</span>
+        </button>
+    </div>
+
+    <div class="p-4">
+        {% if config.theme.logo %}
+            <img class="logo pymdp-sidebar-logo" src="{{ config.theme.logo|url }}" alt="{{ config.site_name }} logo">
+        {% endif %}
+
+        <hr class="drac-divider" />
+
+        <ul class="mb-5 drac-list drac-list-none">
+            {% include "modules/menu.html" %}
+        </ul>
+    </div>
+</nav>
