@@ -33,7 +33,7 @@ Most of the low-level mathematical operations are [NumPy](https://github.com/num
 ## Status
 
 ![status](https://img.shields.io/badge/status-active-green)
-![PyPI version](https://img.shields.io/pypi/v/inferactively-pymdp)
+[![PyPI version](https://img.shields.io/pypi/v/inferactively-pymdp?cacheSeconds=300)](https://pypi.org/project/inferactively-pymdp/1.0.0/)
 [![Documentation Status](https://readthedocs.org/projects/pymdp-rtd/badge/?version=latest)](https://pymdp-rtd.readthedocs.io/en/latest/)
 [![DOI](https://joss.theoj.org/papers/10.21105/joss.04098/status.svg)](https://doi.org/10.21105/joss.04098)
 
