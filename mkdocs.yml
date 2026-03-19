@@ -4,6 +4,8 @@ site_url: https://pymdp-rtd.readthedocs.io/en/latest/
 repo_url: https://github.com/infer-actively/pymdp
 repo_name: infer-actively/pymdp
 docs_dir: docs-mkdocs
+exclude_docs: |
+  overrides/**
 site_dir: !ENV [MKDOCS_SITE_DIR, site]
 strict: true
 validation:
