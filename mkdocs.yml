@@ -4,16 +4,17 @@ site_url: https://pymdp-rtd.readthedocs.io/en/latest/
 repo_url: https://github.com/infer-actively/pymdp
 repo_name: infer-actively/pymdp
 docs_dir: docs-mkdocs
+exclude_docs: |
+  overrides/**
 site_dir: !ENV [MKDOCS_SITE_DIR, site]
 strict: true
 validation:
   omitted_files: ignore
 theme:
-  name: material
-  features:
-    - navigation.instant
-    - navigation.sections
-    - content.code.copy
+  name: dracula
+  custom_dir: docs-mkdocs/overrides
+  logo: assets/pymdp-logo.png
+  favicon: assets/pymdp-favicon.png
 markdown_extensions:
   - admonition
   - attr_list
@@ -26,6 +27,7 @@ extra_css:
   - styles/crisp-api.css
 extra_javascript:
   - javascripts/mathjax.js
+  - javascripts/sidebar-accessibility.js
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js
 plugins:
   - search
@@ -33,6 +35,7 @@ plugins:
       execute: false
       include_source: true
       ignore_h1_titles: true
+      theme: dark
   - mkdocstrings:
       handlers:
         python:
