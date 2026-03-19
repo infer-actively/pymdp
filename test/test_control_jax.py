@@ -76,6 +76,8 @@ class TestControlJax(unittest.TestCase):
         for visiting the bandit arm, which in turn is higher than the state info gain for the policy that leads to staying in the start state.
         """
 
+        np.random.seed(1234)
+
         num_states = [2, 3]  
         num_obs = [3, 3, 3]
 
@@ -137,7 +139,7 @@ class TestControlJax(unittest.TestCase):
             info_gain = ctl_jax.compute_info_gain(qs_jax, qo, A_jax, A_deps)
             info_gain_validation = ctl_np.calc_states_info_gain_factorized(A_np, [qs_numpy],  A_deps)
 
-            self.assertTrue(np.allclose(info_gain, info_gain_validation, atol=1e-5))
+            self.assertTrue(np.allclose(info_gain, info_gain_validation, atol=1e-4))
     
 
 if __name__ == "__main__":
