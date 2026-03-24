@@ -6,7 +6,6 @@ From repo root:
 
 ```bash
 uv sync --no-default-groups --extra docs
-./scripts/sync_docs_notebooks.sh
 ./scripts/docs_build.sh
 ./scripts/docs_serve.sh
 ```
@@ -27,7 +26,9 @@ Local URL:
 3. Verify nav, notebooks, API pages, and redirects.
 
 ## Notes
-- Notebook docs are rendered from pre-executed `.ipynb` files committed in-repo.
-- To add notebook docs, update `docs-mkdocs/tutorials/notebooks.manifest` then run `./scripts/sync_docs_notebooks.sh`.
+- `examples/` notebooks are the source of truth for the notebook gallery.
+- `docs-mkdocs/tutorials/notebooks/examples/` is generated at docs build time by `./scripts/sync_docs_notebooks.sh` and is not intended to be edited by hand.
+- `./scripts/docs_build.sh` and `./scripts/docs_serve.sh` sync curated notebooks automatically before invoking MkDocs.
+- To add notebook docs, update `docs-mkdocs/tutorials/notebooks.manifest`. The sync step will copy the listed notebooks into the generated docs tree.
 - MkDocs source-of-truth content lives in `docs-mkdocs/`.
 - `docs/` is retained as legacy Sphinx-era content for compatibility/history.
