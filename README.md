@@ -190,6 +190,7 @@ Build docs locally:
 - Ozan Catal [@OzanCatalVerses](https://github.com/OzanCatalVerses)
 - Tommaso Salvatori [@salvatomm](https://github.com/salvatomm)
 - Aswin Paul [@aswinpaul](https://github.com/aswinpaul)
+- Lancelot Da Costa [@lancelotdacosta](https://github.com/lancelotdacosta)
 - Ran Wei [@ran-weii](https://github.com/ran-weii)
 - Alexander Tschantz [@alec-tschantz](https://github.com/alec-tschantz)
 - Miguel de Prado [@praesc](https://github.com/praesc)
