@@ -5,6 +5,7 @@ on:
     branches:
       - main
     paths:
+      - 'examples/**'
       - 'mkdocs.yml'
       - 'docs-mkdocs/**'
       - 'scripts/docs_*.sh'
@@ -16,6 +17,7 @@ on:
       - '.github/workflows/docs.yml'
   pull_request:
     paths:
+      - 'examples/**'
       - 'mkdocs.yml'
       - 'docs-mkdocs/**'
       - 'scripts/docs_*.sh'
