@@ -70,6 +70,8 @@ docs = [
 nb = [
     'mediapy>=1.2.4',
     'pygraphviz>=1.14',
+    "scikit-image>=0.25.2",
+    "scikit-learn>=1.7.2",
 ]
 
 modelfit = [
