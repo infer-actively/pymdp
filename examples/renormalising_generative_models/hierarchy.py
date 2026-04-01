@@ -16,6 +16,8 @@ The number of levels is derived automatically from the config:
 
 import math
 
+import jax
+import jax.random as jr
 import numpy as np
 from jax import numpy as jnp
 from typing import NamedTuple
@@ -718,9 +720,9 @@ class RGMHierarchy:
     def generate(
         self,
         digit: int | None = None,
-        prior: np.ndarray | None = None,
+        prior: jnp.ndarray | None = None,
         sample: bool = False,
-        rng: np.random.Generator | None = None,
+        key: jax.Array | None = None,
     ) -> tuple[jnp.ndarray, jnp.ndarray]:
         """Top-down generation: digit prior → reconstructed image.
 
@@ -731,7 +733,7 @@ class RGMHierarchy:
             digit: target digit (builds uniform prior over matching top states)
             prior: explicit top-level prior distribution (overrides digit)
             sample: if True, sample top state from prior; else argmax
-            rng: numpy random generator for sampling
+            key: JAX PRNG key for sampling (required if sample=True)
 
         Returns:
             (image, observations) where image is (1, C, H, W) and
@@ -742,25 +744,25 @@ class RGMHierarchy:
 
         # Build top-level prior from the classification agent's A matrix
         # A[0] shape: (1, n_top_states, n_classes) — P(top_state | digit)
-        cls_A = np.asarray(self.cls_agent.A[0][0])  # (n_top_states, n_classes)
+        cls_A = jnp.asarray(self.cls_agent.A[0][0])  # (n_top_states, n_classes)
         if prior is not None:
-            top_prior = np.asarray(prior, dtype=np.float64)
+            top_prior = jnp.asarray(prior)
         elif digit is not None:
             # P(top_state | digit=d), read from the classification A column
-            top_prior = cls_A[:, digit].astype(np.float64)
+            top_prior = cls_A[:, digit]
             if top_prior.sum() == 0:
                 raise ValueError(f"No top-level states found for digit {digit}")
-            top_prior /= top_prior.sum()
+            top_prior = top_prior / top_prior.sum()
         else:
-            top_prior = np.ones(n_top, dtype=np.float64) / n_top
+            top_prior = jnp.ones(n_top) / n_top
 
         # Select top-level state
         if sample:
-            if rng is None:
-                rng = np.random.default_rng()
-            s_top = rng.choice(n_top, p=top_prior)
+            if key is None:
+                key = jr.PRNGKey(0)
+            s_top = int(jr.choice(key, n_top, p=top_prior))
         else:
-            s_top = int(np.argmax(top_prior))
+            s_top = int(jnp.argmax(top_prior))
 
         # Top → L1: expand through hierarchical levels in reverse
         grid = np.array([[s_top]], dtype=np.int32)
