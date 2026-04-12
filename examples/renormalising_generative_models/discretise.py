@@ -127,13 +127,30 @@ def compute_svd_basis_overlapping(
     tw_flat = tile_weights.reshape(ng * ng, n_pixels)
     weighted = flat[None, :, :] * tw_flat[:, None, :]  # (ng*ng, N, n_pixels)
 
+    # Pre-compute L per tile in numpy: L = min(N, n_active_pixels_in_tile).
+    # MATLAB's spm_svd uses length(s) = min(T, len(G{g})) ≈ min(N, ~48) not k=16.
+    # Tile weights are config-static (computed in numpy), so this is free.
+    tw_np = np.array(tw_flat)
+    L_per_tile = np.minimum(N, (tw_np > 0).sum(axis=1)).astype(np.float32)  # (ng*ng,)
+
     mean = weighted.mean(axis=1)  # (ng*ng, n_pixels)
     centred = weighted - mean[:, None, :]  # (ng*ng, N, n_pixels)
+
+    # Pack L alongside data so we keep a single-argument vmap (avoids a new
+    # XLA compilation path that can upset cuSolver handle allocation).
+    # centred_and_L: (ng*ng, N+1, n_pixels) — last "image" row carries L broadcast.
+    L_row = jnp.broadcast_to(
+        jnp.array(L_per_tile)[:, None, None], (ng * ng, 1, n_pixels)
+    )
+    centred_packed = jnp.concatenate([centred, L_row], axis=1)  # (ng*ng, N+1, n_pixels)
 
     # SVD returns at most min(N, n_pixels) components; pad to k
     max_rank = min(N, n_pixels)
 
-    def svd_one(data):
+    def svd_one(data_packed):
+        data = data_packed[:N, :]   # (N, n_pixels)
+        L = data_packed[N, 0]       # scalar L for this tile
+
         _, S_full, Vh = jnp.linalg.svd(data, full_matrices=False)
         # Vh: (max_rank, n_pixels), pad to (k, n_pixels) if max_rank < k
         V_raw = Vh.T  # (n_pixels, max_rank)
@@ -144,10 +161,10 @@ def compute_svd_basis_overlapping(
         S = S.at[:nk].set(S_full[:nk])
 
         # Adaptive mode selection matching spm_svd:
-        # eigenvalue_i * n / sum(eigenvalues) > 1/su
+        # eigenvalue_i * L / sum(eigenvalues) > 1/su
+        # L = min(N_images, n_active_pixels_in_tile), matching MATLAB's length(s)
         threshold = 1.0 / config.sv_threshold
         eigvals = jnp.square(S)
-        L = eigvals.shape[0]
         normalized = eigvals * (L / jnp.maximum(eigvals.sum(), 1e-12))
         mode_mask = (normalized > threshold).astype(jnp.float32)
 
@@ -162,7 +179,7 @@ def compute_svd_basis_overlapping(
 
         return V, S, n_modes
 
-    V_flat, S_flat, n_modes_flat = vmap(svd_one)(centred)
+    V_flat, S_flat, n_modes_flat = vmap(svd_one)(centred_packed)
     # V_flat: (ng*ng, n_pixels, k), S_flat: (ng*ng, k)
     V = V_flat.reshape(ng, ng, n_pixels, k)
     S = S_flat.reshape(ng, ng, k)

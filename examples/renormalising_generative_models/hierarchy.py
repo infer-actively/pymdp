@@ -3,8 +3,10 @@
 Level 1: batched pymdp Agent (one per patch location) mapping discrete SVD
 observations to learned patch states.
 
-Levels 2+: generic hierarchical agents that pool 2x2 blocks of child MAP
-states into parent states via unique child-state tuples.
+Levels 2+: generic hierarchical agents that pool 2x2 blocks of child
+posterior beliefs into parent states. Inference passes soft probability
+distributions between levels instead of MAP (argmax) states, preserving
+uncertainty and avoiding the argmax bottleneck.
 
 Classification level: maps top-level states to digit classes via a soft
 likelihood learned from exemplar label counts.
@@ -21,6 +23,8 @@ import jax.random as jr
 import numpy as np
 from jax import numpy as jnp
 from typing import NamedTuple
+
+import equinox as eqx
 
 from pymdp.agent import Agent
 from pymdp.control import Policies
@@ -160,6 +164,9 @@ def _build_agent(
     max_states: int,
     n_mod: int,
     valid_mask: jnp.ndarray,
+    learn_A: bool = False,
+    pA: list[jnp.ndarray] | None = None,
+    categorical_obs: bool = False,
 ) -> Agent:
     """Build a batched pymdp Agent with identity transitions and uniform prior.
 
@@ -169,6 +176,10 @@ def _build_agent(
         max_states: hidden state dimension
         n_mod: number of observation modalities
         valid_mask: (n_patches, max_states) boolean mask
+        learn_A: if True, enable Dirichlet learning for A matrices
+        pA: Dirichlet concentration parameters (required when learn_A=True)
+        categorical_obs: if True, observations are probability vectors (n_obs,) rather
+            than integer indices; required for passing soft beliefs between levels
 
     Returns:
         Configured Agent
@@ -185,6 +196,7 @@ def _build_agent(
         A=A,
         B=[B_eye],
         D=[D_vals],
+        pA=pA,
         A_dependencies=[[0]] * n_mod,
         B_dependencies=[[0]],
         policies=Policies(jnp.zeros((1, 1, 1), dtype=jnp.int32)),
@@ -192,6 +204,8 @@ def _build_agent(
         batch_size=n_patches,
         inference_algo="fpi",
         num_iter=16,
+        learn_A=learn_A,
+        categorical_obs=categorical_obs,
     )
 
 
@@ -236,6 +250,162 @@ def _infer_beliefs(
     qs = agent.infer_states(obs_list, agent.D)
     beliefs = qs[0][:, 0, :]
     return jnp.where(valid_mask, beliefs, 0.0)
+
+
+# ---------------------------------------------------------------------------
+# Mutual information and bidirectional message passing helpers
+# ---------------------------------------------------------------------------
+
+
+def _mi_from_pA(pA_list: list[jnp.ndarray]) -> float:
+    """Compute MI I(obs; states) from a list of Dirichlet parameter arrays.
+
+    For each modality array (n_patches, n_obs, n_states):
+      - Normalize each patch independently to a joint distribution
+      - Compute MI = H(o) + H(s) - H(o,s) per patch
+      - Sum MI across patches
+    Then sum across modalities.
+    Matches spm_MI from SPM's DEM_MNIST_RGM.m.
+    """
+    total_mi = 0.0
+    for A_m in pA_list:
+        # A_m shape: (n_patches, n_obs, n_states)
+        totals = A_m.sum(axis=(1, 2), keepdims=True)  # (n_patches, 1, 1)
+        A_norm = A_m / jnp.clip(totals, 1e-16, None)  # (n_patches, n_obs, n_states)
+        log_A = jnp.log(jnp.clip(A_norm, 1e-16, None))
+        joint = jnp.sum(A_norm * log_A, axis=(1, 2))  # (n_patches,)
+        p_s = A_norm.sum(axis=1)  # (n_patches, n_states)
+        p_o = A_norm.sum(axis=2)  # (n_patches, n_obs)
+        h_s = jnp.sum(p_s * jnp.log(jnp.clip(p_s, 1e-16, None)), axis=1)
+        h_o = jnp.sum(p_o * jnp.log(jnp.clip(p_o, 1e-16, None)), axis=1)
+        total_mi += float(jnp.sum(joint - h_s - h_o))
+    return total_mi
+
+
+def compute_level_mi(agent: Agent) -> float:
+    """Compute MI I(observations; states) for an agent level.
+
+    Uses pA (Dirichlet parameters) if available, otherwise falls back to A.
+
+    Args:
+        agent: Agent whose pA (or A) matrices define the joint distribution
+
+    Returns:
+        Mutual information in nats
+    """
+    src = agent.pA if agent.pA is not None else agent.A
+    return _mi_from_pA(src)
+
+
+def _mi_gated_update(
+    agent_prior: Agent,
+    agent_posterior: Agent,
+    beta: float = 512.0,
+    eta: float = 512.0,
+) -> Agent:
+    """Apply MI-gated asymptotic Dirichlet update, following SPM's spm_MDP_VB_XXX.
+
+    Computes MI for the prior and posterior Dirichlet parameters and gates the
+    update with a softmax over the two MI values:
+
+        Pa = softmax(beta * [MI(pa), MI(qa)])
+        pA_new = (Pa[0]*pa + Pa[1]*qa) * eta / (eta + Pa[1])
+
+    With beta=512 the gate is near-binary: the posterior is accepted only if
+    MI(qa) > MI(pa), i.e., the new example measurably increases the mutual
+    information of the learned A matrix. The eta term prevents unbounded
+    accumulation (asymptotic forgetting).
+
+    Args:
+        agent_prior: Agent before Dirichlet update (holds pa = prior pA)
+        agent_posterior: Agent returned by infer_parameters (holds qa = posterior pA)
+        beta: softmax sharpness (SPM uses 512)
+        eta: asymptote / forgetting parameter (SPM uses 512)
+
+    Returns:
+        Agent with gated pA and recomputed A
+    """
+    pa = agent_prior.pA
+    qa = agent_posterior.pA
+
+    mi_pa = _mi_from_pA(pa)
+    mi_qa = _mi_from_pA(qa)
+
+    # Softmax gate
+    mi_arr = jnp.array([mi_pa, mi_qa]) * beta
+    Pa = jnp.exp(mi_arr - mi_arr.max())
+    Pa = Pa / Pa.sum()
+    Pa0, Pa1 = float(Pa[0]), float(Pa[1])
+
+    # Gated asymptotic blend
+    scale = eta / (eta + Pa1)
+    pA_new = [(Pa0 * pa_m + Pa1 * qa_m) * scale for pa_m, qa_m in zip(pa, qa)]
+
+    # Recompute A: normalize along obs axis (axis 1)
+    A_new = [pa_m / pa_m.sum(axis=1, keepdims=True) for pa_m in pA_new]
+
+    return eqx.tree_at(lambda x: (x.A, x.pA), agent_posterior, (A_new, pA_new))
+
+
+def _top_down_D_from_cls(
+    cls_A: list[jnp.ndarray],
+    q_cls: jnp.ndarray,
+) -> jnp.ndarray:
+    """Top-down D for the top hierarchical level from classification beliefs.
+
+    Computes P(top_state | data) = sum_d P(top_state | digit=d) * P(digit=d | data).
+
+    Args:
+        cls_A: classification agent A matrices; cls_A[0] shape (1, n_top_states, n_classes)
+        q_cls: (1, n_classes) classification posterior
+
+    Returns:
+        (1, n_top_states) top-down prior for the top hierarchical level
+    """
+    D_top = jnp.einsum('sc,c->s', cls_A[0][0], q_cls[0])  # (n_top_states,)
+    return D_top[None, :]  # (1, n_top_states)
+
+
+def _top_down_D_hierarchical(
+    parent_A: list[jnp.ndarray],
+    q_parent: jnp.ndarray,
+    child_grid: int,
+    max_child_states: int,
+) -> jnp.ndarray:
+    """Top-down D for a child hierarchical level from parent beliefs.
+
+    For each parent location, marginalises P(child_obs | parent_state) over the
+    parent posterior to produce a top-down prediction over child states.
+
+    Modality ordering matches extract_2x2_children:
+    (0,0)=top-left, (0,1)=top-right, (1,0)=bottom-left, (1,1)=bottom-right.
+
+    Args:
+        parent_A: list of 4 arrays, each (n_parent_patches, max_child_states, max_parent_states)
+        q_parent: (n_parent_patches, max_parent_states) parent posterior
+        child_grid: child grid size (= 2 * parent_grid)
+        max_child_states: max states at child level
+
+    Returns:
+        (n_child_patches, max_child_states) top-down D prior for child level
+    """
+    n_parent = q_parent.shape[0]
+    parent_grid = child_grid // 2
+    n_child = child_grid * child_grid
+    offsets = [(0, 0), (0, 1), (1, 0), (1, 1)]
+
+    parent_rows = jnp.arange(n_parent) // parent_grid
+    parent_cols = jnp.arange(n_parent) % parent_grid
+
+    D_child = jnp.zeros((n_child, max_child_states))
+    for m, (di, dj) in enumerate(offsets):
+        pred_m = jnp.einsum('pcs,ps->pc', parent_A[m], q_parent)  # (n_parent, max_child)
+        child_rows = 2 * parent_rows + di
+        child_cols = 2 * parent_cols + dj
+        child_idx = child_rows * child_grid + child_cols  # (n_parent,)
+        D_child = D_child.at[child_idx, :].set(pred_m)
+
+    return D_child
 
 
 # ---------------------------------------------------------------------------
@@ -290,6 +460,27 @@ def create_patch_agents(
     return agent, valid_mask
 
 
+def infer_patch_beliefs(
+    agent: Agent,
+    valid_mask: jnp.ndarray,
+    observations: jnp.ndarray,
+) -> jnp.ndarray:
+    """Run L1 inference and return soft posterior beliefs.
+
+    Args:
+        agent: Batched Agent from create_patch_agents()
+        valid_mask: (n_patches, max_states) boolean mask
+        observations: (n_groups, n_groups, max_components) single image observations
+
+    Returns:
+        (n_patches, max_states) soft posterior beliefs with padded states zeroed
+    """
+    n_i, n_j, n_mod = observations.shape
+    obs_flat = observations.reshape(n_i * n_j, n_mod)
+    obs_list = [obs_flat[:, m] for m in range(n_mod)]
+    return _infer_beliefs(agent, valid_mask, obs_list)
+
+
 def infer_patch_states(
     agent: Agent,
     valid_mask: jnp.ndarray,
@@ -305,10 +496,9 @@ def infer_patch_states(
     Returns:
         (n_groups, n_groups) MAP state indices
     """
-    n_i, n_j, n_mod = observations.shape
-    obs_flat = observations.reshape(n_i * n_j, n_mod)
-    obs_list = [obs_flat[:, m] for m in range(n_mod)]
-    return _infer_map_states(agent, valid_mask, obs_list, (n_i, n_j))
+    beliefs = infer_patch_beliefs(agent, valid_mask, observations)
+    masked = jnp.where(valid_mask, beliefs, -jnp.inf)
+    return jnp.argmax(masked, axis=1).reshape(observations.shape[0], observations.shape[1])
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +584,10 @@ def create_hierarchical_agents(
         A_np[m_idx, flat_idx, patterns[:n_s, :].T, s_idx] = 1.0
     A = [jnp.array(A_np[m]) for m in range(n_mod)]
 
-    agent = _build_agent(A, n_patches, max_states, n_mod, valid_mask)
+    # categorical_obs=True: observations are soft probability vectors (child beliefs),
+    # not integer MAP states. This lets agent.infer_states and infer_parameters handle
+    # soft child posteriors natively via expected log-likelihood.
+    agent = _build_agent(A, n_patches, max_states, n_mod, valid_mask, categorical_obs=True)
     return agent, valid_mask
 
 
@@ -404,6 +597,11 @@ def infer_hierarchical_states(
     child_map_states: jnp.ndarray,
 ) -> jnp.ndarray:
     """Run inference at one hierarchical level for a single image.
+
+    Converts integer child MAP states to one-hot vectors before passing to the
+    agent, which is built with ``categorical_obs=True``. One-hot is a special
+    case of a probability distribution and gives identical results to integer
+    indexing.
 
     Args:
         agent: Batched Agent from create_hierarchical_agents()
@@ -415,9 +613,42 @@ def infer_hierarchical_states(
     """
     child_grid = child_map_states.shape[0]
     parent_grid = child_grid // 2
-    obs_block = extract_2x2_children(child_map_states)
-    obs_list = [obs_block[:, m] for m in range(4)]
+    obs_block = extract_2x2_children(child_map_states)  # (n_parent, 4) integer indices
+    max_child_states = agent.num_obs[0]
+    obs_list = [
+        jax.nn.one_hot(obs_block[:, m], max_child_states)
+        for m in range(4)
+    ]
     return _infer_map_states(agent, valid_mask, obs_list, (parent_grid, parent_grid))
+
+
+def _extract_soft_obs(child_beliefs: jnp.ndarray, child_grid: int) -> list[jnp.ndarray]:
+    """Build a 4-element soft obs_list for a hierarchical level from child beliefs.
+
+    Each element corresponds to one child position in a 2x2 block (TL, TR, BL, BR).
+    The result is passed directly to agent.infer_states for a categorical_obs=True agent.
+
+    Args:
+        child_beliefs: (n_child_patches, max_child_states) soft child posteriors
+        child_grid: child grid size (n_child_patches = child_grid^2)
+
+    Returns:
+        list of 4 arrays each (n_parent_patches, max_child_states)
+    """
+    n_parent_grid = child_grid // 2
+    n_parent = n_parent_grid * n_parent_grid
+    offsets = [(0, 0), (0, 1), (1, 0), (1, 1)]
+
+    parent_rows = jnp.arange(n_parent) // n_parent_grid
+    parent_cols = jnp.arange(n_parent) % n_parent_grid
+
+    obs_list = []
+    for di, dj in offsets:
+        child_rows = 2 * parent_rows + di
+        child_cols = 2 * parent_cols + dj
+        child_idx = child_rows * child_grid + child_cols  # (n_parent,)
+        obs_list.append(child_beliefs[child_idx])  # (n_parent, max_child_states)
+    return obs_list
 
 
 # ---------------------------------------------------------------------------
@@ -460,7 +691,11 @@ def create_classification_agent(
 
     A = [jnp.array(A_np)]
     valid_mask = jnp.ones((1, n_classes), dtype=bool)
-    agent = _build_agent(A, n_patches=1, max_states=n_classes, n_mod=1, valid_mask=valid_mask)
+    # categorical_obs=True: observation is a soft distribution over top-level states
+    agent = _build_agent(
+        A, n_patches=1, max_states=n_classes, n_mod=1, valid_mask=valid_mask,
+        categorical_obs=True,
+    )
     return agent, valid_mask
 
 
@@ -479,7 +714,8 @@ def infer_classification(
     Returns:
         (1, 1) MAP digit class index
     """
-    obs_list = [jnp.array([top_state])]
+    n_top_states = agent.num_obs[0]
+    obs_list = [jax.nn.one_hot(jnp.array([top_state]), n_top_states)]
     return _infer_map_states(agent, valid_mask, obs_list, (1, 1))
 
 
@@ -675,10 +911,11 @@ class RGMHierarchy:
     def classify(
         self, images: jnp.ndarray
     ) -> tuple[np.ndarray, np.ndarray, jnp.ndarray]:
-        """Bottom-up inference: images → digit predictions.
+        """Bidirectional inference: images → digit predictions.
 
-        Runs the full hierarchy bottom-up, then feeds each top-level state
-        into the classification agent to get a soft posterior over digit classes.
+        Runs the full hierarchy bottom-up, then applies a top-down refinement
+        pass using the classification posterior to sharpen beliefs, then
+        re-classifies with the refined top-level beliefs.
 
         Args:
             images: (N, H, W) or (N, C, H, W) preprocessed images
@@ -691,29 +928,91 @@ class RGMHierarchy:
         """
         observations = encode_images_overlapping(images, self.basis)
         N = observations.shape[0]
+        n_hier = len(self.hierarchical_levels)
         predicted_digits = np.empty(N, dtype=np.int32)
         top_states = np.empty(N, dtype=np.int32)
         all_beliefs = []
 
         for idx in range(N):
-            # L1 patch inference
-            map_states = infer_patch_states(
+            # === Bottom-up pass ===
+            # L1: store integer obs for top-down re-inference
+            n_i, n_j, n_mod = observations[idx].shape
+            obs_flat = observations[idx].reshape(n_i * n_j, n_mod)
+            l1_obs_list = [obs_flat[:, m] for m in range(n_mod)]
+
+            child_beliefs = infer_patch_beliefs(
                 self.levels[0].agent, self.levels[0].valid_mask, observations[idx]
             )
-            # Hierarchical levels (skip classification level)
-            for level in self.hierarchical_levels[1:]:
-                map_states = infer_hierarchical_states(
-                    level.agent, level.valid_mask, map_states
-                )
-            s_top = int(map_states[0, 0])
-            top_states[idx] = s_top
+            level_soft_beliefs = [child_beliefs]
+            level_obs_lists = [l1_obs_list]
 
-            # Classification level
-            obs_list = [jnp.array([s_top])]
-            beliefs = _infer_beliefs(self.cls_agent, self.cls_valid_mask, obs_list)
-            beliefs = beliefs[0]  # (n_classes,) — single batch element
-            all_beliefs.append(beliefs)
-            predicted_digits[idx] = int(jnp.argmax(beliefs))
+            # L2+ hierarchical: soft beliefs as categorical obs → soft parent beliefs
+            for lv_idx in range(1, n_hier):
+                level = self.levels[lv_idx]
+                child_grid = int(round(child_beliefs.shape[0] ** 0.5))
+                obs_list = _extract_soft_obs(child_beliefs, child_grid)
+                level_obs_lists.append(obs_list)
+                qs = level.agent.infer_states(obs_list, level.agent.D)
+                child_beliefs = jnp.where(level.valid_mask, qs[0][:, 0, :], 0.0)
+                level_soft_beliefs.append(child_beliefs)
+
+            # === Initial classification ===
+            qs_cls = self.cls_agent.infer_states([child_beliefs], self.cls_agent.D)
+            q_cls = qs_cls[0][:, 0, :]  # (1, n_classes)
+
+            # === Top-down refinement pass ===
+            refined_soft = [None] * n_hier
+
+            # Classification → top hierarchical level
+            D_top = _top_down_D_from_cls(self.cls_agent.A, q_cls)
+            child_input = level_soft_beliefs[n_hier - 2] if n_hier > 1 else level_soft_beliefs[0]
+            child_grid_top = int(round(child_input.shape[0] ** 0.5))
+            obs_top = _extract_soft_obs(child_input, child_grid_top)
+            qs_top_refined = self.levels[n_hier - 1].agent.infer_states(obs_top, [D_top])
+            refined_soft[n_hier - 1] = jnp.where(
+                self.levels[n_hier - 1].valid_mask, qs_top_refined[0][:, 0, :], 0.0
+            )
+
+            # Propagate top-down through remaining hierarchical levels
+            for lv_idx in range(n_hier - 2, -1, -1):
+                parent_lv = lv_idx + 1
+                q_parent = refined_soft[parent_lv]
+                child_level = self.levels[lv_idx]
+                n_child_patches = child_level.agent.batch_size
+                child_grid = int(round(n_child_patches ** 0.5))
+                max_child_states = child_level.agent.num_states[0]
+
+                D_child = _top_down_D_hierarchical(
+                    self.levels[parent_lv].agent.A,
+                    q_parent,
+                    child_grid,
+                    max_child_states,
+                )
+
+                if lv_idx == 0:
+                    qs_l1_refined = child_level.agent.infer_states(
+                        level_obs_lists[0], [D_child]
+                    )
+                    refined_soft[0] = jnp.where(
+                        child_level.valid_mask, qs_l1_refined[0][:, 0, :], 0.0
+                    )
+                else:
+                    child_input = level_soft_beliefs[lv_idx - 1]
+                    child_grid_here = int(round(child_input.shape[0] ** 0.5))
+                    obs_here = _extract_soft_obs(child_input, child_grid_here)
+                    qs_refined = child_level.agent.infer_states(obs_here, [D_child])
+                    refined_soft[lv_idx] = jnp.where(
+                        child_level.valid_mask, qs_refined[0][:, 0, :], 0.0
+                    )
+
+            # === Final classification using refined top-level beliefs ===
+            refined_top = refined_soft[n_hier - 1]
+            qs_cls_final = self.cls_agent.infer_states([refined_top], self.cls_agent.D)
+            cls_beliefs = qs_cls_final[0][:, 0, :]  # (1, n_classes)
+
+            top_states[idx] = int(jnp.argmax(refined_top[0]))
+            all_beliefs.append(cls_beliefs[0])
+            predicted_digits[idx] = int(jnp.argmax(cls_beliefs[0]))
 
         return predicted_digits, top_states, jnp.stack(all_beliefs)
 
@@ -776,3 +1075,233 @@ class RGMHierarchy:
         image = decode_observations_overlapping(obs_jnp, self.basis)
 
         return image, obs_jnp
+
+    def train(
+        self,
+        x_train: jnp.ndarray,
+        y_train: np.ndarray,
+        concentration_lower: float = 1 / 16,
+        concentration_cls: float = 1 / 128,
+        lr_pA: float = 1.0,
+        beta: float = 512.0,
+        eta: float = 512.0,
+        log_every: int = 500,
+    ) -> dict:
+        """Parametric training via sequential Dirichlet updates with soft beliefs
+        and MI-gated learning, following SPM's DEM_MNIST_RGM.m.
+
+        Inference uses soft beliefs throughout: child posterior distributions are
+        passed between levels via expected log-likelihood rather than MAP states,
+        removing the argmax bottleneck that amplifies errors during learning.
+
+        For each training image:
+        1. Bottom-up soft pass: L1 → soft beliefs, L2+ → soft beliefs via expected
+           log-likelihood via ``agent.infer_states`` with ``categorical_obs=True``.
+        2. Classification: soft top beliefs + supervised one-hot D → digit posterior.
+        3. Top-down pass: propagate classification posterior back through all levels,
+           refining beliefs using top-down D priors (soft at L2+, infer_states at L1).
+        4. MI-gated Dirichlet updates at every level:
+               Pa = softmax(beta * [MI(pa), MI(qa)])
+               pA_new = (Pa[0]*pa + Pa[1]*qa) * eta / (eta + Pa[1])
+
+        Args:
+            x_train: (N, H, W) preprocessed training images
+            y_train: (N,) integer digit labels
+            concentration_lower: initial Dirichlet concentration for L1/L2+ levels
+            concentration_cls: initial Dirichlet concentration for the classification level
+            lr_pA: learning rate passed to infer_parameters
+            beta: softmax sharpness for MI gate (SPM uses 512)
+            eta: asymptote / forgetting parameter (SPM uses 512)
+            log_every: print running accuracy every this many images
+
+        Returns:
+            dict with running_accuracy, mi_history, mi_checkpoints, mi_upper_bounds
+        """
+        # --- Phase A: initialize learnable agents at ALL levels ---
+        for lv_idx, level in enumerate(self.levels):
+            is_cls = lv_idx == len(self.levels) - 1
+            concentration = concentration_cls if is_cls else concentration_lower
+            pA = [A_m + concentration for A_m in level.agent.A]
+            updated_agent = _build_agent(
+                list(level.agent.A),
+                level.agent.batch_size,
+                level.agent.num_states[0],
+                level.agent.num_modalities,
+                level.valid_mask,
+                learn_A=True,
+                pA=pA,
+                categorical_obs=level.agent.categorical_obs,
+            )
+            self.levels[lv_idx] = RGMLevel(updated_agent, level.valid_mask, level.stats)
+
+        # --- Phase B: sequential training loop ---
+        n_hier = len(self.hierarchical_levels)
+        running_accuracy = []
+        correct = 0
+        mi_history = []
+        mi_checkpoints = []
+
+        # Record MI at initialisation (before any images)
+        mi_history.append([compute_level_mi(lv.agent) for lv in self.levels])
+        mi_checkpoints.append(0)
+
+        for img_idx in range(len(x_train)):
+            obs_image = encode_images_overlapping(
+                x_train[img_idx : img_idx + 1], self.basis
+            )
+            label = int(y_train[img_idx])
+
+            # --- Bottom-up soft pass ---
+            # L1: integer SVD obs → soft beliefs; keep obs_list for Dirichlet update
+            n_i, n_j, n_mod = obs_image[0].shape
+            obs_flat = obs_image[0].reshape(n_i * n_j, n_mod)
+            l1_obs_list = [obs_flat[:, m] for m in range(n_mod)]
+            qs_l1 = self.levels[0].agent.infer_states(l1_obs_list, self.levels[0].agent.D)
+            child_beliefs = jnp.where(self.levels[0].valid_mask, qs_l1[0][:, 0, :], 0.0)
+
+            level_soft_beliefs = [child_beliefs]  # per hierarchical level
+            level_obs_lists = [l1_obs_list]        # obs per level (int for L1, soft for L2+)
+
+            # L2+ hierarchical: pass soft child beliefs as categorical obs
+            for lv_idx in range(1, n_hier):
+                level = self.levels[lv_idx]
+                child_grid = int(round(child_beliefs.shape[0] ** 0.5))
+
+                # Build soft obs_list from child beliefs for this level
+                obs_list = _extract_soft_obs(child_beliefs, child_grid)
+                level_obs_lists.append(obs_list)
+
+                # Inference: categorical_obs=True agent receives soft obs natively
+                qs = level.agent.infer_states(obs_list, level.agent.D)
+                child_beliefs = jnp.where(level.valid_mask, qs[0][:, 0, :], 0.0)
+                level_soft_beliefs.append(child_beliefs)
+
+            # child_beliefs is now (1, max_top_states)
+
+            # --- Unsupervised prediction (for accuracy tracking) ---
+            cls_level = self.levels[-1]
+            qs_cls_pred = cls_level.agent.infer_states([child_beliefs], cls_level.agent.D)
+            pred = int(jnp.argmax(qs_cls_pred[0][:, 0, :][0]))
+            correct += int(pred == label)
+            running_accuracy.append(correct / (img_idx + 1))
+
+            # --- Supervised classification with one-hot D prior (for Dirichlet update) ---
+            supervised_D = [jnp.zeros((1, self.n_classes)).at[0, label].set(1.0)]
+            qs_cls = cls_level.agent.infer_states([child_beliefs], supervised_D)
+            q_cls = qs_cls[0][:, 0, :]  # (1, n_classes)
+
+            # --- Top-down pass: refine beliefs using cls posterior ---
+            refined_soft = [None] * n_hier  # refined (n_patches, max_states) per level
+
+            # Classification → top hierarchical level
+            D_top = _top_down_D_from_cls(cls_level.agent.A, q_cls)
+            child_input = level_soft_beliefs[n_hier - 2] if n_hier > 1 else level_soft_beliefs[0]
+            child_grid_top = int(round(child_input.shape[0] ** 0.5))
+            obs_top = _extract_soft_obs(child_input, child_grid_top)
+            qs_top_refined = self.levels[n_hier - 1].agent.infer_states(obs_top, [D_top])
+            refined_soft[n_hier - 1] = jnp.where(
+                self.levels[n_hier - 1].valid_mask, qs_top_refined[0][:, 0, :], 0.0
+            )
+
+            # Propagate top-down through remaining hierarchical levels
+            for lv_idx in range(n_hier - 2, -1, -1):
+                parent_lv = lv_idx + 1
+                q_parent = refined_soft[parent_lv]
+
+                child_level = self.levels[lv_idx]
+                n_child_patches = child_level.agent.batch_size
+                child_grid = int(round(n_child_patches ** 0.5))
+                max_child_states = child_level.agent.num_states[0]
+
+                D_child = _top_down_D_hierarchical(
+                    self.levels[parent_lv].agent.A,
+                    q_parent,
+                    child_grid,
+                    max_child_states,
+                )
+
+                if lv_idx == 0:
+                    # L1: integer obs with top-down D prior (categorical_obs=False)
+                    qs_l1_refined = child_level.agent.infer_states(
+                        level_obs_lists[0], [D_child]
+                    )
+                    refined_soft[0] = jnp.where(
+                        child_level.valid_mask, qs_l1_refined[0][:, 0, :], 0.0
+                    )
+                else:
+                    # L2+: soft child beliefs with top-down D prior (categorical_obs=True)
+                    child_input = level_soft_beliefs[lv_idx - 1]
+                    child_grid_here = int(round(child_input.shape[0] ** 0.5))
+                    obs_here = _extract_soft_obs(child_input, child_grid_here)
+                    qs_refined = child_level.agent.infer_states(obs_here, [D_child])
+                    refined_soft[lv_idx] = jnp.where(
+                        child_level.valid_mask, qs_refined[0][:, 0, :], 0.0
+                    )
+
+            # --- MI-gated Dirichlet updates using top-down refined beliefs ---
+            for lv_idx in range(n_hier):
+                level = self.levels[lv_idx]
+                # beliefs_A: list of (batch, T, states) — add T=1 dim
+                beliefs_A = [refined_soft[lv_idx][:, None, :]]
+                # obs: for L1 integers (batch, 1); for L2+ soft (batch, 1, n_obs)
+                if lv_idx == 0:
+                    obs_with_time = [o[:, None] for o in level_obs_lists[0]]
+                else:
+                    obs_with_time = [o[:, None, :] for o in level_obs_lists[lv_idx]]
+                agent_posterior = level.agent.infer_parameters(
+                    beliefs_A=beliefs_A,
+                    observations=obs_with_time,
+                    actions=None,
+                    lr_pA=lr_pA,
+                )
+                updated_agent = _mi_gated_update(level.agent, agent_posterior, beta, eta)
+                self.levels[lv_idx] = RGMLevel(
+                    updated_agent, level.valid_mask, level.stats
+                )
+
+            # Classification level
+            cls_level = self.levels[-1]
+            qs_cls_for_update = [q_cls[:, None, :]]  # (1, 1, n_classes)
+            # soft top beliefs as obs; shape (1, 1, max_top_states)
+            cls_obs_with_time = [child_beliefs[:, None, :]]
+            cls_posterior = cls_level.agent.infer_parameters(
+                beliefs_A=qs_cls_for_update,
+                observations=cls_obs_with_time,
+                actions=None,
+                lr_pA=lr_pA,
+            )
+            updated_cls = _mi_gated_update(cls_level.agent, cls_posterior, beta, eta)
+            self.levels[-1] = RGMLevel(updated_cls, cls_level.valid_mask, cls_level.stats)
+
+            if (img_idx + 1) % log_every == 0:
+                mi_snap = [compute_level_mi(lv.agent) for lv in self.levels]
+                mi_history.append(mi_snap)
+                mi_checkpoints.append(img_idx + 1)
+                mi_str = "  ".join(
+                    f"L{i+1}={v:.3f}" if i < n_hier else f"cls={v:.3f}"
+                    for i, v in enumerate(mi_snap)
+                )
+                print(
+                    f"  [{img_idx + 1}/{len(x_train)}] "
+                    f"acc={running_accuracy[-1]:.3f}  MI: {mi_str}"
+                )
+
+        # MI upper bounds: sum over modalities and patches of min(log(n_obs_m), log(n_states))
+        # Matches the aggregation in _mi_from_pA (per-patch, per-modality summation).
+        mi_upper_bounds = []
+        for lv in self.levels:
+            n_patches = lv.agent.batch_size
+            n_states = lv.agent.num_states[0]
+            bound = n_patches * sum(
+                min(np.log(n_obs_m), np.log(n_states))
+                for n_obs_m in lv.agent.num_obs
+            )
+            mi_upper_bounds.append(float(bound))
+
+        print(f"Training complete. Final running accuracy: {running_accuracy[-1]:.3f}")
+        return {
+            "running_accuracy": running_accuracy,
+            "mi_history": mi_history,
+            "mi_checkpoints": mi_checkpoints,
+            "mi_upper_bounds": mi_upper_bounds,
+        }
