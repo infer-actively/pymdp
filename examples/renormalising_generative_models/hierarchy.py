@@ -16,9 +16,11 @@ The number of levels is derived automatically from the config:
     n_levels = log2(n_groups) + 1
 """
 
+import functools
 import math
 
 import jax
+import jax.lax as lax
 import jax.random as jr
 import numpy as np
 from jax import numpy as jnp
@@ -257,7 +259,7 @@ def _infer_beliefs(
 # ---------------------------------------------------------------------------
 
 
-def _mi_from_pA(pA_list: list[jnp.ndarray]) -> float:
+def _mi_from_pA(pA_list: list[jnp.ndarray]) -> jnp.ndarray:
     """Compute MI I(obs; states) from a list of Dirichlet parameter arrays.
 
     For each modality array (n_patches, n_obs, n_states):
@@ -266,8 +268,10 @@ def _mi_from_pA(pA_list: list[jnp.ndarray]) -> float:
       - Sum MI across patches
     Then sum across modalities.
     Matches spm_MI from SPM's DEM_MNIST_RGM.m.
+
+    Returns a scalar jnp.ndarray (JIT-safe; no device→host sync).
     """
-    total_mi = 0.0
+    per_mod = []
     for A_m in pA_list:
         # A_m shape: (n_patches, n_obs, n_states)
         totals = A_m.sum(axis=(1, 2), keepdims=True)  # (n_patches, 1, 1)
@@ -278,8 +282,8 @@ def _mi_from_pA(pA_list: list[jnp.ndarray]) -> float:
         p_o = A_norm.sum(axis=2)  # (n_patches, n_obs)
         h_s = jnp.sum(p_s * jnp.log(jnp.clip(p_s, 1e-16, None)), axis=1)
         h_o = jnp.sum(p_o * jnp.log(jnp.clip(p_o, 1e-16, None)), axis=1)
-        total_mi += float(jnp.sum(joint - h_s - h_o))
-    return total_mi
+        per_mod.append(jnp.sum(joint - h_s - h_o))
+    return jnp.stack(per_mod).sum()
 
 
 def compute_level_mi(agent: Agent) -> float:
@@ -291,10 +295,10 @@ def compute_level_mi(agent: Agent) -> float:
         agent: Agent whose pA (or A) matrices define the joint distribution
 
     Returns:
-        Mutual information in nats
+        Mutual information in nats (Python float)
     """
     src = agent.pA if agent.pA is not None else agent.A
-    return _mi_from_pA(src)
+    return float(_mi_from_pA(src))
 
 
 def _mi_gated_update(
@@ -331,20 +335,160 @@ def _mi_gated_update(
     mi_pa = _mi_from_pA(pa)
     mi_qa = _mi_from_pA(qa)
 
-    # Softmax gate
-    mi_arr = jnp.array([mi_pa, mi_qa]) * beta
-    Pa = jnp.exp(mi_arr - mi_arr.max())
-    Pa = Pa / Pa.sum()
-    Pa0, Pa1 = float(Pa[0]), float(Pa[1])
+    # Softmax gate — keep Pa as a traced array so _mi_gated_update is JIT-safe
+    Pa = jax.nn.softmax(beta * jnp.stack([mi_pa, mi_qa]))
 
     # Gated asymptotic blend
-    scale = eta / (eta + Pa1)
-    pA_new = [(Pa0 * pa_m + Pa1 * qa_m) * scale for pa_m, qa_m in zip(pa, qa)]
+    scale = eta / (eta + Pa[1])
+    pA_new = [(Pa[0] * pa_m + Pa[1] * qa_m) * scale for pa_m, qa_m in zip(pa, qa)]
 
     # Recompute A: normalize along obs axis (axis 1)
     A_new = [pa_m / pa_m.sum(axis=1, keepdims=True) for pa_m in pA_new]
 
     return eqx.tree_at(lambda x: (x.A, x.pA), agent_posterior, (A_new, pA_new))
+
+
+class _TrainCarry(NamedTuple):
+    """Immutable carry for the lax.scan training loop.
+
+    Holds only the JAX-mutable state: the per-level agents (as pytrees) and
+    the classification agent.  valid_masks, stats, and other structural data
+    are captured as static closures and never change during training.
+    """
+    levels: tuple   # tuple[Agent, ...] — hierarchical levels only (no cls)
+    cls_agent: Agent
+
+
+def _train_step(
+    carry: _TrainCarry,
+    x: tuple,
+    valid_masks: tuple,
+    n_classes: int,
+    lr_pA: float,
+    beta: float,
+    eta: float,
+) -> tuple[_TrainCarry, dict]:
+    """Pure per-image training step — suitable as a lax.scan body.
+
+    Performs one full bottom-up / supervised-classification / top-down /
+    MI-gated-update cycle for a single pre-encoded image.
+
+    Args:
+        carry: current training state (hierarchical + cls agents)
+        x: (obs_image, label) where obs_image is (n_i, n_j, n_mod) and
+           label is a scalar int32 JAX array
+        valid_masks: tuple of (n_patches, max_states) bool masks, one per
+                     hierarchical level (static, closed over)
+        n_classes: number of digit classes (static)
+        lr_pA: Dirichlet learning rate
+        beta: MI-gate softmax sharpness
+        eta: asymptotic forgetting parameter
+
+    Returns:
+        (new_carry, metrics) where metrics = {"correct_inc": int32 scalar}
+    """
+    obs_image, label = x
+    levels = carry.levels
+    cls_agent = carry.cls_agent
+    n_hier = len(levels)  # static at trace time
+
+    # --- Bottom-up soft pass ---
+    n_i, n_j, n_mod = obs_image.shape  # static at trace time
+    obs_flat = obs_image.reshape(n_i * n_j, n_mod)
+    l1_obs_list = [obs_flat[:, m] for m in range(n_mod)]
+    qs_l1 = levels[0].infer_states(l1_obs_list, levels[0].D)
+    child_beliefs = jnp.where(valid_masks[0], qs_l1[0][:, 0, :], 0.0)
+
+    level_soft_beliefs = [child_beliefs]
+    level_obs_lists = [l1_obs_list]
+
+    for lv_idx in range(1, n_hier):
+        level = levels[lv_idx]
+        child_grid = int(round(child_beliefs.shape[0] ** 0.5))  # static
+        obs_list = _extract_soft_obs(child_beliefs, child_grid)
+        level_obs_lists.append(obs_list)
+        qs = level.infer_states(obs_list, level.D)
+        child_beliefs = jnp.where(valid_masks[lv_idx], qs[0][:, 0, :], 0.0)
+        level_soft_beliefs.append(child_beliefs)
+
+    # child_beliefs is now the top hierarchical level's soft beliefs
+
+    # --- Unsupervised prediction (for accuracy tracking) ---
+    qs_cls_pred = cls_agent.infer_states([child_beliefs], cls_agent.D)
+    pred = jnp.argmax(qs_cls_pred[0][:, 0, :][0])
+    correct_inc = (pred == label).astype(jnp.int32)
+
+    # --- Supervised classification with one-hot D prior ---
+    supervised_D = [jax.nn.one_hot(label, n_classes)[None, :]]
+    qs_cls = cls_agent.infer_states([child_beliefs], supervised_D)
+    q_cls = qs_cls[0][:, 0, :]  # (1, n_classes)
+
+    # --- Top-down pass: refine beliefs using cls posterior ---
+    refined_soft = [None] * n_hier
+
+    D_top = _top_down_D_from_cls(cls_agent.A, q_cls)
+    child_input = level_soft_beliefs[n_hier - 2] if n_hier > 1 else level_soft_beliefs[0]
+    child_grid_top = int(round(child_input.shape[0] ** 0.5))  # static
+    obs_top = _extract_soft_obs(child_input, child_grid_top)
+    qs_top_refined = levels[n_hier - 1].infer_states(obs_top, [D_top])
+    refined_soft[n_hier - 1] = jnp.where(
+        valid_masks[n_hier - 1], qs_top_refined[0][:, 0, :], 0.0
+    )
+
+    for lv_idx in range(n_hier - 2, -1, -1):
+        parent_lv = lv_idx + 1
+        q_parent = refined_soft[parent_lv]
+        child_level = levels[lv_idx]
+        n_child_patches = child_level.batch_size  # static
+        child_grid = int(round(n_child_patches ** 0.5))  # static
+        max_child_states = child_level.num_states[0]  # static
+        D_child = _top_down_D_hierarchical(
+            levels[parent_lv].A, q_parent, child_grid, max_child_states
+        )
+        if lv_idx == 0:
+            qs_l1_refined = child_level.infer_states(level_obs_lists[0], [D_child])
+            refined_soft[0] = jnp.where(
+                valid_masks[0], qs_l1_refined[0][:, 0, :], 0.0
+            )
+        else:
+            child_input_here = level_soft_beliefs[lv_idx - 1]
+            child_grid_here = int(round(child_input_here.shape[0] ** 0.5))  # static
+            obs_here = _extract_soft_obs(child_input_here, child_grid_here)
+            qs_refined = child_level.infer_states(obs_here, [D_child])
+            refined_soft[lv_idx] = jnp.where(
+                valid_masks[lv_idx], qs_refined[0][:, 0, :], 0.0
+            )
+
+    # --- MI-gated Dirichlet updates at every hierarchical level ---
+    new_levels = []
+    for lv_idx in range(n_hier):
+        level = levels[lv_idx]
+        beliefs_A = [refined_soft[lv_idx][:, None, :]]
+        if lv_idx == 0:
+            obs_with_time = [o[:, None] for o in level_obs_lists[0]]
+        else:
+            obs_with_time = [o[:, None, :] for o in level_obs_lists[lv_idx]]
+        agent_posterior = level.infer_parameters(
+            beliefs_A=beliefs_A,
+            observations=obs_with_time,
+            actions=None,
+            lr_pA=lr_pA,
+        )
+        new_levels.append(_mi_gated_update(level, agent_posterior, beta, eta))
+
+    # --- Classification level update ---
+    qs_cls_for_update = [q_cls[:, None, :]]
+    cls_obs_with_time = [child_beliefs[:, None, :]]
+    cls_posterior = cls_agent.infer_parameters(
+        beliefs_A=qs_cls_for_update,
+        observations=cls_obs_with_time,
+        actions=None,
+        lr_pA=lr_pA,
+    )
+    new_cls_agent = _mi_gated_update(cls_agent, cls_posterior, beta, eta)
+
+    new_carry = _TrainCarry(levels=tuple(new_levels), cls_agent=new_cls_agent)
+    return new_carry, {"correct_inc": correct_inc}
 
 
 def _top_down_D_from_cls(
@@ -1104,6 +1248,13 @@ class RGMHierarchy:
                Pa = softmax(beta * [MI(pa), MI(qa)])
                pA_new = (Pa[0]*pa + Pa[1]*qa) * eta / (eta + Pa[1])
 
+        The inner loop is compiled as a ``lax.scan`` over chunks of ``log_every``
+        images (one XLA program per chunk), eliminating per-operation Python
+        dispatch overhead.  On GPU, set
+        ``XLA_PYTHON_CLIENT_ALLOCATOR=platform`` and
+        ``XLA_PYTHON_CLIENT_MEM_FRACTION=0.20`` if you hit CUDA graph OOM during
+        compilation (these are the default test env-vars in ``test/conftest.py``).
+
         Args:
             x_train: (N, H, W) preprocessed training images
             y_train: (N,) integer digit labels
@@ -1112,7 +1263,7 @@ class RGMHierarchy:
             lr_pA: learning rate passed to infer_parameters
             beta: softmax sharpness for MI gate (SPM uses 512)
             eta: asymptote / forgetting parameter (SPM uses 512)
-            log_every: print running accuracy every this many images
+            log_every: chunk size for lax.scan — prints progress after each chunk
 
         Returns:
             dict with running_accuracy, mi_history, mi_checkpoints, mi_upper_bounds
@@ -1134,157 +1285,99 @@ class RGMHierarchy:
             )
             self.levels[lv_idx] = RGMLevel(updated_agent, level.valid_mask, level.stats)
 
-        # --- Phase B: sequential training loop ---
+        # --- Phase B: lax.scan-based training loop ---
         n_hier = len(self.hierarchical_levels)
+        N = len(x_train)
         running_accuracy = []
-        correct = 0
         mi_history = []
         mi_checkpoints = []
 
-        # Record MI at initialisation (before any images)
+        # Precompute ALL observations in one batched call (replaces per-image encode).
+        obs_all = encode_images_overlapping(x_train, self.basis)  # (N, n_i, n_j, n_mod)
+        labels_all = jnp.asarray(y_train, dtype=jnp.int32)
+
+        # Build initial carry from the freshly-initialised agents.
+        level_agents = tuple(lv.agent for lv in self.levels[:n_hier])
+        cls_agent_init = self.levels[-1].agent
+        valid_masks = tuple(lv.valid_mask for lv in self.levels[:n_hier])
+
+        initial_carry = _TrainCarry(levels=level_agents, cls_agent=cls_agent_init)
+
+        # Partition into dynamic (JAX arrays) and static (non-array metadata).
+        # lax.scan requires all carry leaves to be JAX arrays; static fields
+        # (batch_size, num_states, A_dependencies, …) are captured in static_carry
+        # and re-combined at the start of every scan body call.
+        dynamic_carry, static_carry = eqx.partition(initial_carry, eqx.is_array)
+
+        # Build the scan body with static args closed over via partial.
+        step_fn = functools.partial(
+            _train_step,
+            valid_masks=valid_masks,
+            n_classes=self.n_classes,
+            lr_pA=lr_pA,
+            beta=beta,
+            eta=eta,
+        )
+
+        def _scan_body(dynamic_carry, x):
+            carry = eqx.combine(dynamic_carry, static_carry)
+            new_carry, metrics = step_fn(carry, x)
+            new_dynamic, _ = eqx.partition(new_carry, eqx.is_array)
+            return new_dynamic, metrics
+
+        @eqx.filter_jit
+        def _scan_chunk(dc, obs_c, lbl_c):
+            return lax.scan(_scan_body, dc, (obs_c, lbl_c))
+
+        # Record MI at initialisation (before any images).
         mi_history.append([compute_level_mi(lv.agent) for lv in self.levels])
         mi_checkpoints.append(0)
 
-        for img_idx in range(len(x_train)):
-            obs_image = encode_images_overlapping(
-                x_train[img_idx : img_idx + 1], self.basis
+        prior_correct = 0  # cumulative correct count across all chunks
+
+        for chunk_start in range(0, N, log_every):
+            chunk_end = min(chunk_start + log_every, N)
+            obs_chunk = obs_all[chunk_start:chunk_end]
+            lbl_chunk = labels_all[chunk_start:chunk_end]
+
+            dynamic_carry, chunk_metrics = _scan_chunk(dynamic_carry, obs_chunk, lbl_chunk)
+
+            # Reconstruct running accuracy for this chunk without device syncs.
+            correct_inc = np.asarray(chunk_metrics["correct_inc"])  # (chunk_size,)
+            cumcorrect = np.cumsum(correct_inc) + prior_correct
+            total_seen = np.arange(chunk_start + 1, chunk_end + 1)
+            running_accuracy.extend((cumcorrect / total_seen).tolist())
+            prior_correct = int(cumcorrect[-1])
+
+            # MI snapshot (one host-device sync per chunk, not per image).
+            carry_here = eqx.combine(dynamic_carry, static_carry)
+            mi_snap = (
+                [compute_level_mi(lv) for lv in carry_here.levels]
+                + [compute_level_mi(carry_here.cls_agent)]
             )
-            label = int(y_train[img_idx])
+            mi_history.append(mi_snap)
+            mi_checkpoints.append(chunk_end)
 
-            # --- Bottom-up soft pass ---
-            # L1: integer SVD obs → soft beliefs; keep obs_list for Dirichlet update
-            n_i, n_j, n_mod = obs_image[0].shape
-            obs_flat = obs_image[0].reshape(n_i * n_j, n_mod)
-            l1_obs_list = [obs_flat[:, m] for m in range(n_mod)]
-            qs_l1 = self.levels[0].agent.infer_states(l1_obs_list, self.levels[0].agent.D)
-            child_beliefs = jnp.where(self.levels[0].valid_mask, qs_l1[0][:, 0, :], 0.0)
-
-            level_soft_beliefs = [child_beliefs]  # per hierarchical level
-            level_obs_lists = [l1_obs_list]        # obs per level (int for L1, soft for L2+)
-
-            # L2+ hierarchical: pass soft child beliefs as categorical obs
-            for lv_idx in range(1, n_hier):
-                level = self.levels[lv_idx]
-                child_grid = int(round(child_beliefs.shape[0] ** 0.5))
-
-                # Build soft obs_list from child beliefs for this level
-                obs_list = _extract_soft_obs(child_beliefs, child_grid)
-                level_obs_lists.append(obs_list)
-
-                # Inference: categorical_obs=True agent receives soft obs natively
-                qs = level.agent.infer_states(obs_list, level.agent.D)
-                child_beliefs = jnp.where(level.valid_mask, qs[0][:, 0, :], 0.0)
-                level_soft_beliefs.append(child_beliefs)
-
-            # child_beliefs is now (1, max_top_states)
-
-            # --- Unsupervised prediction (for accuracy tracking) ---
-            cls_level = self.levels[-1]
-            qs_cls_pred = cls_level.agent.infer_states([child_beliefs], cls_level.agent.D)
-            pred = int(jnp.argmax(qs_cls_pred[0][:, 0, :][0]))
-            correct += int(pred == label)
-            running_accuracy.append(correct / (img_idx + 1))
-
-            # --- Supervised classification with one-hot D prior (for Dirichlet update) ---
-            supervised_D = [jnp.zeros((1, self.n_classes)).at[0, label].set(1.0)]
-            qs_cls = cls_level.agent.infer_states([child_beliefs], supervised_D)
-            q_cls = qs_cls[0][:, 0, :]  # (1, n_classes)
-
-            # --- Top-down pass: refine beliefs using cls posterior ---
-            refined_soft = [None] * n_hier  # refined (n_patches, max_states) per level
-
-            # Classification → top hierarchical level
-            D_top = _top_down_D_from_cls(cls_level.agent.A, q_cls)
-            child_input = level_soft_beliefs[n_hier - 2] if n_hier > 1 else level_soft_beliefs[0]
-            child_grid_top = int(round(child_input.shape[0] ** 0.5))
-            obs_top = _extract_soft_obs(child_input, child_grid_top)
-            qs_top_refined = self.levels[n_hier - 1].agent.infer_states(obs_top, [D_top])
-            refined_soft[n_hier - 1] = jnp.where(
-                self.levels[n_hier - 1].valid_mask, qs_top_refined[0][:, 0, :], 0.0
+            mi_str = "  ".join(
+                f"L{i+1}={v:.3f}" if i < n_hier else f"cls={v:.3f}"
+                for i, v in enumerate(mi_snap)
+            )
+            print(
+                f"  [{chunk_end}/{N}] "
+                f"acc={running_accuracy[-1]:.3f}  MI: {mi_str}"
             )
 
-            # Propagate top-down through remaining hierarchical levels
-            for lv_idx in range(n_hier - 2, -1, -1):
-                parent_lv = lv_idx + 1
-                q_parent = refined_soft[parent_lv]
-
-                child_level = self.levels[lv_idx]
-                n_child_patches = child_level.agent.batch_size
-                child_grid = int(round(n_child_patches ** 0.5))
-                max_child_states = child_level.agent.num_states[0]
-
-                D_child = _top_down_D_hierarchical(
-                    self.levels[parent_lv].agent.A,
-                    q_parent,
-                    child_grid,
-                    max_child_states,
-                )
-
-                if lv_idx == 0:
-                    # L1: integer obs with top-down D prior (categorical_obs=False)
-                    qs_l1_refined = child_level.agent.infer_states(
-                        level_obs_lists[0], [D_child]
-                    )
-                    refined_soft[0] = jnp.where(
-                        child_level.valid_mask, qs_l1_refined[0][:, 0, :], 0.0
-                    )
-                else:
-                    # L2+: soft child beliefs with top-down D prior (categorical_obs=True)
-                    child_input = level_soft_beliefs[lv_idx - 1]
-                    child_grid_here = int(round(child_input.shape[0] ** 0.5))
-                    obs_here = _extract_soft_obs(child_input, child_grid_here)
-                    qs_refined = child_level.agent.infer_states(obs_here, [D_child])
-                    refined_soft[lv_idx] = jnp.where(
-                        child_level.valid_mask, qs_refined[0][:, 0, :], 0.0
-                    )
-
-            # --- MI-gated Dirichlet updates using top-down refined beliefs ---
-            for lv_idx in range(n_hier):
-                level = self.levels[lv_idx]
-                # beliefs_A: list of (batch, T, states) — add T=1 dim
-                beliefs_A = [refined_soft[lv_idx][:, None, :]]
-                # obs: for L1 integers (batch, 1); for L2+ soft (batch, 1, n_obs)
-                if lv_idx == 0:
-                    obs_with_time = [o[:, None] for o in level_obs_lists[0]]
-                else:
-                    obs_with_time = [o[:, None, :] for o in level_obs_lists[lv_idx]]
-                agent_posterior = level.agent.infer_parameters(
-                    beliefs_A=beliefs_A,
-                    observations=obs_with_time,
-                    actions=None,
-                    lr_pA=lr_pA,
-                )
-                updated_agent = _mi_gated_update(level.agent, agent_posterior, beta, eta)
-                self.levels[lv_idx] = RGMLevel(
-                    updated_agent, level.valid_mask, level.stats
-                )
-
-            # Classification level
-            cls_level = self.levels[-1]
-            qs_cls_for_update = [q_cls[:, None, :]]  # (1, 1, n_classes)
-            # soft top beliefs as obs; shape (1, 1, max_top_states)
-            cls_obs_with_time = [child_beliefs[:, None, :]]
-            cls_posterior = cls_level.agent.infer_parameters(
-                beliefs_A=qs_cls_for_update,
-                observations=cls_obs_with_time,
-                actions=None,
-                lr_pA=lr_pA,
+        # Write updated agents back into self.levels.
+        final_carry = eqx.combine(dynamic_carry, static_carry)
+        for lv_idx in range(n_hier):
+            level = self.levels[lv_idx]
+            self.levels[lv_idx] = RGMLevel(
+                final_carry.levels[lv_idx], level.valid_mask, level.stats
             )
-            updated_cls = _mi_gated_update(cls_level.agent, cls_posterior, beta, eta)
-            self.levels[-1] = RGMLevel(updated_cls, cls_level.valid_mask, cls_level.stats)
-
-            if (img_idx + 1) % log_every == 0:
-                mi_snap = [compute_level_mi(lv.agent) for lv in self.levels]
-                mi_history.append(mi_snap)
-                mi_checkpoints.append(img_idx + 1)
-                mi_str = "  ".join(
-                    f"L{i+1}={v:.3f}" if i < n_hier else f"cls={v:.3f}"
-                    for i, v in enumerate(mi_snap)
-                )
-                print(
-                    f"  [{img_idx + 1}/{len(x_train)}] "
-                    f"acc={running_accuracy[-1]:.3f}  MI: {mi_str}"
-                )
+        cls_level = self.levels[-1]
+        self.levels[-1] = RGMLevel(
+            final_carry.cls_agent, cls_level.valid_mask, cls_level.stats
+        )
 
         # MI upper bounds: sum over modalities and patches of min(log(n_obs_m), log(n_states))
         # Matches the aggregation in _mi_from_pA (per-patch, per-modality summation).
