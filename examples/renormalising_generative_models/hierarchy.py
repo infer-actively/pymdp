@@ -1169,18 +1169,28 @@ class RGMHierarchy:
     ) -> tuple[jnp.ndarray, jnp.ndarray]:
         """Top-down generation: digit prior → reconstructed image.
 
-        Traverses state_patterns from the top level down to L1 observations,
-        then decodes.
+        By default propagates the full prior distribution down through every
+        level using the learned A matrices, producing an image that is the
+        expected reconstruction under the distribution.  Each level's A matrix
+        marginalises over parent states to give child-state beliefs
+        (``_top_down_D_hierarchical``), and at L1 the expected bin centres are
+        fed directly into the linear unproject + tile-sum decoder — no argmax
+        anywhere in the pipeline.
+
+        When ``sample=True``, a single top-level state is drawn from the prior
+        and the existing deterministic pattern-lookup path is used instead.
 
         Args:
-            digit: target digit (builds uniform prior over matching top states)
-            prior: explicit top-level prior distribution (overrides digit)
-            sample: if True, sample top state from prior; else argmax
+            digit: target digit (builds prior from classification A column)
+            prior: explicit prior distribution over top-level states (overrides digit)
+            sample: if True, sample one top state and expand deterministically;
+                    if False (default), propagate the full distribution
             key: JAX PRNG key for sampling (required if sample=True)
 
         Returns:
-            (image, observations) where image is (1, C, H, W) and
-            observations is (1, n_groups, n_groups, max_components) discrete bin indices
+            (image, observations) where image is (1, C, H, W).  For
+            sample=False, observations is (1, n_groups, n_groups, max_components)
+            with float expected bin indices; for sample=True, integer bin indices.
         """
         top_stats = self.hierarchical_levels[-1].stats
         n_top = int(top_stats.num_states[0, 0])
@@ -1191,7 +1201,6 @@ class RGMHierarchy:
         if prior is not None:
             top_prior = jnp.asarray(prior)
         elif digit is not None:
-            # P(top_state | digit=d), read from the classification A column
             top_prior = cls_A[:, digit]
             if top_prior.sum() == 0:
                 raise ValueError(f"No top-level states found for digit {digit}")
@@ -1199,25 +1208,67 @@ class RGMHierarchy:
         else:
             top_prior = jnp.ones(n_top) / n_top
 
-        # Select top-level state
         if sample:
+            # --- Point-estimate path: sample one state, expand deterministically ---
             if key is None:
                 key = jr.PRNGKey(0)
             s_top = int(jr.choice(key, n_top, p=top_prior))
-        else:
-            s_top = int(jnp.argmax(top_prior))
+            grid = np.array([[s_top]], dtype=np.int32)
+            for level in reversed(self.hierarchical_levels[1:]):
+                grid = _expand_grid(grid, level.stats)
+            obs_grid = _expand_to_obs(grid, self.levels[0].stats, self.config)
+            obs_jnp = jnp.array(obs_grid)[None]
+            image = decode_observations_overlapping(obs_jnp, self.basis)
+            return image, obs_jnp
 
-        # Top → L1: expand through hierarchical levels in reverse
-        grid = np.array([[s_top]], dtype=np.int32)
-        for level in reversed(self.hierarchical_levels[1:]):
-            grid = _expand_grid(grid, level.stats)
+        # --- Distributional path: propagate full prior down via A matrices ---
+        levels = self.hierarchical_levels  # [L1, L2, ..., Ltop]
+        beliefs = top_prior[None, :]  # (1, n_top_states)
 
-        # L1 → observations
-        obs_grid = _expand_to_obs(grid, self.levels[0].stats, self.config)
+        for parent_lv_idx in range(len(levels) - 1, 0, -1):
+            parent_level = levels[parent_lv_idx]
+            child_level = levels[parent_lv_idx - 1]
+            child_grid = int(round(child_level.agent.batch_size ** 0.5))
+            max_child_states = child_level.agent.num_states[0]
+            beliefs = _top_down_D_hierarchical(
+                parent_level.agent.A, beliefs, child_grid, max_child_states
+            )
+        # beliefs: (n_L1_patches, max_L1_states)
 
-        obs_jnp = jnp.array(obs_grid)[None]
-        image = decode_observations_overlapping(obs_jnp, self.basis)
+        # Compute expected bin centres per patch per SVD component.
+        # For each L1 patch p and component k:
+        #   E[centre_k] = sum_s q[s] * bin_centres[i,j,k, pattern[s][k]]
+        # (expectation is in the continuous variate domain, not the bin-index domain)
+        n_groups = self.config.image_size // self.config.group_size
+        n_comp = self.config.max_components
+        l1_stats = self.levels[0].stats
 
+        expected_variates = np.zeros((n_groups, n_groups, n_comp), dtype=np.float32)
+        expected_obs = np.zeros((n_groups, n_groups, n_comp), dtype=np.float32)
+
+        for i in range(n_groups):
+            for j in range(n_groups):
+                p = i * n_groups + j
+                patterns = np.asarray(l1_stats.state_patterns[i][j])  # (n_s, n_comp)
+                n_s = patterns.shape[0]
+                q = np.asarray(beliefs[p, :n_s])  # (n_s,)
+                expected_obs[i, j] = q @ patterns  # expected bin index per component
+                for k in range(n_comp):
+                    centres_k = np.asarray(self.basis.bin_centres[i, j, k, :])
+                    expected_variates[i, j, k] = float(q @ centres_k[patterns[:, k]])
+
+        # Decode: feed expected variates directly into the linear unproject + tile-sum.
+        # This is identical to decode_observations_overlapping but skips the integer
+        # gather step (expected variates are already in the continuous latent domain).
+        variates_t = jnp.array(expected_variates)[None].transpose(1, 2, 0, 3)  # (ng, ng, 1, k)
+        recon_weighted = jnp.einsum('ijnk,ijfk->ijnf', variates_t, self.basis.V)
+        recon_weighted = recon_weighted + self.basis.mean[:, :, None, :]
+        recon = recon_weighted.sum(axis=(0, 1))  # (1, n_pixels)
+        C = self.config.n_channels
+        H = W = self.config.image_size
+        image = recon.reshape(1, C, H, W)
+
+        obs_jnp = jnp.array(expected_obs)[None]  # (1, n_groups, n_groups, n_comp)
         return image, obs_jnp
 
     def train(
