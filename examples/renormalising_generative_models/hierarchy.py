@@ -925,6 +925,134 @@ def _expand_to_obs(
 
 
 # ---------------------------------------------------------------------------
+# Compiled per-image classify helpers (used by RGMHierarchy.classify)
+# ---------------------------------------------------------------------------
+
+
+def _classify_one(
+    obs_i: jnp.ndarray,
+    level_agents: tuple,
+    level_masks: tuple,
+    cls_agent,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Single-image bidirectional inference, safe for use under jax.lax.map.
+
+    Identical math to the per-iteration body of the old Python loop in
+    RGMHierarchy.classify, but returns JAX arrays instead of writing into
+    NumPy buffers so no host sync is required mid-batch.
+
+    Args:
+        obs_i: (n_groups, n_groups, max_components) encoded observations.
+        level_agents: tuple of Agent objects for the hierarchical levels
+            (L1 patch agent first, then L2+ agents; excludes cls agent).
+        level_masks: tuple of (n_patches, max_states) boolean masks,
+            one per hierarchical level.
+        cls_agent: classification Agent.
+
+    Returns:
+        (predicted_digit, top_state, cls_beliefs) as on-device scalars/arrays.
+    """
+    n_hier = len(level_agents)
+
+    # === Bottom-up pass ===
+    n_i, n_j, n_mod = obs_i.shape
+    obs_flat = obs_i.reshape(n_i * n_j, n_mod)
+    l1_obs_list = [obs_flat[:, m] for m in range(n_mod)]
+
+    child_beliefs = infer_patch_beliefs(level_agents[0], level_masks[0], obs_i)
+    level_soft_beliefs = [child_beliefs]
+    level_obs_lists = [l1_obs_list]
+
+    for lv_idx in range(1, n_hier):
+        child_grid = int(round(child_beliefs.shape[0] ** 0.5))
+        obs_list = _extract_soft_obs(child_beliefs, child_grid)
+        level_obs_lists.append(obs_list)
+        qs = level_agents[lv_idx].infer_states(obs_list, level_agents[lv_idx].D)
+        child_beliefs = jnp.where(level_masks[lv_idx], qs[0][:, 0, :], 0.0)
+        level_soft_beliefs.append(child_beliefs)
+
+    # === Initial classification ===
+    qs_cls = cls_agent.infer_states([child_beliefs], cls_agent.D)
+    q_cls = qs_cls[0][:, 0, :]  # (1, n_classes)
+
+    # === Top-down refinement pass ===
+    refined_soft = [None] * n_hier
+
+    D_top = _top_down_D_from_cls(cls_agent.A, q_cls)
+    child_input = level_soft_beliefs[n_hier - 2] if n_hier > 1 else level_soft_beliefs[0]
+    child_grid_top = int(round(child_input.shape[0] ** 0.5))
+    obs_top = _extract_soft_obs(child_input, child_grid_top)
+    qs_top_refined = level_agents[n_hier - 1].infer_states(obs_top, [D_top])
+    refined_soft[n_hier - 1] = jnp.where(
+        level_masks[n_hier - 1], qs_top_refined[0][:, 0, :], 0.0
+    )
+
+    for lv_idx in range(n_hier - 2, -1, -1):
+        parent_lv = lv_idx + 1
+        q_parent = refined_soft[parent_lv]
+        n_child_patches = level_agents[lv_idx].batch_size
+        child_grid = int(round(n_child_patches ** 0.5))
+        max_child_states = level_agents[lv_idx].num_states[0]
+
+        D_child = _top_down_D_hierarchical(
+            level_agents[parent_lv].A,
+            q_parent,
+            child_grid,
+            max_child_states,
+        )
+
+        if lv_idx == 0:
+            qs_l1_refined = level_agents[0].infer_states(level_obs_lists[0], [D_child])
+            refined_soft[0] = jnp.where(level_masks[0], qs_l1_refined[0][:, 0, :], 0.0)
+        else:
+            child_input = level_soft_beliefs[lv_idx - 1]
+            child_grid_here = int(round(child_input.shape[0] ** 0.5))
+            obs_here = _extract_soft_obs(child_input, child_grid_here)
+            qs_refined = level_agents[lv_idx].infer_states(obs_here, [D_child])
+            refined_soft[lv_idx] = jnp.where(
+                level_masks[lv_idx], qs_refined[0][:, 0, :], 0.0
+            )
+
+    refined_top = refined_soft[n_hier - 1]
+    qs_cls_final = cls_agent.infer_states([refined_top], cls_agent.D)
+    cls_beliefs = qs_cls_final[0][:, 0, :]  # (1, n_classes)
+
+    predicted_digit = jnp.argmax(cls_beliefs[0])
+    top_state = jnp.argmax(refined_top[0])
+    return predicted_digit, top_state, cls_beliefs[0]
+
+
+@jax.jit
+def _classify_batch(
+    level_agents: tuple,
+    level_masks: tuple,
+    cls_agent,
+    obs_batch: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Map _classify_one over N images in a single compiled program.
+
+    Decorated with @jax.jit so the first call compiles once and subsequent
+    calls (even after training updates the agent weights) reuse the same XLA
+    program — agent arrays flow through as dynamic inputs, not compile-time
+    constants.  jax.lax.map keeps peak memory comparable to single-image
+    inference by executing the body sequentially on-device.
+
+    Args:
+        level_agents: tuple of Agent objects (L1 … Ltop, no cls).
+        level_masks: tuple of valid-state boolean masks, one per level.
+        cls_agent: classification Agent.
+        obs_batch: (N, n_groups, n_groups, max_components) encoded images.
+
+    Returns:
+        (predicted_digits, top_states, digit_beliefs) as JAX arrays.
+    """
+    def classify_one(obs_i):
+        return _classify_one(obs_i, level_agents, level_masks, cls_agent)
+
+    return jax.lax.map(classify_one, obs_batch)
+
+
+# ---------------------------------------------------------------------------
 # RGMHierarchy: unified classification and generation
 # ---------------------------------------------------------------------------
 
@@ -1061,6 +1189,12 @@ class RGMHierarchy:
         pass using the classification posterior to sharpen beliefs, then
         re-classifies with the refined top-level beliefs.
 
+        The per-image computation is compiled once via ``jax.jit`` and iterated
+        over the batch with ``jax.lax.map``, eliminating the Python loop and all
+        per-image host syncs.  The first call incurs a one-time compilation cost;
+        subsequent calls (including after training) reuse the same XLA program
+        because agent weights flow through as dynamic inputs.
+
         Args:
             images: (N, H, W) or (N, C, H, W) preprocessed images
 
@@ -1071,94 +1205,13 @@ class RGMHierarchy:
             - digit_beliefs: (N, n_classes) posterior over digits per image
         """
         observations = encode_images_overlapping(images, self.basis)
-        N = observations.shape[0]
-        n_hier = len(self.hierarchical_levels)
-        predicted_digits = np.empty(N, dtype=np.int32)
-        top_states = np.empty(N, dtype=np.int32)
-        all_beliefs = []
+        level_agents = tuple(lv.agent for lv in self.hierarchical_levels)
+        level_masks = tuple(lv.valid_mask for lv in self.hierarchical_levels)
 
-        for idx in range(N):
-            # === Bottom-up pass ===
-            # L1: store integer obs for top-down re-inference
-            n_i, n_j, n_mod = observations[idx].shape
-            obs_flat = observations[idx].reshape(n_i * n_j, n_mod)
-            l1_obs_list = [obs_flat[:, m] for m in range(n_mod)]
-
-            child_beliefs = infer_patch_beliefs(
-                self.levels[0].agent, self.levels[0].valid_mask, observations[idx]
-            )
-            level_soft_beliefs = [child_beliefs]
-            level_obs_lists = [l1_obs_list]
-
-            # L2+ hierarchical: soft beliefs as categorical obs → soft parent beliefs
-            for lv_idx in range(1, n_hier):
-                level = self.levels[lv_idx]
-                child_grid = int(round(child_beliefs.shape[0] ** 0.5))
-                obs_list = _extract_soft_obs(child_beliefs, child_grid)
-                level_obs_lists.append(obs_list)
-                qs = level.agent.infer_states(obs_list, level.agent.D)
-                child_beliefs = jnp.where(level.valid_mask, qs[0][:, 0, :], 0.0)
-                level_soft_beliefs.append(child_beliefs)
-
-            # === Initial classification ===
-            qs_cls = self.cls_agent.infer_states([child_beliefs], self.cls_agent.D)
-            q_cls = qs_cls[0][:, 0, :]  # (1, n_classes)
-
-            # === Top-down refinement pass ===
-            refined_soft = [None] * n_hier
-
-            # Classification → top hierarchical level
-            D_top = _top_down_D_from_cls(self.cls_agent.A, q_cls)
-            child_input = level_soft_beliefs[n_hier - 2] if n_hier > 1 else level_soft_beliefs[0]
-            child_grid_top = int(round(child_input.shape[0] ** 0.5))
-            obs_top = _extract_soft_obs(child_input, child_grid_top)
-            qs_top_refined = self.levels[n_hier - 1].agent.infer_states(obs_top, [D_top])
-            refined_soft[n_hier - 1] = jnp.where(
-                self.levels[n_hier - 1].valid_mask, qs_top_refined[0][:, 0, :], 0.0
-            )
-
-            # Propagate top-down through remaining hierarchical levels
-            for lv_idx in range(n_hier - 2, -1, -1):
-                parent_lv = lv_idx + 1
-                q_parent = refined_soft[parent_lv]
-                child_level = self.levels[lv_idx]
-                n_child_patches = child_level.agent.batch_size
-                child_grid = int(round(n_child_patches ** 0.5))
-                max_child_states = child_level.agent.num_states[0]
-
-                D_child = _top_down_D_hierarchical(
-                    self.levels[parent_lv].agent.A,
-                    q_parent,
-                    child_grid,
-                    max_child_states,
-                )
-
-                if lv_idx == 0:
-                    qs_l1_refined = child_level.agent.infer_states(
-                        level_obs_lists[0], [D_child]
-                    )
-                    refined_soft[0] = jnp.where(
-                        child_level.valid_mask, qs_l1_refined[0][:, 0, :], 0.0
-                    )
-                else:
-                    child_input = level_soft_beliefs[lv_idx - 1]
-                    child_grid_here = int(round(child_input.shape[0] ** 0.5))
-                    obs_here = _extract_soft_obs(child_input, child_grid_here)
-                    qs_refined = child_level.agent.infer_states(obs_here, [D_child])
-                    refined_soft[lv_idx] = jnp.where(
-                        child_level.valid_mask, qs_refined[0][:, 0, :], 0.0
-                    )
-
-            # === Final classification using refined top-level beliefs ===
-            refined_top = refined_soft[n_hier - 1]
-            qs_cls_final = self.cls_agent.infer_states([refined_top], self.cls_agent.D)
-            cls_beliefs = qs_cls_final[0][:, 0, :]  # (1, n_classes)
-
-            top_states[idx] = int(jnp.argmax(refined_top[0]))
-            all_beliefs.append(cls_beliefs[0])
-            predicted_digits[idx] = int(jnp.argmax(cls_beliefs[0]))
-
-        return predicted_digits, top_states, jnp.stack(all_beliefs)
+        preds, tops, beliefs = _classify_batch(
+            level_agents, level_masks, self.cls_agent, observations
+        )
+        return np.asarray(preds), np.asarray(tops), beliefs
 
     def generate(
         self,
