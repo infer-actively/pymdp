@@ -59,7 +59,7 @@ def stable_cross_entropy(x: ArrayLike, y: ArrayLike) -> ArrayLike:
     ArrayLike
         Cross-entropy value.
     """
-    return - xlogy(x, y).sum()
+    return - xlogy(x, jnp.clip(y, MINVAL)).sum()
 
 def log_stable(x: ArrayLike) -> ArrayLike:
     """Compute stable logarithm with minimum clipping.
