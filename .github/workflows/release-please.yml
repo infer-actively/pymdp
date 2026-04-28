@@ -4,14 +4,17 @@ on:
   push:
     branches: [main]
 
+# Default to least-privilege; jobs that need more elevate per-job.
 permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+  contents: read
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write       # commit version bumps, create release tag
+      pull-requests: write  # open/update the Release PR
+      issues: write         # apply autorelease:* labels
     outputs:
       releases_created: ${{ steps.release.outputs.releases_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
@@ -28,6 +31,7 @@ jobs:
     needs: release-please
     if: ${{ needs.release-please.outputs.releases_created == 'true' }}
     runs-on: ubuntu-latest
+    # Inherits workflow default (contents: read), sufficient for checkout.
     steps:
       - uses: actions/checkout@v4
         with:
@@ -69,7 +73,7 @@ jobs:
       name: pypi
       url: https://pypi.org/p/inferactively-pymdp
     permissions:
-      id-token: write
+      id-token: write  # OIDC for PyPI trusted publishing (replaces defaults)
     steps:
       - uses: actions/download-artifact@v4
         with:
