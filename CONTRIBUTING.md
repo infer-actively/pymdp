@@ -208,3 +208,34 @@ Some automated tests will also run in the background to make sure that your
 code can be imported correctly and other sanity checks. Once that is all done, 
 one of us will either accept your Pull Request, or leave a message requesting some
 changes (you will receive an email either way).
+
+
+## Pull request titles & releases
+
+Releases are automated by [release-please](https://github.com/googleapis/release-please).
+Every PR is squash-merged into `main`, so the **PR title becomes the commit message
+on `main`** — and release-please reads those messages to compute the next version
+number and to write `CHANGELOG.md`. PR titles must therefore follow the
+[Conventional Commits](https://www.conventionalcommits.org/) format:
+
+```
+<type>(<optional scope>): <short description>
+```
+
+Common types and what they trigger in the changelog and version:
+
+| Type | Effect |
+|---|---|
+| `feat:` | minor version bump, listed under "Features" (e.g. `feat(planning): add iterative-deepening MCTS`) |
+| `fix:` | patch version bump, listed under "Bug Fixes" (e.g. `fix(maths): clip y in stable_cross_entropy`) |
+| `deps:` | patch bump, listed under "Dependencies" (e.g. `deps: bump jax to 0.10`) |
+| `perf:` | patch bump, listed under "Performance" |
+| `docs:` / `refactor:` | listed in changelog, no version bump |
+| `chore:` / `ci:` / `test:` / `build:` / `style:` | hidden from changelog, no version bump |
+
+**Breaking changes:** append `!` after the type/scope (e.g. `feat(agent)!: change Agent.step return type`)
+**or** include a `BREAKING CHANGE: <description>` footer in the PR description body.
+Either form triggers a major version bump and a "⚠ BREAKING CHANGES" section in the changelog.
+
+**Linking issues:** include `Fixes #N` or `Closes #N` in the PR description (not just the title)
+to auto-link the issue from the corresponding changelog entry.
