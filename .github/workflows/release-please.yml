@@ -1,0 +1,83 @@
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+# Default to least-privilege; jobs that need more elevate per-job.
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # commit version bumps, create release tag
+      pull-requests: write  # open/update the Release PR
+      issues: write         # apply autorelease:* labels
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  build:
+    name: Build distribution
+    needs: release-please
+    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    runs-on: ubuntu-latest
+    # Inherits workflow default (contents: read), sufficient for checkout.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --sdist --wheel
+
+      - name: Smoke-test built wheel
+        run: |
+          python -m pip install dist/*.whl
+          cd /tmp
+          python - <<'PY'
+          import pymdp
+          from pymdp.agent import Agent
+
+          print("Imported pymdp from", pymdp.__file__)
+          assert "site-packages" in pymdp.__file__
+          print("Agent symbol:", Agent.__name__)
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: [release-please, build]
+    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/inferactively-pymdp
+    permissions:
+      id-token: write  # OIDC for PyPI trusted publishing (replaces defaults)
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
