@@ -3,6 +3,11 @@ name: release-please
 on:
   push:
     branches: [main]
+  # Manual escape hatch: release-please's own PR merges produce a
+  # github-actions[bot]-authored commit, which suppresses the push
+  # trigger. Until we switch to a PAT/App token, workflow_dispatch
+  # lets us re-fire the workflow by hand from the Actions tab.
+  workflow_dispatch:
 
 # Default to least-privilege; jobs that need more elevate per-job.
 permissions:
