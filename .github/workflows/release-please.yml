@@ -3,11 +3,6 @@ name: release-please
 on:
   push:
     branches: [main]
-  # Manual escape hatch: release-please's own PR merges produce a
-  # github-actions[bot]-authored commit, which suppresses the push
-  # trigger. Until we switch to a PAT/App token, workflow_dispatch
-  # lets us re-fire the workflow by hand from the Actions tab.
-  workflow_dispatch:
 
 # Default to least-privilege; jobs that need more elevate per-job.
 permissions:
@@ -27,7 +22,12 @@ jobs:
       - uses: googleapis/release-please-action@v4
         id: release
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Use a PAT instead of GITHUB_TOKEN so commits and PRs created
+          # by release-please are authored by a real user account, which
+          # lets the merge of release-please's own PR trigger this
+          # workflow's push event (GITHUB_TOKEN-authored events are
+          # suppressed by GitHub's recursion guard).
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
