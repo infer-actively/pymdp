@@ -239,3 +239,8 @@ Either form triggers a major version bump and a "⚠ BREAKING CHANGES" section i
 
 **Linking issues:** include `Fixes #N` or `Closes #N` in the PR description (not just the title)
 to auto-link the issue from the corresponding changelog entry.
+
+The format is enforced by the `PR Title Lint` workflow
+(`.github/workflows/pr-title-lint.yaml`), which runs on every PR and must pass
+before merging. If you need to fix a title, just edit it on GitHub — the check
+will re-run automatically.
