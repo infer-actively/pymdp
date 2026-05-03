@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "inferactively-pymdp"
-version = "1.0.1"
+version = "1.0.2"
 description = "A Python package for solving Markov Decision Processes with Active Inference"
 authors = [
     { name = "Conor Heins", email="conor.heins@gmail.com"},
