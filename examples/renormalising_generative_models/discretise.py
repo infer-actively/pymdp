@@ -24,6 +24,7 @@ class DiscretiseConfig(NamedTuple):
     n_levels: int = 7          # nb in SPM (number of discrete bins, forced odd)
     image_size: int = 32
     n_channels: int = 1        # grayscale by default
+    center_svd: bool = False    # subtract per-tile mean before SVD; set False to match MATLAB
 
 class OverlappingSVDBasis(NamedTuple):
     """SVD basis learned with SPM-style overlapping Gaussian-weighted tiles.
@@ -133,8 +134,15 @@ def compute_svd_basis_overlapping(
     tw_np = np.array(tw_flat)
     L_per_tile = np.minimum(N, (tw_np > 0).sum(axis=1)).astype(np.float32)  # (ng*ng,)
 
-    mean = weighted.mean(axis=1)  # (ng*ng, n_pixels)
-    centred = weighted - mean[:, None, :]  # (ng*ng, N, n_pixels)
+    if config.center_svd:
+        mean = weighted.mean(axis=1)          # (ng*ng, n_pixels)
+        centred = weighted - mean[:, None, :] # (ng*ng, N, n_pixels)
+    else:
+        # MATLAB (spm_rgb2O) does not subtract the mean before SVD.
+        # Without centring, the first singular vector captures mean tile brightness,
+        # which is discriminative for digit classification.
+        mean = jnp.zeros((ng * ng, n_pixels))
+        centred = weighted
 
     # Pack L alongside data so we keep a single-argument vmap (avoids a new
     # XLA compilation path that can upset cuSolver handle allocation).

@@ -1005,9 +1005,8 @@ def _classify_one(
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Single-image bidirectional inference, safe for use under jax.lax.map.
 
-    Identical math to the per-iteration body of the old Python loop in
-    RGMHierarchy.classify, but returns JAX arrays instead of writing into
-    NumPy buffers so no host sync is required mid-batch.
+    Runs one bottom-up pass, one initial classification, then one top-down
+    refinement pass, and a final re-classification with the refined top beliefs.
 
     Args:
         obs_i: (n_groups, n_groups, max_components) encoded observations.
@@ -1422,7 +1421,9 @@ class RGMHierarchy:
             lr_pA: learning rate passed to infer_parameters
             beta: softmax sharpness for MI gate (SPM uses 512)
             eta: asymptote / forgetting parameter (SPM uses 512)
-            log_every: chunk size for lax.scan — prints progress after each chunk
+            log_every: chunk size for lax.scan — prints progress after each chunk.
+                Also controls the lax.scan program size; keep ≤ 1 000 on GPU if
+                compilation OOMs.
 
         Returns:
             dict with running_accuracy, mi_history, mi_checkpoints, mi_upper_bounds
@@ -1451,8 +1452,17 @@ class RGMHierarchy:
         mi_history = []
         mi_checkpoints = []
 
-        # Precompute ALL observations in one batched call (replaces per-image encode).
-        obs_all = encode_images_overlapping(x_train, self.basis)  # (N, n_i, n_j, n_mod)
+        # Encode in chunks to avoid materialising the (ng, ng, N, n_pixels) intermediate
+        # tensor all at once.  The output (integer bin indices) is tiny; only the SVD
+        # projection step is large.  10 000 images ≈ 2.6 GB intermediate; 50 000 ≈ 13 GB.
+        _encode_bs = 10_000
+        obs_all = jnp.concatenate(
+            [
+                encode_images_overlapping(x_train[s : s + _encode_bs], self.basis)
+                for s in range(0, N, _encode_bs)
+            ],
+            axis=0,
+        )  # (N, n_i, n_j, n_mod)
         labels_all = jnp.asarray(y_train, dtype=jnp.int32)
 
         # Build initial carry from the freshly-initialised agents.
