@@ -552,6 +552,74 @@ def _top_down_D_hierarchical(
     return D_child
 
 
+@eqx.filter_jit
+def _generate_image_distributional(
+    top_prior: jnp.ndarray,
+    level_A_tuple: tuple,
+    child_grids: tuple,
+    max_child_states: tuple,
+    l1_A_stack: jnp.ndarray,
+    l1_valid_mask: jnp.ndarray,
+    bin_centres: jnp.ndarray,
+    V: jnp.ndarray,
+    mean: jnp.ndarray,
+    image_shape: tuple,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """JIT-compiled distributional top-down generation.
+
+    Propagates a prior over top-level states down through all hierarchy levels
+    using the trained A matrices and returns the reconstructed image and
+    expected bin-index observations.
+
+    Args:
+        top_prior: (n_top,) prior distribution over top-level states
+        level_A_tuple: per-level A matrices, ordered from top-1 down to L2
+        child_grids: child grid sizes per descent step
+        max_child_states: max child state count per descent step
+        l1_A_stack: (n_comp, n_patches, n_levels, max_states) stacked L1 A
+        l1_valid_mask: (n_patches, max_states) boolean mask
+        bin_centres: (ng, ng, n_comp, n_levels) continuous bin centre values
+        V: (ng, ng, n_pixels, k) SVD basis vectors
+        mean: (ng, ng, n_pixels) per-group pixel mean
+        image_shape: (C, H, W) static tuple
+
+    Returns:
+        (image, obs) where image is (1, C, H, W) and obs is
+        (1, ng, ng, n_comp) expected bin indices.
+    """
+    beliefs = top_prior[None, :]
+    for parent_A, cg, mcs in zip(level_A_tuple, child_grids, max_child_states):
+        beliefs = _top_down_D_hierarchical(list(parent_A), beliefs, cg, mcs)
+    # beliefs: (n_patches, max_states)
+
+    q_masked = beliefs * l1_valid_mask
+    n_comp, n_patches, n_levels, _ = l1_A_stack.shape
+    ng = int(round(n_patches ** 0.5))
+    q_grid = q_masked.reshape(ng, ng, -1)  # (ng, ng, max_states)
+
+    # marginal[k, i, j, l] = sum_s A[k, patch, l, s] * q[i, j, s]
+    A_grid = l1_A_stack.reshape(n_comp, ng, ng, n_levels, -1)
+    marginal = jnp.einsum('kijls,ijs->kijl', A_grid, q_grid)  # (n_comp, ng, ng, n_levels)
+
+    # Expected bin index per patch per component
+    levels_vec = jnp.arange(n_levels, dtype=bin_centres.dtype)
+    expected_obs = jnp.einsum('kijl,l->ijk', marginal, levels_vec)  # (ng, ng, n_comp)
+
+    # Expected continuous variate per patch per component
+    expected_variates = jnp.einsum('kijl,ijkl->ijk', marginal, bin_centres)  # (ng, ng, n_comp)
+
+    # Decode: linear unproject + tile-sum (identical to decode_observations_overlapping tail)
+    variates_t = expected_variates[None].transpose(1, 2, 0, 3)  # (ng, ng, 1, n_comp)
+    recon_weighted = jnp.einsum('ijnk,ijfk->ijnf', variates_t, V)
+    recon_weighted = recon_weighted + mean[:, :, None, :]
+    recon = recon_weighted.sum(axis=(0, 1))  # (1, n_pixels)
+
+    C, H, W = image_shape
+    image = recon.reshape(1, C, H, W)
+    obs = expected_obs[None]  # (1, ng, ng, n_comp)
+    return image, obs
+
+
 # ---------------------------------------------------------------------------
 # Level 1: patch agents
 # ---------------------------------------------------------------------------
@@ -1274,54 +1342,41 @@ class RGMHierarchy:
             image = decode_observations_overlapping(obs_jnp, self.basis)
             return image, obs_jnp
 
-        # --- Distributional path: propagate full prior down via A matrices ---
+        # --- Distributional path: propagate full prior through trained A matrices ---
         levels = self.hierarchical_levels  # [L1, L2, ..., Ltop]
-        beliefs = top_prior[None, :]  # (1, n_top_states)
+        level_A_tuple = tuple(
+            tuple(levels[i].agent.A)
+            for i in range(len(levels) - 1, 0, -1)
+        )
+        child_grids = tuple(
+            int(round(levels[i - 1].agent.batch_size ** 0.5))
+            for i in range(len(levels) - 1, 0, -1)
+        )
+        max_child_states_tuple = tuple(
+            int(levels[i - 1].agent.num_states[0])
+            for i in range(len(levels) - 1, 0, -1)
+        )
 
-        for parent_lv_idx in range(len(levels) - 1, 0, -1):
-            parent_level = levels[parent_lv_idx]
-            child_level = levels[parent_lv_idx - 1]
-            child_grid = int(round(child_level.agent.batch_size ** 0.5))
-            max_child_states = child_level.agent.num_states[0]
-            beliefs = _top_down_D_hierarchical(
-                parent_level.agent.A, beliefs, child_grid, max_child_states
-            )
-        # beliefs: (n_L1_patches, max_L1_states)
+        l1_level = self.levels[0]
+        l1_A_stack = jnp.stack(list(l1_level.agent.A), axis=0)
+        # l1_A_stack: (n_comp, n_patches, n_levels, max_states)
 
-        # Compute expected bin centres per patch per SVD component.
-        # For each L1 patch p and component k:
-        #   E[centre_k] = sum_s q[s] * bin_centres[i,j,k, pattern[s][k]]
-        # (expectation is in the continuous variate domain, not the bin-index domain)
-        n_groups = self.config.image_size // self.config.group_size
-        n_comp = self.config.max_components
-        l1_stats = self.levels[0].stats
-
-        expected_variates = np.zeros((n_groups, n_groups, n_comp), dtype=np.float32)
-        expected_obs = np.zeros((n_groups, n_groups, n_comp), dtype=np.float32)
-
-        for i in range(n_groups):
-            for j in range(n_groups):
-                p = i * n_groups + j
-                patterns = np.asarray(l1_stats.state_patterns[i][j])  # (n_s, n_comp)
-                n_s = patterns.shape[0]
-                q = np.asarray(beliefs[p, :n_s])  # (n_s,)
-                expected_obs[i, j] = q @ patterns  # expected bin index per component
-                for k in range(n_comp):
-                    centres_k = np.asarray(self.basis.bin_centres[i, j, k, :])
-                    expected_variates[i, j, k] = float(q @ centres_k[patterns[:, k]])
-
-        # Decode: feed expected variates directly into the linear unproject + tile-sum.
-        # This is identical to decode_observations_overlapping but skips the integer
-        # gather step (expected variates are already in the continuous latent domain).
-        variates_t = jnp.array(expected_variates)[None].transpose(1, 2, 0, 3)  # (ng, ng, 1, k)
-        recon_weighted = jnp.einsum('ijnk,ijfk->ijnf', variates_t, self.basis.V)
-        recon_weighted = recon_weighted + self.basis.mean[:, :, None, :]
-        recon = recon_weighted.sum(axis=(0, 1))  # (1, n_pixels)
         C = self.config.n_channels
         H = W = self.config.image_size
-        image = recon.reshape(1, C, H, W)
+        image_shape = (C, H, W)
 
-        obs_jnp = jnp.array(expected_obs)[None]  # (1, n_groups, n_groups, n_comp)
+        image, obs_jnp = _generate_image_distributional(
+            top_prior,
+            level_A_tuple,
+            child_grids,
+            max_child_states_tuple,
+            l1_A_stack,
+            l1_level.valid_mask,
+            self.basis.bin_centres,
+            self.basis.V,
+            self.basis.mean,
+            image_shape,
+        )
         return image, obs_jnp
 
     def train(
