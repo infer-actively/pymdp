@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.2](https://github.com/infer-actively/pymdp/compare/v1.0.1...v1.0.2) (2026-05-07)
+
+
+### Dependencies
+
+* unpin jax/jaxlib now that numpyro 0.21.0 ships fix ([#404](https://github.com/infer-actively/pymdp/issues/404)) ([5491979](https://github.com/infer-actively/pymdp/commit/54919795d51f277b190c71ca98d6ae83b7f6fbf8))
+
+
+### Documentation
+
+* **contributing:** fix release-trigger table and document cadence ([#403](https://github.com/infer-actively/pymdp/issues/403)) ([66226ea](https://github.com/infer-actively/pymdp/commit/66226eadf1515d5e1a0dff263f663ee7adb90def))
+* **notebooks:** render math in mkdocs-jupyter notebooks ([#400](https://github.com/infer-actively/pymdp/issues/400)) ([23c29ed](https://github.com/infer-actively/pymdp/commit/23c29ed55cf76aa1baf5461be5214a18287b70b7))
+
 ## [1.0.1](https://github.com/infer-actively/pymdp/compare/v1.0.0...v1.0.1) (2026-04-28)
 
 
