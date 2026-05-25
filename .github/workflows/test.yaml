@@ -11,11 +11,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.12"]
+        python-version: ["3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install uv
@@ -33,7 +33,7 @@ jobs:
       - name: Upload coverage reports as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pymdp-coverage
+          name: pymdp-coverage-${{ matrix.python-version }}
           path: |
             coverage.xml
             htmlcov/

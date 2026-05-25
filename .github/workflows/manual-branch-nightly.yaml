@@ -11,7 +11,7 @@ on:
       python_version:
         description: Python version to use
         required: true
-        default: "3.12"
+        default: "3.14"
         type: string
 
 concurrency:
