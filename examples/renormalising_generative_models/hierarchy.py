@@ -1,7 +1,9 @@
 """Hierarchical agents for Renormalised Generative Models.
 
-Level 1: batched pymdp Agent (one per patch location) mapping discrete SVD
-observations to learned patch states.
+Level 1: batched pymdp Agent (one per 2×2 group location) mapping joint
+4-tile raw SVD observations to learned group states, matching MATLAB's
+spm_MB_structure_learning. No argmax bottleneck between raw observations
+and the first pooling level.
 
 Levels 2+: generic hierarchical agents that pool 2x2 blocks of child
 posterior beliefs into parent states. Inference passes soft probability
@@ -13,7 +15,7 @@ likelihood learned from exemplar label counts.
 
 The number of levels is derived automatically from the config:
     n_groups = image_size // group_size
-    n_levels = log2(n_groups) + 1
+    n_levels = log2(n_groups)
 """
 
 import functools
@@ -52,39 +54,60 @@ class StateStats(NamedTuple):
     child_num_states: list | None  # [i][j] -> (4,) num_states of each child (None for L1)
 
 
-def compute_patch_states(observations: jnp.ndarray) -> StateStats:
-    """Find unique observation patterns per patch location across structure images.
+def compute_group_states(
+    observations: jnp.ndarray,
+    config: DiscretiseConfig,
+) -> StateStats:
+    """Find unique joint 4-tile observation patterns per 2×2 group.
+
+    Matches MATLAB's spm_MB_structure_learning L1: groups the ng×ng SVD tiles
+    into (ng//2)×(ng//2) parent locations, concatenates the 4 tile observation
+    vectors per group into a single (4k,) integer tuple, and finds unique rows
+    across N exemplars.  No argmax is taken — the vocabulary is built directly
+    over raw observations.
 
     Args:
-        observations: (N, n_groups, n_groups, max_components) integer bin indices
-                      from encode_images()
+        observations: (N, ng, ng, k) integer bin indices from encode_images_overlapping
+        config: discretisation config
 
     Returns:
-        StateStats with unique states per patch location
+        StateStats for the 2×2-grouped level:
+          num_states: (ng//2, ng//2) unique state count per group location
+          state_patterns: [i][j] → (n_states, 4k) unique joint obs tuples
+          state_to_images: [i][j][s] → list of exemplar indices
+          child_num_states: [i][j] → (4k,) n_levels per (tile, component) modality
     """
     obs_np = np.asarray(observations)
-    _, n_i, n_j, _ = obs_np.shape
+    N, ng, _, k = obs_np.shape
+    ng2 = ng // 2
+    offsets = [(0, 0), (0, 1), (1, 0), (1, 1)]
 
-    num_states = np.zeros((n_i, n_j), dtype=np.int32)
-    state_patterns = [[None for _ in range(n_j)] for _ in range(n_i)]
-    state_to_images = [[None for _ in range(n_j)] for _ in range(n_i)]
+    num_states = np.zeros((ng2, ng2), dtype=np.int32)
+    state_patterns = [[None for _ in range(ng2)] for _ in range(ng2)]
+    state_to_images = [[None for _ in range(ng2)] for _ in range(ng2)]
+    child_num_states = [[None for _ in range(ng2)] for _ in range(ng2)]
 
-    for i in range(n_i):
-        for j in range(n_j):
-            patch_obs = obs_np[:, i, j, :]  # (N, k)
-            unique, inverse = np.unique(patch_obs, axis=0, return_inverse=True)
+    for i in range(ng2):
+        for j in range(ng2):
+            # Gather 4 child tiles into joint (N, 4k) observation tuples
+            tiles = np.stack([
+                obs_np[:, 2 * i + di, 2 * j + dj, :]
+                for di, dj in offsets
+            ], axis=1)  # (N, 4, k)
+            joint = tiles.reshape(N, 4 * k)  # (N, 4k)
+            unique, inverse = np.unique(joint, axis=0, return_inverse=True)
             num_states[i, j] = len(unique)
             state_patterns[i][j] = jnp.array(unique)
-            # Map each state to its source image indices
             state_to_images[i][j] = [
                 list(np.where(inverse == s)[0]) for s in range(len(unique))
             ]
+            child_num_states[i][j] = np.full(4 * k, config.n_levels)
 
     return StateStats(
         num_states=jnp.array(num_states),
         state_patterns=state_patterns,
         state_to_images=state_to_images,
-        child_num_states=None,
+        child_num_states=child_num_states,
     )
 
 
@@ -348,6 +371,72 @@ def _mi_gated_update(
     return eqx.tree_at(lambda x: (x.A, x.pA), agent_posterior, (A_new, pA_new))
 
 
+def _interleaved_em(
+    pA_list: list[jnp.ndarray],
+    obs_soft_list: list[jnp.ndarray],
+    D: jnp.ndarray,
+    valid_mask: jnp.ndarray,
+    num_iter: int = 16,
+) -> tuple[list[jnp.ndarray], jnp.ndarray]:
+    """Interleaved Q-A EM matching MATLAB's spm_VBX within-level solver.
+
+    Each iteration resets qa to the prior then adds the current sufficient
+    statistic, mirroring MATLAB's `qa = pa; qa += cross(O, Q)` pattern:
+
+        M-step: qa_m = pa_m + einsum('po,ps->pos', obs_m, Q)
+        A_m    = normalize(qa_m)                               (spm_norm)
+        E-step: Q = softmax(sum_m log(A_m) @ obs_m + log(D))
+
+    Only Q evolves across iterations; pa is the fixed Dirichlet prior.
+    Q is initialised to D (the state prior) before the first M-step.
+
+    Uses lax.scan over iterations (carry = Q only) to keep XLA graph size O(1)
+    regardless of num_iter — avoiding command-buffer OOM from loop unrolling.
+
+    Args:
+        pA_list:       list of (n_patches, n_obs_m, max_states) Dirichlet priors
+        obs_soft_list: list of (n_patches, n_obs_m) soft observation vectors
+        D:             (n_patches, max_states) state prior
+        valid_mask:    (n_patches, max_states) bool — zero out invalid patches
+        num_iter:      number of EM iterations (MATLAB uses 16)
+
+    Returns:
+        (qa_list, Q): final Dirichlet accumulators and state posterior
+    """
+    log_D = jnp.log(jnp.clip(D, 1e-16))
+
+    def em_step(Q, _):
+        # M-step: qa_m = (pa_m + outer(obs_m, Q)) * (pa_m > 0)
+        # Reset to pa each iteration; mask zeros so unobserved (obs, state) pairs
+        # are never activated — matches spm_backwards: qa = qa .* (pa > 0)
+        qa_list_inner = [
+            (pa_m + jnp.einsum('po,ps->pos', obs_m, Q)) * (pa_m > 0)
+            for pa_m, obs_m in zip(pA_list, obs_soft_list)
+        ]
+        A_list_inner = [
+            qa_m / jnp.clip(qa_m.sum(axis=1, keepdims=True), 1e-16)
+            for qa_m in qa_list_inner
+        ]
+        # E-step: Q = softmax(sum_m log(A_m) @ obs_m + log(D))
+        log_q = log_D + sum(
+            jnp.einsum('pos,po->ps', jnp.log(jnp.clip(A_m, 1e-16)), obs_m)
+            for A_m, obs_m in zip(A_list_inner, obs_soft_list)
+        )
+        Q_new = jax.nn.softmax(log_q, axis=-1)
+        Q_new = jnp.where(valid_mask, Q_new, 0.0)
+        Q_new = Q_new / jnp.clip(Q_new.sum(axis=-1, keepdims=True), 1e-16)
+        return Q_new, None
+
+    Q, _ = lax.scan(em_step, D, None, length=num_iter)
+
+    # Final M-step to recover qa_list at the converged Q (with mask)
+    qa_list = [
+        (pa_m + jnp.einsum('po,ps->pos', obs_m, Q)) * (pa_m > 0)
+        for pa_m, obs_m in zip(pA_list, obs_soft_list)
+    ]
+    return qa_list, Q
+
+
 class _TrainCarry(NamedTuple):
     """Immutable carry for the lax.scan training loop.
 
@@ -364,14 +453,13 @@ def _train_step(
     x: tuple,
     valid_masks: tuple,
     n_classes: int,
-    lr_pA: float,
     beta: float,
     eta: float,
 ) -> tuple[_TrainCarry, dict]:
     """Pure per-image training step — suitable as a lax.scan body.
 
     Performs one full bottom-up / supervised-classification / top-down /
-    MI-gated-update cycle for a single pre-encoded image.
+    interleaved-EM-update cycle for a single pre-encoded image.
 
     Args:
         carry: current training state (hierarchical + cls agents)
@@ -380,7 +468,6 @@ def _train_step(
         valid_masks: tuple of (n_patches, max_states) bool masks, one per
                      hierarchical level (static, closed over)
         n_classes: number of digit classes (static)
-        lr_pA: Dirichlet learning rate
         beta: MI-gate softmax sharpness
         eta: asymptotic forgetting parameter
 
@@ -393,9 +480,7 @@ def _train_step(
     n_hier = len(levels)  # static at trace time
 
     # --- Bottom-up soft pass ---
-    n_i, n_j, n_mod = obs_image.shape  # static at trace time
-    obs_flat = obs_image.reshape(n_i * n_j, n_mod)
-    l1_obs_list = [obs_flat[:, m] for m in range(n_mod)]
+    l1_obs_list = _raw_obs_to_group_obs_list(obs_image)
     qs_l1 = levels[0].infer_states(l1_obs_list, levels[0].D)
     child_beliefs = jnp.where(valid_masks[0], qs_l1[0][:, 0, :], 0.0)
 
@@ -459,32 +544,30 @@ def _train_step(
                 valid_masks[lv_idx], qs_refined[0][:, 0, :], 0.0
             )
 
-    # --- MI-gated Dirichlet updates at every hierarchical level ---
+    # --- Interleaved EM updates at every hierarchical level (matching spm_VBX) ---
     new_levels = []
     for lv_idx in range(n_hier):
         level = levels[lv_idx]
-        beliefs_A = [refined_soft[lv_idx][:, None, :]]
+        D_em = refined_soft[lv_idx]   # top-down refined prior over states
         if lv_idx == 0:
-            obs_with_time = [o[:, None] for o in level_obs_lists[0]]
+            n_obs_l1 = level.pA[0].shape[1]  # n_levels (SVD bin outcomes)
+            obs_soft = [jax.nn.one_hot(o, n_obs_l1) for o in level_obs_lists[0]]
         else:
-            obs_with_time = [o[:, None, :] for o in level_obs_lists[lv_idx]]
-        agent_posterior = level.infer_parameters(
-            beliefs_A=beliefs_A,
-            observations=obs_with_time,
-            actions=None,
-            lr_pA=lr_pA,
-        )
+            obs_soft = level_obs_lists[lv_idx]  # already (n_patches, max_child_states)
+        qa_final, _ = _interleaved_em(level.pA, obs_soft, D_em, valid_masks[lv_idx])
+        A_new_em = [qa_m / jnp.clip(qa_m.sum(axis=1, keepdims=True), 1e-16) for qa_m in qa_final]
+        agent_posterior = eqx.tree_at(lambda x: (x.pA, x.A), level, (qa_final, A_new_em))
         new_levels.append(_mi_gated_update(level, agent_posterior, beta, eta))
 
-    # --- Classification level update ---
-    qs_cls_for_update = [q_cls[:, None, :]]
-    cls_obs_with_time = [child_beliefs[:, None, :]]
-    cls_posterior = cls_agent.infer_parameters(
-        beliefs_A=qs_cls_for_update,
-        observations=cls_obs_with_time,
-        actions=None,
-        lr_pA=lr_pA,
+    # --- Classification level: interleaved EM ---
+    obs_soft_cls = [child_beliefs]   # (1, n_top_states)
+    D_cls = q_cls                    # (1, n_classes) supervised posterior
+    qa_cls_final, _ = _interleaved_em(
+        cls_agent.pA, obs_soft_cls, D_cls,
+        jnp.ones((1, n_classes), dtype=jnp.bool_),
     )
+    A_cls_new = [qa_m / jnp.clip(qa_m.sum(axis=1, keepdims=True), 1e-16) for qa_m in qa_cls_final]
+    cls_posterior = eqx.tree_at(lambda x: (x.pA, x.A), cls_agent, (qa_cls_final, A_cls_new))
     new_cls_agent = _mi_gated_update(cls_agent, cls_posterior, beta, eta)
 
     new_carry = _TrainCarry(levels=tuple(new_levels), cls_agent=new_cls_agent)
@@ -590,127 +673,131 @@ def _generate_image_distributional(
     beliefs = top_prior[None, :]
     for parent_A, cg, mcs in zip(level_A_tuple, child_grids, max_child_states):
         beliefs = _top_down_D_hierarchical(list(parent_A), beliefs, cg, mcs)
-    # beliefs: (n_patches, max_states)
+    # beliefs: (n_l1_patches, max_l1_states) where n_l1_patches = (ng//2)^2
 
     q_masked = beliefs * l1_valid_mask
-    n_comp, n_patches, n_levels, _ = l1_A_stack.shape
-    ng = int(round(n_patches ** 0.5))
-    q_grid = q_masked.reshape(ng, ng, -1)  # (ng, ng, max_states)
+    n_mod_l1, n_patches, n_levels_l1, _ = l1_A_stack.shape  # n_mod_l1 = 4k
+    ng2 = int(round(n_patches ** 0.5))  # L1 parent grid = ng//2
+    k = n_mod_l1 // 4
+    ng = 2 * ng2  # full SVD tile grid
+    q_grid = q_masked.reshape(ng2, ng2, -1)  # (ng2, ng2, max_states)
 
-    # marginal[k, i, j, l] = sum_s A[k, patch, l, s] * q[i, j, s]
-    A_grid = l1_A_stack.reshape(n_comp, ng, ng, n_levels, -1)
-    marginal = jnp.einsum('kijls,ijs->kijl', A_grid, q_grid)  # (n_comp, ng, ng, n_levels)
+    A_grid = l1_A_stack.reshape(n_mod_l1, ng2, ng2, n_levels_l1, -1)
+    marginal = jnp.einsum('kijls,ijs->kijl', A_grid, q_grid)  # (4k, ng2, ng2, n_levels)
+    marginal_4k = marginal.reshape(4, k, ng2, ng2, n_levels_l1)  # (4, k, ng2, ng2, n_levels)
 
-    # Expected bin index per patch per component
-    levels_vec = jnp.arange(n_levels, dtype=bin_centres.dtype)
-    expected_obs = jnp.einsum('kijl,l->ijk', marginal, levels_vec)  # (ng, ng, n_comp)
+    levels_vec = jnp.arange(n_levels_l1, dtype=bin_centres.dtype)
 
-    # Expected continuous variate per patch per component
-    expected_variates = jnp.einsum('kijl,ijkl->ijk', marginal, bin_centres)  # (ng, ng, n_comp)
+    # Scatter expected obs and variates from group patches back to SVD tile positions
+    expected_obs_full = jnp.zeros((ng, ng, k))
+    expected_variates_full = jnp.zeros((ng, ng, k))
+    for t, (di, dj) in enumerate([(0, 0), (0, 1), (1, 0), (1, 1)]):
+        child_rows = 2 * jnp.arange(ng2) + di  # (ng2,)
+        child_cols = 2 * jnp.arange(ng2) + dj  # (ng2,)
+        m_t = marginal_4k[t]  # (k, ng2, ng2, n_levels)
+        ev_obs_t = jnp.einsum('cijn,n->ijc', m_t, levels_vec)  # (ng2, ng2, k)
+        expected_obs_full = expected_obs_full.at[
+            child_rows[:, None], child_cols[None, :], :
+        ].set(ev_obs_t)
+        bc_t = bin_centres[child_rows[:, None], child_cols[None, :], :, :]  # (ng2, ng2, k, n_levels)
+        ev_var_t = jnp.einsum('cijn,ijcn->ijc', m_t, bc_t)  # (ng2, ng2, k)
+        expected_variates_full = expected_variates_full.at[
+            child_rows[:, None], child_cols[None, :], :
+        ].set(ev_var_t)
 
-    # Decode: linear unproject + tile-sum (identical to decode_observations_overlapping tail)
-    variates_t = expected_variates[None].transpose(1, 2, 0, 3)  # (ng, ng, 1, n_comp)
+    # Decode: linear unproject + tile-sum
+    variates_t = expected_variates_full[None].transpose(1, 2, 0, 3)  # (ng, ng, 1, k)
     recon_weighted = jnp.einsum('ijnk,ijfk->ijnf', variates_t, V)
     recon_weighted = recon_weighted + mean[:, :, None, :]
     recon = recon_weighted.sum(axis=(0, 1))  # (1, n_pixels)
 
     C, H, W = image_shape
     image = recon.reshape(1, C, H, W)
-    obs = expected_obs[None]  # (1, ng, ng, n_comp)
+    obs = expected_obs_full[None]  # (1, ng, ng, k)
     return image, obs
 
 
 # ---------------------------------------------------------------------------
-# Level 1: patch agents
+# Level 1: group agents (2×2 blocks of raw SVD observations, matching MATLAB)
 # ---------------------------------------------------------------------------
 
 
-def create_patch_agents(
+def create_group_agents(
     stats: StateStats,
     config: DiscretiseConfig,
 ) -> tuple[Agent, jnp.ndarray]:
-    """Build a single batched pymdp Agent for all patch locations.
+    """Build L1 batched agents taking raw 4-tile SVD observations.
 
-    Each patch location becomes one element in the batch. All patches share:
-    - max_components observation modalities, each with n_levels levels
-    - 1 hidden state factor whose size = max unique states across all patches
+    Each of the (ng//2)^2 group locations becomes one batch element with 4k
+    observation modalities (4 tiles × k SVD components), each with
+    config.n_levels possible values (SVD bin indices).
 
     Args:
-        stats: StateStats from compute_patch_states()
-        config: DiscretiseConfig used for discretisation
+        stats: StateStats from compute_group_states()
+        config: DiscretiseConfig
 
     Returns:
-        (agent, valid_states_mask) where valid_states_mask is (n_patches, max_states)
+        (agent, valid_mask)
     """
-    n_groups = config.image_size // config.group_size
-    n_patches = n_groups * n_groups
-    n_mod = config.max_components
+    ng2 = stats.num_states.shape[0]
+    n_patches = ng2 * ng2
+    k = config.max_components
+    n_mod = 4 * k
     n_levels = config.n_levels
 
-    num_states_flat = stats.num_states.flatten()  # (n_patches,)
+    num_states_flat = stats.num_states.flatten()
     max_states = int(num_states_flat.max())
 
-    # Valid states mask: (n_patches, max_states)
     valid_mask = jnp.arange(max_states)[None, :] < num_states_flat[:, None]
 
-    # --- Build A matrices in NumPy, convert once ---
     # A[m] shape: (n_patches, n_levels, max_states)
-    # For valid state s at patch p, modality m: one-hot at the observation level
+    # For valid state s: one-hot at the observed bin index for modality m
     # For padded states: uniform 1/n_levels
     A_np = np.full((n_mod, n_patches, n_levels, max_states), 1.0 / n_levels)
-    m_idx = np.arange(n_mod)[:, None]  # (n_mod, 1) for broadcasting
     for flat_idx in range(n_patches):
-        i, j = divmod(flat_idx, n_groups)
-        patterns = np.asarray(stats.state_patterns[i][j])  # (n_s, max_components)
+        i, j = divmod(flat_idx, ng2)
+        patterns = np.asarray(stats.state_patterns[i][j])  # (n_s, 4k)
         n_s = patterns.shape[0]
-        s_idx = np.arange(n_s)[None, :]  # (1, n_s)
         A_np[:, flat_idx, :, :n_s] = 0.0
-        A_np[m_idx, flat_idx, patterns[:n_s, :].T, s_idx] = 1.0
+        for m in range(n_mod):
+            s_idx = np.arange(n_s)
+            A_np[m, flat_idx, patterns[:n_s, m], s_idx] = 1.0
     A = [jnp.array(A_np[m]) for m in range(n_mod)]
 
-    agent = _build_agent(A, n_patches, max_states, n_mod, valid_mask)
+    # categorical_obs=False: observations are integer bin indices
+    agent = _build_agent(A, n_patches, max_states, n_mod, valid_mask, categorical_obs=False)
     return agent, valid_mask
 
 
-def infer_patch_beliefs(
-    agent: Agent,
-    valid_mask: jnp.ndarray,
-    observations: jnp.ndarray,
-) -> jnp.ndarray:
-    """Run L1 inference and return soft posterior beliefs.
+def _raw_obs_to_group_obs_list(obs_image: jnp.ndarray) -> list[jnp.ndarray]:
+    """Build a 4k-element obs_list for a group-level agent from raw tile obs.
+
+    Each of the 4k modalities corresponds to one (tile, component) pair in the
+    2×2 block. Ordered: tile 0 components 0…k-1, tile 1 components 0…k-1, …
 
     Args:
-        agent: Batched Agent from create_patch_agents()
-        valid_mask: (n_patches, max_states) boolean mask
-        observations: (n_groups, n_groups, max_components) single image observations
+        obs_image: (ng, ng, k) integer bin indices
 
     Returns:
-        (n_patches, max_states) soft posterior beliefs with padded states zeroed
+        list of 4k arrays, each (ng//2 * ng//2,) integer indices
     """
-    n_i, n_j, n_mod = observations.shape
-    obs_flat = observations.reshape(n_i * n_j, n_mod)
-    obs_list = [obs_flat[:, m] for m in range(n_mod)]
-    return _infer_beliefs(agent, valid_mask, obs_list)
+    ng = obs_image.shape[0]
+    k = obs_image.shape[2]
+    ng2 = ng // 2
+    n_parent = ng2 * ng2
+    offsets = [(0, 0), (0, 1), (1, 0), (1, 1)]
 
+    parent_rows = jnp.arange(n_parent) // ng2
+    parent_cols = jnp.arange(n_parent) % ng2
 
-def infer_patch_states(
-    agent: Agent,
-    valid_mask: jnp.ndarray,
-    observations: jnp.ndarray,
-) -> jnp.ndarray:
-    """Run L1 inference for a single image.
-
-    Args:
-        agent: Batched Agent from create_patch_agents()
-        valid_mask: (n_patches, max_states) boolean mask
-        observations: (n_groups, n_groups, max_components) single image observations
-
-    Returns:
-        (n_groups, n_groups) MAP state indices
-    """
-    beliefs = infer_patch_beliefs(agent, valid_mask, observations)
-    masked = jnp.where(valid_mask, beliefs, -jnp.inf)
-    return jnp.argmax(masked, axis=1).reshape(observations.shape[0], observations.shape[1])
+    obs_list = []
+    for di, dj in offsets:
+        child_rows = 2 * parent_rows + di
+        child_cols = 2 * parent_cols + dj
+        tile_obs = obs_image[child_rows, child_cols, :]  # (n_parent, k)
+        for c in range(k):
+            obs_list.append(tile_obs[:, c])
+    return obs_list
 
 
 # ---------------------------------------------------------------------------
@@ -972,23 +1059,30 @@ def _expand_to_obs(
     l1_stats: StateStats,
     config: DiscretiseConfig,
 ) -> np.ndarray:
-    """Expand L1 state grid to observation grid via state_patterns.
+    """Expand L1 group state grid to raw SVD observation grid.
+
+    l1_grid is (ng//2, ng//2) and each state's pattern has shape (4k,)
+    encoding the 4 child tiles' k SVD components.
 
     Args:
-        l1_grid: (n_groups, n_groups) L1 MAP state indices
-        l1_stats: StateStats for level 1
+        l1_grid: (ng//2, ng//2) L1 MAP state indices
+        l1_stats: StateStats from compute_group_states
         config: DiscretiseConfig
 
     Returns:
-        (n_groups, n_groups, max_components) discrete bin indices
+        (ng, ng, k) discrete bin indices
     """
-    n_groups = config.image_size // config.group_size
-    n_comp = config.max_components
-    obs_grid = np.zeros((n_groups, n_groups, n_comp), dtype=np.int32)
-    for i in range(n_groups):
-        for j in range(n_groups):
+    ng = config.image_size // config.group_size
+    k = config.max_components
+    ng2 = ng // 2
+    offsets = [(0, 0), (0, 1), (1, 0), (1, 1)]
+    obs_grid = np.zeros((ng, ng, k), dtype=np.int32)
+    for i in range(ng2):
+        for j in range(ng2):
             s = int(l1_grid[i, j])
-            obs_grid[i, j] = np.asarray(l1_stats.state_patterns[i][j][s])
+            pattern = np.asarray(l1_stats.state_patterns[i][j][s])  # (4k,)
+            for t, (di, dj) in enumerate(offsets):
+                obs_grid[2 * i + di, 2 * j + dj, :] = pattern[t * k:(t + 1) * k]
     return obs_grid
 
 
@@ -1022,11 +1116,9 @@ def _classify_one(
     n_hier = len(level_agents)
 
     # === Bottom-up pass ===
-    n_i, n_j, n_mod = obs_i.shape
-    obs_flat = obs_i.reshape(n_i * n_j, n_mod)
-    l1_obs_list = [obs_flat[:, m] for m in range(n_mod)]
-
-    child_beliefs = infer_patch_beliefs(level_agents[0], level_masks[0], obs_i)
+    l1_obs_list = _raw_obs_to_group_obs_list(obs_i)
+    qs_l1 = level_agents[0].infer_states(l1_obs_list, level_agents[0].D)
+    child_beliefs = jnp.where(level_masks[0], qs_l1[0][:, 0, :], 0.0)
     level_soft_beliefs = [child_beliefs]
     level_obs_lists = [l1_obs_list]
 
@@ -1190,22 +1282,26 @@ class RGMHierarchy:
         basis = compute_svd_basis_overlapping(x_exemplars, config)
         observations = encode_images_overlapping(x_exemplars, basis)
 
-        # Level 1: patch states
-        l1_stats = compute_patch_states(observations)
-        l1_agent, l1_valid_mask = create_patch_agents(l1_stats, config)
+        # Level 1: group states (2×2 blocks of raw SVD observations, matching MATLAB)
+        l1_stats = compute_group_states(observations, config)
+        l1_agent, l1_valid_mask = create_group_agents(l1_stats, config)
 
-        # L1 inference on all exemplars
+        # L1 MAP states for structure learning at L2+
         l1_maps = jnp.stack([
-            infer_patch_states(l1_agent, l1_valid_mask, observations[idx])
+            _infer_map_states(
+                l1_agent, l1_valid_mask,
+                _raw_obs_to_group_obs_list(observations[idx]),
+                output_shape=(n_groups // 2, n_groups // 2),
+            )
             for idx in range(len(observations))
         ])
 
         levels = [RGMLevel(l1_agent, l1_valid_mask, l1_stats)]
         maps = l1_maps
         prev_stats = l1_stats
-        grid_size = n_groups
+        grid_size = n_groups // 2  # already halved by the group step
 
-        for _ in range(n_halvings):
+        for _ in range(n_halvings - 1):  # one fewer halving
             stats = compute_hierarchical_state_stats(maps, prev_stats)
             agent, valid_mask = create_hierarchical_agents(stats, prev_stats)
             levels.append(RGMLevel(agent, valid_mask, stats))
@@ -1334,8 +1430,10 @@ class RGMHierarchy:
                 key = jr.PRNGKey(0)
             s_top = int(jr.choice(key, n_top, p=top_prior))
             grid = np.array([[s_top]], dtype=np.int32)
+            # Expand from top through L2+ levels; L1 is group-based (handled by _expand_to_obs)
             for level in reversed(self.hierarchical_levels[1:]):
                 grid = _expand_grid(grid, level.stats)
+            # grid is now (ng//2, ng//2) — L1 group states; expand to (ng, ng, k)
             obs_grid = _expand_to_obs(grid, self.levels[0].stats, self.config)
             obs_jnp = jnp.array(obs_grid)[None]
             image = decode_observations_overlapping(obs_jnp, self.basis)
@@ -1454,8 +1552,8 @@ class RGMHierarchy:
 
         # Encode in chunks to avoid materialising the (ng, ng, N, n_pixels) intermediate
         # tensor all at once.  The output (integer bin indices) is tiny; only the SVD
-        # projection step is large.  10 000 images ≈ 2.6 GB intermediate; 50 000 ≈ 13 GB.
-        _encode_bs = 10_000
+        # projection step is large.  3 000 images ≈ 0.8 GB intermediate; 10 000 ≈ 2.6 GB.
+        _encode_bs = 3_000
         obs_all = jnp.concatenate(
             [
                 encode_images_overlapping(x_train[s : s + _encode_bs], self.basis)
@@ -1483,7 +1581,6 @@ class RGMHierarchy:
             _train_step,
             valid_masks=valid_masks,
             n_classes=self.n_classes,
-            lr_pA=lr_pA,
             beta=beta,
             eta=eta,
         )
