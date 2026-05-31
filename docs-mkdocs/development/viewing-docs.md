@@ -31,4 +31,3 @@ Local URL:
 - `./scripts/docs_build.sh` and `./scripts/docs_serve.sh` sync curated notebooks automatically before invoking MkDocs.
 - To add notebook docs, update `docs-mkdocs/tutorials/notebooks.manifest`. The sync step will copy the listed notebooks into the generated docs tree.
 - MkDocs source-of-truth content lives in `docs-mkdocs/`.
-- `docs/` is retained as legacy Sphinx-era content for compatibility/history.
