@@ -20,3 +20,4 @@ site/
 build/
 dist/
 uv.lock
+docs-mkdocs/tutorials/notebooks/examples/**/*.ipynb

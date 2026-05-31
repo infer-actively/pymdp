@@ -26,7 +26,7 @@ class GridWorldEnv(Env):
 
     CONTROL_NAMES = ["UP", "RIGHT", "DOWN", "LEFT", "STAY"]
 
-    def __init__(self, shape=[2, 2], init_state=None):
+    def __init__(self, shape=None, init_state=None):
         """
         Initialization function for 2-D grid world
 
@@ -38,7 +38,8 @@ class GridWorldEnv(Env):
             Initial state of the environment, i.e. the location of the agent in grid world. If not ``None``, must be a discrete index  in the range ``(0, (shape[0] * shape[1])-1)``. It is thus a "linear index" of the initial location of the agent in grid world.
             If ``None``, then an initial location will be randomly sampled from the grid.
         """
-        
+        if shape is None:
+            shape = [2, 2]
         self.shape = shape
         self.n_states = np.prod(shape)
         self.n_observations = self.n_states
@@ -201,7 +202,9 @@ class DGridWorldEnv(object):
 
     CONTROL_NAMES = ["LEFT", "STAY", "RIGHT"]
 
-    def __init__(self, shape=[2, 2], init_state=None):
+    def __init__(self, shape=None, init_state=None):
+        if shape is None:
+            shape = [2, 2]
         self.shape = shape
         self.n_states = np.prod(shape)
         self.n_observations = self.n_states
