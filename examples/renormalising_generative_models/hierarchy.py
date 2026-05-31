@@ -1486,6 +1486,7 @@ class RGMHierarchy:
         beta: float = 512.0,
         eta: float = 512.0,
         log_every: int = 500,
+        scan_chunk_size: int = 50,
     ) -> dict:
         """Parametric training via sequential Dirichlet updates with soft beliefs
         and MI-gated learning, following SPM's DEM_MNIST_RGM.m.
@@ -1504,12 +1505,12 @@ class RGMHierarchy:
                Pa = softmax(beta * [MI(pa), MI(qa)])
                pA_new = (Pa[0]*pa + Pa[1]*qa) * eta / (eta + Pa[1])
 
-        The inner loop is compiled as a ``lax.scan`` over chunks of ``log_every``
-        images (one XLA program per chunk), eliminating per-operation Python
-        dispatch overhead.  On GPU, set
-        ``XLA_PYTHON_CLIENT_ALLOCATOR=platform`` and
-        ``XLA_PYTHON_CLIENT_MEM_FRACTION=0.20`` if you hit CUDA graph OOM during
-        compilation (these are the default test env-vars in ``test/conftest.py``).
+        The inner loop is compiled as a ``lax.scan`` over sub-chunks of
+        ``scan_chunk_size`` images (one XLA program per unique sub-chunk size),
+        eliminating per-operation Python dispatch overhead.  ``log_every`` controls
+        only how often progress is printed; ``scan_chunk_size`` controls the XLA
+        program size and peak memory.  On GPU, reduce ``scan_chunk_size`` (e.g. 50)
+        if you hit OOM during compilation.
 
         Args:
             x_train: (N, H, W) preprocessed training images
@@ -1519,8 +1520,10 @@ class RGMHierarchy:
             lr_pA: learning rate passed to infer_parameters
             beta: softmax sharpness for MI gate (SPM uses 512)
             eta: asymptote / forgetting parameter (SPM uses 512)
-            log_every: chunk size for lax.scan — prints progress after each chunk.
-                Also controls the lax.scan program size; keep ≤ 1 000 on GPU if
+            log_every: how often (in images) to print a progress line and record MI.
+            scan_chunk_size: number of images per ``lax.scan`` call. Smaller values
+                use less peak memory at the cost of more XLA compilations (one per
+                unique chunk size). Must be ≤ log_every. Reduce to 25–50 on GPU if
                 compilation OOMs.
 
         Returns:
@@ -1603,13 +1606,19 @@ class RGMHierarchy:
 
         for chunk_start in range(0, N, log_every):
             chunk_end = min(chunk_start + log_every, N)
-            obs_chunk = obs_all[chunk_start:chunk_end]
-            lbl_chunk = labels_all[chunk_start:chunk_end]
 
-            dynamic_carry, chunk_metrics = _scan_chunk(dynamic_carry, obs_chunk, lbl_chunk)
+            # Break the log_every window into scan_chunk_size sub-chunks so XLA
+            # compiles a smaller program (fewer traced steps → less peak memory).
+            correct_inc_parts = []
+            for sub_start in range(chunk_start, chunk_end, scan_chunk_size):
+                sub_end = min(sub_start + scan_chunk_size, chunk_end)
+                obs_sub = obs_all[sub_start:sub_end]
+                lbl_sub = labels_all[sub_start:sub_end]
+                dynamic_carry, sub_metrics = _scan_chunk(dynamic_carry, obs_sub, lbl_sub)
+                correct_inc_parts.append(np.asarray(sub_metrics["correct_inc"]))
 
             # Reconstruct running accuracy for this chunk without device syncs.
-            correct_inc = np.asarray(chunk_metrics["correct_inc"])  # (chunk_size,)
+            correct_inc = np.concatenate(correct_inc_parts)  # (chunk_size,)
             cumcorrect = np.cumsum(correct_inc) + prior_correct
             total_seen = np.arange(chunk_start + 1, chunk_end + 1)
             running_accuracy.extend((cumcorrect / total_seen).tolist())
