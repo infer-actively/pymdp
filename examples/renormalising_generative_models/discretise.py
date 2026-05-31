@@ -203,8 +203,9 @@ def compute_svd_basis_overlapping(
     mode_mask = (S > 0).astype(jnp.float32)
 
     def symmetric_bin_centres(v):
-        max_abs = jnp.maximum(jnp.abs(v).max(), 1e-8)
-        return jnp.linspace(-max_abs, max_abs, config.n_levels)
+        lo = v.min()
+        hi = jnp.maximum(v.max(), lo + 1e-8)
+        return jnp.linspace(lo, hi, config.n_levels)
 
     # vmap over (ng, ng, k) -> bin_centres (ng, ng, k, n_levels)
     bin_centres = vmap(vmap(vmap(symmetric_bin_centres)))(
