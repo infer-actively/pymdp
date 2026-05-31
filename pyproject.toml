@@ -53,6 +53,8 @@ test = [
     "pytest>=8.4.2",
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.5.0",
+    "scikit-image>=0.25.2",
+    "scikit-learn>=1.7.2",
 ]
 
 [project.optional-dependencies]
