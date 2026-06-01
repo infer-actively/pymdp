@@ -480,23 +480,8 @@ def _train_step(
     n_hier = len(levels)  # static at trace time
 
     # --- Bottom-up soft pass ---
-    l1_obs_list = _raw_obs_to_group_obs_list(obs_image)
-    qs_l1 = levels[0].infer_states(l1_obs_list, levels[0].D)
-    child_beliefs = jnp.where(valid_masks[0], qs_l1[0][:, 0, :], 0.0)
-
-    level_soft_beliefs = [child_beliefs]
-    level_obs_lists = [l1_obs_list]
-
-    for lv_idx in range(1, n_hier):
-        level = levels[lv_idx]
-        child_grid = int(round(child_beliefs.shape[0] ** 0.5))  # static
-        obs_list = _extract_soft_obs(child_beliefs, child_grid)
-        level_obs_lists.append(obs_list)
-        qs = level.infer_states(obs_list, level.D)
-        child_beliefs = jnp.where(valid_masks[lv_idx], qs[0][:, 0, :], 0.0)
-        level_soft_beliefs.append(child_beliefs)
-
-    # child_beliefs is now the top hierarchical level's soft beliefs
+    level_soft_beliefs, level_obs_lists = _bottom_up_pass(levels, valid_masks, obs_image)
+    child_beliefs = level_soft_beliefs[-1]
 
     # --- Unsupervised prediction (for accuracy tracking) ---
     qs_cls_pred = cls_agent.infer_states([child_beliefs], cls_agent.D)
@@ -509,40 +494,9 @@ def _train_step(
     q_cls = qs_cls[0][:, 0, :]  # (1, n_classes)
 
     # --- Top-down pass: refine beliefs using cls posterior ---
-    refined_soft = [None] * n_hier
-
-    D_top = _top_down_D_from_cls(cls_agent.A, q_cls)
-    child_input = level_soft_beliefs[n_hier - 2] if n_hier > 1 else level_soft_beliefs[0]
-    child_grid_top = int(round(child_input.shape[0] ** 0.5))  # static
-    obs_top = _extract_soft_obs(child_input, child_grid_top)
-    qs_top_refined = levels[n_hier - 1].infer_states(obs_top, [D_top])
-    refined_soft[n_hier - 1] = jnp.where(
-        valid_masks[n_hier - 1], qs_top_refined[0][:, 0, :], 0.0
+    refined_soft = _top_down_refinement_pass(
+        levels, valid_masks, cls_agent, q_cls, level_soft_beliefs, level_obs_lists
     )
-
-    for lv_idx in range(n_hier - 2, -1, -1):
-        parent_lv = lv_idx + 1
-        q_parent = refined_soft[parent_lv]
-        child_level = levels[lv_idx]
-        n_child_patches = child_level.batch_size  # static
-        child_grid = int(round(n_child_patches ** 0.5))  # static
-        max_child_states = child_level.num_states[0]  # static
-        D_child = _top_down_D_hierarchical(
-            levels[parent_lv].A, q_parent, child_grid, max_child_states
-        )
-        if lv_idx == 0:
-            qs_l1_refined = child_level.infer_states(level_obs_lists[0], [D_child])
-            refined_soft[0] = jnp.where(
-                valid_masks[0], qs_l1_refined[0][:, 0, :], 0.0
-            )
-        else:
-            child_input_here = level_soft_beliefs[lv_idx - 1]
-            child_grid_here = int(round(child_input_here.shape[0] ** 0.5))  # static
-            obs_here = _extract_soft_obs(child_input_here, child_grid_here)
-            qs_refined = child_level.infer_states(obs_here, [D_child])
-            refined_soft[lv_idx] = jnp.where(
-                valid_masks[lv_idx], qs_refined[0][:, 0, :], 0.0
-            )
 
     # --- Interleaved EM updates at every hierarchical level (matching spm_VBX) ---
     new_levels = []
@@ -950,6 +904,99 @@ def _extract_soft_obs(child_beliefs: jnp.ndarray, child_grid: int) -> list[jnp.n
     return obs_list
 
 
+def _bottom_up_pass(
+    levels: tuple,
+    valid_masks: tuple,
+    obs_image: jnp.ndarray,
+) -> tuple[list, list]:
+    """Run the bottom-up soft inference pass through all hierarchical levels.
+
+    Args:
+        levels: tuple of Agent objects (L1 first)
+        valid_masks: tuple of (n_patches, max_states) boolean masks
+        obs_image: (ng, ng, k) encoded observation image
+
+    Returns:
+        (level_soft_beliefs, level_obs_lists) ordered bottom to top
+    """
+    l1_obs_list = _raw_obs_to_group_obs_list(obs_image)
+    qs_l1 = levels[0].infer_states(l1_obs_list, levels[0].D)
+    child_beliefs = jnp.where(valid_masks[0], qs_l1[0][:, 0, :], 0.0)
+
+    level_soft_beliefs = [child_beliefs]
+    level_obs_lists = [l1_obs_list]
+
+    for lv_idx in range(1, len(levels)):
+        child_grid = int(round(child_beliefs.shape[0] ** 0.5))
+        obs_list = _extract_soft_obs(child_beliefs, child_grid)
+        level_obs_lists.append(obs_list)
+        qs = levels[lv_idx].infer_states(obs_list, levels[lv_idx].D)
+        child_beliefs = jnp.where(valid_masks[lv_idx], qs[0][:, 0, :], 0.0)
+        level_soft_beliefs.append(child_beliefs)
+
+    return level_soft_beliefs, level_obs_lists
+
+
+def _top_down_refinement_pass(
+    levels: tuple,
+    valid_masks: tuple,
+    cls_agent: Agent,
+    q_cls: jnp.ndarray,
+    level_soft_beliefs: list,
+    level_obs_lists: list,
+) -> list:
+    """Run the top-down refinement pass through all hierarchical levels.
+
+    Args:
+        levels: tuple of Agent objects (L1 first)
+        valid_masks: tuple of (n_patches, max_states) boolean masks
+        cls_agent: classification Agent
+        q_cls: (1, n_classes) classification posterior
+        level_soft_beliefs: bottom-up beliefs per level (from _bottom_up_pass)
+        level_obs_lists: obs lists per level (from _bottom_up_pass)
+
+    Returns:
+        refined_soft: list of (n_patches, max_states) refined beliefs per level
+    """
+    n_hier = len(levels)
+    refined_soft = [None] * n_hier
+
+    D_top = _top_down_D_from_cls(cls_agent.A, q_cls)
+    child_input = level_soft_beliefs[n_hier - 2] if n_hier > 1 else level_soft_beliefs[0]
+    child_grid_top = int(round(child_input.shape[0] ** 0.5))
+    obs_top = _extract_soft_obs(child_input, child_grid_top)
+    qs_top_refined = levels[n_hier - 1].infer_states(obs_top, [D_top])
+    refined_soft[n_hier - 1] = jnp.where(
+        valid_masks[n_hier - 1], qs_top_refined[0][:, 0, :], 0.0
+    )
+
+    for lv_idx in range(n_hier - 2, -1, -1):
+        parent_lv = lv_idx + 1
+        q_parent = refined_soft[parent_lv]
+        child_level = levels[lv_idx]
+        n_child_patches = child_level.batch_size
+        child_grid = int(round(n_child_patches ** 0.5))
+        max_child_states = child_level.num_states[0]
+        D_child = _top_down_D_hierarchical(
+            levels[parent_lv].A, q_parent, child_grid, max_child_states
+        )
+        if lv_idx == 0:
+            qs_l1_refined = child_level.infer_states(level_obs_lists[0], [D_child])
+            refined_soft[0] = jnp.where(
+                valid_masks[0], qs_l1_refined[0][:, 0, :], 0.0
+            )
+        else:
+            child_input_here = level_soft_beliefs[lv_idx - 1]
+            child_grid_here = int(round(child_input_here.shape[0] ** 0.5))
+            obs_here = _extract_soft_obs(child_input_here, child_grid_here)
+            qs_refined = child_level.infer_states(obs_here, [D_child])
+            refined_soft[lv_idx] = jnp.where(
+                valid_masks[lv_idx], qs_refined[0][:, 0, :], 0.0
+            )
+
+    return refined_soft
+
+
 # ---------------------------------------------------------------------------
 # Classification level: top-level states → digit classes
 # ---------------------------------------------------------------------------
@@ -1116,61 +1163,17 @@ def _classify_one(
     n_hier = len(level_agents)
 
     # === Bottom-up pass ===
-    l1_obs_list = _raw_obs_to_group_obs_list(obs_i)
-    qs_l1 = level_agents[0].infer_states(l1_obs_list, level_agents[0].D)
-    child_beliefs = jnp.where(level_masks[0], qs_l1[0][:, 0, :], 0.0)
-    level_soft_beliefs = [child_beliefs]
-    level_obs_lists = [l1_obs_list]
-
-    for lv_idx in range(1, n_hier):
-        child_grid = int(round(child_beliefs.shape[0] ** 0.5))
-        obs_list = _extract_soft_obs(child_beliefs, child_grid)
-        level_obs_lists.append(obs_list)
-        qs = level_agents[lv_idx].infer_states(obs_list, level_agents[lv_idx].D)
-        child_beliefs = jnp.where(level_masks[lv_idx], qs[0][:, 0, :], 0.0)
-        level_soft_beliefs.append(child_beliefs)
+    level_soft_beliefs, level_obs_lists = _bottom_up_pass(level_agents, level_masks, obs_i)
+    child_beliefs = level_soft_beliefs[-1]
 
     # === Initial classification ===
     qs_cls = cls_agent.infer_states([child_beliefs], cls_agent.D)
     q_cls = qs_cls[0][:, 0, :]  # (1, n_classes)
 
     # === Top-down refinement pass ===
-    refined_soft = [None] * n_hier
-
-    D_top = _top_down_D_from_cls(cls_agent.A, q_cls)
-    child_input = level_soft_beliefs[n_hier - 2] if n_hier > 1 else level_soft_beliefs[0]
-    child_grid_top = int(round(child_input.shape[0] ** 0.5))
-    obs_top = _extract_soft_obs(child_input, child_grid_top)
-    qs_top_refined = level_agents[n_hier - 1].infer_states(obs_top, [D_top])
-    refined_soft[n_hier - 1] = jnp.where(
-        level_masks[n_hier - 1], qs_top_refined[0][:, 0, :], 0.0
+    refined_soft = _top_down_refinement_pass(
+        level_agents, level_masks, cls_agent, q_cls, level_soft_beliefs, level_obs_lists
     )
-
-    for lv_idx in range(n_hier - 2, -1, -1):
-        parent_lv = lv_idx + 1
-        q_parent = refined_soft[parent_lv]
-        n_child_patches = level_agents[lv_idx].batch_size
-        child_grid = int(round(n_child_patches ** 0.5))
-        max_child_states = level_agents[lv_idx].num_states[0]
-
-        D_child = _top_down_D_hierarchical(
-            level_agents[parent_lv].A,
-            q_parent,
-            child_grid,
-            max_child_states,
-        )
-
-        if lv_idx == 0:
-            qs_l1_refined = level_agents[0].infer_states(level_obs_lists[0], [D_child])
-            refined_soft[0] = jnp.where(level_masks[0], qs_l1_refined[0][:, 0, :], 0.0)
-        else:
-            child_input = level_soft_beliefs[lv_idx - 1]
-            child_grid_here = int(round(child_input.shape[0] ** 0.5))
-            obs_here = _extract_soft_obs(child_input, child_grid_here)
-            qs_refined = level_agents[lv_idx].infer_states(obs_here, [D_child])
-            refined_soft[lv_idx] = jnp.where(
-                level_masks[lv_idx], qs_refined[0][:, 0, :], 0.0
-            )
 
     refined_top = refined_soft[n_hier - 1]
     qs_cls_final = cls_agent.infer_states([refined_top], cls_agent.D)
