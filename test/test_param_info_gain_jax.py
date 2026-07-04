@@ -32,24 +32,43 @@ def test_exact_wnorm_mathematical_correctness():
     # Simple 2x2 case with known values
     A = jnp.array([[1.0, 2.0],
                    [3.0, 4.0]])
-    
+
     result = _exact_wnorm(A)
-    
-    # Manually compute expected result using the formula
-    # wA = log(A.sum(0)) - log(A) + 1/A - 1/A.sum(0) + digamma(A) - digamma(A.sum(0))
+
+    # Reference: direct expansion of eq. (D.15), stable at this magnitude since A is
+    # far from MINVAL. Mathematically equivalent to the implementation (see the digamma
+    # recurrence note in _exact_wnorm's docstring), so both should agree up to float32
+    # rounding -- the two forms don't round identically since they go through different
+    # sequences of operations.
     A_sum = A.sum(axis=0)  # [4.0, 6.0]
-    
+
     expected = (
         jnp.log(A_sum) - jnp.log(A) +
         1.0 / A - 1.0 / A_sum +
         jnp.array(digamma(A)) - jnp.array(digamma(A_sum))
     )
     expected = -expected  # minus sign in the implementation
-    
-    np.testing.assert_allclose(result, expected, rtol=1e-6, atol=1e-8)
-    
+
+    np.testing.assert_allclose(result, expected, rtol=1e-4, atol=1e-4)
+
     # Verify output shape matches input
-    assert result.shape == A.shape 
+    assert result.shape == A.shape
+
+
+@pytest.mark.parametrize("K", [2, 5, 10, 50])
+@pytest.mark.parametrize("a", [1e-8, 1e-12, 1e-15])
+def test_exact_wnorm_symmetric_tiny_concentrations_match_log_k(K, a):
+    """For a symmetric Dirichlet (all K entries equal to `a`), the exact value of eq. (D.15)
+    as `a -> 0` is `-log(K)`: both `digamma(a+1)` and `digamma(K*a+1)` tend to `digamma(1)`
+    and cancel, leaving only `log(K)`. This is an independent closed-form reference (no
+    digamma evaluation needed at the limit), so it directly catches the cancellation bug:
+    the pre-fix direct-expansion formula drifts further from `-log(K)` as `a` shrinks
+    instead of converging to it.
+    """
+    A = jnp.full((K, 1), a)
+    result = _exact_wnorm(A)
+    expected = -jnp.log(float(K))
+    np.testing.assert_allclose(result, expected, rtol=1e-4, atol=1e-4)
 
 
 # -----------------------------------------------------------------------------
