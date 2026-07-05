@@ -18,23 +18,46 @@ import equinox as eqx
 from pymdp.maths import factor_dot, log_stable, stable_entropy, stable_xlogx, spm_wnorm
 from pymdp import utils
 
+def _to_nested_tuple(x):
+    """Recursively convert nested lists/tuples to nested tuples, for hashable-by-value storage."""
+    if isinstance(x, (list, tuple)):
+        return tuple(_to_nested_tuple(v) for v in x)
+    return x
+
+
 class Policies(eqx.Module):
-    """ 
-    A class for storing an array of policies and its properties
-    
     """
-    policy_arr: Array
+    A class for storing an array of policies and its properties
+
+    """
+    _policy_tup: tuple = eqx.field(static=True)
+    _dtype: jnp.dtype = eqx.field(static=True)
     horizon: int = eqx.field(static=True)
     num_policies: int = eqx.field(static=True)
 
-    def __init__(self, policy_arr: Array) -> None:
-        self.num_policies = policy_arr.shape[0]
-        self.horizon = policy_arr.shape[1]
-        self.policy_arr = policy_arr
-    
+    def __init__(self, policy_arr: Array | tuple) -> None:
+        if isinstance(policy_arr, tuple):
+            # Already a concrete nested tuple (e.g. from `_construct_policies_tuple`).
+            # Building it never invoked a JAX primitive, so it's safe to use directly
+            # even if this constructor is itself being called while `Agent.__init__` is
+            # traced under `jax.jit` -- there's no array here to concretize.
+            self._policy_tup = policy_arr
+            self.num_policies = len(policy_arr)
+            self.horizon = len(policy_arr[0])
+            self._dtype = jnp.int32
+        else:
+            self.num_policies = policy_arr.shape[0]
+            self.horizon = policy_arr.shape[1]
+            self._dtype = policy_arr.dtype
+            self._policy_tup = _to_nested_tuple(policy_arr.tolist())
+
+    @property
+    def policy_arr(self) -> Array:
+        return jnp.array(self._policy_tup, dtype=self._dtype)
+
     def __getitem__(self, idx: int) -> Array:
         return self.policy_arr[idx]
-    
+
     def __len__(self) -> int:
         return self.num_policies
     
@@ -175,6 +198,27 @@ def construct_policies(
         Policy matrix with shape `(num_policies, policy_len, num_factors)`.
     """
 
+    policies_tup = _construct_policies_tuple(num_states, num_controls, policy_len, control_fac_idx)
+    return jnp.array(policies_tup, dtype=jnp.int32)
+
+
+def _construct_policies_tuple(
+    num_states: Sequence[int],
+    num_controls: Sequence[int] | None = None,
+    policy_len: int = 1,
+    control_fac_idx: Sequence[int] | None = None,
+) -> tuple:
+    """
+    Pure-Python (no JAX operations) combinatorial construction of the policy table, as a
+    nested tuple of shape `(num_policies, policy_len, num_factors)`.
+
+    `num_states`/`num_controls`/`policy_len`/`control_fac_idx` are always plain Python
+    values (never traced), so this never invokes a JAX primitive. That makes it safe to
+    call even while `Agent.__init__` is itself being traced under `jax.jit`, unlike
+    building the result via `jnp.array`/`jnp.stack` first: converting a traced array back
+    with `.tolist()` raises `ConcretizationTypeError`, since `.tolist()` requires a
+    concrete value that doesn't exist until the trace finishes.
+    """
     num_factors = len(num_states)
     if control_fac_idx is None:
         if num_controls is not None:
@@ -184,14 +228,14 @@ def construct_policies(
 
     if num_controls is None:
         num_controls = [num_states[c_idx] if c_idx in control_fac_idx else 1 for c_idx in range(num_factors)]
-        
-    x = num_controls * policy_len
-    policies = list(itertools.product(*[list(range(i)) for i in x]))
-    
-    for pol_i in range(len(policies)):
-        policies[pol_i] = jnp.array(policies[pol_i]).reshape(policy_len, num_factors)
 
-    return jnp.stack(policies)
+    x = num_controls * policy_len
+    flat_policies = itertools.product(*[range(i) for i in x])
+
+    return tuple(
+        tuple(flat[t * num_factors : (t + 1) * num_factors] for t in range(policy_len))
+        for flat in flat_policies
+    )
 
 
 def update_posterior_policies(
