@@ -42,6 +42,13 @@ dev = [
 ]
 
 test = [
+    # Exclude jaxlib/jax 0.10.2: its Linux x86-64 CPU (XLA) build hangs compiling the
+    # JIT cell in examples/advanced/infer_states_optimization/methods_test.ipynb (>2000s,
+    # uninterruptible), reddening the CI notebook step on unrelated PRs. 0.10.1 is the last
+    # known-good (main was green on it). Scoped to the test env only so published deps stay
+    # unconstrained. Remove once the upstream regression is fixed.
+    "jax!=0.10.2",
+    "jaxlib!=0.10.2",
     # Keep ipykernel<7 while mkdocs-jupyter requires ipykernel>6,<7.
     "ipykernel>=6.29.0,<7",
     "jupyter>=1.1.1",
