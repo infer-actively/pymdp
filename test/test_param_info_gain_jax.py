@@ -49,7 +49,9 @@ def test_exact_wnorm_mathematical_correctness():
     )
     expected = -expected  # minus sign in the implementation
 
-    np.testing.assert_allclose(result, expected, rtol=1e-4, atol=1e-4)
+    # Measured max relative diff between the two forms on this input is ~4.8e-6 in
+    # float32 (see discussion on PR #415); rtol/atol below leave a ~3-11x margin above that.
+    np.testing.assert_allclose(result, expected, rtol=1e-5, atol=1e-6)
 
     # Verify output shape matches input
     assert result.shape == A.shape
@@ -61,9 +63,9 @@ def test_exact_wnorm_symmetric_tiny_concentrations_match_log_k(K, a):
     """For a symmetric Dirichlet (all K entries equal to `a`), the exact value of eq. (D.15)
     as `a -> 0` is `-log(K)`: both `digamma(a+1)` and `digamma(K*a+1)` tend to `digamma(1)`
     and cancel, leaving only `log(K)`. This is an independent closed-form reference (no
-    digamma evaluation needed at the limit), so it directly catches the cancellation bug:
-    the pre-fix direct-expansion formula drifts further from `-log(K)` as `a` shrinks
-    instead of converging to it.
+    digamma evaluation needed at the limit), so it directly catches the cancellation error
+    described in #340: the pre-fix direct-expansion formula drifts further from `-log(K)`
+    as `a` shrinks instead of converging to it.
     """
     A = jnp.full((K, 1), a)
     result = _exact_wnorm(A)
