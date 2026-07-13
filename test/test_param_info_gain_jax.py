@@ -70,7 +70,10 @@ def test_exact_wnorm_symmetric_tiny_concentrations_match_log_k(K, a):
     A = jnp.full((K, 1), a)
     result = _exact_wnorm(A)
     expected = -jnp.log(float(K))
-    np.testing.assert_allclose(result, expected, rtol=1e-4, atol=1e-4)
+
+    # Measured max abs diff across all (K, a) parametrizations is ~1.9e-6 in float32;
+    # rtol/atol below leave at least a ~5.5x margin above that in the worst case (K=2, a=1e-15).
+    np.testing.assert_allclose(result, expected, rtol=1e-5, atol=1e-6)
 
 
 # -----------------------------------------------------------------------------
