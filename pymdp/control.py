@@ -25,20 +25,12 @@ _policy_arr_cache: "OrderedDict[tuple, Array]" = OrderedDict()
 
 def _materialize_policy_arr(policy_tup: tuple, dtype: jnp.dtype) -> Array:
     """
-    Cache keyed on `(policy_tup, dtype)`, both hashable-by-value: repeated `Policies`
-    construction with the same logical policy table (e.g. one fresh `Agent` per
-    training/eval step) reuses the same materialized array instead of rebuilding it on
-    every `policy_arr` access, which otherwise showed up as a measurable per-call
-    regression in `Agent.infer_policies` (non-jitted, reads `policy_arr` eagerly).
+    LRU cache for `policy_arr` materialization, keyed on `(policy_tup, dtype)`.
 
-    Deliberately NOT a plain `functools.lru_cache`: if this is called while
-    `Agent.policies` is accessed inside an active `jax.jit`/`lax.scan` trace (e.g.
-    `si_policy_search`, which is jitted end-to-end), `jnp.array(...)` returns a JAX
-    tracer that's only valid within that specific trace. A cache keyed purely on the
-    hashable `(policy_tup, dtype)` -- identical across trace boundaries -- would hand
-    that stale tracer back to a later, unrelated trace, corrupting it
-    (`UnexpectedTracerError`). So only concrete (non-tracer) results get cached; a
-    tracer is always recomputed fresh and never stored.
+    Not a plain `functools.lru_cache`: under an active `jax.jit`/`lax.scan` trace,
+    `jnp.array(...)` returns a tracer valid only in that trace. Caching it would leak
+    a stale tracer into later, unrelated eager code (`UnexpectedTracerError`), so only
+    concrete results are cached -- a tracer is always recomputed and never stored.
     """
     key = (policy_tup, dtype)
     cached = _policy_arr_cache.get(key)
@@ -75,10 +67,8 @@ class Policies(eqx.Module):
             self._policy_tup = policy_arr
             self.num_policies = len(policy_arr)
             self.horizon = len(policy_arr[0])
-            # normalize to an `np.dtype` instance (not a bare type like `jnp.int32`), so
-            # that a tuple-constructed and an array-constructed `Policies` holding the
-            # same logical dtype hash equal, not just `==`-compare equal; respect x64
-            # config the same way JAX's own default int dtype does.
+            # np.dtype instance (not a bare type) so tuple- and array-constructed
+            # Policies hash equal, not just ==-equal; respects x64 config.
             self._dtype = jnp.dtype(jax.dtypes.canonicalize_dtype(jnp.int64))
         else:
             self.num_policies = policy_arr.shape[0]
@@ -234,10 +224,8 @@ def construct_policies(
     """
 
     policies_tup = _construct_policies_tuple(num_states, num_controls, policy_len, control_fac_idx)
-    # respect x64 config the same way `Policies.__init__`'s tuple branch does, rather than
-    # hardcoding int32 -- `upstream/main`'s original implementation left dtype unspecified
-    # and so already respected x64 via jnp's default int inference; hardcoding int32 here
-    # would silently downgrade x64 users, exactly the class of bug fixed in `Policies.__init__`.
+    # Respect x64 config instead of hardcoding int32, which would silently
+    # downgrade precision for jax_enable_x64 users.
     return jnp.array(policies_tup, dtype=jnp.dtype(jax.dtypes.canonicalize_dtype(jnp.int64)))
 
 

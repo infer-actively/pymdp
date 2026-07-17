@@ -916,12 +916,10 @@ class TestAgentJax(unittest.TestCase):
 
 class TestPoliciesTupleAgentEquivalence(unittest.TestCase):
     """
-    Regression coverage for pymdp#346 / PR#416 (hashable-tuple `Policies`) at the
-    `Agent` level: verifies `Agent._construct_flattend_policies_tuple` against the old,
-    still-present array-based `_construct_flattend_policies` across several
-    `B_action_dependencies` configurations (including conorheins's own mutation-testing
-    config from the PR review, and a `policy_len > 1` case), and that the fix actually
-    delivers on its motivating point -- hashability of `Agent.policies`, including as a
+    Regression coverage for pymdp#346 (hashable-tuple `Policies`) at the `Agent` level:
+    verifies `Agent._construct_flattend_policies_tuple` against the old, still-present
+    array-based `_construct_flattend_policies` across several `B_action_dependencies`
+    configurations, and that `Agent.policies` is actually hashable, including as a
     static `jax.jit` argument.
     """
 
@@ -932,7 +930,7 @@ class TestPoliciesTupleAgentEquivalence(unittest.TestCase):
             A_dependencies=[[0], [0, 1], [0, 1, 2]], B_dependencies=[[0], [0, 1], [1, 2]],
             B_action_dependencies=[[], [0, 1], [0, 2]], policy_len=1,
         ),
-        # conorheins's mutation-testing config, PR #416 review
+        # mutation-tested: forward vs reversed mixed-radix order changes results here
         dict(
             num_obs=[4, 5, 2], num_states=[4, 5, 2], num_controls=[2, 3, 2],
             A_dependencies=[[0], [0, 1], [0, 1, 2]], B_dependencies=[[0], [0, 1], [1, 2]],
@@ -985,22 +983,14 @@ class TestPoliciesTupleAgentEquivalence(unittest.TestCase):
 
     def test_construct_flattend_policies_tuple_direct_unit_test(self):
         """
-        Direct, isolated unit test of `Agent._construct_flattend_policies_tuple`
-        itself, calling it (and the old array-based `_construct_flattend_policies`)
-        directly -- not exercised through full `Agent()` construction, unlike
-        `test_construct_flattend_policies_tuple_matches_old_array_builder` above.
-        conorheins's review specifically asked for "a unit test for this new
-        function's correctness"; the equivalence test above (proven via mutation
-        testing to catch bugs in this exact function) only calls it indirectly,
-        through `Agent.__init__`. This closes that precision gap.
+        Isolated unit test of `Agent._construct_flattend_policies_tuple`, calling it
+        (and the old `_construct_flattend_policies`) directly rather than through a
+        full `Agent()` build.
 
-        `action_maps` are derived from the real, untouched `_flatten_B_action_dims`
-        (via a lightweight stand-in for `self`, since that method only reads
-        `self.num_controls_multi`) rather than hand-written, so there's nothing here
-        that could drift from what real `Agent` construction actually produces --
-        an earlier version of this test hand-wrote the `action_maps` dicts directly,
-        which worked but had no guarantee of staying correct if either the schema or
-        `_flatten_B_action_dims`'s behavior changed later.
+        `action_maps` are derived from the real `_flatten_B_action_dims` (via a
+        lightweight stand-in for `self`, since that method only reads
+        `self.num_controls_multi`) rather than hand-written, so this can't drift from
+        what real `Agent` construction produces.
         """
         # neither `_construct_flattend_policies` nor `_construct_flattend_policies_tuple`
         # reads `self`, so any constructed Agent works as their method owner here.
@@ -1010,9 +1000,8 @@ class TestPoliciesTupleAgentEquivalence(unittest.TestCase):
         )
 
         def real_action_maps(num_controls_multi, B_action_dependencies):
-            """Derive real action_maps via the actual _flatten_B_action_dims, using a
-            minimal stand-in for `self` and dummy-shaped B tensors (values are never
-            read, only shapes matter for the reshape logic), instead of a full Agent."""
+            """Derive real action_maps via _flatten_B_action_dims, using a minimal
+            stand-in for `self` and dummy-shaped B tensors, instead of a full Agent."""
             stand_in = SimpleNamespace(num_controls_multi=num_controls_multi)
             B = []
             for action_dependency in B_action_dependencies:
@@ -1025,8 +1014,7 @@ class TestPoliciesTupleAgentEquivalence(unittest.TestCase):
             return action_maps
 
         direct_cases = [
-            # mirrors conorheins's mutation-testing config: one empty dependency, two
-            # combined-pair dependencies, both policy_len=1 and policy_len=3
+            # one empty dependency, two combined-pair dependencies
             dict(
                 num_controls_multi=[2, 3, 2],
                 B_action_dependencies=[[], [0, 1], [0, 2]],

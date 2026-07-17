@@ -318,9 +318,8 @@ def _reference_construct_policies_array(num_states, num_controls=None, policy_le
 class TestPoliciesTupleEquivalence(unittest.TestCase):
     """
     Regression coverage for the hashable-tuple `Policies`/`_construct_policies_tuple`
-    rework (pymdp#346 / PR#416): verifies the pure-Python tuple builders against
-    independent references, and that hashability actually holds across construction
-    paths, since neither was covered by a committed test before this.
+    rework (pymdp#346): verifies the pure-Python tuple builders against independent
+    references, and that hashability holds across construction paths.
     """
 
     cases = [
@@ -331,7 +330,6 @@ class TestPoliciesTupleEquivalence(unittest.TestCase):
         dict(num_states=[2, 3, 4], num_controls=None, policy_len=1, control_fac_idx=[0, 2]),
         dict(num_states=[5], num_controls=[5], policy_len=1),
         dict(num_states=[2, 2], num_controls=[1, 2], policy_len=4),
-        # mirrors conorheins's mutation-testing config for issue #346 / PR #416
         dict(num_states=[4, 5, 2], num_controls=[2, 3, 2], policy_len=1),
         dict(num_states=[4, 5, 2], num_controls=[2, 3, 2], policy_len=3),
     ]
@@ -376,21 +374,14 @@ class TestPoliciesTupleEquivalence(unittest.TestCase):
 
     def test_policy_arr_cache_does_not_leak_tracers_across_jit_boundary(self):
         """
-        Regression test for a tracer-leak bug found in `_materialize_policy_arr`'s
-        cache: keying purely on the hashable `(policy_tup, dtype)` (as a naive
-        `functools.lru_cache` would) means the FIRST materialization of a given
-        policy table can happen while tracing under `jax.jit`/`lax.scan` (producing a
-        JAX tracer, only valid within that specific trace) and get cached; a LATER,
-        unrelated eager access with the same key then gets handed that stale tracer
-        back, raising `jax.errors.UnexpectedTracerError` the moment it's actually used
-        in another op. This is exactly the sequence that broke `si_policy_search` in
-        practice (materialized inside its jitted planning loop first, then reused via
-        `agent.policies` in eager code afterward). The fix only caches concrete
-        (non-tracer) results; a tracer is always recomputed fresh and never stored.
+        Regression test for a tracer-leak bug in `_materialize_policy_arr`'s cache: a
+        naive `functools.lru_cache` keyed on `(policy_tup, dtype)` could cache a JAX
+        tracer produced by a first access inside a `jax.jit`/`lax.scan` trace, then
+        hand that stale tracer to a later, unrelated eager access, raising
+        `UnexpectedTracerError`. The fix only caches concrete results.
 
-        Getting the order right matters: warming the cache eagerly *before* the jit
-        access (as an earlier, wrong version of this test did) never exercises the
-        cold-cache-inside-a-trace path at all, and passes even with the guard removed.
+        Order matters here: the cold cache access must happen inside the jit trace
+        first, otherwise this test never exercises the bug path.
         """
         ctl_jax._policy_arr_cache.clear()
 
@@ -424,16 +415,10 @@ class TestPoliciesTupleEquivalence(unittest.TestCase):
         """
         Regression test for a silent x64-downgrade bug: both `construct_policies()`
         and `Policies.__init__`'s tuple branch used to hardcode `dtype=jnp.int32`,
-        silently discarding int64 precision for users running under
-        `jax_enable_x64=True`, exactly the class of bug conorheins flagged inline on
-        `Policies.__init__` (a second, separate instance of it was found in
-        `construct_policies()` itself and fixed the same way).
+        discarding int64 precision under `jax_enable_x64=True`.
 
-        Runs in a fresh subprocess, calling `jax.config.update('jax_enable_x64', True)`
-        immediately after importing `jax` and before any array/dtype operation, since
-        flipping x64 config inside this process would leak into every other test
-        sharing this pytest worker (x64 config is process-global and JAX warns
-        against toggling it after other JAX operations have already run).
+        Runs in a fresh subprocess since x64 is process-global config and can't be
+        toggled inline without leaking into other tests in the same pytest worker.
         """
         script = (
             "import jax; jax.config.update('jax_enable_x64', True)\n"
