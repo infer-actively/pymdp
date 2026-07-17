@@ -24,6 +24,13 @@ from typing import (
 )
 
 
+def to_nested_tuple(x):
+    """Recursively convert nested lists/tuples to nested tuples, for hashable-by-value storage."""
+    if isinstance(x, (list, tuple)):
+        return tuple(to_nested_tuple(v) for v in x)
+    return x
+
+
 def norm_dist(dist: Array) -> Array:
     """Normalizes a Categorical probability distribution.
 
