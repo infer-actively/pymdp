@@ -9,6 +9,12 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # Work around a jaxlib 0.10.2+ XLA:CPU bug: the default-on __ynn_fusion path
+      # crashes/hangs on rank>=7 broadcast-multiply-reduce kernels on x86-64, which
+      # stalls the padded-A jit cells in the infer_states notebooks for >2000s.
+      # See https://github.com/jax-ml/jax/issues/39257. Remove once fixed upstream.
+      XLA_FLAGS: --xla_cpu_experimental_ynn_fusion_type=
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13", "3.14"]

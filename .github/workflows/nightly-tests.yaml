@@ -8,6 +8,11 @@ on:
 jobs:
   nightly:
     runs-on: ubuntu-latest
+    env:
+      # Work around a jaxlib 0.10.2+ XLA:CPU bug (__ynn_fusion crash/hang on rank>=7
+      # broadcast-multiply-reduce). See https://github.com/jax-ml/jax/issues/39257.
+      # Remove once fixed upstream.
+      XLA_FLAGS: --xla_cpu_experimental_ynn_fusion_type=
     strategy:
       matrix:
         python-version: ["3.14"]
