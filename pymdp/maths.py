@@ -784,6 +784,11 @@ def _exact_wnorm(A: ArrayLike) -> ArrayLike:
     """
     Implements (-1) * eq. (D.15) in Da Costa et al. ‘Active inference on discrete state-spaces: A synthesis’, Journal of Mathematical Psychology, 2020.
 
+    Note: the direct expansion of eq. (D.15) sums `1/A - 1/sumA` with `digamma(A) - digamma(sumA)`; both terms
+    diverge as A shrinks and are supposed to cancel, which is numerically unstable in finite precision.
+    Using the digamma recurrence `digamma(x+1) = digamma(x) + 1/x` lets those terms cancel algebraically
+    instead, avoiding the cancellation entirely.
+
     Note: Like the legacy SPM implementation this function clips A for numerical stability. However note that if some values of Aare set to zero e.g. by Bayesian model reduction, these are non-zeroed in this calculation, and thus contribute a large amount to the information gain unless these are zeroed when multiplying by beliefs about states and expected observations. In principle, this should be the case.
 
     Parameters
@@ -802,8 +807,7 @@ def _exact_wnorm(A: ArrayLike) -> ArrayLike:
 
     wA = (
         jnp.log(safe_sumA) - jnp.log(safe_A)
-        + 1. / safe_A - 1. / safe_sumA
-        + digamma(safe_A) - digamma(safe_sumA)
+        + digamma(safe_A + 1.) - digamma(safe_sumA + 1.)
     )
 
     return -wA # TODO: minus sign here gives negative info gain for backward compatibility with spm implementation. Later will need to remove minus sign here to get positive info gain and adjust function documentation accordingly.

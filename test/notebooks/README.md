@@ -27,7 +27,7 @@ The nightly tier is currently locked to:
 - `examples/model_fitting/fitting_with_pybefit.ipynb`
 - `examples/sparse/sparse_benchmark.ipynb`
 
-All other non-legacy notebooks in `examples/` belong to the CI tier.
+All other non-legacy notebooks in `examples/` belong to the CI tier. Heavy rendering or animation cells within CI-tier notebooks should be tagged `nbval-skip` rather than moved to nightly (see Authoring Notes).
 
 ## Running Notebook Tests Locally
 
@@ -68,3 +68,4 @@ The hook behavior is tier-aware and reads the manifests above:
 2. Avoid massive printed outputs.
 3. If a notebook keeps saved outputs, the hook will canonicalize its execution counts so local kernel history does not create meaningless diffs.
 4. CI wiring consumes these manifests directly through `scripts/run_notebook_manifest.py`.
+5. Use `nbval-skip` for cells that are heavy to execute under CI but belong in the tutorial (e.g. animation loops, video rendering). Add the tag to the cell's metadata: `"metadata": {"tags": ["nbval-skip"]}`. Skipped cells keep their saved outputs for readers; the surrounding active inference cells still run and get validated.

@@ -7,6 +7,7 @@ __author__: Dimitrije Markovic, Conor Heins
 
 import unittest
 from functools import partial
+from types import SimpleNamespace
 
 import numpy as np
 from jax import numpy as jnp, random as jr
@@ -913,10 +914,177 @@ class TestAgentJax(unittest.TestCase):
         self.assertFalse(jnp.allclose(agent.A[0][0], E_A_filtered[0], atol=1e-6))
 
 
-        
+class TestPoliciesTupleAgentEquivalence(unittest.TestCase):
+    """
+    Regression coverage for pymdp#346 (hashable-tuple `Policies`) at the `Agent` level:
+    verifies `Agent._construct_flattend_policies_tuple` against the old, still-present
+    array-based `_construct_flattend_policies` across several `B_action_dependencies`
+    configurations, and that `Agent.policies` is actually hashable, including as a
+    static `jax.jit` argument.
+    """
+
+    flatten_configs = [
+        # matches test_agent_complex_action's known-good config
+        dict(
+            num_obs=[3, 3, 2], num_states=[2, 2, 1], num_controls=[2, 2, 2],
+            A_dependencies=[[0], [0, 1], [0, 1, 2]], B_dependencies=[[0], [0, 1], [1, 2]],
+            B_action_dependencies=[[], [0, 1], [0, 2]], policy_len=1,
+        ),
+        # mutation-tested: forward vs reversed mixed-radix order changes results here
+        dict(
+            num_obs=[4, 5, 2], num_states=[4, 5, 2], num_controls=[2, 3, 2],
+            A_dependencies=[[0], [0, 1], [0, 1, 2]], B_dependencies=[[0], [0, 1], [1, 2]],
+            B_action_dependencies=[[], [0, 1], [0, 2]], policy_len=1,
+        ),
+        # same, with policy_len > 1
+        dict(
+            num_obs=[4, 5, 2], num_states=[4, 5, 2], num_controls=[2, 3, 2],
+            A_dependencies=[[0], [0, 1], [0, 1, 2]], B_dependencies=[[0], [0, 1], [1, 2]],
+            B_action_dependencies=[[], [0, 1], [0, 2]], policy_len=3,
+        ),
+        # 3-factor combined-dependency stress case: every B factor depends on all 3 control factors
+        dict(
+            num_obs=[2, 2, 2], num_states=[2, 2, 2], num_controls=[2, 2, 2],
+            A_dependencies=[[0], [1], [2]], B_dependencies=[[0], [1], [2]],
+            B_action_dependencies=[[0, 1, 2], [0, 1, 2], [0, 1, 2]], policy_len=1,
+        ),
+    ]
+
+    def test_construct_flattend_policies_tuple_matches_old_array_builder(self):
+        for i, cfg in enumerate(self.flatten_configs):
+            with self.subTest(i=i, policy_len=cfg["policy_len"]):
+                a_key, b_key = jr.split(jr.PRNGKey(1000 + i), 2)
+                A = utils.random_A_array(
+                    a_key, cfg["num_obs"], cfg["num_states"], A_dependencies=cfg["A_dependencies"]
+                )
+                B = utils.random_B_array(
+                    b_key, cfg["num_states"], cfg["num_controls"],
+                    B_dependencies=cfg["B_dependencies"],
+                    B_action_dependencies=cfg["B_action_dependencies"],
+                )
+                agent = Agent(
+                    A, B,
+                    A_dependencies=cfg["A_dependencies"],
+                    B_dependencies=cfg["B_dependencies"],
+                    B_action_dependencies=cfg["B_action_dependencies"],
+                    num_controls=cfg["num_controls"],
+                    policy_len=cfg["policy_len"],
+                    sampling_mode="full",
+                )
+
+                # independent ground truth: the old, still-present array-based flatten
+                # builder, fed a freshly-built (unrelated-codepath) multi-action policy array
+                policies_multi_array = control.construct_policies(
+                    agent.num_controls_multi, agent.num_controls_multi, cfg["policy_len"], None
+                )
+                reference = agent._construct_flattend_policies(policies_multi_array, agent.action_maps)
+
+                self.assertTrue(jnp.array_equal(reference, agent.policies.policy_arr))
+
+    def test_construct_flattend_policies_tuple_direct_unit_test(self):
+        """
+        Isolated unit test of `Agent._construct_flattend_policies_tuple`, calling it
+        (and the old `_construct_flattend_policies`) directly rather than through a
+        full `Agent()` build.
+
+        `action_maps` are derived from the real `_flatten_B_action_dims` (via a
+        lightweight stand-in for `self`, since that method only reads
+        `self.num_controls_multi`) rather than hand-written, so this can't drift from
+        what real `Agent` construction produces.
+        """
+        # neither `_construct_flattend_policies` nor `_construct_flattend_policies_tuple`
+        # reads `self`, so any constructed Agent works as their method owner here.
+        agent = Agent(
+            A=utils.random_A_array(jr.PRNGKey(0), [2], [2]),
+            B=utils.random_B_array(jr.PRNGKey(1), [2], [2]),
+        )
+
+        def real_action_maps(num_controls_multi, B_action_dependencies):
+            """Derive real action_maps via _flatten_B_action_dims, using a minimal
+            stand-in for `self` and dummy-shaped B tensors, instead of a full Agent."""
+            stand_in = SimpleNamespace(num_controls_multi=num_controls_multi)
+            B = []
+            for action_dependency in B_action_dependencies:
+                if action_dependency == []:
+                    B.append(jnp.zeros(()))
+                else:
+                    dims = tuple(num_controls_multi[d] for d in action_dependency)
+                    B.append(jnp.zeros(dims))
+            _, _, action_maps = Agent._flatten_B_action_dims(stand_in, B, None, B_action_dependencies)
+            return action_maps
+
+        direct_cases = [
+            # one empty dependency, two combined-pair dependencies
+            dict(
+                num_controls_multi=[2, 3, 2],
+                B_action_dependencies=[[], [0, 1], [0, 2]],
+                policy_len=1,
+            ),
+            dict(
+                num_controls_multi=[2, 3, 2],
+                B_action_dependencies=[[], [0, 1], [0, 2]],
+                policy_len=3,
+            ),
+            # 3-factor combined-dependency stress case: every entry depends on all 3 factors
+            dict(
+                num_controls_multi=[2, 2, 2],
+                B_action_dependencies=[[0, 1, 2], [0, 1, 2], [0, 1, 2]],
+                policy_len=1,
+            ),
+        ]
+
+        for i, cfg in enumerate(direct_cases):
+            with self.subTest(i=i, policy_len=cfg["policy_len"]):
+                action_maps = real_action_maps(cfg["num_controls_multi"], cfg["B_action_dependencies"])
+
+                policies_tup = control._construct_policies_tuple(
+                    cfg["num_controls_multi"], cfg["num_controls_multi"], cfg["policy_len"], None
+                )
+                policies_array = control.construct_policies(
+                    cfg["num_controls_multi"], cfg["num_controls_multi"], cfg["policy_len"], None
+                )
+
+                new_result = agent._construct_flattend_policies_tuple(policies_tup, action_maps)
+                reference = agent._construct_flattend_policies(policies_array, action_maps)
+
+                self.assertTrue(jnp.array_equal(reference, jnp.array(new_result, dtype=jnp.int32)))
+
+    def test_agent_policies_hash_reproducible_across_identical_construction(self):
+        """Direct regression test for pymdp#346: two freshly-built, logically-identical
+        `Agent`s must produce equal-hashing `Policies`, not just equal-valued ones."""
+        num_obs = [3]
+        num_states = [3]
+        num_controls = [3]
+        a_key, b_key = jr.split(jr.PRNGKey(7), 2)
+        A = utils.random_A_array(a_key, num_obs, num_states)
+        B = utils.random_B_array(b_key, num_states, num_controls)
+
+        agent1 = Agent(A=A, B=B, policy_len=2)
+        agent2 = Agent(A=A, B=B, policy_len=2)
+
+        self.assertEqual(agent1.policies, agent2.policies)
+        self.assertEqual(hash(agent1.policies), hash(agent2.policies))
+
+        agent3 = Agent(A=A, B=B, policy_len=3)  # different policy_len -> different table
+        self.assertNotEqual(agent1.policies, agent3.policies)
+        self.assertNotEqual(hash(agent1.policies), hash(agent3.policies))
+
+    def test_policies_usable_as_static_jit_argument(self):
+        """Passing `Policies` as a `static_argnums` jit argument raises on the old
+        array-backed implementation (unhashable jnp.ndarray field); must work now."""
+        A = utils.random_A_array(jr.PRNGKey(0), [2], [2])
+        B = utils.random_B_array(jr.PRNGKey(1), [2], [2])
+        policies = Agent(A=A, B=B).policies
+
+        @partial(jit, static_argnums=0)
+        def f(pol):
+            return pol.num_policies
+
+        self.assertEqual(f(policies), policies.num_policies)
+
 
 if __name__ == "__main__":
-    unittest.main()       
+    unittest.main()
 
 
 

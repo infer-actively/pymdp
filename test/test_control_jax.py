@@ -5,9 +5,13 @@
 __author__: Dimitrije Markovic, Conor Heins
 """
 
+import itertools
+import subprocess
+import sys
 import unittest
 
 import numpy as np
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
@@ -286,6 +290,154 @@ class TestControlJax(unittest.TestCase):
                 use_param_info_gain=True,
                 use_inductive=False,
             )
+
+def _reference_construct_policies_array(num_states, num_controls=None, policy_len=1, control_fac_idx=None):
+    """
+    Independent array-based reference for policy construction, deliberately not sharing
+    any code with `control._construct_policies_tuple`/`control.construct_policies`
+    (which now both delegate to the same tuple-building logic internally) -- exists so
+    the equivalence test below has real ground truth rather than comparing the code
+    under test against itself.
+    """
+    num_factors = len(num_states)
+    if control_fac_idx is None:
+        if num_controls is not None:
+            control_fac_idx = [f for f, n_c in enumerate(num_controls) if n_c > 1]
+        else:
+            control_fac_idx = list(range(num_factors))
+    if num_controls is None:
+        num_controls = [num_states[c_idx] if c_idx in control_fac_idx else 1 for c_idx in range(num_factors)]
+
+    x = num_controls * policy_len
+    policies = list(itertools.product(*[list(range(i)) for i in x]))
+    for pol_i in range(len(policies)):
+        policies[pol_i] = jnp.array(policies[pol_i]).reshape(policy_len, num_factors)
+    return jnp.stack(policies)
+
+
+class TestPoliciesTupleEquivalence(unittest.TestCase):
+    """
+    Regression coverage for the hashable-tuple `Policies`/`_construct_policies_tuple`
+    rework (pymdp#346): verifies the pure-Python tuple builders against independent
+    references, and that hashability holds across construction paths.
+    """
+
+    cases = [
+        dict(num_states=[3, 3], num_controls=[3, 2], policy_len=2),
+        dict(num_states=[2, 2, 1], num_controls=[2, 2, 2], policy_len=1),
+        dict(num_states=[4], num_controls=[4], policy_len=3),
+        dict(num_states=[2, 3, 4], num_controls=None, policy_len=1),
+        dict(num_states=[2, 3, 4], num_controls=None, policy_len=1, control_fac_idx=[0, 2]),
+        dict(num_states=[5], num_controls=[5], policy_len=1),
+        dict(num_states=[2, 2], num_controls=[1, 2], policy_len=4),
+        dict(num_states=[4, 5, 2], num_controls=[2, 3, 2], policy_len=1),
+        dict(num_states=[4, 5, 2], num_controls=[2, 3, 2], policy_len=3),
+    ]
+
+    def test_construct_policies_tuple_matches_reference(self):
+        for kwargs in self.cases:
+            with self.subTest(**kwargs):
+                reference = _reference_construct_policies_array(**kwargs)
+                tup = ctl_jax._construct_policies_tuple(**kwargs)
+                got = jnp.array(tup, dtype=jnp.int32)
+                self.assertEqual(reference.shape, got.shape)
+                self.assertTrue(jnp.array_equal(reference, got))
+
+    def test_construct_policies_matches_tuple_builder(self):
+        # construct_policies() itself now delegates to _construct_policies_tuple(), so
+        # this only checks the array-wrapping is faithful, not correctness of the
+        # underlying combinatorics (that's covered against the independent reference above)
+        for kwargs in self.cases:
+            with self.subTest(**kwargs):
+                tup = ctl_jax._construct_policies_tuple(**kwargs)
+                array_version = ctl_jax.construct_policies(**kwargs)
+                self.assertTrue(jnp.array_equal(array_version, jnp.array(tup, dtype=jnp.int32)))
+
+    def test_policies_array_and_tuple_construction_are_hash_and_eq_consistent(self):
+        for kwargs in self.cases:
+            with self.subTest(**kwargs):
+                array_version = ctl_jax.construct_policies(**kwargs)
+                p_from_array = ctl_jax.Policies(array_version)
+                p_from_tuple = ctl_jax.Policies(p_from_array._policy_tup)
+
+                self.assertEqual(p_from_array, p_from_tuple)
+                self.assertEqual(hash(p_from_array), hash(p_from_tuple))
+                self.assertEqual(p_from_array._dtype, p_from_tuple._dtype)
+                self.assertEqual(hash(p_from_array._dtype), hash(p_from_tuple._dtype))
+                self.assertTrue(jnp.array_equal(p_from_array.policy_arr, p_from_tuple.policy_arr))
+
+    def test_policies_hash_differs_for_different_policy_tables(self):
+        p1 = ctl_jax.Policies(ctl_jax.construct_policies(num_states=[3], num_controls=[3], policy_len=1))
+        p2 = ctl_jax.Policies(ctl_jax.construct_policies(num_states=[4], num_controls=[4], policy_len=1))
+        self.assertNotEqual(p1, p2)
+        self.assertNotEqual(hash(p1), hash(p2))
+
+    def test_policy_arr_cache_does_not_leak_tracers_across_jit_boundary(self):
+        """
+        Regression test for a tracer-leak bug in `_materialize_policy_arr`'s cache: a
+        naive `functools.lru_cache` keyed on `(policy_tup, dtype)` could cache a JAX
+        tracer produced by a first access inside a `jax.jit`/`lax.scan` trace, then
+        hand that stale tracer to a later, unrelated eager access, raising
+        `UnexpectedTracerError`. The fix only caches concrete results.
+
+        Order matters here: the cold cache access must happen inside the jit trace
+        first, otherwise this test never exercises the bug path.
+        """
+        ctl_jax._policy_arr_cache.clear()
+
+        arr = ctl_jax.construct_policies(num_states=[3, 2], num_controls=[3, 2], policy_len=2)
+        policies = ctl_jax.Policies(arr)
+        key = (policies._policy_tup, policies._dtype)
+        self.assertNotIn(key, ctl_jax._policy_arr_cache, "test setup requires a cold cache")
+
+        # FIRST access: cold cache, happens INSIDE an active jax.jit trace -- this is
+        # the moment a naive cache would store a tracer.
+        @jax.jit
+        def access_inside_jit(policies_obj):
+            return policies_obj.policy_arr.sum()
+
+        result = access_inside_jit(policies)
+        self.assertTrue(jnp.array_equal(result, arr.sum()))
+
+        if key in ctl_jax._policy_arr_cache:
+            self.assertFalse(isinstance(ctl_jax._policy_arr_cache[key], jax.core.Tracer))
+
+        # SECOND access: eager, same key, and actually USE the returned array (merely
+        # holding a reference to a stale tracer doesn't raise -- feeding it into another
+        # op outside its original trace is what raises `UnexpectedTracerError`, mirroring
+        # `control.get_marginals`'s indexing/comparison on `agent.policies.policy_arr`).
+        eager_result = policies.policy_arr
+        self.assertFalse(isinstance(eager_result, jax.core.Tracer))
+        sliced = eager_result[:, 0, 0]
+        self.assertTrue(jnp.array_equal(sliced, arr[:, 0, 0]))
+
+    def test_construct_policies_and_tuple_policies_respect_x64_config(self):
+        """
+        Regression test for a silent x64-downgrade bug: both `construct_policies()`
+        and `Policies.__init__`'s tuple branch used to hardcode `dtype=jnp.int32`,
+        discarding int64 precision under `jax_enable_x64=True`.
+
+        Runs in a fresh subprocess since x64 is process-global config and can't be
+        toggled inline without leaking into other tests in the same pytest worker.
+        """
+        script = (
+            "import jax; jax.config.update('jax_enable_x64', True)\n"
+            "import jax.numpy as jnp\n"
+            "from pymdp.control import Policies, construct_policies\n"
+            "arr = construct_policies(num_states=[3], num_controls=[3], policy_len=1)\n"
+            "assert arr.dtype == jnp.dtype('int64'), f'construct_policies: expected int64, got {arr.dtype}'\n"
+            "p = Policies(((0,), (1,), (2,)))\n"
+            "assert p._dtype == jnp.dtype('int64'), f'Policies tuple branch: expected int64, got {p._dtype}'\n"
+            "assert p.policy_arr.dtype == jnp.dtype('int64')\n"
+            "print('OK')\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, f"stdout: {result.stdout}\nstderr: {result.stderr}")
+        self.assertIn("OK", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

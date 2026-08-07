@@ -211,14 +211,14 @@ class Agent(Module):
         if (
             policies is None and B_action_dependencies is not None
         ):  # note, this only works when B_action_dependencies is not the trivial case of [[0], [1], ...., [num_factors-1]]
-            policies_multi = control.construct_policies(
+            policies_multi_tup = control._construct_policies_tuple(
                 self.num_controls_multi,
                 self.num_controls_multi,
                 policy_len,
                 control_fac_idx,
             )
             B, pB, self.action_maps = self._flatten_B_action_dims(B, pB, self.B_action_dependencies)
-            policies = self._construct_flattend_policies(policies_multi, self.action_maps)
+            policies = self._construct_flattend_policies_tuple(policies_multi_tup, self.action_maps)
             self.sampling_mode = "full"
         
         # extract shapes from A and B
@@ -307,18 +307,23 @@ class Agent(Module):
 
         # construct policies
         if policies is None:
-            policies_array = control.construct_policies(
+            policies_tup = control._construct_policies_tuple(
                 self.num_states,
                 self.num_controls,
                 self.policy_len,
                 self.control_fac_idx,
             )
-            self.policies = control.Policies(policies_array)
+            self.policies = control.Policies(policies_tup)
         else:
-            if not isinstance(policies, control.Policies):
-                self.policies = control.Policies(jnp.array(policies))
-            else:
+            if isinstance(policies, control.Policies):
                 self.policies = policies
+            elif isinstance(policies, tuple):
+                # already a concrete nested tuple (e.g. from `_construct_flattend_policies_tuple`);
+                # pass it straight through so `Policies.__init__` doesn't need to round-trip it
+                # through `jnp.array` first, which would defeat the point under an active jit trace
+                self.policies = control.Policies(policies)
+            else:
+                self.policies = control.Policies(jnp.array(policies))
 
         if C is None:
             C = [jnp.ones((self.batch_size, self.num_obs[m])) / self.num_obs[m] for m in range(self.num_modalities)]
@@ -1135,6 +1140,47 @@ class Agent(Module):
             )
         policies_flat = jnp.stack(policies_flat, axis=-1)
         return policies_flat
+
+    def _construct_flattend_policies_tuple(
+        self, policies_tup: tuple, action_maps: list[dict[str, Any]]
+    ) -> tuple:
+        """
+        Pure-Python equivalent of `_construct_flattend_policies`, operating on and
+        returning nested tuples instead of `jnp.ndarray`. Mirrors
+        `utils.get_combination_index`'s mixed-radix encoding exactly, but never invokes
+        a JAX primitive, so it's safe to call while `Agent.__init__` is itself being
+        traced under `jax.jit` (see `control._construct_policies_tuple`'s docstring for
+        why that matters).
+        """
+        num_policies = len(policies_tup)
+        horizon = len(policies_tup[0])
+
+        columns = []
+        for action_map in action_maps:
+            multi_dependency = action_map["multi_dependency"]
+            if multi_dependency == []:
+                columns.append(tuple(tuple(0 for _ in range(horizon)) for _ in range(num_policies)))
+                continue
+
+            dims = action_map["multi_dims"]
+            column = []
+            for policy in policies_tup:
+                row = []
+                for t in range(horizon):
+                    xs = [policy[t][d] for d in multi_dependency]
+                    index = 0
+                    product = 1
+                    for i in reversed(range(len(dims))):
+                        index += xs[i] * product
+                        product *= dims[i]
+                    row.append(index)
+                column.append(tuple(row))
+            columns.append(tuple(column))
+
+        return tuple(
+            tuple(tuple(columns[a][pol][t] for a in range(len(action_maps))) for t in range(horizon))
+            for pol in range(num_policies)
+        )
 
     def _get_default_params(self) -> dict[str, Any] | None:
         method = self.inference_algo

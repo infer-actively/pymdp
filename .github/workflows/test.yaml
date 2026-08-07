@@ -9,13 +9,19 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # Work around a jaxlib 0.10.2+ XLA:CPU bug: the default-on __ynn_fusion path
+      # crashes/hangs on rank>=7 broadcast-multiply-reduce kernels on x86-64, which
+      # stalls the padded-A jit cells in the infer_states notebooks for >2000s.
+      # See https://github.com/jax-ml/jax/issues/39257. Remove once fixed upstream.
+      XLA_FLAGS: --xla_cpu_experimental_ynn_fusion_type=
     strategy:
       matrix:
-        python-version: ["3.12"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install uv
@@ -33,7 +39,7 @@ jobs:
       - name: Upload coverage reports as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pymdp-coverage
+          name: pymdp-coverage-${{ matrix.python-version }}
           path: |
             coverage.xml
             htmlcov/

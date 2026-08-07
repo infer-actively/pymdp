@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.3](https://github.com/infer-actively/pymdp/compare/v1.0.2...v1.0.3) (2026-06-08)
+
+
+### Documentation
+
+* **notebooks:** add colab badge and install cell to other notebooks ([#407](https://github.com/infer-actively/pymdp/issues/407)) ([c9f8ef9](https://github.com/infer-actively/pymdp/commit/c9f8ef9f8ba9b1f163f66cb4009918510fef9222))
+* **notebooks:** add google colab badge and install cell to model construction notebook ([#406](https://github.com/infer-actively/pymdp/issues/406)) ([be658c2](https://github.com/infer-actively/pymdp/commit/be658c2f949586520a7c8c005533a4944fd7e5b6))
+* remove legacy docs folder ([#409](https://github.com/infer-actively/pymdp/issues/409)) ([57b09cf](https://github.com/infer-actively/pymdp/commit/57b09cf48ceacff972f710718fc58334b42badf5))
+
 ## [1.0.2](https://github.com/infer-actively/pymdp/compare/v1.0.1...v1.0.2) (2026-05-07)
 
 
