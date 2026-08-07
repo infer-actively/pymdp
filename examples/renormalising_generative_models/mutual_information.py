@@ -15,17 +15,16 @@ from pymdp.agent import Agent
 # ---------------------------------------------------------------------------
 
 
-def _mi_from_pA(pA_list: list[jnp.ndarray]) -> jnp.ndarray:
-    """Compute MI I(obs; states) from a list of Dirichlet parameter arrays.
+def _mi_per_mapping_from_pA(pA_list: list[jnp.ndarray]) -> list[jnp.ndarray]:
+    """Per-mapping MI I(obs; states) from a list of Dirichlet parameter arrays.
 
-    For each modality array (n_patches, n_obs, n_states):
-      - Normalize each patch independently to a joint distribution
-      - Compute MI = H(o) + H(s) - H(o,s) per patch
-      - Sum MI across patches
-    Then sum across modalities.
-    Matches spm_MI from SPM's DEM_MNIST_RGM.m.
+    For each modality array (n_patches, n_obs, n_states), each (patch, modality)
+    slice is treated as one independent likelihood mapping and its
+    MI = H(o) + H(s) - H(o,s) is returned *without* aggregating across patches or
+    modalities. SPM gates each likelihood mapping independently rather than once
+    across a whole level, so the MI gate needs this un-summed form.
 
-    Returns a scalar jnp.ndarray (JIT-safe; no device→host sync).
+    Returns a list (one entry per modality) of (n_patches,) MI arrays. JIT-safe.
     """
     per_mod = []
     for A_m in pA_list:
@@ -38,8 +37,19 @@ def _mi_from_pA(pA_list: list[jnp.ndarray]) -> jnp.ndarray:
         p_o = A_norm.sum(axis=2)  # (n_patches, n_obs)
         h_s = jnp.sum(p_s * jnp.log(jnp.clip(p_s, 1e-16, None)), axis=1)
         h_o = jnp.sum(p_o * jnp.log(jnp.clip(p_o, 1e-16, None)), axis=1)
-        per_mod.append(jnp.sum(joint - h_s - h_o))
-    return jnp.stack(per_mod).sum()
+        per_mod.append(joint - h_s - h_o)  # (n_patches,)
+    return per_mod
+
+
+def _mi_from_pA(pA_list: list[jnp.ndarray]) -> jnp.ndarray:
+    """Total MI across all patches and modalities (scalar; for reporting).
+
+    Sums the per-mapping MI so the training MI-history plot keeps a single
+    scalar per level. Matches spm_MI from SPM's DEM_MNIST_RGM.m.
+
+    Returns a scalar jnp.ndarray (JIT-safe; no device→host sync).
+    """
+    return jnp.stack([m.sum() for m in _mi_per_mapping_from_pA(pA_list)]).sum()
 
 
 def compute_level_mi(agent: Agent) -> float:

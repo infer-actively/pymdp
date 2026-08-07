@@ -160,28 +160,30 @@ def compute_svd_basis_overlapping(
         L = data_packed[N, 0]       # scalar L for this tile
 
         _, S_full, Vh = jnp.linalg.svd(data, full_matrices=False)
-        # Vh: (max_rank, n_pixels), pad to (k, n_pixels) if max_rank < k
+        # S_full: (max_rank,) — the FULL spectrum. max_rank = min(N, n_pixels)
+        # can exceed k. Vh: (max_rank, n_pixels).
         V_raw = Vh.T  # (n_pixels, max_rank)
-        V = jnp.zeros((n_pixels, k))
-        nk = min(max_rank, k)
-        V = V.at[:, :nk].set(V_raw[:, :nk])
-        S = jnp.zeros(k)
-        S = S.at[:nk].set(S_full[:nk])
 
         # Adaptive mode selection matching spm_svd:
-        # eigenvalue_i * L / sum(eigenvalues) > 1/su
-        # L = min(N_images, n_active_pixels_in_tile), matching MATLAB's length(s)
+        #   eigenvalue_i * L / sum(eigenvalues) > 1/su
+        # The retention denominator uses the FULL spectrum, and the mode count is
+        # only capped at k *after* thresholding — spm_svd thresholds first and
+        # caps at 16 post-hoc. Truncating to the top-k before summing (the prior
+        # behaviour) shrinks the denominator and admits modes SPM would reject.
+        # L = min(N_images, n_active_pixels_in_tile), matching MATLAB's length(s).
         threshold = 1.0 / config.sv_threshold
-        eigvals = jnp.square(S)
-        normalized = eigvals * (L / jnp.maximum(eigvals.sum(), 1e-12))
-        mode_mask = (normalized > threshold).astype(jnp.float32)
+        eigvals_full = jnp.square(S_full)
+        normalized_full = eigvals_full * (L / jnp.maximum(eigvals_full.sum(), 1e-12))
+        # Singular values are sorted descending, so the passing set is a prefix;
+        # count how many pass, keep at least one, then cap at k.
+        n_pass = jnp.sum(normalized_full > threshold).astype(jnp.int32)
+        n_modes = jnp.clip(n_pass, 1, k)
 
-        # Keep at least one mode for near-degenerate patches
-        mode_mask = mode_mask.at[0].set(
-            jnp.where(mode_mask.sum() > 0, mode_mask[0], 1.0)
-        )
-        n_modes = mode_mask.sum().astype(jnp.int32)
-
+        # Store the top-k singular vectors/values, masked to the retained modes.
+        nk = min(max_rank, k)
+        V = jnp.zeros((n_pixels, k)).at[:, :nk].set(V_raw[:, :nk])
+        S = jnp.zeros(k).at[:nk].set(S_full[:nk])
+        mode_mask = (jnp.arange(k) < n_modes).astype(jnp.float32)
         V = V * mode_mask[None, :]
         S = S * mode_mask
 
@@ -203,9 +205,11 @@ def compute_svd_basis_overlapping(
     mode_mask = (S > 0).astype(jnp.float32)
 
     def symmetric_bin_centres(v):
-        lo = v.min()
-        hi = jnp.maximum(v.max(), lo + 1e-8)
-        return jnp.linspace(lo, hi, config.n_levels)
+        # spm_rgb2O bins each variate over a symmetric, zero-centred range
+        # [-max|u|, +max|u|] rather than [min(u), max(u)]. With an odd n_levels
+        # this puts a bin exactly at 0 and keeps the discretisation sign-symmetric.
+        a = jnp.maximum(jnp.max(jnp.abs(v)), 1e-8)
+        return jnp.linspace(-a, a, config.n_levels)
 
     # vmap over (ng, ng, k) -> bin_centres (ng, ng, k, n_levels)
     bin_centres = vmap(vmap(vmap(symmetric_bin_centres)))(

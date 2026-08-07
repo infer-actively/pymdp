@@ -122,7 +122,7 @@ def _classify_one(
     q_cls = qs_cls[0][:, 0, :]  # (1, n_classes)
 
     # === Top-down refinement pass ===
-    refined_soft = _top_down_refinement_pass(
+    refined_soft, _ = _top_down_refinement_pass(
         level_agents, level_masks, cls_agent, q_cls, level_soft_beliefs, level_obs_lists
     )
 

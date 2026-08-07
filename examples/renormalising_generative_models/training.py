@@ -15,8 +15,12 @@ import equinox as eqx
 
 from pymdp.agent import Agent
 
-from mutual_information import _mi_from_pA
-from hierarchical import _bottom_up_pass, _top_down_refinement_pass
+from mutual_information import _mi_per_mapping_from_pA
+from hierarchical import (
+    _bottom_up_pass,
+    _top_down_refinement_pass,
+    _extract_soft_obs,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -32,16 +36,19 @@ def _mi_gated_update(
 ) -> Agent:
     """Apply MI-gated asymptotic Dirichlet update, following SPM's spm_MDP_VB_XXX.
 
-    Computes MI for the prior and posterior Dirichlet parameters and gates the
-    update with a softmax over the two MI values:
+    Gates the update per likelihood mapping — each (patch, modality) slice is
+    gated on its *own* MI change, not once across the whole level (SPM applies
+    the gate to each mapping independently). For every mapping:
 
-        Pa = softmax(beta * [MI(pa), MI(qa)])
+        Pa = softmax(beta * [MI(pa), MI(qa)])            # per (patch, modality)
         pA_new = (Pa[0]*pa + Pa[1]*qa) * eta / (eta + Pa[1])
 
-    With beta=512 the gate is near-binary: the posterior is accepted only if
-    MI(qa) > MI(pa), i.e., the new example measurably increases the mutual
-    information of the learned A matrix. The eta term prevents unbounded
-    accumulation (asymptotic forgetting).
+    With beta=512 the gate is near-binary: a mapping's posterior is accepted only
+    if MI(qa) > MI(pa) for that mapping, i.e., the new example measurably
+    increases its mutual information. The eta term bounds accumulation
+    (asymptotic forgetting). Gating per mapping matters at beta=512 because a
+    single scalar level-wide gate lets one high-MI patch veto learning at all the
+    others (or vice-versa).
 
     Args:
         agent_prior: Agent before Dirichlet update (holds pa = prior pA)
@@ -55,15 +62,20 @@ def _mi_gated_update(
     pa = agent_prior.pA
     qa = agent_posterior.pA
 
-    mi_pa = _mi_from_pA(pa)
-    mi_qa = _mi_from_pA(qa)
+    mi_pa_list = _mi_per_mapping_from_pA(pa)  # list of (n_patches,)
+    mi_qa_list = _mi_per_mapping_from_pA(qa)  # list of (n_patches,)
 
-    # Softmax gate — keep Pa as a traced array so _mi_gated_update is JIT-safe
-    Pa = jax.nn.softmax(beta * jnp.stack([mi_pa, mi_qa]))
-
-    # Gated asymptotic blend
-    scale = eta / (eta + Pa[1])
-    pA_new = [(Pa[0] * pa_m + Pa[1] * qa_m) * scale for pa_m, qa_m in zip(pa, qa)]
+    pA_new = []
+    for pa_m, qa_m, mi_pa_m, mi_qa_m in zip(pa, qa, mi_pa_list, mi_qa_list):
+        # Per-patch softmax gate for this modality — (n_patches, 2), traced so
+        # _mi_gated_update stays JIT-safe.
+        Pa = jax.nn.softmax(
+            beta * jnp.stack([mi_pa_m, mi_qa_m], axis=-1), axis=-1
+        )  # (n_patches, 2)
+        Pa0 = Pa[:, 0][:, None, None]  # (n_patches, 1, 1)
+        Pa1 = Pa[:, 1][:, None, None]
+        scale = eta / (eta + Pa1)      # (n_patches, 1, 1) asymptotic forgetting
+        pA_new.append((Pa0 * pa_m + Pa1 * qa_m) * scale)
 
     # Recompute A: normalize along obs axis (axis 1)
     A_new = [pa_m / pa_m.sum(axis=1, keepdims=True) for pa_m in pA_new]
@@ -76,7 +88,7 @@ def _interleaved_em(
     obs_soft_list: list[jnp.ndarray],
     D: jnp.ndarray,
     valid_mask: jnp.ndarray,
-    num_iter: int = 16,
+    num_iter: int = 1,
 ) -> tuple[list[jnp.ndarray], jnp.ndarray]:
     """Interleaved Q-A EM matching MATLAB's spm_VBX within-level solver.
 
@@ -90,6 +102,15 @@ def _interleaved_em(
     Only Q evolves across iterations; pa is the fixed Dirichlet prior.
     Q is initialised to D (the state prior) before the first M-step.
 
+    ``num_iter`` defaults to 1: SPM's DEM_MNIST_RGM demo runs ``spm_VBX`` with
+    ``OPTIONS.B = 0``, i.e. a single non-iterative belief-propagation pass with
+    A held fixed, followed by one Dirichlet accumulation. The 16-iteration
+    ``qa = pa; qa += cross(O, Q)`` scheme lives in ``spm_backwards`` and is only
+    entered when ``OPTIONS.B = 1`` (not used by the MNIST demo). Iterating Q
+    against an A refit to the same image is self-reinforcing and sharpens the
+    counts toward one-hot relative to SPM, so 1 is the parity default; larger
+    values remain available for experimentation.
+
     Uses lax.scan over iterations (carry = Q only) to keep XLA graph size O(1)
     regardless of num_iter — avoiding command-buffer OOM from loop unrolling.
 
@@ -98,7 +119,8 @@ def _interleaved_em(
         obs_soft_list: list of (n_patches, n_obs_m) soft observation vectors
         D:             (n_patches, max_states) state prior
         valid_mask:    (n_patches, max_states) bool — zero out invalid patches
-        num_iter:      number of EM iterations (MATLAB uses 16)
+        num_iter:      number of EM iterations (SPM MNIST demo uses 1; the
+                       16-iteration spm_backwards path requires OPTIONS.B=1)
 
     Returns:
         (qa_list, Q): final Dirichlet accumulators and state posterior
@@ -160,6 +182,7 @@ def _train_step(
     n_classes: int,
     beta: float,
     eta: float,
+    num_iter: int = 1,
 ) -> tuple[_TrainCarry, dict]:
     """Pure per-image training step — suitable as a lax.scan body.
 
@@ -175,6 +198,7 @@ def _train_step(
         n_classes: number of digit classes (static)
         beta: MI-gate softmax sharpness
         eta: asymptotic forgetting parameter
+        num_iter: interleaved-EM iterations per level (SPM parity = 1)
 
     Returns:
         (new_carry, metrics) where metrics = {"correct_inc": int32 scalar}
@@ -199,7 +223,9 @@ def _train_step(
     q_cls = qs_cls[0][:, 0, :]  # (1, n_classes)
 
     # --- Top-down pass: refine beliefs using cls posterior ---
-    refined_soft = _top_down_refinement_pass(
+    # td_D holds the label-conditioned top-down message that entered each level
+    # *before* that level's observations were folded in (spm_dot(A, Q_parent)).
+    refined_soft, td_D = _top_down_refinement_pass(
         levels, valid_masks, cls_agent, q_cls, level_soft_beliefs, level_obs_lists
     )
 
@@ -207,23 +233,40 @@ def _train_step(
     new_levels = []
     for lv_idx in range(n_hier):
         level = levels[lv_idx]
-        D_em = refined_soft[lv_idx]   # top-down refined prior over states
+        # Learning prior = top-down message alone, so this level's observations
+        # enter the M-step exactly once (using refined_soft here would double
+        # count them — it has already absorbed those observations).
+        D_em = td_D[lv_idx]
         if lv_idx == 0:
+            # L1 outcomes are the actual SVD bin observations (data, not beliefs),
+            # so they are label-independent and used as-is.
             n_obs_l1 = level.pA[0].shape[1]  # n_levels (SVD bin outcomes)
             obs_soft = [jax.nn.one_hot(o, n_obs_l1) for o in level_obs_lists[0]]
         else:
-            obs_soft = level_obs_lists[lv_idx]  # already (n_patches, max_child_states)
-        qa_final, _ = _interleaved_em(level.pA, obs_soft, D_em, valid_masks[lv_idx])
+            # Outcome side = refined (label-conditioned) child beliefs. In SPM the
+            # supervised one-hot D conditions the whole downward sweep, so the
+            # child posteriors that come back up as outcomes O are label-conditioned
+            # by the time qa += cross(O, Q) runs.
+            child_refined = refined_soft[lv_idx - 1]
+            child_grid = int(round(child_refined.shape[0] ** 0.5))
+            obs_soft = _extract_soft_obs(child_refined, child_grid)
+        qa_final, _ = _interleaved_em(
+            level.pA, obs_soft, D_em, valid_masks[lv_idx], num_iter=num_iter
+        )
         A_new_em = [qa_m / jnp.clip(qa_m.sum(axis=1, keepdims=True), 1e-16) for qa_m in qa_final]
         agent_posterior = eqx.tree_at(lambda x: (x.pA, x.A), level, (qa_final, A_new_em))
         new_levels.append(_mi_gated_update(level, agent_posterior, beta, eta))
 
     # --- Classification level: interleaved EM ---
-    obs_soft_cls = [child_beliefs]   # (1, n_top_states)
-    D_cls = q_cls                    # (1, n_classes) supervised posterior
+    # Outcome side = refined (label-conditioned) top belief; learning prior =
+    # supervised one-hot label (the cls level's top-down message), so the top
+    # belief evidence enters the M-step once rather than also seeding the prior.
+    obs_soft_cls = [refined_soft[n_hier - 1]]   # (1, n_top_states)
+    D_cls = supervised_D[0]                      # (1, n_classes) one-hot label
     qa_cls_final, _ = _interleaved_em(
         cls_agent.pA, obs_soft_cls, D_cls,
         jnp.ones((1, n_classes), dtype=jnp.bool_),
+        num_iter=num_iter,
     )
     A_cls_new = [qa_m / jnp.clip(qa_m.sum(axis=1, keepdims=True), 1e-16) for qa_m in qa_cls_final]
     cls_posterior = eqx.tree_at(lambda x: (x.pA, x.A), cls_agent, (qa_cls_final, A_cls_new))

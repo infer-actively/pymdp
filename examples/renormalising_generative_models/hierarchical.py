@@ -107,6 +107,38 @@ def create_hierarchical_agents(
     return agent, valid_mask
 
 
+def hierarchical_obs_valid_mask(
+    stats: StateStats,
+    max_child_states: int,
+) -> list[jnp.ndarray]:
+    """Per-modality observation-validity masks for a hierarchical level.
+
+    The batched A matrices pad every modality's outcome axis to the *largest*
+    child-state vocabulary across the whole child grid, so a mapping whose real
+    child vocabulary is smaller carries padded outcome rows above it. Those rows
+    are exactly zero in A, but ``pA = A + concentration`` would floor them to a
+    positive value and leak probability into nonexistent outcomes after
+    normalisation (and inflate the MI / generation). This mask marks the real
+    outcomes so callers can keep the padded rows at zero.
+
+    Returns a list of 4 boolean arrays, each (n_patches, max_child_states); entry
+    (p, o) is True iff outcome o is within modality m's real vocabulary
+    ``child_num_states[p][m]`` at patch p.
+    """
+    n_grid = stats.num_states.shape[0]
+    n_patches = n_grid * n_grid
+    n_mod = 4
+    masks = []
+    for m in range(n_mod):
+        child_ns = np.empty(n_patches, dtype=np.int64)
+        for p in range(n_patches):
+            i, j = divmod(p, n_grid)
+            child_ns[p] = int(stats.child_num_states[i][j][m])
+        mask = np.arange(max_child_states)[None, :] < child_ns[:, None]
+        masks.append(jnp.asarray(mask))
+    return masks
+
+
 def infer_hierarchical_states(
     agent: Agent,
     valid_mask: jnp.ndarray,
@@ -291,11 +323,19 @@ def _top_down_refinement_pass(
 
     Returns:
         refined_soft: list of (n_patches, max_states) refined beliefs per level
+        td_D: list of (n_patches, max_states) top-down D messages per level —
+            the label-conditioned prior that entered each level's refinement,
+            *before* that level's own observations were folded in. This is the
+            correct prior for Dirichlet learning (spm_dot(A, Q_parent) folded
+            into the child's D): using it — rather than ``refined_soft`` — keeps
+            the level's observations from being counted twice in the M-step.
     """
     n_hier = len(levels)
     refined_soft = [None] * n_hier
+    td_D = [None] * n_hier
 
     D_top = _top_down_D_from_cls(cls_agent.A, q_cls)
+    td_D[n_hier - 1] = jnp.where(valid_masks[n_hier - 1], D_top, 0.0)
     child_input = level_soft_beliefs[n_hier - 2] if n_hier > 1 else level_soft_beliefs[0]
     child_grid_top = int(round(child_input.shape[0] ** 0.5))
     obs_top = _extract_soft_obs(child_input, child_grid_top)
@@ -314,6 +354,7 @@ def _top_down_refinement_pass(
         D_child = _top_down_D_hierarchical(
             levels[parent_lv].A, q_parent, child_grid, max_child_states
         )
+        td_D[lv_idx] = jnp.where(valid_masks[lv_idx], D_child, 0.0)
         if lv_idx == 0:
             qs_l1_refined = child_level.infer_states(level_obs_lists[0], [D_child])
             refined_soft[0] = jnp.where(
@@ -328,4 +369,4 @@ def _top_down_refinement_pass(
                 valid_masks[lv_idx], qs_refined[0][:, 0, :], 0.0
             )
 
-    return refined_soft
+    return refined_soft, td_D

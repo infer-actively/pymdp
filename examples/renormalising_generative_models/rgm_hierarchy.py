@@ -43,7 +43,11 @@ from state_stats import compute_group_states, compute_hierarchical_state_stats
 from agent_build import RGMLevel, _build_agent, _infer_map_states
 from mutual_information import compute_level_mi
 from group_agents import create_group_agents, _raw_obs_to_group_obs_list
-from hierarchical import create_hierarchical_agents, infer_hierarchical_states
+from hierarchical import (
+    create_hierarchical_agents,
+    infer_hierarchical_states,
+    hierarchical_obs_valid_mask,
+)
 from classification import create_classification_agent, _classify_batch
 from generation import _generate_image_distributional, _expand_grid, _expand_to_obs
 from training import _TrainCarry, _train_step
@@ -89,6 +93,7 @@ class RGMHierarchy:
         y_exemplars: np.ndarray,
         config: DiscretiseConfig | None = None,
         n_classes: int = 10,
+        x_basis: jnp.ndarray | None = None,
     ) -> "RGMHierarchy":
         """Build the full N-level hierarchy from preprocessed exemplar images.
 
@@ -96,11 +101,22 @@ class RGMHierarchy:
             n_groups = image_size // group_size
             n_levels = log2(n_groups) + 1
 
+        The SVD front-end and the structure-learning step use conceptually
+        separate inputs, matching SPM: the SVD bases are fit on a (typically
+        broad) dataset, and fast structure learning then runs from a few
+        exemplars per class *using that fixed front-end*. Pass ``x_basis`` to
+        fit the basis on a different, usually larger, set than ``x_exemplars``.
+        When ``x_basis`` is None the exemplars fit the basis too (legacy
+        behaviour), which conflates the two stages.
+
         Args:
             x_exemplars: (N, H, W) or (N, C, H, W) preprocessed structure images
-            y_exemplars: (N,) digit labels
+                used for fast structure learning (e.g. 13 per class)
+            y_exemplars: (N,) digit labels for ``x_exemplars``
             config: discretisation config (default: DiscretiseConfig())
             n_classes: number of output digit classes
+            x_basis: optional (M, H, W)/(M, C, H, W) preprocessed images used to
+                fit the SVD front-end only. Defaults to ``x_exemplars``.
 
         Returns:
             Fully constructed RGMHierarchy
@@ -116,8 +132,10 @@ class RGMHierarchy:
             )
         n_halvings = int(math.log2(n_groups))
 
-        # SVD basis and discretisation
-        basis = compute_svd_basis_overlapping(x_exemplars, config)
+        # SVD basis and discretisation. Fit the front-end on x_basis (falls back
+        # to the exemplars) but always encode the structure exemplars themselves.
+        x_basis_fit = x_exemplars if x_basis is None else x_basis
+        basis = compute_svd_basis_overlapping(x_basis_fit, config)
         observations = encode_images_overlapping(x_exemplars, basis)
 
         # Level 1: group states (2×2 blocks of raw SVD observations, matching MATLAB)
@@ -323,6 +341,7 @@ class RGMHierarchy:
         lr_pA: float = 1.0,
         beta: float = 512.0,
         eta: float = 512.0,
+        num_iter: int = 1,
         log_every: int = 500,
         scan_chunk_size: int = 50,
     ) -> dict:
@@ -358,6 +377,10 @@ class RGMHierarchy:
             lr_pA: learning rate passed to infer_parameters
             beta: softmax sharpness for MI gate (SPM uses 512)
             eta: asymptote / forgetting parameter (SPM uses 512)
+            num_iter: interleaved-EM iterations per level per image. Defaults to
+                1 to match SPM's MNIST demo (``spm_VBX`` with ``OPTIONS.B=0`` is a
+                single non-iterative pass). Set >1 to reproduce the iterative
+                ``spm_backwards`` (``OPTIONS.B=1``) scheme for comparison.
             log_every: how often (in images) to print a progress line and record MI.
             scan_chunk_size: number of images per ``lax.scan`` call. Smaller values
                 use less peak memory at the cost of more XLA compilations (one per
@@ -370,8 +393,21 @@ class RGMHierarchy:
         # --- Phase A: initialize learnable agents at ALL levels ---
         for lv_idx, level in enumerate(self.levels):
             is_cls = lv_idx == len(self.levels) - 1
+            # L2+ hierarchical agents (created by create_hierarchical_agents) pad
+            # the outcome axis to the largest child vocabulary. Add concentration
+            # only to real outcome rows so padded child outcomes stay exactly
+            # zero and never accrue Dirichlet mass.
+            is_hier_l2plus = 0 < lv_idx < len(self.levels) - 1
             concentration = concentration_cls if is_cls else concentration_lower
-            pA = [A_m + concentration for A_m in level.agent.A]
+            if is_hier_l2plus:
+                max_child = level.agent.A[0].shape[1]
+                obs_masks = hierarchical_obs_valid_mask(level.stats, max_child)
+                pA = [
+                    A_m + concentration * obs_masks[m][:, :, None]
+                    for m, A_m in enumerate(level.agent.A)
+                ]
+            else:
+                pA = [A_m + concentration for A_m in level.agent.A]
             updated_agent = _build_agent(
                 list(level.agent.A),
                 level.agent.batch_size,
@@ -424,6 +460,7 @@ class RGMHierarchy:
             n_classes=self.n_classes,
             beta=beta,
             eta=eta,
+            num_iter=num_iter,
         )
 
         def _scan_body(dynamic_carry, x):
