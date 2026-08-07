@@ -39,6 +39,9 @@ dev = [
     "nbformat>=5.10.4",
     "nbstripout>=0.8.2",
     "pre-commit>=4.2.0",
+    # Bound to <0.16: 0.16.0 broadened ruff's default rule set. Keep this in
+    # sync with the ruff spec in .github/workflows/lint.yaml.
+    "ruff>=0.15,<0.16",
 ]
 
 test = [

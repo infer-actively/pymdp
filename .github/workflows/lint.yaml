@@ -20,4 +20,8 @@ jobs:
     - name: Install uv
       uses: astral-sh/setup-uv@v6
     - name: Analysing the code with ruff
-      run: uvx ruff check
+      # Bound ruff to the 0.15.x series: 0.16.0 broadened the default rule set,
+      # which flags a large amount of pre-existing code. Staying on <0.16 keeps
+      # lint green while still picking up 0.15.x patch fixes. Bump the ceiling
+      # deliberately when ready to adopt the newer rules.
+      run: uvx 'ruff>=0.15,<0.16' check

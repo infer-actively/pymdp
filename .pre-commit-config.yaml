@@ -1,6 +1,13 @@
 repos:
   - repo: local
     hooks:
+      - id: ruff
+        name: ruff lint
+        # Uses the ruff bounded in the `dev` dependency group, matching CI.
+        entry: uv run --group dev ruff check --force-exclude
+        language: system
+        types_or: [python, pyi, jupyter]
+        require_serial: true
       - id: sanitize-notebooks
         name: sanitize notebooks by tier
         entry: uv run --group dev python scripts/notebook_precommit.py sanitize
