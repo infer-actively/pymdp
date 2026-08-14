@@ -6,6 +6,7 @@ import math as pymath
 import warnings
 import jax.numpy as jnp
 import jax.tree_util as jtu
+from jax.experimental import sparse
 from jax import nn, vmap
 from pymdp import inference, control, learning, utils
 from pymdp.distribution import Distribution, get_dependencies
@@ -260,7 +261,13 @@ class Agent(Module):
                         f"Batch size {batch_size} does not match the first dimension of B[{f}] with shape {b_f.shape}"
                     )
             elif b_f.ndim == (len(b_f_state_factors) + 2):  # this indicates no leading batch dimension
-                B[f] = jnp.broadcast_to(b_f, (batch_size,) + b_f.shape)
+                if isinstance(b_f, sparse.BCOO):
+                    if batch_size > 1:
+                        raise ValueError("Batched Agent with batch_size > 1 requires explicit batch dimension for sparse BCOO tensors.")
+                    # Construct BCOO with leading batch dimension and n_batch=1
+                    B[f] = sparse.BCOO((b_f.data[jnp.newaxis], b_f.indices[jnp.newaxis]), shape=(batch_size,) + b_f.shape)
+                else:
+                    B[f] = jnp.broadcast_to(b_f, (batch_size,) + b_f.shape)
                 if pB is not None:
                     pB[f] = jnp.broadcast_to(pB[f], (batch_size,) + b_f.shape)
                 if D is not None:

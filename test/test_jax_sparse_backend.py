@@ -204,6 +204,37 @@ class TestJaxSparseOperations(unittest.TestCase):
                     )
                     self.assertTrue(np.allclose(dense_out, qs_joint_sparse))
 
+    def test_sparse_b_agent_fpi(self):
+        """Test constructing Agent with sparse B (BCOO) and running FPI inference."""
+        from pymdp.agent import Agent
+        from pymdp.maths import spm_dot_sparse
+
+        V = 64
+        # Create sparse identity transition
+        data = jnp.ones(V, dtype=jnp.float32)
+        idx_3d = jnp.stack([jnp.arange(V), jnp.arange(V), jnp.zeros(V, dtype=int)], axis=1)
+        sparse_B0 = sparse.BCOO((data, idx_3d), shape=(V, V, 1))
+
+        dense_B0 = np.eye(V, dtype=np.float32)[:, :, np.newaxis]
+        A = [np.eye(V, dtype=np.float32)]
+        D = [np.ones(V, dtype=np.float32) / V]
+
+        dense_agent = Agent(A=A, B=[dense_B0], D=D, batch_size=1)
+        sparse_agent = Agent(A=A, B=[sparse_B0], D=D, batch_size=1)
+
+        prior_d = [jnp.array(dense_agent.D[0])]
+        prior_s = [jnp.array(sparse_agent.D[0])]
+
+        # Run inference steps and compare posteriors
+        for obs_val in [0, 5, 12, 30]:
+            qs_d = dense_agent.infer_states([jnp.array([obs_val])], prior_d)
+            qs_s = sparse_agent.infer_states([jnp.array([obs_val])], prior_s)
+            self.assertTrue(np.allclose(qs_d[0], qs_s[0], atol=1e-6))
+
+            prior_d = dense_agent.update_empirical_prior(jnp.array([[0]]), qs_d)
+            prior_s = sparse_agent.update_empirical_prior(jnp.array([[0]]), qs_s)
+            self.assertTrue(np.allclose(prior_d[0], prior_s[0], atol=1e-6))
+
 
 if __name__ == "__main__":
     unittest.main()
