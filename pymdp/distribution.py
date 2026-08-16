@@ -39,21 +39,120 @@ class Distribution:
                 raise ValueError(f"When setting the tensor directly, the new shape {value.shape} must match the existing tensor shape {self._data.shape}")
         self._data = value
 
-    def get(self, batch: dict | None = None, event: dict | None = None) -> np.ndarray:
+    def get(
+        self, batch: dict | None = None, event: dict | None = None, *, pointwise: bool = False
+    ) -> np.ndarray:
+        """Read the block the labels name, in declared axis order.
+
+        Lists on several axes select the block they describe. pointwise=True
+        zips them into single points instead, as described on set.
+        """
         event_slices = self._get_slices(event, self.event_indices, self.event)
         batch_slices = self._get_slices(batch, self.batch_indices, self.batch)
 
         slices = event_slices + batch_slices
-        return self._data[tuple(slices)]
+        return self._data[self._index(slices, pointwise)]
 
     def set(
-        self, batch: dict | None = None, event: dict | None = None, values: np.ndarray | float | int | None = None
+        self,
+        batch: dict | None = None,
+        event: dict | None = None,
+        values: np.ndarray | float | int | None = None,
+        *,
+        pointwise: bool = False,
     ) -> None:
+        """Write values into the block the labels name, in declared axis order.
+
+        values is broadcast into that block by the usual numpy rules, so a
+        value whose shape is smaller than the block is repeated across it.
+        Writing lists of labels on two axes therefore fills the whole block:
+
+            transition.set(
+                event={"loc": locs}, batch={"loc": locs, "ctrl": "up"},
+                values=np.ones(4),
+            )
+
+        writes 1.0 to all 16 entries of the 4 by 4 block, because a (4,)
+        value is broadcast into every row of it. Before block selection
+        existed this same expression wrote the 4 diagonal entries. Pass
+        pointwise=True to keep that meaning: the lists are then zipped into
+        4 points and values is matched against those points instead.
+        """
         event_slices = self._get_slices(event, self.event_indices, self.event)
         batch_slices = self._get_slices(batch, self.batch_indices, self.batch)
 
         slices = event_slices + batch_slices
-        self._data[tuple(slices)] = values
+        self._data[self._index(slices, pointwise)] = values
+
+    def _index(self, slices: list[Any], pointwise: bool) -> tuple:
+        """Turn per-axis indices into a tuple that selects what the labels name.
+
+        Without lists this returns the entries untouched, so plain label and
+        slice access stays basic indexing and keeps returning views.
+
+        With a list on any axis, every axis is converted to an index array:
+        slices become arange and each list is reshaped onto its own output
+        dimension. No slices are left in the tuple, so numpy has nothing to
+        separate and the result keeps the declared axis order. Two lists select
+        the block they describe rather than its diagonal. Scalars stay scalar
+        and their axes collapse, as with basic indexing.
+
+        With pointwise=True the lists zip instead: they must share one length,
+        they are consumed together along one output axis placed where the first
+        list appears, and the remaining axes keep declared order. This is the
+        old broadcast behaviour made explicit, for writing diagonals and
+        per-point updates that block selection cannot express.
+        """
+        has_list = any(isinstance(s, list) for s in slices)
+        if not has_list:
+            if pointwise:
+                raise ValueError("pointwise indexing needs a list of labels on at least one axis")
+            return tuple(slices)
+
+        if pointwise:
+            lengths = {len(s) for s in slices if isinstance(s, list)}
+            if len(lengths) > 1:
+                raise ValueError(
+                    f"pointwise lists must all have the same length, got lengths {sorted(lengths)}"
+                )
+            n_out = 1 + sum(1 for s in slices if isinstance(s, slice))
+        else:
+            n_out = sum(1 for s in slices if isinstance(s, (list, slice)))
+
+        out: list[Any] = []
+        dim = 0
+        point_dim = None
+        for axis, s in enumerate(slices):
+            if isinstance(s, list):
+                if pointwise:
+                    if point_dim is None:
+                        point_dim = dim
+                        dim += 1
+                    use = point_dim
+                else:
+                    use = dim
+                    dim += 1
+                shape = [1] * n_out
+                shape[use] = -1
+                out.append(np.asarray(s, dtype=int).reshape(shape))
+            elif isinstance(s, slice):
+                shape = [1] * n_out
+                shape[dim] = -1
+                out.append(np.arange(self._data.shape[axis]).reshape(shape))
+                dim += 1
+            else:
+                out.append(s)
+        return tuple(out)
+
+    @property
+    def points(self) -> "_PointwiseView":
+        """Positional pointwise indexing, the zip counterpart of block access.
+
+        d.points[["A", "B"], ["C", "D"], "up"] reads or writes the two entries
+        (A, C, up) and (B, D, up) rather than the 2 by 2 block. Lists zip along
+        one shared axis and must have equal lengths.
+        """
+        return _PointwiseView(self)
 
     def _get_slices(self, keys: dict | None, indices: dict, full_indices: dict) -> list[Any]:
         slices = []
@@ -77,7 +176,7 @@ class Distribution:
         else:
             return index_map[key]
 
-    def _get_index_from_axis(self, axis: int, element: Any) -> int | slice:
+    def _get_index_from_axis(self, axis: int, element: Any) -> int | slice | list[int]:
         if isinstance(element, slice):
             return slice(None)
         if axis < len(self.event):
@@ -86,29 +185,79 @@ class Distribution:
         else:
             key = list(self.batch.keys())[axis - len(self.event)]
             index_map = self.batch_indices[key]
+        if isinstance(element, list):
+            return [self._get_index(v, index_map) for v in element]
         return self._get_index(element, index_map)
 
-    def __getitem__(self, indices: Any) -> np.ndarray:
+    def _positional_slices(self, indices: Any) -> list[Any]:
+        """Resolve a bracket index tuple to one entry per axis.
+
+        Keys are positional over the event axes and then the batch axes. An
+        event axis and a batch axis may share a key name while carrying
+        different label orders, so axes are resolved by position and never by
+        name. Axes left off the end of the tuple are taken whole.
+
+        Both bracket paths use this, so d[...] and d.points[...] accept the
+        same keys and differ only in how the lists are consumed.
+        """
         if not isinstance(indices, tuple):
             indices = (indices,)
-        index_list = [
-            self._get_index_from_axis(i, idx) for i, idx in enumerate(indices)
+        n_axes = len(self.event) + len(self.batch)
+        if len(indices) > n_axes:
+            raise IndexError(
+                f"too many indices for Distribution: it has {n_axes} axes, "
+                f"but {len(indices)} were indexed"
+            )
+        out = [
+            self._get_index_from_axis(axis, element)
+            for axis, element in enumerate(indices)
         ]
-        return self._data[tuple(index_list)]
+        out.extend([slice(None)] * (n_axes - len(indices)))
+        return out
+
+    def __getitem__(self, indices: Any) -> np.ndarray:
+        """Read by label. Lists select the block they name, as get does."""
+        slices = self._positional_slices(indices)
+        return self._data[self._index(slices, pointwise=False)]
 
     def __setitem__(self, indices: Any, value: Any) -> None:
-        if not isinstance(indices, tuple):
-            indices = (indices,)
-        index_list = [
-            self._get_index_from_axis(i, idx) for i, idx in enumerate(indices)
-        ]
-        self._data[tuple(index_list)] = value
+        """Write by label. Lists select the block they name, as set does."""
+        slices = self._positional_slices(indices)
+        self._data[self._index(slices, pointwise=False)] = value
 
     def normalize(self) -> None:
         self.data = norm_dist(self.data)
 
     def __repr__(self) -> str:
         return f"Distribution({self.event}, {self.batch})\n {self.data}"
+
+
+class _PointwiseView:
+    """Bracket access on Distribution.points.
+
+    Keys are positional over the event axes then the batch axes, the same order
+    __getitem__ uses. Labels, integers, lists of either, and bare slices are
+    accepted; lists zip rather than selecting a block. At least one axis must
+    receive a list: a selection of labels and slices alone names no points to
+    zip and raises ValueError, so d.points["A", "C", "up"] is not a way to read
+    one entry. Use d["A", "C", "up"] for that.
+    """
+
+    def __init__(self, dist: Distribution) -> None:
+        self._dist = dist
+
+    def _translate(self, indices: Any) -> list[Any]:
+        # Positional resolution is shared with Distribution's own brackets, so
+        # both accept the same keys and reject the same arities.
+        return self._dist._positional_slices(indices)
+
+    def __getitem__(self, indices: Any) -> np.ndarray:
+        slices = self._translate(indices)
+        return self._dist._data[self._dist._index(slices, pointwise=True)]
+
+    def __setitem__(self, indices: Any, values: Any) -> None:
+        slices = self._translate(indices)
+        self._dist._data[self._dist._index(slices, pointwise=True)] = values
 
 
 class DistributionIndexer(dict):
