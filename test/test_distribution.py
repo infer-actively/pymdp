@@ -345,6 +345,8 @@ class TestDists(unittest.TestCase):
             likelihood["r", "s0", :]
         with self.assertRaisesRegex(IndexError, "it has 2 axes, but 3 were indexed"):
             likelihood.points[["r", "g"], ["s0", "s1"], :]
+        with self.assertRaisesRegex(IndexError, "it has 2 axes, but 3 were indexed"):
+            likelihood["r", "s0", "s1"]
 
     def test_pointwise_is_keyword_only(self):
         likelihood = distribution.Distribution(
