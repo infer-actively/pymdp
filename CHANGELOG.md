@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.4](https://github.com/infer-actively/pymdp/compare/v1.0.3...v1.0.4) (2026-08-21)
+
+
+### Bug Fixes
+
+* **agent:** back Policies with a hashable tuple ([#416](https://github.com/infer-actively/pymdp/issues/416)) ([e690426](https://github.com/infer-actively/pymdp/commit/e690426181e10ab5b6713ba3114906e45146b477))
+* **maths:** eliminate cancellation error in exact parameter info-gain weight ([#415](https://github.com/infer-actively/pymdp/issues/415)) ([dec6c83](https://github.com/infer-actively/pymdp/commit/dec6c83de85eda1054489e4967e86489aadc06c9))
+* label lists on multiple axes select blocks instead of diagonals ([#442](https://github.com/infer-actively/pymdp/issues/442)) ([4579c9b](https://github.com/infer-actively/pymdp/commit/4579c9b09bc11230431f415747fde0efb3ed39d9))
+
+
+### Dependencies
+
+* fix ruff version and make local dev setup match CI ([#441](https://github.com/infer-actively/pymdp/issues/441)) ([c19fa9e](https://github.com/infer-actively/pymdp/commit/c19fa9e2607a5138ebd8987fb31e8ee07b6d878a))
+* pin jax/jaxlib &lt;0.11.1 pending numpyro fix ([#448](https://github.com/infer-actively/pymdp/issues/448)) ([d16daf6](https://github.com/infer-actively/pymdp/commit/d16daf6c25cfbc25c5d54393099215132a8a15de))
+
 ## [1.0.3](https://github.com/infer-actively/pymdp/compare/v1.0.2...v1.0.3) (2026-06-08)
 
 
