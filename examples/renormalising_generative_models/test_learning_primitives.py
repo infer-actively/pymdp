@@ -32,28 +32,25 @@ from hierarchical import (  # noqa: E402
 
 
 def _manual_single_pass(pA_list, obs_list, D, valid_mask):
-    """One explicit M-step -> E-step under the prior A, matching OPTIONS.B=0.
+    """One explicit E-step -> M-step under the *unmodified* prior A, matching
+    OPTIONS.B=0 (spm_VBX).
 
-    Mirrors spm_VBX's single non-iterative belief-propagation pass followed by
-    one Dirichlet accumulation: Q is initialised to D, A is formed from the
-    prior counts, Q is updated once, then the counts are accumulated at that Q.
+    Independent of `_interleaved_em`'s control flow: A is formed directly from
+    the prior counts pA (this sample has not been folded in yet), Q is
+    inferred once using SPM's soft-likelihood form (log outside the
+    expectation), then the counts are accumulated once at that Q.
     """
-    Q = D
-    # A from the *prior* counts (M-step with Q = D)
-    qa0 = [
-        (pa + jnp.einsum("po,ps->pos", o, Q)) * (pa > 0)
-        for pa, o in zip(pA_list, obs_list)
-    ]
-    A0 = [q / jnp.clip(q.sum(axis=1, keepdims=True), 1e-16) for q in qa0]
-    # E-step: one belief update
+    # A from the *prior* counts only — no sample evidence baked in.
+    A0 = [pa / jnp.clip(pa.sum(axis=1, keepdims=True), 1e-16) for pa in pA_list]
+    # E-step: log(sum_o A(o|s) q(o)), not sum_o q(o) log A(o|s).
     log_q = jnp.log(jnp.clip(D, 1e-16)) + sum(
-        jnp.einsum("pos,po->ps", jnp.log(jnp.clip(A_m, 1e-16)), o)
+        jnp.log(jnp.clip(jnp.einsum("pos,po->ps", A_m, o), 1e-16))
         for A_m, o in zip(A0, obs_list)
     )
     Q1 = jax.nn.softmax(log_q, axis=-1)
     Q1 = jnp.where(valid_mask, Q1, 0.0)
     Q1 = Q1 / jnp.clip(Q1.sum(axis=-1, keepdims=True), 1e-16)
-    # Final accumulation at the converged Q
+    # Single accumulation at that Q.
     qa1 = [
         (pa + jnp.einsum("po,ps->pos", o, Q1)) * (pa > 0)
         for pa, o in zip(pA_list, obs_list)
@@ -91,13 +88,14 @@ def test_num_iter_1_matches_manual_single_pass(toy_problem):
         assert jnp.allclose(a, b, atol=1e-6)
 
 
-def test_iteration_sharpens_posterior(toy_problem):
-    """Iterating Q against an A refit to the same obs is self-reinforcing:
-    the max belief mass should be no smaller after 16 iters than after 1."""
+def test_iterating_converges_to_a_fixed_point(toy_problem):
+    """num_iter > 1 (spm_backwards, OPTIONS.B=1) repeatedly refits A to its own
+    qa and should settle to a self-consistent fixed point rather than diverge
+    or oscillate indefinitely."""
     pA, obs, D, mask = toy_problem
-    _, Q1 = _interleaved_em(pA, obs, D, mask, num_iter=1)
     _, Q16 = _interleaved_em(pA, obs, D, mask, num_iter=16)
-    assert jnp.all(Q16.max(axis=-1) >= Q1.max(axis=-1) - 1e-6)
+    _, Q32 = _interleaved_em(pA, obs, D, mask, num_iter=32)
+    assert jnp.allclose(Q16, Q32, atol=1e-5)
 
 
 def test_padded_states_stay_zero(toy_problem):

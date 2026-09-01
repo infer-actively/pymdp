@@ -474,7 +474,9 @@ class RGMHierarchy:
             return lax.scan(_scan_body, dc, (obs_c, lbl_c))
 
         # Record MI at initialisation (before any images).
-        mi_history.append([compute_level_mi(lv.agent) for lv in self.levels])
+        mi_history.append(
+            [compute_level_mi(lv.agent, lv.valid_mask) for lv in self.levels]
+        )
         mi_checkpoints.append(0)
 
         prior_correct = 0  # cumulative correct count across all chunks
@@ -502,7 +504,10 @@ class RGMHierarchy:
             # MI snapshot (one host-device sync per chunk, not per image).
             carry_here = eqx.combine(dynamic_carry, static_carry)
             mi_snap = (
-                [compute_level_mi(lv) for lv in carry_here.levels]
+                [
+                    compute_level_mi(lv, valid_masks[i])
+                    for i, lv in enumerate(carry_here.levels)
+                ]
                 + [compute_level_mi(carry_here.cls_agent)]
             )
             mi_history.append(mi_snap)

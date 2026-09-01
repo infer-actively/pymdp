@@ -33,6 +33,7 @@ def _mi_gated_update(
     agent_posterior: Agent,
     beta: float = 512.0,
     eta: float = 512.0,
+    valid_mask: jnp.ndarray | None = None,
 ) -> Agent:
     """Apply MI-gated asymptotic Dirichlet update, following SPM's spm_MDP_VB_XXX.
 
@@ -55,6 +56,11 @@ def _mi_gated_update(
         agent_posterior: Agent returned by infer_parameters (holds qa = posterior pA)
         beta: softmax sharpness (SPM uses 512)
         eta: asymptote / forgetting parameter (SPM uses 512)
+        valid_mask: optional (n_patches, max_states) bool mask marking real
+            (non-padded) states. The batched pA pads every mapping's state
+            axis to the level's max state count with a nonzero (uniform)
+            likelihood; without this mask those phantom states would inflate
+            the MI used to gate learning.
 
     Returns:
         Agent with gated pA and recomputed A
@@ -62,8 +68,8 @@ def _mi_gated_update(
     pa = agent_prior.pA
     qa = agent_posterior.pA
 
-    mi_pa_list = _mi_per_mapping_from_pA(pa)  # list of (n_patches,)
-    mi_qa_list = _mi_per_mapping_from_pA(qa)  # list of (n_patches,)
+    mi_pa_list = _mi_per_mapping_from_pA(pa, valid_mask)  # list of (n_patches,)
+    mi_qa_list = _mi_per_mapping_from_pA(qa, valid_mask)  # list of (n_patches,)
 
     pA_new = []
     for pa_m, qa_m, mi_pa_m, mi_qa_m in zip(pa, qa, mi_pa_list, mi_qa_list):
@@ -92,27 +98,33 @@ def _interleaved_em(
 ) -> tuple[list[jnp.ndarray], jnp.ndarray]:
     """Interleaved Q-A EM matching MATLAB's spm_VBX within-level solver.
 
-    Each iteration resets qa to the prior then adds the current sufficient
-    statistic, mirroring MATLAB's `qa = pa; qa += cross(O, Q)` pattern:
+    Each iteration derives A from the *previous* qa, then resets qa to the
+    prior and adds the current sufficient statistic, mirroring MATLAB's
+    ``qa = pa; qa += cross(O, Q)`` pattern:
 
-        M-step: qa_m = pa_m + einsum('po,ps->pos', obs_m, Q)
-        A_m    = normalize(qa_m)                               (spm_norm)
-        E-step: Q = softmax(sum_m log(A_m) @ obs_m + log(D))
+        A_m    = normalize(qa_m)             (spm_norm; qa_m == pa_m on iter 1)
+        E-step: Q = softmax(sum_m log(A_m @ obs_m) + log(D))
+        M-step: qa_m = (pa_m + einsum('po,ps->pos', obs_m, Q)) * (pa_m > 0)
 
-    Only Q evolves across iterations; pa is the fixed Dirichlet prior.
-    Q is initialised to D (the state prior) before the first M-step.
+    On iteration 1, qa == pa, so A is the fixed prior-normalised likelihood —
+    this sample has not yet been folded in. ``num_iter`` defaults to 1: SPM's
+    DEM_MNIST_RGM demo runs ``spm_VBX`` with ``OPTIONS.B = 0``, i.e. a single
+    non-iterative belief-propagation pass under that prior A, followed by one
+    Dirichlet accumulation. The 16-iteration scheme (deriving A afresh from
+    each iteration's own qa, which is self-reinforcing) lives in
+    ``spm_backwards`` and is only entered when ``OPTIONS.B = 1`` (not used by
+    the MNIST demo); larger ``num_iter`` values reproduce that scheme for
+    experimentation.
 
-    ``num_iter`` defaults to 1: SPM's DEM_MNIST_RGM demo runs ``spm_VBX`` with
-    ``OPTIONS.B = 0``, i.e. a single non-iterative belief-propagation pass with
-    A held fixed, followed by one Dirichlet accumulation. The 16-iteration
-    ``qa = pa; qa += cross(O, Q)`` scheme lives in ``spm_backwards`` and is only
-    entered when ``OPTIONS.B = 1`` (not used by the MNIST demo). Iterating Q
-    against an A refit to the same image is self-reinforcing and sharpens the
-    counts toward one-hot relative to SPM, so 1 is the parity default; larger
-    values remain available for experimentation.
+    The E-step uses SPM's soft-likelihood form — the log outside the
+    expectation, ``log(sum_o A(o|s) q(o))`` — rather than
+    ``sum_o q(o) log A(o|s)``. The two agree only when q(o) is one-hot; the
+    upper hierarchical levels pass soft (non-one-hot) beliefs as observations,
+    so the placement of the log is a substantive difference, not notation.
 
-    Uses lax.scan over iterations (carry = Q only) to keep XLA graph size O(1)
-    regardless of num_iter — avoiding command-buffer OOM from loop unrolling.
+    Uses lax.scan over iterations (carry = qa_list) to keep XLA graph size
+    O(1) regardless of num_iter — avoiding command-buffer OOM from loop
+    unrolling.
 
     Args:
         pA_list:       list of (n_patches, n_obs_m, max_states) Dirichlet priors
@@ -127,35 +139,31 @@ def _interleaved_em(
     """
     log_D = jnp.log(jnp.clip(D, 1e-16))
 
-    def em_step(Q, _):
-        # M-step: qa_m = (pa_m + outer(obs_m, Q)) * (pa_m > 0)
-        # Reset to pa each iteration; mask zeros so unobserved (obs, state) pairs
-        # are never activated — matches spm_backwards: qa = qa .* (pa > 0)
-        qa_list_inner = [
-            (pa_m + jnp.einsum('po,ps->pos', obs_m, Q)) * (pa_m > 0)
-            for pa_m, obs_m in zip(pA_list, obs_soft_list)
-        ]
-        A_list_inner = [
+    def em_step(qa_list, _):
+        A_list = [
             qa_m / jnp.clip(qa_m.sum(axis=1, keepdims=True), 1e-16)
-            for qa_m in qa_list_inner
+            for qa_m in qa_list
         ]
-        # E-step: Q = softmax(sum_m log(A_m) @ obs_m + log(D))
+        # E-step: Q = softmax(sum_m log(A_m @ obs_m) + log(D)) — log outside
+        # the expectation, matching spm_VBX's soft-likelihood form.
         log_q = log_D + sum(
-            jnp.einsum('pos,po->ps', jnp.log(jnp.clip(A_m, 1e-16)), obs_m)
-            for A_m, obs_m in zip(A_list_inner, obs_soft_list)
+            jnp.log(jnp.clip(jnp.einsum('pos,po->ps', A_m, obs_m), 1e-16))
+            for A_m, obs_m in zip(A_list, obs_soft_list)
         )
         Q_new = jax.nn.softmax(log_q, axis=-1)
         Q_new = jnp.where(valid_mask, Q_new, 0.0)
         Q_new = Q_new / jnp.clip(Q_new.sum(axis=-1, keepdims=True), 1e-16)
-        return Q_new, None
+        # M-step: reset to pa, add this sample's cross term once. Mask zeros
+        # so unobserved (obs, state) pairs are never activated — matches
+        # spm_backwards: qa = qa .* (pa > 0)
+        qa_new = [
+            (pa_m + jnp.einsum('po,ps->pos', obs_m, Q_new)) * (pa_m > 0)
+            for pa_m, obs_m in zip(pA_list, obs_soft_list)
+        ]
+        return qa_new, Q_new
 
-    Q, _ = lax.scan(em_step, D, None, length=num_iter)
-
-    # Final M-step to recover qa_list at the converged Q (with mask)
-    qa_list = [
-        (pa_m + jnp.einsum('po,ps->pos', obs_m, Q)) * (pa_m > 0)
-        for pa_m, obs_m in zip(pA_list, obs_soft_list)
-    ]
+    qa_list, Q_seq = lax.scan(em_step, pA_list, None, length=num_iter)
+    Q = Q_seq[-1]
     return qa_list, Q
 
 
@@ -255,7 +263,9 @@ def _train_step(
         )
         A_new_em = [qa_m / jnp.clip(qa_m.sum(axis=1, keepdims=True), 1e-16) for qa_m in qa_final]
         agent_posterior = eqx.tree_at(lambda x: (x.pA, x.A), level, (qa_final, A_new_em))
-        new_levels.append(_mi_gated_update(level, agent_posterior, beta, eta))
+        new_levels.append(
+            _mi_gated_update(level, agent_posterior, beta, eta, valid_masks[lv_idx])
+        )
 
     # --- Classification level: interleaved EM ---
     # Outcome side = refined (label-conditioned) top belief; learning prior =
