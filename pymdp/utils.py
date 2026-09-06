@@ -22,6 +22,9 @@ from typing import (
     Any,
     Sequence,
 )
+from dataclasses import dataclass
+from heapq import heappush, heappop
+from random import choices as _rnd_choices
 
 
 def to_nested_tuple(x):
@@ -1021,17 +1024,21 @@ def prepare_obs_for_block_diag(obs: list[Array], num_obs: Sequence[int]) -> list
 def concatenate_observations_block_diag(obs_list: list[Array]) -> Array:
     """Concatenate observation vectors for block-diagonal processing.
 
+    Concatenation happens along the trailing (observation) axis, so this
+    supports both single-timestep inputs of shape `(batch, obs_dim)` (e.g. FPI)
+    and sequence inputs of shape `(batch, T, obs_dim)` (e.g. VMP/MMP).
+
     Parameters
     ----------
     obs_list: list[Array]
-        One-hot encoded observations per modality.
+        One-hot encoded observations per modality, sharing all leading axes.
 
     Returns
     -------
     Array
         Concatenated observation tensor.
     """
-    return jnp.concatenate(obs_list, axis=1)
+    return jnp.concatenate(obs_list, axis=-1)
 
 def apply_A_end2end_padding_batched(A: list[Array]) -> Array:
     """Pad A tensors for end-to-end batched processing.
@@ -1066,24 +1073,669 @@ def apply_A_end2end_padding_batched(A: list[Array]) -> Array:
 def apply_obs_end2end_padding_batched(obs: list[Array], max_obs_dim: int) -> Array:
     """Pad observations for end-to-end batched processing.
 
+    Only the trailing (observation) axis is padded to `max_obs_dim`; all leading
+    axes are taken from `obs[0]`. This supports both single-timestep inputs of
+    shape `(batch, obs_dim)` (e.g. FPI) and sequence inputs of shape
+    `(batch, T, obs_dim)` (e.g. VMP/MMP).
+
     Parameters
     ----------
     obs: list[Array]
-        Observation tensors.
+        Observation tensors, one per modality, sharing all leading axes.
     max_obs_dim: int
-        Dimensionality to pad observation axis to.
+        Dimensionality to pad the trailing observation axis to.
 
     Returns
     -------
     Array
-        Batched padded observation tensor.
+        Batched padded observation tensor of shape
+        `(num_modalities,) + obs[0].shape[:-1] + (max_obs_dim,)`.
     """
-    
-    full_shape = [len(obs), obs[0].shape[0], max_obs_dim]
-    
+
+    full_shape = (len(obs),) + tuple(obs[0].shape[:-1]) + (max_obs_dim,)
+
     obs_padded = jnp.zeros(full_shape, dtype=obs[0].dtype)
 
     for i, o in enumerate(obs):
-        obs_padded = obs_padded.at[i, :, slice(0, o.shape[1])].set(o)
-        
+        obs_padded = obs_padded.at[(i, ...) + (slice(0, o.shape[-1]),)].set(o)
+
     return obs_padded
+
+
+# Sequence-based (VMP/MMP) optimized-inference helpers
+
+def pad_individual_Bs(B: list[Array]) -> list[Array]:
+    """Pad each transition tensor's state axes to the largest state dimension.
+
+    Assumes trivial `B_dependencies` (each factor depends only on itself), so
+    every `B[f]` has shape `(batch, num_states[f], num_states[f], num_controls[f])`.
+
+    Parameters
+    ----------
+    B: list[Array]
+        Transition tensors per factor.
+
+    Returns
+    -------
+    list[Array]
+        Per-factor tensors zero-padded to
+        `(batch, max_state_dim, max_state_dim, num_controls[f])`.
+    """
+
+    maxdim = max(b.shape[1] for b in B)
+    B_padded = [jnp.zeros((b.shape[0], maxdim, maxdim, b.shape[-1]), dtype=B[0].dtype) for b in B]
+
+    for i in range(len(B)):
+        nb, ns, ns, na = B[i].shape
+        B_padded[i] = B_padded[i].at[:nb, :ns, :ns, :na].set(B[i])
+
+    return B_padded
+
+
+def preprocess_B(B: list[Array], past_actions: Array) -> list[Array]:
+    """Condition transition tensors on a sequence of past actions.
+
+    This is the core path of
+    :func:`pymdp.inference._condition_transitions_on_actions` specialized to
+    all-valid, non-negative action indices (no `invalid_action_mode` handling
+    and no sparse-`B` densification). It is used by the optimized VMP routines,
+    which assume exactly this setting.
+
+    Parameters
+    ----------
+    B: list[Array]
+        Transition tensors per factor, with the policy/action axis rightmost.
+    past_actions: Array
+        Action indices of shape `(T, num_factors)`.
+
+    Returns
+    -------
+    list[Array]
+        Per-factor action-conditioned transitions with time as the leading axis.
+    """
+
+    nf = len(B)
+    actions_tree = [past_actions[:, i] for i in range(nf)]
+
+    # move time steps to the leading axis (leftmost)
+    # this assumes that a policy is always specified as the rightmost axis of Bs
+    B = jtu.tree_map(
+        lambda b, a_idx: jnp.moveaxis(b[..., a_idx], -1, 0),
+        B,
+        actions_tree,
+    )
+
+    return B
+
+
+def init_B_from_spec(
+    num_states: Sequence[int],
+    num_controls: Sequence[int],
+    batch_size: int = 1,
+) -> list[Array]:
+    """Create random transition tensors with trivial `B_dependencies`.
+
+    Companion to :func:`init_A_and_D_from_spec` for sequence-based inference.
+    Each factor's transitions depend only on that factor's own state (i.e.
+    `B_dependencies = [[0], [1], ...]`), matching the constraint of the
+    optimized VMP routines.
+
+    Parameters
+    ----------
+    num_states: Sequence[int]
+        Hidden-state cardinalities.
+    num_controls: Sequence[int]
+        Control cardinalities per factor.
+    batch_size: int, default=1
+        Number of sampled model instances.
+
+    Returns
+    -------
+    list[Array]
+        Per-factor tensors of shape `(batch, ns, ns, nc)`, column-normalized.
+    """
+
+    B = []
+    for ns, nc in zip(num_states, num_controls):
+        B_m = [np.random.rand(ns, ns, nc) for batch in range(batch_size)]
+        B_m = [b / b.sum(axis=0, keepdims=True) for b in B_m]
+        B_m = np.concatenate([b[np.newaxis, ...] for b in B_m], axis=0)
+        B.append(B_m)
+
+    return [jnp.array(b) for b in B]
+
+
+def get_sample_action_seq(num_controls: Sequence[int], T: int, batch_size: int = 1) -> Array:
+    """Generate a random action sequence for each batch element.
+
+    Parameters
+    ----------
+    num_controls: Sequence[int]
+        Control cardinalities per factor.
+    T: int
+        Number of timesteps.
+    batch_size: int, default=1
+        Number of batch elements.
+
+    Returns
+    -------
+    Array
+        Integer actions of shape `(batch_size, T, num_factors)`.
+    """
+    action_seq = []
+    for i in range(batch_size):
+        batch = []
+        for j in range(T):
+            batch.append([np.random.randint(0, control_dim) for control_dim in num_controls])
+        action_seq.append(batch)
+    return jnp.array(action_seq)
+
+
+def get_sample_state(num_states: Sequence[int], batch_size: int = 1) -> list[Array]:
+    """Generate a random hidden state for each batch element.
+
+    Parameters
+    ----------
+    num_states: Sequence[int]
+        Hidden-state cardinalities.
+    batch_size: int, default=1
+        Number of batch elements.
+
+    Returns
+    -------
+    list[Array]
+        Per-factor state indices of shape `(batch_size,)`.
+    """
+    state = [[np.random.randint(0, state_dim) for _ in range(batch_size)] for state_dim in num_states]
+    return [jnp.array(s) for s in state]
+
+
+def get_obs_seq_from_actions(
+    action_seq: Array,
+    start_state: list[Array],
+    A: list[Array],
+    A_dependencies: list[list[int]],
+    B: list[Array],
+    B_dependencies: list[list[int]],
+) -> list[Array]:
+    """Roll out an observation sequence by simulating the generative model.
+
+    Starting from `start_state`, states are propagated through the
+    action-conditioned transitions `B` and observations are sampled from the
+    likelihoods `A` at every step, yielding `T + 1` observations for `T`
+    actions.
+
+    Parameters
+    ----------
+    action_seq: Array
+        Action indices of shape `(batch_size, T, num_factors)`.
+    start_state: list[Array]
+        Initial per-factor state indices of shape `(batch_size,)`.
+    A: list[Array]
+        Likelihood tensors per modality.
+    A_dependencies: list[list[int]]
+        Modality-to-state dependencies.
+    B: list[Array]
+        Transition tensors per factor.
+    B_dependencies: list[list[int]]
+        Factor-to-factor dependencies.
+
+    Returns
+    -------
+    list[Array]
+        Per-modality observation indices of shape `(batch_size, T + 1)`.
+    """
+
+    nm, nf = len(A), len(B)
+    batch_size, T = action_seq.shape[:2]
+
+    obs_seq = [[[] for i in range(batch_size)] for k in range(nm)]
+    for k in range(nm):
+        for i in range(batch_size):
+            s_idx = tuple(start_state[f][i] for f in A_dependencies[k])
+            A_tmp = A[k][(i, slice(None, None)) + s_idx]
+            if np.sum(A_tmp) < 0.0001:
+                A_tmp = np.ones_like(A_tmp) / A_tmp.shape[0]
+            obs_seq[k][i].append(_rnd_choices(list(range(A_tmp.shape[0])), weights=A_tmp, k=1)[0])
+
+    curr_state = start_state
+    for j in range(T):
+
+        next_state = [[None for i in range(batch_size)] for k in range(nf)]
+        for k in range(nf):
+            for i in range(batch_size):
+                s_idx = tuple(curr_state[f][i] for f in B_dependencies[k])
+                a_idx = (action_seq[i, j, k],)
+                B_tmp = B[k][(i, slice(None, None)) + s_idx + a_idx]
+                if np.sum(B_tmp) < 0.0001:
+                    B_tmp = np.ones_like(B_tmp) / B_tmp.shape[0]
+                next_state[k][i] = _rnd_choices(list(range(B_tmp.shape[0])), weights=B_tmp, k=1)[0]
+
+        curr_state = next_state
+        for k in range(nm):
+            for i in range(batch_size):
+                s_idx = tuple(curr_state[f][i] for f in A_dependencies[k])
+                A_tmp = A[k][(i, slice(None, None)) + s_idx]
+                if np.sum(A_tmp) < 0.0001:
+                    A_tmp = np.ones_like(A_tmp) / A_tmp.shape[0]
+                obs_seq[k][i].append(_rnd_choices(list(range(A_tmp.shape[0])), weights=A_tmp, k=1)[0])
+
+    return [jnp.array(o) for o in obs_seq]
+
+
+# Modality-clustering utilities for optimized inference
+
+def get_A_dep_clusters(A_dependencies: list[list[int]]) -> list[list[int]]:
+    """Group modalities into clusters by the number of factors they depend on.
+
+    Modalities whose `A_dependencies` have equal length share padded array
+    shapes and can therefore be batched together with less padding overhead
+    than one global padded batch.
+
+    Parameters
+    ----------
+    A_dependencies: list[list[int]]
+        Modality-to-state dependencies.
+
+    Returns
+    -------
+    list[list[int]]
+        Cluster-to-modality mapping: one list of modality indices per cluster.
+    """
+
+    num_modalities = len(A_dependencies)
+    lengths = sorted({len(A_dep) for A_dep in A_dependencies})
+    num_lengths = len(lengths)
+
+    o2c_mapping = [lengths.index(len(A_dep)) for A_dep in A_dependencies]
+
+    c2o_mapping = [
+        [i for i in range(num_modalities) if o2c_mapping[i] == c]
+        for c in range(num_lengths)
+    ]
+
+    return c2o_mapping
+
+
+def apply_padding_per_cluster(xs: list[Array], c2o_mapping: list[list[int]]) -> list[Array]:
+    """Apply :func:`apply_padding_batched` separately within each cluster.
+
+    Parameters
+    ----------
+    xs: list[Array]
+        Arrays to pad and concatenate (e.g. `A` tensors or observations).
+    c2o_mapping: list[list[int]]
+        Cluster-to-modality mapping from :func:`get_A_dep_clusters`.
+
+    Returns
+    -------
+    list[Array]
+        One padded batch tensor per cluster.
+    """
+    return [
+        apply_padding_batched([xs[i] for i in c2o_mapping[c]])
+        for c in range(len(c2o_mapping))
+    ]
+
+
+def apply_A_end2end_padding_per_cluster(A: list[Array], c2o_mapping: list[list[int]]) -> list[Array]:
+    """Apply :func:`apply_A_end2end_padding_batched` separately within each cluster.
+
+    Parameters
+    ----------
+    A: list[Array]
+        Likelihood tensors per modality.
+    c2o_mapping: list[list[int]]
+        Cluster-to-modality mapping from :func:`get_A_dep_clusters`.
+
+    Returns
+    -------
+    list[Array]
+        One batched padded `A` tensor per cluster.
+    """
+    return [
+        apply_A_end2end_padding_batched([A[i] for i in c2o_mapping[c]])
+        for c in range(len(c2o_mapping))
+    ]
+
+
+def apply_obs_end2end_padding_per_cluster(
+    obs: list[Array], c2o_mapping: list[list[int]], max_obs_dims: Sequence[int]
+) -> list[Array]:
+    """Apply :func:`apply_obs_end2end_padding_batched` separately within each cluster.
+
+    Parameters
+    ----------
+    obs: list[Array]
+        Observation tensors per modality.
+    c2o_mapping: list[list[int]]
+        Cluster-to-modality mapping from :func:`get_A_dep_clusters`.
+    max_obs_dims: Sequence[int]
+        Observation-axis padding target per cluster.
+
+    Returns
+    -------
+    list[Array]
+        One batched padded observation tensor per cluster.
+    """
+    return [
+        apply_obs_end2end_padding_batched([obs[i] for i in c2o_mapping[c]], max_obs_dims[c])
+        for c in range(len(c2o_mapping))
+    ]
+
+
+@dataclass
+class _BlockGroup:
+    R: int
+    C: int
+    members: set
+    alive: bool = True
+    ver: int = 0  # version number, increments when the group changes (for stale-heap detection)
+
+
+def _block_group_objective(groups: list[_BlockGroup]) -> int:
+    return sum(g.R * g.C for g in groups if g.alive)
+
+
+def _block_group_merge_delta(a: _BlockGroup, b: _BlockGroup) -> int:
+    # Increase in sum_g R_g*C_g if we merge a and b
+    return a.R * b.C + b.R * a.C
+
+
+def agglomerative_min_structural_zeros(
+    rc_list: list[tuple[int, int]],
+    target_K: int,
+    *,
+    R_max: int | None = None,  # forbid merges that would exceed this R
+    C_max: int | None = None,  # forbid merges that would exceed this C
+    area_max: int | None = None,  # forbid merges that would exceed this R*C
+    record_history: bool = True,  # keep (K, objective, snapshot) after each merge
+    keep_snapshots: bool = False,  # store group membership per step (can be big)
+) -> dict[str, Any]:
+    """
+    Bottom-up agglomerative grouping to minimize structural zeros with a fixed #groups.
+
+    This is a host-side (pure Python, non-jittable) preprocessing utility used
+    to decide how modalities are grouped for clustered block-diagonal
+    likelihood evaluation.
+
+    Args:
+        rc_list: iterable of (r_i, c_i) per block.
+        target_K: stop when this many groups remain (1..M).
+        R_max, C_max, area_max: optional caps for merged groups.
+        record_history: whether to return a 'history' list of (num_groups, objective, snapshot?).
+        keep_snapshots: if True, store a snapshot of group memberships at each step.
+
+    Returns:
+        dict with keys:
+          - 'groups': list[list[int]] final groups (indices into the original rc_list)
+          - 'objective': int, objective value sum_g R_g*C_g at the end
+          - 'zeros': int, structural zeros = objective - sum_i r_i*c_i
+          - 'history': optional list of dicts with per-step info for elbow analysis
+    """
+    rc = list(rc_list)
+    M = len(rc)
+    if not (1 <= target_K <= M):
+        raise ValueError("target_K must be between 1 and M.")
+
+    # Create singleton groups
+    groups: list[_BlockGroup] = [
+        _BlockGroup(R=r, C=c, members={i}) for i, (r, c) in enumerate(rc)
+    ]
+
+    # Precompute total useful area once (constant term)
+    total_area = sum(r * c for r, c in rc)
+
+    # Build initial heap of all candidate merges
+    # We store (delta, a_idx, a_ver, b_idx, b_ver)
+    heap: list[tuple[int, int, int, int, int]] = []
+    for a in range(M):
+        for b in range(a + 1, M):
+            d = _block_group_merge_delta(groups[a], groups[b])
+            heappush(heap, (d, a, groups[a].ver, b, groups[b].ver))
+
+    # Helper: check caps
+    def allowed_merge(a: _BlockGroup, b: _BlockGroup) -> bool:
+        R = a.R + b.R
+        C = a.C + b.C
+        if (R_max is not None) and (R > R_max):
+            return False
+        if (C_max is not None) and (C > C_max):
+            return False
+        if (area_max is not None) and (R * C > area_max):
+            return False
+        return True
+
+    # History (optional)
+    history: list[dict[str, Any]] = []
+
+    def snapshot() -> list[list[int]]:
+        return [sorted(g.members) for g in groups if g.alive]
+
+    if record_history:
+        history.append(
+            {
+                "num_groups": M,
+                "objective": _block_group_objective(groups),
+                **({"groups": snapshot()} if keep_snapshots else {}),
+            }
+        )
+
+    alive_count = M
+
+    # Merge loop until we have target_K groups
+    while alive_count > target_K:
+        # Get best feasible, fresh pair
+        while heap:
+            d, a_idx, a_ver, b_idx, b_ver = heappop(heap)
+            if a_idx >= len(groups) or b_idx >= len(groups):
+                continue
+            ga, gb = groups[a_idx], groups[b_idx]
+            # Skip if either dead or version changed (stale)
+            if (
+                (not ga.alive)
+                or (not gb.alive)
+                or (ga.ver != a_ver)
+                or (gb.ver != b_ver)
+            ):
+                continue
+            # Respect caps
+            if not allowed_merge(ga, gb):
+                # If the best pair is forbidden, we still need to consider other pairs;
+                # just continue popping.
+                continue
+            # Fresh and feasible
+            break
+        else:
+            # No feasible merge found (caps too strict)
+            break
+
+        # Merge b into a (keep index a)
+        ga.R += gb.R
+        ga.C += gb.C
+        ga.members |= gb.members
+        ga.ver += 1
+
+        gb.alive = False
+        alive_count -= 1
+
+        # Push new deltas involving 'a'
+        for k, gk in enumerate(groups):
+            if k == a_idx or (not gk.alive):
+                continue
+            heappush(heap, (_block_group_merge_delta(ga, gk), a_idx, ga.ver, k, gk.ver))
+
+        # Record history
+        if record_history:
+            history.append(
+                {
+                    "num_groups": alive_count,
+                    "objective": _block_group_objective(groups),
+                    **({"groups": snapshot()} if keep_snapshots else {}),
+                }
+            )
+
+    # Collect final groups
+    final_groups = [sorted(g.members) for g in groups if g.alive]
+    final_objective = _block_group_objective(groups)
+    structural_zeros = final_objective - total_area
+
+    return {
+        "groups": final_groups,
+        "objective": final_objective,
+        "zeros": structural_zeros,
+        "history": history if record_history else None,
+    }
+
+
+def _extract_FK(history: list[dict[str, Any]]) -> tuple[list[int], list[float]]:
+    """Return Ks (descending) and F(K) from the agglomerative history."""
+    pairs = [(h["num_groups"], h["objective"]) for h in history]
+    pairs.sort(reverse=True)  # Ks: M, M-1, ..., 1
+    Ks = [int(n) for n, _ in pairs]
+    Fs = [float(f) for _, f in pairs]
+    return Ks, Fs
+
+
+def kneedle_max_distance_to_chord(
+    history: list[dict[str, Any]],
+    plot: bool = False,
+    chords_sample: int = 20,  # draw ~this many chords on the normalized plot
+) -> dict[str, Any]:
+    """
+    Kneedle-style knee using max distance to the chord between endpoints, after
+    normalizing both axes to [0,1].
+
+    Args:
+        history: result["history"] from agglomerative_min_structural_zeros(...).
+                 Must contain dicts with keys: "num_groups", "objective".
+        plot:    if True, show two figures:
+                 (1) normalized curve with endpoint chord and perpendiculars
+                 (2) original F(K) vs K with the knee highlighted
+        chords_sample: approx number of perpendicular chords to draw (to avoid clutter).
+
+    Returns:
+        dict with:
+          - K_knee: selected number of groups (int)
+          - knee_index: index in the (sorted-desc) Ks/Fs arrays
+          - Ks, Fs: the arrays used
+          - distances: per-point distances to the chord on the normalized curve
+    """
+    Ks, Fs = _extract_FK(history)
+
+    # Normalize Ks and Fs to [0,1]
+    kmin, kmax = float(min(Ks)), float(max(Ks))
+    fmin, fmax = float(min(Fs)), float(max(Fs))
+    x = [(k - kmin) / (kmax - kmin + 1e-12) for k in Ks]
+    y = [(f - fmin) / (fmax - fmin + 1e-12) for f in Fs]
+
+    # Endpoints of the chord (first and last points in this order)
+    x0, y0 = x[0], y[0]
+    x1, y1 = x[-1], y[-1]
+    denom = math.hypot(x1 - x0, y1 - y0) + 1e-12  # euclidean distance between endpoints
+
+    # Perpendicular distance of each point to the endpoint chord
+    distances = [
+        abs((y1 - y0) * xi - (x1 - x0) * yi + x1 * y0 - y1 * x0) / denom
+        for xi, yi in zip(x, y)
+    ]
+    knee_index = max(range(len(distances)), key=lambda i: distances[i])
+    K_knee = Ks[knee_index]
+
+    if plot:
+        # Helper: project a point onto the chord
+        vx, vy = (x1 - x0), (y1 - y0)
+        v2 = vx * vx + vy * vy + 1e-12
+
+        def project_to_chord(xi, yi):
+            t = ((xi - x0) * vx + (yi - y0) * vy) / v2
+            return (x0 + t * vx, y0 + t * vy)
+
+        # (1) Normalized plot with endpoint chord + perpendicular chords
+        plt.figure(figsize=(8, 6))
+        plt.plot(x, y, marker="o", label="Normalized F(K)")
+        plt.plot([x0, x1], [y0, y1], linestyle="--", label="Chord (endpoints)")
+
+        # draw ~chords_sample chords to avoid clutter
+        step = max(1, len(x) // max(1, chords_sample))
+        for i in range(0, len(x), step):
+            xp, yp = project_to_chord(x[i], y[i])
+            plt.plot([x[i], xp], [y[i], yp], color="0.8", linewidth=1)
+
+        # knee chord in bold
+        xk, yk = x[knee_index], y[knee_index]
+        xkp, ykp = project_to_chord(xk, yk)
+        plt.plot([xk, xkp], [yk, ykp], linewidth=3, label=f"Knee chord (K={K_knee})")
+
+        plt.title("Kneedle (max distance) with chords to the endpoint line")
+        plt.xlabel("Normalized K")
+        plt.ylabel("Normalized F(K)")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+        # (2) Original-scale elbow curve with knee highlighted
+        plt.figure(figsize=(7, 5))
+        plt.plot(Ks, Fs, marker="o")
+        plt.plot(Ks[knee_index], Fs[knee_index], marker="o", color="red", markersize=10)
+        plt.title(f"Elbow curve with Kneedle knee highlighted (K={K_knee})")
+        plt.xlabel("K (number of groups)")
+        plt.ylabel("F(K) = sum of group rectangles")
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    return {
+        "K_knee": K_knee,
+        "knee_index": knee_index,
+        "Ks": Ks,
+        "Fs": Fs,
+        "distances": distances,
+    }
+
+
+def prep_clustered_block_data(
+    A: list[Array], o_vec: list[Array]
+) -> tuple[list[Array], list[Array], list[tuple], list[tuple], list[list[int]]]:
+    """Cluster modalities and build per-group block-diagonal data.
+
+    Runs the (host-side, non-jittable) agglomerative clustering over the
+    flattened `A` shapes, selects the number of groups with a Kneedle knee
+    criterion, and constructs one block-diagonal `A` and one concatenated
+    observation tensor per group via :func:`build_block_diag_A`.
+
+    Parameters
+    ----------
+    A: list[Array]
+        Likelihood tensors per modality.
+    o_vec: list[Array]
+        One-hot observation tensors per modality.
+
+    Returns
+    -------
+    tuple[list[Array], list[Array], list[tuple], list[tuple], list[list[int]]]
+        `(A_block, obs_block, state_shapes_block, cuts_block, group_mapping)`,
+        each indexed by group.
+    """
+
+    A_rc = [(a.shape[0], math.prod(a.shape[1:])) for a in A]
+    clustering_result = agglomerative_min_structural_zeros(A_rc, target_K=1, record_history=True, keep_snapshots=True)
+    knee = kneedle_max_distance_to_chord(clustering_result['history'])
+    group_mapping = list(filter(lambda x: x['num_groups'] == knee["K_knee"], clustering_result["history"]))[0]['groups']
+
+    A_block = []
+    state_shapes_block = []
+    cuts_block = []
+    for group in group_mapping:
+        A_block_group, state_shapes_group, cuts_group = build_block_diag_A([jnp.moveaxis(A[i], 1, -1) for i in group])
+        A_block.append(A_block_group)
+        state_shapes_block.append(state_shapes_group)
+        cuts_block.append(cuts_group)
+
+    obs_block = []
+    for group in group_mapping:
+        obs_block_group = jnp.concatenate([o_vec[i] for i in group], axis=-1)
+        obs_block.append(obs_block_group)
+
+    return A_block, obs_block, state_shapes_block, cuts_block, group_mapping

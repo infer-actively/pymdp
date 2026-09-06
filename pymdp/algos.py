@@ -14,6 +14,9 @@ from jaxtyping import Array
 # config.update("jax_enable_x64", True)
 
 from pymdp.maths import compute_log_likelihood, compute_log_likelihood_per_modality, log_stable, factor_dot, factor_dot_flex, MINVAL
+from pymdp.maths import get_vmp_fw_msgs_padded, get_vmp_bw_msgs_padded, deconstruct_msgs_padded
+from pymdp.maths import get_mmp_fw_msgs_padded, get_mmp_bw_msgs_padded
+from pymdp.utils import preprocess_B
 
 def add(x: Array, y: Array) -> Array:
     return x + y
@@ -685,6 +688,1013 @@ def run_factorized_fpi_end2end_padded(
     qs = jtu.tree_map(nn.softmax, res)
 
     return jtu.tree_map(lambda x: jnp.expand_dims(x, 1), qs)
+
+def run_factorized_fpi_clustered_end2end(
+    ll_clusters: list[Array],
+    prior: list[Array],
+    c2o_mapping: list[list[int]],
+    c2s_mapping: list[list[int]],
+    max_state_dims: list[int],
+    A_dependencies: list[list[int]],
+    num_iter: int,
+) -> list[Array]:
+    """Run factorized FPI on per-cluster end-to-end padded log-likelihoods.
+
+    Clustered counterpart of :func:`run_factorized_fpi_end2end_padded` and the
+    FPI sibling of :func:`run_vmp_clustered_end2end` (known as the "partially
+    padded clustered" method in the accompanying research code and benchmarks).
+    The per-cluster log-likelihoods are typically produced with
+    :func:`pymdp.maths.compute_log_likelihoods_end2end_per_cluster`. Unlike the
+    fully padded end-to-end variant, no final slicing of the posterior update
+    is needed because the clustered marginal computation already slices back to
+    the original per-factor state dimensions.
+
+    Parameters
+    ----------
+    ll_clusters: list[Array]
+        Padded log-likelihoods, one tensor per cluster.
+    prior: list[Array]
+        Per-factor priors of shape `(batch, num_states[f])`.
+    c2o_mapping: list[list[int]]
+        Cluster-to-modality mapping.
+    c2s_mapping: list[list[int]]
+        Cluster-to-factor mapping.
+    max_state_dims: list[int]
+        Per-cluster state-padding targets.
+    A_dependencies: list[list[int]]
+        Modality-to-state dependencies.
+    num_iter: int
+        Number of FPI iterations.
+
+    Returns
+    -------
+    list[Array]
+        Posterior beliefs per hidden-state factor.
+    """
+
+    log_prior = jtu.tree_map(log_stable, prior)
+    log_q = jtu.tree_map(jnp.zeros_like, prior)
+
+    prior_lengths = [d.shape[-1] for d in prior]
+
+    def scan_fn(carry: list[Array], t: Array) -> tuple[list[Array], None]:
+
+        log_q = carry
+        q = jtu.tree_map(nn.softmax, log_q)
+
+        qs_clusters = get_qs_clusters(q, max_state_dims, c2s_mapping)
+        qL_marginals = compute_qL_marginals_clustered(
+            ll_clusters,
+            qs_clusters,
+            c2o_mapping,
+            max_state_dims,
+            prior_lengths,
+            A_dependencies
+        )
+        qL_all = compute_qL_all_clustered(qL_marginals, A_dependencies, len(q))
+
+        log_q = jtu.tree_map(lambda q, lp: q + lp, qL_all, log_prior)
+
+        return log_q, None
+
+    res, _ = lax.scan(scan_fn, log_q, jnp.arange(num_iter))
+    qs = jtu.tree_map(nn.softmax, res)
+    return jtu.tree_map(lambda x: jnp.expand_dims(x, 1), qs)
+
+
+# Infer states VMP/MMP optimized (trivial B_dependencies)
+
+def mirror_gradient_descent_step_combined(
+    tau: float, ln_A: Array, lnB_past_and_future: Array, ln_qs: Array
+) -> Array:
+    """Re-parametrization of :func:`mirror_gradient_descent_step`.
+
+    Mathematically identical to :func:`mirror_gradient_descent_step`, but takes
+    the forward and backward transition messages pre-summed into a single
+    tensor, as produced by the padded message computation of the optimized VMP
+    routines.
+
+    Parameters
+    ----------
+    tau: float
+        Step size of the mirror-descent update.
+    ln_A: Array
+        Marginal log-likelihood term.
+    lnB_past_and_future: Array
+        Sum of the forward and backward transition messages.
+    ln_qs: Array
+        Current log-posterior.
+
+    Returns
+    -------
+    Array
+        Updated posterior (softmax-normalized).
+    """
+    err = ln_A - ln_qs + lnB_past_and_future
+    ln_qs = ln_qs + tau * err
+    qs = nn.softmax(ln_qs - ln_qs.mean(axis=-1, keepdims=True))
+    return qs
+
+def prep_lnB_and_ln_prior(
+    B_padded: list[Array],
+    past_actions: Array,
+    ln_prior: list[Array],
+    num_states: list[int],
+    maxdim: int,
+) -> tuple[Array, Array]:
+    """Precompute the factor-stacked padded log-transitions and log-prior.
+
+    Parameters
+    ----------
+    B_padded: list[Array]
+        State-padded transition tensors per factor
+        (see :func:`pymdp.utils.pad_individual_Bs`).
+    past_actions: Array
+        Action indices of shape `(T, num_factors)`.
+    ln_prior: list[Array]
+        Per-factor log-priors.
+    num_states: list[int]
+        Hidden-state cardinalities.
+    maxdim: int
+        Maximum state dimension (padding target).
+
+    Returns
+    -------
+    tuple[Array, Array]
+        `(lnB_prep_padded, ln_prior_padded)` of shapes
+        `(num_factors, T, maxdim, maxdim)` and `(num_factors, maxdim)`.
+    """
+
+    lnB_prep_padded = log_stable(jnp.stack(preprocess_B(B_padded, past_actions), axis=0))
+
+    ln_prior_padded = jnp.zeros((len(num_states), maxdim), dtype=ln_prior[0].dtype)
+    for i in range(len(num_states)):
+        ln_prior_padded = ln_prior_padded.at[i, :num_states[i]].set(ln_prior[i])
+
+    return lnB_prep_padded, ln_prior_padded
+
+def pad_qs_and_compute_vmp_msgs(
+    qs: list[Array],
+    lnB_prep_padded: Array,
+    ln_prior_padded: Array,
+    num_states: list[int],
+    maxdim: int,
+    T: int,
+) -> tuple[Array, list[Array]]:
+    """Pad the posteriors and compute the combined VMP transition messages.
+
+    Parameters
+    ----------
+    qs: list[Array]
+        Per-factor posteriors of shape `(T, num_states[f])`.
+    lnB_prep_padded: Array
+        Factor-stacked padded log-transitions from :func:`prep_lnB_and_ln_prior`.
+    ln_prior_padded: Array
+        Factor-stacked padded log-priors from :func:`prep_lnB_and_ln_prior`.
+    num_states: list[int]
+        Hidden-state cardinalities.
+    maxdim: int
+        Maximum state dimension (padding target).
+    T: int
+        Number of timesteps.
+
+    Returns
+    -------
+    tuple[Array, list[Array]]
+        `(qs_padded, lnB_past_and_future)` where `qs_padded` has shape
+        `(num_factors, T, maxdim)` and `lnB_past_and_future` holds the summed
+        forward and backward messages per factor.
+    """
+
+    qs_padded = jnp.zeros((len(num_states), T, maxdim), dtype=qs[0].dtype)
+    for i in range(len(num_states)):
+        qs_padded = qs_padded.at[i, :, :num_states[i]].set(qs[i])
+
+    lnB_future_padded = get_vmp_fw_msgs_padded(lnB_prep_padded, qs_padded, ln_prior_padded)
+    lnB_past_padded = get_vmp_bw_msgs_padded(lnB_prep_padded, qs_padded)
+    lnB_past_and_future = deconstruct_msgs_padded(lnB_future_padded + lnB_past_padded, num_states)
+
+    return qs_padded, lnB_past_and_future
+
+def run_vmp_hybrid(
+    log_likelihoods: list[Array],
+    prior: list[Array],
+    past_actions: Array,
+    B_padded: list[Array],
+    num_states: list[int],
+    A_dependencies: list[list[int]],
+    B_dependencies: list[list[int]],
+    num_iter: int = 1,
+    tau: float = 1.0,
+) -> list[Array]:
+    """Run optimized VMP given precomputed per-modality log-likelihood sequences.
+
+    Optimized counterpart of :func:`run_vmp` operating on a single batch
+    element, restricted to trivial `B_dependencies`, all-valid observations and
+    transitions, and one-hot (already likelihood-evaluated) observations. The
+    per-modality `log_likelihoods` can come from any of the padded, clustered,
+    or block-diagonal preparation strategies in :mod:`pymdp.maths`.
+
+    Parameters
+    ----------
+    log_likelihoods: list[Array]
+        Per-modality log-likelihood sequences of shape
+        `(T,) + tuple(num_states[f] for f in A_dependencies[m])`.
+    prior: list[Array]
+        Per-factor priors of shape `(num_states[f],)`.
+    past_actions: Array
+        Action indices of shape `(T - 1, num_factors)`.
+    B_padded: list[Array]
+        State-padded transition tensors per factor.
+    num_states: list[int]
+        Hidden-state cardinalities.
+    A_dependencies: list[list[int]]
+        Modality-to-state dependencies.
+    B_dependencies: list[list[int]]
+        Factor-to-factor dependencies; must be trivial (`[[0], [1], ...]`).
+    num_iter: int, default=1
+        Number of VMP iterations.
+    tau: float, default=1.0
+        Step size of the mirror-descent update.
+
+    Returns
+    -------
+    list[Array]
+        Sequence posterior beliefs per hidden-state factor, shape
+        `(T, num_states[f])`.
+    """
+
+    T = log_likelihoods[0].shape[0]
+    maxdim = max(num_states)
+
+    ln_qs = jtu.tree_map(lambda p: jnp.broadcast_to(jnp.zeros_like(p), (T,) + p.shape), prior)
+    ln_prior = jtu.tree_map(log_stable, prior)
+    qs = jtu.tree_map(nn.softmax, ln_qs)
+
+    lnB_prep_padded, ln_prior_padded = prep_lnB_and_ln_prior(B_padded, past_actions, ln_prior, num_states, maxdim)
+
+    def scan_fn(carry: list[Array], iter: Array) -> tuple[list[Array], None]:
+
+        qs = carry
+        ln_qs = jtu.tree_map(log_stable, qs)
+
+        _, lnB_past_and_future = pad_qs_and_compute_vmp_msgs(qs, lnB_prep_padded, ln_prior_padded, num_states, maxdim, T)
+
+        ln_As = vmap(all_marginal_log_likelihood, in_axes=(0, 0, None))(qs, log_likelihoods, A_dependencies)
+
+        mgds = jtu.Partial(mirror_gradient_descent_step_combined, tau)
+        qs = jtu.tree_map(mgds, ln_As, lnB_past_and_future, ln_qs)
+
+        return qs, None
+
+    qs, _ = lax.scan(scan_fn, qs, jnp.arange(num_iter))
+
+    return qs
+
+def all_marginal_log_likelihood_end2end(
+    lls_padded: Array,
+    qs_padded: Array,
+    A_dependencies: list[list[int]],
+    max_state_dim: int,
+    num_states: list[int],
+) -> list[Array]:
+    """Compute all marginal log-likelihoods from fully padded tensors.
+
+    End-to-end counterpart of :func:`all_marginal_log_likelihood`, composed of
+    :func:`compute_qL_marginals`, :func:`qL_flatten` and :func:`compute_qL_all`
+    with a final slice back to the original state dimensions.
+
+    Parameters
+    ----------
+    lls_padded: Array
+        Modality-stacked padded log-likelihoods for a single timestep.
+    qs_padded: Array
+        Factor-stacked padded posteriors of shape
+        `(batch, num_factors, max_state_dim)`.
+    A_dependencies: list[list[int]]
+        Modality-to-state dependencies.
+    max_state_dim: int
+        Maximum state dimension (padding target).
+    num_states: list[int]
+        Hidden-state cardinalities.
+
+    Returns
+    -------
+    list[Array]
+        Per-factor marginal log-likelihoods of shape `(batch, num_states[f])`.
+    """
+
+    qs_padded_list = [qs_padded[:, f, :] for f in range(len(num_states))]
+
+    qL_marginals_padded = compute_qL_marginals(lls_padded, qs_padded_list, A_dependencies, max_state_dim)
+    qL_flat = qL_flatten(qL_marginals_padded)
+    qL_all = compute_qL_all(qL_flat, A_dependencies, len(num_states))
+
+    return jtu.tree_map(lambda q, ns: q[:, 0:ns], qL_all, num_states)
+
+def run_vmp_end2end_padded(
+    lls_padded: Array,
+    prior: list[Array],
+    past_actions: Array,
+    B_padded: list[Array],
+    num_states: list[int],
+    A_dependencies: list[list[int]],
+    B_dependencies: list[list[int]],
+    num_iter: int = 1,
+    tau: float = 1.0,
+) -> list[Array]:
+    """Run optimized VMP on fully padded log-likelihood sequences.
+
+    End-to-end counterpart of :func:`run_vmp_hybrid` operating on the whole
+    batch at once, restricted to trivial `B_dependencies`. The padded
+    log-likelihoods are typically produced with
+    :func:`pymdp.maths.compute_log_likelihood_per_modality_end2end_padded`
+    vmapped over the time axis.
+
+    Parameters
+    ----------
+    lls_padded: Array
+        Modality-stacked padded log-likelihood sequences with time as the
+        leading axis.
+    prior: list[Array]
+        Per-factor priors of shape `(batch, num_states[f])`.
+    past_actions: Array
+        Action indices of shape `(batch, T - 1, num_factors)`.
+    B_padded: list[Array]
+        State-padded transition tensors per factor.
+    num_states: list[int]
+        Hidden-state cardinalities.
+    A_dependencies: list[list[int]]
+        Modality-to-state dependencies.
+    B_dependencies: list[list[int]]
+        Factor-to-factor dependencies; must be trivial (`[[0], [1], ...]`).
+    num_iter: int, default=1
+        Number of VMP iterations.
+    tau: float, default=1.0
+        Step size of the mirror-descent update.
+
+    Returns
+    -------
+    list[Array]
+        Sequence posterior beliefs per hidden-state factor, shape
+        `(batch, T, num_states[f])`.
+    """
+
+    T = lls_padded.shape[0]
+    maxdim = max(num_states)
+
+    ln_prior = jtu.tree_map(log_stable, prior)
+    ln_qs = jtu.tree_map(lambda p: jnp.zeros((p.shape[0], T, p.shape[-1])), prior)
+    qs = jtu.tree_map(nn.softmax, ln_qs)
+
+    lnB_prep_padded, ln_prior_padded = vmap(
+        prep_lnB_and_ln_prior, (0, 0, 0, None, None)
+    )(B_padded, past_actions, ln_prior, num_states, maxdim)
+
+    def scan_fn(carry: list[Array], iter: Array) -> tuple[list[Array], None]:
+
+        qs = carry
+        ln_qs = jtu.tree_map(log_stable, qs)
+
+        qs_padded, lnB_past_and_future = vmap(
+            pad_qs_and_compute_vmp_msgs, (0, 0, 0, None, None, None)
+        )(qs, lnB_prep_padded, ln_prior_padded, num_states, maxdim, T)
+
+        ln_As = vmap(
+            all_marginal_log_likelihood_end2end, in_axes=(0, 2, None, None, None), out_axes=1
+        )(lls_padded, qs_padded, A_dependencies, maxdim, num_states)
+
+        mgds = jtu.Partial(mirror_gradient_descent_step_combined, tau)
+        qs = jtu.tree_map(mgds, ln_As, lnB_past_and_future, ln_qs)
+
+        return qs, None
+
+    qs, _ = lax.scan(scan_fn, qs, jnp.arange(num_iter))
+
+    return qs
+
+def get_qs_clusters(
+    qs: list[Array], max_state_dims: list[int], c2s_mapping: list[list[int]]
+) -> list[dict]:
+    """Pad the posteriors of the factors belonging to each cluster.
+
+    Parameters
+    ----------
+    qs: list[Array]
+        Per-factor posteriors of shape `(batch, num_states[f])`.
+    max_state_dims: list[int]
+        Per-cluster state-padding targets.
+    c2s_mapping: list[list[int]]
+        Cluster-to-factor mapping (factors referenced by each cluster's
+        modalities).
+
+    Returns
+    -------
+    list[dict]
+        One `{factor_index: padded_qs}` dict per cluster.
+    """
+    qs_clusters = []
+    for max_state_dim, states in zip(max_state_dims, c2s_mapping):
+        qs_cluster = {}
+        for s in states:
+            q = qs[s]
+            qs_cluster[s] = jnp.zeros((q.shape[0], max_state_dim)).at[:, 0:q.shape[1]].set(q)
+        qs_clusters.append(qs_cluster)
+    return qs_clusters
+
+def compute_qL_marginals_clustered(
+    ll_clusters: list[Array],
+    qs_clusters: list[dict],
+    c2o_mapping: list[list[int]],
+    max_state_dims: list[int],
+    prior_lengths: list[int],
+    A_dependencies: list[list[int]],
+) -> list[list[Array]]:
+    """Per-cluster counterpart of :func:`compute_qL_marginals`.
+
+    Uses the same dynamic-programming marginalization over shared partial
+    products, restarted per cluster, and slices the results back to the
+    original per-factor state dimensions.
+
+    Parameters
+    ----------
+    ll_clusters: list[Array]
+        Padded log-likelihoods, one tensor per cluster, for a single timestep.
+    qs_clusters: list[dict]
+        Padded posteriors per cluster from :func:`get_qs_clusters`.
+    c2o_mapping: list[list[int]]
+        Cluster-to-modality mapping.
+    max_state_dims: list[int]
+        Per-cluster state-padding targets.
+    prior_lengths: list[int]
+        Original per-factor state dimensions.
+    A_dependencies: list[list[int]]
+        Modality-to-state dependencies.
+
+    Returns
+    -------
+    list[list[Array]]
+        Per-modality lists of marginal log-likelihoods.
+    """
+
+    qL_marginals = [[] for i in range(len(A_dependencies))]
+
+    for ll_cluster, qs_cluster, os, max_state_dim in (zip(ll_clusters, qs_clusters, c2o_mapping, max_state_dims)):
+
+        dp_dict = {}
+
+        for i, o in enumerate(os):
+
+            A_dep = A_dependencies[o]
+
+            if len(A_dep) == 1:
+
+                q_tmp = ll_cluster[i]
+
+                idx = (
+                    slice(0, q_tmp.shape[0]),
+                    slice(0, prior_lengths[A_dep[0]])
+                ) + tuple(0 for _ in range(q_tmp.ndim - 2))
+
+                qL_marginals[o].append(q_tmp[idx])
+
+            else:
+
+                for j in range(len(A_dep)):
+
+                    axes_factors = tuple((axis, factor) for axis, factor in enumerate(A_dep) if j != axis)
+
+                    existing_key = None
+                    for sublen in range(len(axes_factors), 0, -1):
+                        if axes_factors[:sublen] in dp_dict:
+                            existing_key = axes_factors[:sublen]
+                            break
+
+                    new_key = () if existing_key is None else existing_key
+                    offset = 0 if existing_key is None else len(existing_key)
+                    curr_prod = ll_cluster if existing_key is None else dp_dict[existing_key]
+
+                    for axis, factor in axes_factors[offset:]:
+                        new_key = new_key + ((axis, factor),)
+                        q_reshaped = qs_cluster[factor].reshape(
+                            [1, ll_cluster.shape[1]] + [max_state_dim if k == axis else 1 for k in range(ll_cluster.ndim - 2)]
+                        )
+                        curr_prod = curr_prod * q_reshaped
+                        dp_dict[new_key] = curr_prod
+
+                    q_tmp = dp_dict[axes_factors][i].sum(
+                        axis=[axis + 1 for axis, _ in axes_factors]
+                    )
+
+                    idx = (
+                        slice(0, q_tmp.shape[0]),
+                        slice(0, prior_lengths[A_dep[j]])
+                    ) + tuple(0 for _ in range(q_tmp.ndim - 2))
+
+                    qL_marginals[o].append(q_tmp[idx])
+
+    return qL_marginals
+
+def compute_qL_all_clustered(
+    qL_marginals: list[list[Array]], A_dependencies: list[list[int]], num_factors: int
+) -> list[Array]:
+    """Accumulate per-modality marginals into per-factor totals (clustered case).
+
+    Unlike :func:`compute_qL_all`, the accumulator is initialized with
+    `jnp.zeros(1)` rather than `zeros_like`: in the clustered setting the
+    marginals are already sliced to their original (ragged) per-factor
+    dimensions, so a broadcastable initializer is required. Do not fold this
+    into :func:`compute_qL_all`.
+
+    Parameters
+    ----------
+    qL_marginals: list[list[Array]]
+        Per-modality lists of marginal log-likelihoods.
+    A_dependencies: list[list[int]]
+        Modality-to-state dependencies.
+    num_factors: int
+        Number of hidden-state factors.
+
+    Returns
+    -------
+    list[Array]
+        Per-factor accumulated marginal log-likelihoods.
+    """
+
+    qL_all = [jnp.zeros(1)] * num_factors
+
+    for m, factor_list_m in enumerate(A_dependencies):
+        for l, f in enumerate(factor_list_m):
+            qL_all[f] += qL_marginals[m][l]
+
+    return qL_all
+
+def all_marginal_log_likelihood_clustered(
+    ll_clusters: list[Array],
+    qs: list[Array],
+    A_dependencies: list[list[int]],
+    max_state_dims: list[int],
+    c2s_mapping: list[list[int]],
+    c2o_mapping: list[list[int]],
+    prior_lengths: list[int],
+) -> list[Array]:
+    """Clustered counterpart of :func:`all_marginal_log_likelihood_end2end`.
+
+    Parameters
+    ----------
+    ll_clusters: list[Array]
+        Padded log-likelihoods, one tensor per cluster, for a single timestep.
+    qs: list[Array]
+        Per-factor posteriors of shape `(batch, num_states[f])`.
+    A_dependencies: list[list[int]]
+        Modality-to-state dependencies.
+    max_state_dims: list[int]
+        Per-cluster state-padding targets.
+    c2s_mapping: list[list[int]]
+        Cluster-to-factor mapping.
+    c2o_mapping: list[list[int]]
+        Cluster-to-modality mapping.
+    prior_lengths: list[int]
+        Original per-factor state dimensions.
+
+    Returns
+    -------
+    list[Array]
+        Per-factor marginal log-likelihoods.
+    """
+
+    qs_clusters = get_qs_clusters(qs, max_state_dims, c2s_mapping)
+    qL_marginals = compute_qL_marginals_clustered(ll_clusters, qs_clusters, c2o_mapping, max_state_dims, prior_lengths, A_dependencies)
+    return compute_qL_all_clustered(qL_marginals, A_dependencies, len(qs))
+
+def run_vmp_clustered_end2end(
+    ll_clusters: list[Array],
+    prior: list[Array],
+    past_actions: Array,
+    B_padded: list[Array],
+    c2o_mapping: list[list[int]],
+    c2s_mapping: list[list[int]],
+    max_state_dims: list[int],
+    num_states: list[int],
+    A_dependencies: list[list[int]],
+    B_dependencies: list[list[int]],
+    num_iter: int = 1,
+    tau: float = 1.0,
+) -> list[Array]:
+    """Run optimized VMP on per-cluster padded log-likelihood sequences.
+
+    Clustered counterpart of :func:`run_vmp_end2end_padded`, restricted to
+    trivial `B_dependencies`. The per-cluster log-likelihoods are typically
+    produced with
+    :func:`pymdp.maths.compute_log_likelihoods_end2end_per_cluster` vmapped
+    over the time axis.
+
+    Parameters
+    ----------
+    ll_clusters: list[Array]
+        Padded log-likelihood sequences, one tensor per cluster, with time as
+        the leading axis.
+    prior: list[Array]
+        Per-factor priors of shape `(batch, num_states[f])`.
+    past_actions: Array
+        Action indices of shape `(batch, T - 1, num_factors)`.
+    B_padded: list[Array]
+        State-padded transition tensors per factor.
+    c2o_mapping: list[list[int]]
+        Cluster-to-modality mapping.
+    c2s_mapping: list[list[int]]
+        Cluster-to-factor mapping.
+    max_state_dims: list[int]
+        Per-cluster state-padding targets.
+    num_states: list[int]
+        Hidden-state cardinalities.
+    A_dependencies: list[list[int]]
+        Modality-to-state dependencies.
+    B_dependencies: list[list[int]]
+        Factor-to-factor dependencies; must be trivial (`[[0], [1], ...]`).
+    num_iter: int, default=1
+        Number of VMP iterations.
+    tau: float, default=1.0
+        Step size of the mirror-descent update.
+
+    Returns
+    -------
+    list[Array]
+        Sequence posterior beliefs per hidden-state factor, shape
+        `(batch, T, num_states[f])`.
+    """
+
+    T = ll_clusters[0].shape[0]
+    maxdim = max(max_state_dims)
+    prior_lengths = [d.shape[-1] for d in prior]
+
+    ln_prior = jtu.tree_map(log_stable, prior)
+    ln_qs = jtu.tree_map(lambda p: jnp.zeros((p.shape[0], T, p.shape[-1])), prior)
+    qs = jtu.tree_map(nn.softmax, ln_qs)
+
+    lnB_prep_padded, ln_prior_padded = vmap(
+        prep_lnB_and_ln_prior, (0, 0, 0, None, None)
+    )(B_padded, past_actions, ln_prior, num_states, maxdim)
+
+    def scan_fn(carry: list[Array], iter: Array) -> tuple[list[Array], None]:
+
+        qs = carry
+        ln_qs = jtu.tree_map(log_stable, qs)
+
+        _, lnB_past_and_future = vmap(
+            pad_qs_and_compute_vmp_msgs, (0, 0, 0, None, None, None)
+        )(qs, lnB_prep_padded, ln_prior_padded, num_states, maxdim, T)
+
+        ln_As = vmap(
+            all_marginal_log_likelihood_clustered, in_axes=(0, 1, None, None, None, None, None), out_axes=1
+        )(ll_clusters, qs, A_dependencies, max_state_dims, c2s_mapping, c2o_mapping, prior_lengths)
+
+        mgds = jtu.Partial(mirror_gradient_descent_step_combined, tau)
+        qs = jtu.tree_map(mgds, ln_As, lnB_past_and_future, ln_qs)
+
+        return qs, None
+
+    qs, _ = lax.scan(scan_fn, qs, jnp.arange(num_iter))
+
+    return qs
+
+
+
+def prep_B_and_ln_prior(
+    B_padded: list[Array],
+    past_actions: Array,
+    ln_prior: list[Array],
+    num_states: list[int],
+    maxdim: int,
+) -> tuple[Array, Array]:
+    """Precompute the factor-stacked padded transitions and log-prior for MMP.
+
+    MMP sibling of :func:`prep_lnB_and_ln_prior`: the transitions are kept in
+    probability space (no log), because the MMP message primitives contract
+    first and apply the log afterwards.
+
+    Parameters
+    ----------
+    B_padded: list[Array]
+        State-padded transition tensors per factor
+        (see :func:`pymdp.utils.pad_individual_Bs`).
+    past_actions: Array
+        Action indices of shape `(T, num_factors)`.
+    ln_prior: list[Array]
+        Per-factor log-priors.
+    num_states: list[int]
+        Hidden-state cardinalities.
+    maxdim: int
+        Maximum state dimension (padding target).
+
+    Returns
+    -------
+    tuple[Array, Array]
+        `(B_prep_padded, ln_prior_padded)` of shapes
+        `(num_factors, T, maxdim, maxdim)` and `(num_factors, maxdim)`.
+    """
+
+    B_prep_padded = jnp.stack(preprocess_B(B_padded, past_actions), axis=0)
+
+    ln_prior_padded = jnp.zeros((len(num_states), maxdim), dtype=ln_prior[0].dtype)
+    for i in range(len(num_states)):
+        ln_prior_padded = ln_prior_padded.at[i, :num_states[i]].set(ln_prior[i])
+
+    return B_prep_padded, ln_prior_padded
+
+def pad_qs_and_compute_mmp_msgs(
+    qs: list[Array],
+    B_prep_padded: Array,
+    ln_prior_padded: Array,
+    num_states: list[int],
+    maxdim: int,
+    T: int,
+) -> tuple[Array, list[Array]]:
+    """Pad the posteriors and compute the combined MMP transition messages.
+
+    MMP sibling of :func:`pad_qs_and_compute_vmp_msgs`, using the MMP message
+    primitives (probability-space transitions, half-weighted messages).
+
+    Parameters
+    ----------
+    qs: list[Array]
+        Per-factor posteriors of shape `(T, num_states[f])`.
+    B_prep_padded: Array
+        Factor-stacked padded transitions (probability space) from
+        :func:`prep_B_and_ln_prior`.
+    ln_prior_padded: Array
+        Factor-stacked padded log-priors from :func:`prep_B_and_ln_prior`.
+    num_states: list[int]
+        Hidden-state cardinalities.
+    maxdim: int
+        Maximum state dimension (padding target).
+    T: int
+        Number of timesteps.
+
+    Returns
+    -------
+    tuple[Array, list[Array]]
+        `(qs_padded, lnB_past_and_future)` where `qs_padded` has shape
+        `(num_factors, T, maxdim)` and `lnB_past_and_future` holds the summed
+        forward and backward messages per factor.
+    """
+
+    qs_padded = jnp.zeros((len(num_states), T, maxdim), dtype=qs[0].dtype)
+    for i in range(len(num_states)):
+        qs_padded = qs_padded.at[i, :, :num_states[i]].set(qs[i])
+
+    lnB_future_padded = get_mmp_fw_msgs_padded(B_prep_padded, qs_padded, ln_prior_padded, T - 1)
+    lnB_past_padded = get_mmp_bw_msgs_padded(B_prep_padded, qs_padded)
+    lnB_past_and_future = deconstruct_msgs_padded(lnB_future_padded + lnB_past_padded, num_states)
+
+    return qs_padded, lnB_past_and_future
+
+def run_mmp_hybrid(
+    log_likelihoods: list[Array],
+    prior: list[Array],
+    past_actions: Array,
+    B_padded: list[Array],
+    num_states: list[int],
+    A_dependencies: list[list[int]],
+    B_dependencies: list[list[int]],
+    num_iter: int = 1,
+    tau: float = 1.0,
+) -> list[Array]:
+    """Run optimized MMP given precomputed per-modality log-likelihood sequences.
+
+    MMP sibling of :func:`run_vmp_hybrid`; optimized counterpart of :func:`run_mmp` operating on a single batch
+    element, restricted to trivial `B_dependencies`, all-valid observations and
+    transitions, and one-hot (already likelihood-evaluated) observations. The
+    per-modality `log_likelihoods` can come from any of the padded, clustered,
+    or block-diagonal preparation strategies in :mod:`pymdp.maths`.
+
+    Parameters
+    ----------
+    log_likelihoods: list[Array]
+        Per-modality log-likelihood sequences of shape
+        `(T,) + tuple(num_states[f] for f in A_dependencies[m])`.
+    prior: list[Array]
+        Per-factor priors of shape `(num_states[f],)`.
+    past_actions: Array
+        Action indices of shape `(T - 1, num_factors)`.
+    B_padded: list[Array]
+        State-padded transition tensors per factor.
+    num_states: list[int]
+        Hidden-state cardinalities.
+    A_dependencies: list[list[int]]
+        Modality-to-state dependencies.
+    B_dependencies: list[list[int]]
+        Factor-to-factor dependencies; must be trivial (`[[0], [1], ...]`).
+    num_iter: int, default=1
+        Number of MMP iterations.
+    tau: float, default=1.0
+        Step size of the mirror-descent update.
+
+    Returns
+    -------
+    list[Array]
+        Sequence posterior beliefs per hidden-state factor, shape
+        `(T, num_states[f])`.
+    """
+
+    T = log_likelihoods[0].shape[0]
+    maxdim = max(num_states)
+
+    ln_qs = jtu.tree_map(lambda p: jnp.broadcast_to(jnp.zeros_like(p), (T,) + p.shape), prior)
+    ln_prior = jtu.tree_map(log_stable, prior)
+    qs = jtu.tree_map(nn.softmax, ln_qs)
+
+    B_prep_padded, ln_prior_padded = prep_B_and_ln_prior(B_padded, past_actions, ln_prior, num_states, maxdim)
+
+    def scan_fn(carry: list[Array], iter: Array) -> tuple[list[Array], None]:
+
+        qs = carry
+        ln_qs = jtu.tree_map(log_stable, qs)
+
+        _, lnB_past_and_future = pad_qs_and_compute_mmp_msgs(qs, B_prep_padded, ln_prior_padded, num_states, maxdim, T)
+
+        ln_As = vmap(all_marginal_log_likelihood, in_axes=(0, 0, None))(qs, log_likelihoods, A_dependencies)
+
+        mgds = jtu.Partial(mirror_gradient_descent_step_combined, tau)
+        qs = jtu.tree_map(mgds, ln_As, lnB_past_and_future, ln_qs)
+
+        return qs, None
+
+    qs, _ = lax.scan(scan_fn, qs, jnp.arange(num_iter))
+
+    return qs
+
+def run_mmp_end2end_padded(
+    lls_padded: Array,
+    prior: list[Array],
+    past_actions: Array,
+    B_padded: list[Array],
+    num_states: list[int],
+    A_dependencies: list[list[int]],
+    B_dependencies: list[list[int]],
+    num_iter: int = 1,
+    tau: float = 1.0,
+) -> list[Array]:
+    """Run optimized MMP on fully padded log-likelihood sequences.
+
+    MMP sibling of :func:`run_vmp_end2end_padded`; end-to-end counterpart of :func:`run_mmp_hybrid` operating on the whole
+    batch at once, restricted to trivial `B_dependencies`. The padded
+    log-likelihoods are typically produced with
+    :func:`pymdp.maths.compute_log_likelihood_per_modality_end2end_padded`
+    vmapped over the time axis.
+
+    Parameters
+    ----------
+    lls_padded: Array
+        Modality-stacked padded log-likelihood sequences with time as the
+        leading axis.
+    prior: list[Array]
+        Per-factor priors of shape `(batch, num_states[f])`.
+    past_actions: Array
+        Action indices of shape `(batch, T - 1, num_factors)`.
+    B_padded: list[Array]
+        State-padded transition tensors per factor.
+    num_states: list[int]
+        Hidden-state cardinalities.
+    A_dependencies: list[list[int]]
+        Modality-to-state dependencies.
+    B_dependencies: list[list[int]]
+        Factor-to-factor dependencies; must be trivial (`[[0], [1], ...]`).
+    num_iter: int, default=1
+        Number of MMP iterations.
+    tau: float, default=1.0
+        Step size of the mirror-descent update.
+
+    Returns
+    -------
+    list[Array]
+        Sequence posterior beliefs per hidden-state factor, shape
+        `(batch, T, num_states[f])`.
+    """
+
+    T = lls_padded.shape[0]
+    maxdim = max(num_states)
+
+    ln_prior = jtu.tree_map(log_stable, prior)
+    ln_qs = jtu.tree_map(lambda p: jnp.zeros((p.shape[0], T, p.shape[-1])), prior)
+    qs = jtu.tree_map(nn.softmax, ln_qs)
+
+    B_prep_padded, ln_prior_padded = vmap(
+        prep_B_and_ln_prior, (0, 0, 0, None, None)
+    )(B_padded, past_actions, ln_prior, num_states, maxdim)
+
+    def scan_fn(carry: list[Array], iter: Array) -> tuple[list[Array], None]:
+
+        qs = carry
+        ln_qs = jtu.tree_map(log_stable, qs)
+
+        qs_padded, lnB_past_and_future = vmap(
+            pad_qs_and_compute_mmp_msgs, (0, 0, 0, None, None, None)
+        )(qs, B_prep_padded, ln_prior_padded, num_states, maxdim, T)
+
+        ln_As = vmap(
+            all_marginal_log_likelihood_end2end, in_axes=(0, 2, None, None, None), out_axes=1
+        )(lls_padded, qs_padded, A_dependencies, maxdim, num_states)
+
+        mgds = jtu.Partial(mirror_gradient_descent_step_combined, tau)
+        qs = jtu.tree_map(mgds, ln_As, lnB_past_and_future, ln_qs)
+
+        return qs, None
+
+    qs, _ = lax.scan(scan_fn, qs, jnp.arange(num_iter))
+
+    return qs
+
+def run_mmp_clustered_end2end(
+    ll_clusters: list[Array],
+    prior: list[Array],
+    past_actions: Array,
+    B_padded: list[Array],
+    c2o_mapping: list[list[int]],
+    c2s_mapping: list[list[int]],
+    max_state_dims: list[int],
+    num_states: list[int],
+    A_dependencies: list[list[int]],
+    B_dependencies: list[list[int]],
+    num_iter: int = 1,
+    tau: float = 1.0,
+) -> list[Array]:
+    """Run optimized MMP on per-cluster padded log-likelihood sequences.
+
+    MMP sibling of :func:`run_vmp_clustered_end2end`; clustered counterpart of :func:`run_mmp_end2end_padded`, restricted to
+    trivial `B_dependencies`. The per-cluster log-likelihoods are typically
+    produced with
+    :func:`pymdp.maths.compute_log_likelihoods_end2end_per_cluster` vmapped
+    over the time axis.
+
+    Parameters
+    ----------
+    ll_clusters: list[Array]
+        Padded log-likelihood sequences, one tensor per cluster, with time as
+        the leading axis.
+    prior: list[Array]
+        Per-factor priors of shape `(batch, num_states[f])`.
+    past_actions: Array
+        Action indices of shape `(batch, T - 1, num_factors)`.
+    B_padded: list[Array]
+        State-padded transition tensors per factor.
+    c2o_mapping: list[list[int]]
+        Cluster-to-modality mapping.
+    c2s_mapping: list[list[int]]
+        Cluster-to-factor mapping.
+    max_state_dims: list[int]
+        Per-cluster state-padding targets.
+    num_states: list[int]
+        Hidden-state cardinalities.
+    A_dependencies: list[list[int]]
+        Modality-to-state dependencies.
+    B_dependencies: list[list[int]]
+        Factor-to-factor dependencies; must be trivial (`[[0], [1], ...]`).
+    num_iter: int, default=1
+        Number of MMP iterations.
+    tau: float, default=1.0
+        Step size of the mirror-descent update.
+
+    Returns
+    -------
+    list[Array]
+        Sequence posterior beliefs per hidden-state factor, shape
+        `(batch, T, num_states[f])`.
+    """
+
+    T = ll_clusters[0].shape[0]
+    maxdim = max(max_state_dims)
+    prior_lengths = [d.shape[-1] for d in prior]
+
+    ln_prior = jtu.tree_map(log_stable, prior)
+    ln_qs = jtu.tree_map(lambda p: jnp.zeros((p.shape[0], T, p.shape[-1])), prior)
+    qs = jtu.tree_map(nn.softmax, ln_qs)
+
+    B_prep_padded, ln_prior_padded = vmap(
+        prep_B_and_ln_prior, (0, 0, 0, None, None)
+    )(B_padded, past_actions, ln_prior, num_states, maxdim)
+
+    def scan_fn(carry: list[Array], iter: Array) -> tuple[list[Array], None]:
+
+        qs = carry
+        ln_qs = jtu.tree_map(log_stable, qs)
+
+        _, lnB_past_and_future = vmap(
+            pad_qs_and_compute_mmp_msgs, (0, 0, 0, None, None, None)
+        )(qs, B_prep_padded, ln_prior_padded, num_states, maxdim, T)
+
+        ln_As = vmap(
+            all_marginal_log_likelihood_clustered, in_axes=(0, 1, None, None, None, None, None), out_axes=1
+        )(ll_clusters, qs, A_dependencies, max_state_dims, c2s_mapping, c2o_mapping, prior_lengths)
+
+        mgds = jtu.Partial(mirror_gradient_descent_step_combined, tau)
+        qs = jtu.tree_map(mgds, ln_As, lnB_past_and_future, ln_qs)
+
+        return qs, None
+
+    qs, _ = lax.scan(scan_fn, qs, jnp.arange(num_iter))
+
+    return qs
 
 class FilterMessage(NamedTuple):
     # A: conditional transition-like matrix for the segment
