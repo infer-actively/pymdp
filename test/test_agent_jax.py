@@ -23,6 +23,67 @@ from equinox import Module, EquinoxRuntimeError
 
 class TestAgentJax(unittest.TestCase):
 
+    def test_masked_inference_does_not_mutate_A(self):
+        A = [jnp.eye(2)]
+        B = [jnp.stack([jnp.eye(2), jnp.eye(2)], axis=-1)]
+        agent = Agent(A, B, categorical_obs=True)
+        before = agent.A[0].copy()
+
+        agent.infer_states(
+            [jnp.array([[1.0, 0.0]])],
+            agent.D,
+            mask=[jnp.array([0.0])],
+        )
+
+        np.testing.assert_allclose(agent.A[0], before)
+
+    def test_agent_rejects_invalid_sampling_configuration(self):
+        A = [jnp.eye(2)]
+        B = [jnp.stack([jnp.eye(2), jnp.eye(2)], axis=-1)]
+
+        with self.assertRaises(ValueError):
+            Agent(A, B, sampling_mode="invalid")
+        with self.assertRaises(ValueError):
+            Agent(A, B, action_selection="invalid")
+
+    def test_agent_accepts_canonical_action_dependencies_with_marginal_sampling(self):
+        A = [jnp.eye(2)]
+        B = [jnp.stack([jnp.eye(2), jnp.eye(2)], axis=-1)]
+
+        agent = Agent(
+            A,
+            B,
+            B_action_dependencies=[[0]],
+            num_controls=[2],
+            sampling_mode="marginal",
+        )
+        self.assertEqual(agent.sampling_mode, "marginal")
+
+    def test_agent_rejects_marginal_sampling_with_complex_actions(self):
+        A = [jnp.eye(2), jnp.eye(2)]
+        B = [
+            jnp.zeros((2, 2, 2, 2)),
+            jnp.zeros((2, 2, 2)),
+        ]
+        # Factor 0 depends on actions from factors 0 and 1
+        B_action_dependencies = [[0, 1], [1]]
+
+        with self.assertRaisesRegex(ValueError, "sampling_mode='full'"):
+            Agent(
+                A,
+                B,
+                B_action_dependencies=B_action_dependencies,
+                num_controls=[2, 2],
+                sampling_mode="marginal",
+            )
+
+    def test_agent_rejects_unimplemented_learning_flags(self):
+        A = [jnp.eye(2)]
+        B = [jnp.stack([jnp.eye(2), jnp.eye(2)], axis=-1)]
+
+        with self.assertRaises(NotImplementedError):
+            Agent(A, B, learn_D=True)
+
     def test_no_desired_batch_no_batched_input_construction(self):
         """
         Tests for the case where the user wants no batch size, and they pass in tensors with no batch size

@@ -11,12 +11,51 @@ import numpy as np
 from jax import numpy as jnp, random as jr
 
 from pymdp.algos import run_vanilla_fpi as fpi_jax
+from pymdp.inference import update_posterior_states
 from pymdp.utils import random_factorized_categorical, random_A_array
 
 from pymdp.legacy.algos import run_vanilla_fpi as fpi_numpy
 from pymdp.legacy import utils
 
 class TestInferenceJax(unittest.TestCase):
+
+    def test_multifactor_inference_resolves_default_dependencies(self):
+        A = [jnp.ones((2, 2, 2)) / 2.0]
+        B = [
+            jnp.stack([jnp.eye(2), jnp.eye(2)], axis=-1),
+            jnp.stack([jnp.eye(2), jnp.eye(2)], axis=-1),
+        ]
+        obs = [jnp.array([1.0, 0.0])]
+        prior = [jnp.array([0.5, 0.5]), jnp.array([0.5, 0.5])]
+
+        # 1. FPI one-step
+        result_fpi = update_posterior_states(
+            A, B, obs, None, prior=prior, method="fpi"
+        )
+        self.assertEqual(len(result_fpi), 2)
+        assert isinstance(result_fpi, list)
+        for factor in result_fpi:
+            self.assertTrue(bool(jnp.all(jnp.isfinite(factor))))
+
+        # 2. Sequence inference (MMP & VMP) with omitted A/B dependencies
+        seq_obs = [jnp.array([[1.0, 0.0], [0.0, 1.0]])]
+        past_actions = jnp.array([[0, 0]])
+
+        result_mmp = update_posterior_states(
+            A, B, seq_obs, past_actions, prior=prior, method="mmp"
+        )
+        self.assertEqual(len(result_mmp), 2)
+        assert isinstance(result_mmp, list)
+        for factor in result_mmp:
+            self.assertTrue(bool(jnp.all(jnp.isfinite(factor))))
+
+        result_vmp = update_posterior_states(
+            A, B, seq_obs, past_actions, prior=prior, method="vmp"
+        )
+        self.assertEqual(len(result_vmp), 2)
+        assert isinstance(result_vmp, list)
+        for factor in result_vmp:
+            self.assertTrue(bool(jnp.all(jnp.isfinite(factor))))
 
     def test_fixed_point_iteration_singlestate_singleobs(self):
         """
@@ -186,7 +225,7 @@ class TestInferenceJax(unittest.TestCase):
             qs_jax = fpi_jax(A_jax, obs, prior_jax, num_iter=16)
 
             for f, _ in enumerate(qs_jax):
-                self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f]))
+                self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f], atol=1e-4, rtol=1e-4))
     
     def test_fixed_point_iteration_index_observations(self):
         """

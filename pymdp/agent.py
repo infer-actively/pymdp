@@ -167,11 +167,29 @@ class Agent(Module):
         learn_D: bool = False,
         learn_E: bool = False,
     ) -> None:
+        if action_selection not in {"deterministic", "stochastic"}:
+            raise ValueError(
+                "`action_selection` must be either 'deterministic' or 'stochastic'"
+            )
+        if sampling_mode not in {"full", "marginal"}:
+            raise ValueError("`sampling_mode` must be either 'full' or 'marginal'")
+
         if B_action_dependencies is not None:
-            assert num_controls is not None, "Please specify num_controls if you're also using complex action dependencies"
+            is_canonical = B_action_dependencies == [[f] for f in range(len(B))]
+            if not is_canonical:
+                assert num_controls is not None, "Please specify num_controls if you're also using complex action dependencies"
+                if sampling_mode != "full":
+                    raise ValueError(
+                        "Complex B action dependencies require sampling_mode='full'"
+                    )
 
         if learn_A:
             assert pA is not None, "pA is required for A learning"
+
+        if learn_C or learn_D or learn_E:
+            raise NotImplementedError(
+                "Modern Agent learning currently supports only learn_A and learn_B"
+            )
 
         # extract high level variables
         self.num_modalities = len(A)
@@ -208,9 +226,11 @@ class Agent(Module):
 
         # flatten B action dims for multiple action dependencies
         self.action_maps = None
+        # canonical or empty dependencies don't require flattening
+        is_canonical = self.B_action_dependencies == [[f] for f in range(self.num_factors)]
         if (
-            policies is None and B_action_dependencies is not None
-        ):  # note, this only works when B_action_dependencies is not the trivial case of [[0], [1], ...., [num_factors-1]]
+            policies is None and self.B_action_dependencies is not None and not is_canonical
+        ):
             policies_multi_tup = control._construct_policies_tuple(
                 self.num_controls_multi,
                 self.num_controls_multi,
@@ -789,7 +809,8 @@ class Agent(Module):
                 f"`empirical_prior` has {len(empirical_prior)} factor(s), expected {self.num_factors}"
             )
 
-        A = self.A
+        # Masking is per-call state, so never replace entries in self.A.
+        A = list(self.A)
         if mask is not None:
             for i, m in enumerate(mask):
                 o_vec[i] = m * o_vec[i] + (1 - m) * jnp.ones_like(o_vec[i]) / self.num_obs[i]
