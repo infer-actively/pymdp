@@ -1654,10 +1654,10 @@ class TestControl(unittest.TestCase):
 
         seeds = [1923, 48323]
 
-        sampled_action = control._sample_action_test(q_pi, policies, num_controls, action_selection="deterministic", seed=seeds[0])
+        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic", seed=seeds[0])
         self.assertEqual(sampled_action[0], 0)
 
-        sampled_action = control._sample_action_test(q_pi, policies, num_controls, action_selection="deterministic", seed=seeds[1])
+        sampled_action = control.sample_action(q_pi, policies, num_controls, action_selection="deterministic", seed=seeds[1])
         self.assertEqual(sampled_action[0], 1)
     
     def test_deterministic_policy_selection_equal_value(self):
@@ -1673,10 +1673,10 @@ class TestControl(unittest.TestCase):
 
         seeds = [1923, 48323]
 
-        sampled_action = control._sample_policy_test(q_pi, policies, num_controls, action_selection="deterministic", seed=seeds[0])
+        sampled_action = control.sample_policy(q_pi, policies, num_controls, action_selection="deterministic", seed=seeds[0])
         self.assertEqual(sampled_action[0], 1)
 
-        sampled_action = control._sample_policy_test(q_pi, policies, num_controls, action_selection="deterministic", seed=seeds[1])
+        sampled_action = control.sample_policy(q_pi, policies, num_controls, action_selection="deterministic", seed=seeds[1])
         self.assertEqual(sampled_action[0], 2)
 
 if __name__ == "__main__":
