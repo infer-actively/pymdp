@@ -6,8 +6,10 @@ import math as pymath
 import warnings
 import jax.numpy as jnp
 import jax.tree_util as jtu
+from jax.experimental import sparse
 from jax import nn, vmap
 from pymdp import inference, control, learning, utils
+from pymdp.maths import _to_dense_if_sparse
 from pymdp.distribution import Distribution, get_dependencies
 from equinox import Module, field, tree_at
 
@@ -260,7 +262,18 @@ class Agent(Module):
                         f"Batch size {batch_size} does not match the first dimension of B[{f}] with shape {b_f.shape}"
                     )
             elif b_f.ndim == (len(b_f_state_factors) + 2):  # this indicates no leading batch dimension
-                B[f] = jnp.broadcast_to(b_f, (batch_size,) + b_f.shape)
+                if isinstance(b_f, sparse.BCOO):
+                    if batch_size > 1:
+                        raise ValueError(
+                            "Batched Agent with batch_size > 1 requires explicit "
+                            "batch dimension for sparse BCOO tensors."
+                        )
+                    B[f] = sparse.BCOO(
+                        (b_f.data[jnp.newaxis], b_f.indices[jnp.newaxis]),
+                        shape=(batch_size,) + b_f.shape,
+                    )
+                else:
+                    B[f] = jnp.broadcast_to(b_f, (batch_size,) + b_f.shape)
                 if pB is not None:
                     pB[f] = jnp.broadcast_to(pB[f], (batch_size,) + b_f.shape)
                 if D is not None:
@@ -605,7 +618,9 @@ class Agent(Module):
                 return qB, E_qB
 
             def skip_B_step(_: Any) -> tuple[list[Array], list[Array]]:
-                return self.pB, self.B
+                dense_B = [jnp.asarray(_to_dense_if_sparse(b)) for b in self.B]
+                dense_pB = [jnp.asarray(_to_dense_if_sparse(pb)) for pb in self.pB] if self.pB is not None else self.pB
+                return dense_pB, dense_B
 
             qB, E_qB = lax.cond(can_update_B, update_B_step, skip_B_step, operand=None)
 
@@ -1100,9 +1115,26 @@ class Agent(Module):
         pB_flat = []
         for i, (B_f, action_dependency) in enumerate(zip(B, B_action_dependencies)):
             if action_dependency == []:
-                B_flat.append(jnp.expand_dims(B_f, axis=-1))
+                if isinstance(B_f, sparse.BCOO):
+                    B_flat.append(
+                        sparse.BCOO(
+                            (B_f.data, jnp.pad(B_f.indices, ((0, 0), (0, 1)))),
+                            shape=B_f.shape + (1,),
+                        )
+                    )
+                else:
+                    B_flat.append(jnp.expand_dims(B_f, axis=-1))
                 if pB is not None:
-                    pB_flat.append(jnp.expand_dims(pB[i], axis=-1))
+                    pb_elem = pB[i]
+                    if isinstance(pb_elem, sparse.BCOO):
+                        pB_flat.append(
+                            sparse.BCOO(
+                                (pb_elem.data, jnp.pad(pb_elem.indices, ((0, 0), (0, 1)))),
+                                shape=pb_elem.shape + (1,),
+                            )
+                        )
+                    else:
+                        pB_flat.append(jnp.expand_dims(pb_elem, axis=-1))
                 action_maps.append(
                     {"multi_dependency": [], "multi_dims": [], "flat_dependency": [i], "flat_dims": [1]}
                 )

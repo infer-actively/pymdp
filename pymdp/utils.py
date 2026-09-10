@@ -5,6 +5,7 @@
 
 import jax
 from jax import numpy as jnp, random as jr
+from jax.experimental import sparse
 from jax import tree_util as jtu
 from jax import nn
 import numpy as np
@@ -113,7 +114,11 @@ def validate_normalization(tensor: Array, axis: int = 1, tensor_name: str = "ten
         distributions are signaled via `eqx.error_if`.
     """
 
-    sums = jnp.sum(tensor, axis=axis)
+    if isinstance(tensor, sparse.BCOO):
+        res = sparse.sparsify(jnp.sum)(tensor, axis=axis)
+        sums = res.todense() if hasattr(res, "todense") else res
+    else:
+        sums = jnp.sum(tensor, axis=axis)
 
     # When traced under JIT we still need a JAX-compatible runtime assertion.
     # Equinox handles that case well for valid tensors, and the jittable Agent

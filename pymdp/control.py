@@ -17,7 +17,14 @@ from jaxtyping import Array
 
 import equinox as eqx
 
-from pymdp.maths import factor_dot, log_stable, stable_entropy, stable_xlogx, spm_wnorm
+from pymdp.maths import (
+    _to_dense_if_sparse,
+    factor_dot,
+    log_stable,
+    stable_entropy,
+    stable_xlogx,
+    spm_wnorm,
+)
 from pymdp import utils
 
 _POLICY_ARR_CACHE_MAXSIZE = 128
@@ -393,7 +400,7 @@ def compute_expected_state(
     for B_f, u_f, deps in zip(B, u_t, B_dependencies):
         relevant_factors = [qs_prior[idx] for idx in deps]
         qs_next_f = factor_dot(B_f[...,u_f], relevant_factors, keep_dims=(0,))
-        qs_next.append(qs_next_f)
+        qs_next.append(_to_dense_if_sparse(qs_next_f))
         
     # P(s'|s, u) = \sum_{s, u} P(s'|s) P(s|u) P(u|pi)P(pi) because u </-> pi
     return qs_next
