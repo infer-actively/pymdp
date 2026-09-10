@@ -219,7 +219,26 @@ class Agent(Module):
             )
             B, pB, self.action_maps = self._flatten_B_action_dims(B, pB, self.B_action_dependencies)
             policies = self._construct_flattend_policies_tuple(policies_multi_tup, self.action_maps)
-            self.sampling_mode = "full"
+            # Flattening the action dimensions collapses the control factors into a
+            # single joint action space. That is the space `sampling_mode="full"`
+            # indexes against (`unique_multiactions`), whereas `"marginal"` reasons
+            # about the un-flattened factors, so the two modes no longer describe the
+            # same action space here.
+            #
+            # This branch used to assign `self.sampling_mode = "full"`, but that
+            # assignment was dead: the constructor parameter is written to
+            # `self.sampling_mode` below and always won, so the request was honoured
+            # and the deliberate override never took effect. Warn instead of
+            # overriding, so the conflict is visible without changing which mode is
+            # used. See issue #434.
+            if sampling_mode != "full":
+                warnings.warn(
+                    "`B_action_dependencies` flattens the control factors into a single "
+                    "joint action space, which `sampling_mode='full'` is designed for; got "
+                    f"sampling_mode={sampling_mode!r}. Action selection will follow the "
+                    "requested mode. Pass sampling_mode='full' to silence this warning.",
+                    stacklevel=2,
+                )
         
         # extract shapes from A and B
         self.num_states = self._get_num_states_from_B(B, self.B_dependencies)
