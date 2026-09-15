@@ -37,5 +37,8 @@ jobs:
         run: |
           uv run pytest test -n 2 -m nightly
       - name: Running nightly-tier notebook tests
+        # nbval's default per-cell timeout is 2000s. The SVI fit in
+        # fitting_with_pybefit.ipynb runs close to that on a typical runner and
+        # exceeded it on a slow one (2026-09-14), so give nightly cells more room.
         run: |
-          uv run python scripts/run_notebook_manifest.py test/notebooks/nightly_notebooks.txt
+          uv run python scripts/run_notebook_manifest.py test/notebooks/nightly_notebooks.txt -- --nbval-cell-timeout=3600

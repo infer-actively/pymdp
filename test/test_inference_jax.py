@@ -37,6 +37,7 @@ class TestInferenceJax(unittest.TestCase):
         ]
 
         keys = jr.split(jr.PRNGKey(42), len(num_states_list)*2).reshape((len(num_states_list), 2, 2))
+        rng = np.random.default_rng(42)
         for (keys_per_element, num_states, num_obs) in zip(keys, num_states_list, num_obs_list):
             
             # jax arrays
@@ -49,7 +50,7 @@ class TestInferenceJax(unittest.TestCase):
 
             obs = utils.obj_array(len(num_obs))
             for m, obs_dim in enumerate(num_obs):
-                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim)
+                obs[m] = utils.onehot(rng.integers(obs_dim), obs_dim)
 
             qs_numpy = fpi_numpy(A_np, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
@@ -78,6 +79,7 @@ class TestInferenceJax(unittest.TestCase):
         ]
 
         keys = jr.split(jr.PRNGKey(43), len(num_states_list)*2).reshape((len(num_states_list), 2, 2))
+        rng = np.random.default_rng(43)
         for (keys_per_element, num_states, num_obs) in zip(keys, num_states_list, num_obs_list):
 
             # jax arrays
@@ -90,7 +92,7 @@ class TestInferenceJax(unittest.TestCase):
 
             obs = utils.obj_array(len(num_obs))
             for m, obs_dim in enumerate(num_obs):
-                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim)
+                obs[m] = utils.onehot(rng.integers(obs_dim), obs_dim)
 
             qs_numpy = fpi_numpy(A_np, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
@@ -120,6 +122,7 @@ class TestInferenceJax(unittest.TestCase):
         ]
 
         keys = jr.split(jr.PRNGKey(44), len(num_states_list)*2).reshape((len(num_states_list), 2, 2))
+        rng = np.random.default_rng(44)
         for (keys_per_element, num_states, num_obs) in zip(keys, num_states_list, num_obs_list):
             
             # jax arrays
@@ -132,7 +135,7 @@ class TestInferenceJax(unittest.TestCase):
 
             obs = utils.obj_array(len(num_obs))
             for m, obs_dim in enumerate(num_obs):
-                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim)
+                obs[m] = utils.onehot(rng.integers(obs_dim), obs_dim)
 
             qs_numpy = fpi_numpy(A_np, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
@@ -165,6 +168,7 @@ class TestInferenceJax(unittest.TestCase):
         ]
 
         keys = jr.split(jr.PRNGKey(45), len(num_states_list)*2).reshape((len(num_states_list), 2, 2))
+        rng = np.random.default_rng(45)
         for (keys_per_element, num_states, num_obs) in zip(keys, num_states_list, num_obs_list):
             
             # jax arrays
@@ -177,7 +181,7 @@ class TestInferenceJax(unittest.TestCase):
 
             obs = utils.obj_array(len(num_obs))
             for m, obs_dim in enumerate(num_obs):
-                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim)
+                obs[m] = utils.onehot(rng.integers(obs_dim), obs_dim)
 
             qs_numpy = fpi_numpy(A_np, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
@@ -212,6 +216,7 @@ class TestInferenceJax(unittest.TestCase):
         ]
 
         keys = jr.split(jr.PRNGKey(46), len(num_states_list)*2).reshape((len(num_states_list), 2, 2))
+        rng = np.random.default_rng(46)
         for (keys_per_element, num_states, num_obs) in zip(keys, num_states_list, num_obs_list):
             
             # jax arrays
@@ -224,7 +229,7 @@ class TestInferenceJax(unittest.TestCase):
 
             obs = utils.obj_array(len(num_obs))
             for m, obs_dim in enumerate(num_obs):
-                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim)
+                obs[m] = utils.onehot(rng.integers(obs_dim), obs_dim)
 
             qs_numpy = fpi_numpy(A_np, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
