@@ -6,6 +6,7 @@ __author__: Dimitrije Markovic, Conor Heins
 """
 
 import unittest
+import warnings
 from functools import partial
 from types import SimpleNamespace
 
@@ -103,6 +104,61 @@ class TestAgentJax(unittest.TestCase):
         self.assertTrue(agent.num_controls == num_controls_flattened)
 
             
+    def test_flattened_action_dependencies_warn_on_incompatible_sampling_mode(self):
+        """
+        `B_action_dependencies` flatten the control factors into a single joint action
+        space, which is the space `sampling_mode="full"` indexes against; `"marginal"`
+        reasons about the un-flattened factors instead. The flattening branch used to
+        try to force `"full"` by assigning `self.sampling_mode`, but that assignment was
+        dead -- the constructor parameter is written to `self.sampling_mode` afterwards
+        and always won -- so a conflicting request was honoured with no indication.
+        It should now warn, without changing which mode is used.
+        """
+        num_obs = [2, 3]
+        num_states = [4, 5, 2]
+        num_controls = [2, 3, 2]
+        A_dependencies = [[0, 1], [1]]
+        B_dependencies = [[0], [0, 1, 2], [2]]
+        B_action_dependencies = [[], [0, 1], [0, 2]]
+
+        a_key, b_key = jr.PRNGKey(0), jr.PRNGKey(1)
+
+        def build(sampling_mode):
+            A = utils.random_A_array(
+                a_key, num_obs, num_states, A_dependencies=A_dependencies
+            )
+            B = utils.random_B_array(
+                b_key,
+                num_states,
+                num_controls,
+                B_dependencies=B_dependencies,
+                B_action_dependencies=B_action_dependencies,
+            )
+            return Agent(
+                A,
+                B,
+                A_dependencies=A_dependencies,
+                B_dependencies=B_dependencies,
+                B_action_dependencies=B_action_dependencies,
+                num_controls=num_controls,
+                sampling_mode=sampling_mode,
+            )
+
+        # an incompatible request is reported ...
+        with self.assertWarns(UserWarning):
+            agent_marginal = build("marginal")
+        # ... and is still the mode that ends up in effect
+        self.assertEqual(agent_marginal.sampling_mode, "marginal")
+
+        # `"full"` is the mode the flattened action space is built for: no warning
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            agent_full = build("full")
+        self.assertEqual(
+            [w for w in caught if issubclass(w.category, UserWarning)], []
+        )
+        self.assertEqual(agent_full.sampling_mode, "full")
+
     def test_desired_batch_no_batched_input_construction(self):
         """
         Tests for the case where the user wants > 1 batch size, and they pass in tensors with no batch size
