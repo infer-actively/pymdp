@@ -8,6 +8,7 @@ __author__: Dimitrije Markovic, Conor Heins
 import unittest
 
 import numpy as np
+import jax
 from jax import numpy as jnp, random as jr
 
 from pymdp.algos import run_vanilla_fpi as fpi_jax
@@ -15,6 +16,26 @@ from pymdp.utils import random_factorized_categorical, random_A_array
 
 from pymdp.legacy.algos import run_vanilla_fpi as fpi_numpy
 from pymdp.legacy import utils
+
+
+def _to_float64_numpy(arrays):
+    """Float64 copies of JAX-generated arrays, as an object array for the NumPy reference."""
+    return utils.obj_array_from_list([np.asarray(a, dtype=np.float64) for a in arrays])
+
+
+def _fpi_jax_float64(A, obs, prior, **kwargs):
+    """Run the JAX FPI in float64, so the comparison with the NumPy version tests the
+    algorithm rather than float32 rounding.
+
+    In float32, np.allclose's default rtol is only ~80 ulps, and XLA:CPU codegen changes
+    (jaxlib 0.10.2 un-fused the small dot+add contractions in factor_dot) were enough to
+    make these comparisons fail on a few percent of observation draws. Arrays are created
+    inside the x64 context, because outside it JAX silently truncates float64 to float32.
+    """
+    with jax.enable_x64(True):
+        as64 = lambda x: jnp.asarray(x, dtype=jnp.float64)
+        obs = [as64(o) if np.issubdtype(np.asarray(o).dtype, np.floating) else jnp.asarray(o) for o in obs]
+        return fpi_jax([as64(a) for a in A], obs, [as64(p) for p in prior], **kwargs)
 
 class TestInferenceJax(unittest.TestCase):
 
@@ -43,9 +64,9 @@ class TestInferenceJax(unittest.TestCase):
             prior_jax = random_factorized_categorical(keys_per_element[0], num_states)
             A_jax = random_A_array(keys_per_element[1], num_obs, num_states)
 
-            # numpy arrays
-            prior = utils.obj_array_from_list(prior_jax)
-            A_np = utils.obj_array_from_list(A_jax)
+            # numpy arrays (float64)
+            prior = _to_float64_numpy(prior_jax)
+            A_np = _to_float64_numpy(A_jax)
 
             obs_keys = jr.split(keys_per_element[2], len(num_obs))
             obs = utils.obj_array(len(num_obs))
@@ -54,8 +75,7 @@ class TestInferenceJax(unittest.TestCase):
 
             qs_numpy = fpi_numpy(A_np, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
-            obs = [jnp.array(o_m) for o_m in obs]
-            qs_jax = fpi_jax(A_jax, obs, prior_jax, num_iter=16)
+            qs_jax = _fpi_jax_float64(A_jax, obs, prior_jax, num_iter=16)
 
             for f, _ in enumerate(qs_jax):
                 self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f]))
@@ -85,9 +105,9 @@ class TestInferenceJax(unittest.TestCase):
             prior_jax = random_factorized_categorical(keys_per_element[0], num_states)
             A_jax = random_A_array(keys_per_element[1], num_obs, num_states)
 
-            # numpy arrays
-            prior = utils.obj_array_from_list(prior_jax)
-            A_np = utils.obj_array_from_list(A_jax)
+            # numpy arrays (float64)
+            prior = _to_float64_numpy(prior_jax)
+            A_np = _to_float64_numpy(A_jax)
 
             obs_keys = jr.split(keys_per_element[2], len(num_obs))
             obs = utils.obj_array(len(num_obs))
@@ -96,9 +116,7 @@ class TestInferenceJax(unittest.TestCase):
 
             qs_numpy = fpi_numpy(A_np, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
-            obs = [jnp.array(o_m) for o_m in obs]
-
-            qs_jax = fpi_jax(A_jax, obs, prior_jax, num_iter=16)
+            qs_jax = _fpi_jax_float64(A_jax, obs, prior_jax, num_iter=16)
 
             for f, _ in enumerate(qs_jax):
                 self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f]))
@@ -129,8 +147,8 @@ class TestInferenceJax(unittest.TestCase):
             A_jax = random_A_array(keys_per_element[1], num_obs, num_states)
 
             # numpy version
-            prior = utils.obj_array_from_list(prior_jax)
-            A_np = utils.obj_array_from_list(A_jax)
+            prior = _to_float64_numpy(prior_jax)
+            A_np = _to_float64_numpy(A_jax)
 
             obs_keys = jr.split(keys_per_element[2], len(num_obs))
             obs = utils.obj_array(len(num_obs))
@@ -139,8 +157,7 @@ class TestInferenceJax(unittest.TestCase):
 
             qs_numpy = fpi_numpy(A_np, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
-            obs = [jnp.array(o_m) for o_m in obs]
-            qs_jax = fpi_jax(A_jax, obs, prior_jax, num_iter=16)
+            qs_jax = _fpi_jax_float64(A_jax, obs, prior_jax, num_iter=16)
 
             for f, _ in enumerate(qs_jax):
                 self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f]))
@@ -174,9 +191,9 @@ class TestInferenceJax(unittest.TestCase):
             prior_jax = random_factorized_categorical(keys_per_element[0], num_states)
             A_jax = random_A_array(keys_per_element[1], num_obs, num_states)
                 
-            # numpy arrays
-            prior = utils.obj_array_from_list(prior_jax)
-            A_np = utils.obj_array_from_list(A_jax)
+            # numpy arrays (float64)
+            prior = _to_float64_numpy(prior_jax)
+            A_np = _to_float64_numpy(A_jax)
 
             obs_keys = jr.split(keys_per_element[2], len(num_obs))
             obs = utils.obj_array(len(num_obs))
@@ -186,8 +203,7 @@ class TestInferenceJax(unittest.TestCase):
             qs_numpy = fpi_numpy(A_np, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
             # jax version
-            obs = [jnp.array(o_m) for o_m in obs]
-            qs_jax = fpi_jax(A_jax, obs, prior_jax, num_iter=16)
+            qs_jax = _fpi_jax_float64(A_jax, obs, prior_jax, num_iter=16)
 
             for f, _ in enumerate(qs_jax):
                 self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f]))
@@ -222,9 +238,9 @@ class TestInferenceJax(unittest.TestCase):
             A_jax = random_A_array(keys_per_element[1], num_obs, num_states)
             prior_jax = random_factorized_categorical(keys_per_element[0], num_states)
 
-            # numpy arrays
-            prior = utils.obj_array_from_list(prior_jax)
-            A_np = utils.obj_array_from_list(A_jax)
+            # numpy arrays (float64)
+            prior = _to_float64_numpy(prior_jax)
+            A_np = _to_float64_numpy(A_jax)
 
             obs_keys = jr.split(keys_per_element[2], len(num_obs))
             obs = utils.obj_array(len(num_obs))
@@ -237,7 +253,7 @@ class TestInferenceJax(unittest.TestCase):
             for ob in obs:
                 obs_idx.append(np.where(ob)[0][0])
             
-            qs_jax = fpi_jax(A_jax, obs_idx, prior_jax, num_iter=16, distr_obs=False)
+            qs_jax = _fpi_jax_float64(A_jax, obs_idx, prior_jax, num_iter=16, distr_obs=False)
 
             for f, _ in enumerate(qs_jax):
                 self.assertTrue(np.allclose(qs_numpy[f], qs_jax[f]))
