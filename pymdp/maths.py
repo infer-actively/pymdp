@@ -892,7 +892,7 @@ def compute_log_likelihoods_padded(obs_padded: ArrayLike, A_padded: ArrayLike) -
     )
 
 def deconstruct_lls(
-    lls_padded: ArrayLike, A_shapes: Sequence[tuple[int, ...]]
+    lls_padded: ArrayLike, A_shapes: Sequence[tuple[int, ...]], has_time_axis: bool = False
 ) -> list[ArrayLike]:
     """Split padded likelihood tensor into modality-specific blocks.
 
@@ -902,6 +902,10 @@ def deconstruct_lls(
         Combined padded log-likelihood tensor.
     A_shapes: Sequence[tuple[int, ...]]
         Original unpadded shapes per modality.
+    has_time_axis: bool, default=False
+        Set to `True` when `lls_padded` carries a time axis directly after the
+        batch axis (sequence-based inference such as VMP/MMP); the time axis is
+        then kept in full in each output block.
 
     Returns
     -------
@@ -915,10 +919,12 @@ def deconstruct_lls(
         ll = lls_padded[i*batch_size : (i+1)*batch_size]
         idx = [
             slice(0, batch_size)
-        ] + [
+        ] + (
+            [slice(None)] if has_time_axis else []  # keep the time axis in full
+        ) + [
             slice(0, dim) for dim in a_shape[2:]
         ] + [
-            0 for _ in range(ll.ndim - len(a_shape) + 1)
+            0 for _ in range(ll.ndim - len(a_shape) + 1 - int(has_time_axis))
         ]
         lls.append(ll[tuple(idx)])
     return lls
@@ -1051,7 +1057,7 @@ def log_stable_sparse(x: ArrayLike) -> ArrayLike:
         return jsparse.BCOO((jnp.log(jnp.clip(x.data, min=MINVAL)), x.indices), shape=x.shape)
     return jnp.log(jnp.clip(x, min=MINVAL))
     
-def compute_log_likelihood_per_modality_end2end2_padded(
+def compute_log_likelihood_per_modality_end2end_padded(
     obs_padded: ArrayLike, A_padded: ArrayLike, sparsity: str
 ) -> ArrayLike:
     """Compute padded end-to-end per-modality likelihood.
@@ -1074,6 +1080,285 @@ def compute_log_likelihood_per_modality_end2end2_padded(
         jnp.expand_dims(obs_padded, tuple(range(obs_padded.ndim, A_padded.ndim))) * A_padded
     ).sum(axis=2)
     return log_stable(likelihood) if sparsity == 'll_only' else log_stable_sparse(likelihood)
+
+
+# Infer states VMP/MMP optimized: padded message primitives (trivial B_dependencies)
+
+def get_vmp_fw_msgs_padded(lnB_prep_padded: ArrayLike, qs_padded: ArrayLike, ln_prior_padded: ArrayLike) -> ArrayLike:
+    """Compute padded forward (past-to-future) VMP messages for all factors at once.
+
+    This is the trivial-`B_dependencies` specialization of the `forward` message
+    in :func:`pymdp.algos.get_vmp_messages` (with all transitions valid),
+    evaluated as a single einsum over factor-stacked, state-padded tensors. The
+    prior is prepended as the `t = 0` forward message.
+
+    Parameters
+    ----------
+    lnB_prep_padded: ArrayLike
+        Log of action-conditioned, state-padded transitions, shape
+        `(num_factors, T, max_state_dim, max_state_dim)`.
+    qs_padded: ArrayLike
+        State-padded posteriors, shape `(num_factors, T, max_state_dim)`.
+    ln_prior_padded: ArrayLike
+        State-padded log-priors, shape `(num_factors, max_state_dim)`.
+
+    Returns
+    -------
+    ArrayLike
+        Forward messages of shape `(num_factors, T, max_state_dim)`.
+    """
+    fw_msgs_padded = jnp.einsum('btxy,bty->btx', lnB_prep_padded, qs_padded[:, :-1])
+    fw_msgs_padded = jnp.concatenate([jnp.expand_dims(ln_prior_padded, 1), fw_msgs_padded], axis=1)
+    return fw_msgs_padded
+
+def get_vmp_bw_msgs_padded(lnB_prep_padded: ArrayLike, qs_padded: ArrayLike) -> ArrayLike:
+    """Compute padded backward (future-to-past) VMP messages for all factors at once.
+
+    Trivial-`B_dependencies` specialization of the `backward` message in
+    :func:`pymdp.algos.get_vmp_messages` (with all transitions valid). The last
+    timestep receives a zero message.
+
+    Parameters
+    ----------
+    lnB_prep_padded: ArrayLike
+        Log of action-conditioned, state-padded transitions, shape
+        `(num_factors, T, max_state_dim, max_state_dim)`.
+    qs_padded: ArrayLike
+        State-padded posteriors, shape `(num_factors, T, max_state_dim)`.
+
+    Returns
+    -------
+    ArrayLike
+        Backward messages of shape `(num_factors, T, max_state_dim)`.
+    """
+    bw_msgs_padded = jnp.einsum('btxy,btx->bty', lnB_prep_padded, qs_padded[:, 1:])
+    bw_msgs_padded = jnp.pad(bw_msgs_padded, ((0, 0), (0, 1), (0, 0)))
+    return bw_msgs_padded
+
+def deconstruct_msgs_padded(msgs_padded: ArrayLike, num_states: Sequence[int]) -> list[ArrayLike]:
+    """Split factor-stacked padded messages back into per-factor tensors.
+
+    Method-agnostic: used for both the VMP and MMP padded message primitives.
+
+    Parameters
+    ----------
+    msgs_padded: ArrayLike
+        Padded messages of shape `(num_factors, T, max_state_dim)`.
+    num_states: Sequence[int]
+        Hidden-state cardinalities.
+
+    Returns
+    -------
+    list[ArrayLike]
+        Per-factor messages of shape `(T, num_states[f])`.
+    """
+    msgs = []
+    for i, ns in enumerate(num_states):
+        msgs.append(msgs_padded[i, :, :ns])
+    return msgs
+
+def get_mmp_fw_msgs_padded(
+    B_prep_padded: ArrayLike, qs_padded: ArrayLike, ln_prior_padded: ArrayLike, T: int
+) -> ArrayLike:
+    """Compute padded forward (past-to-future) MMP messages for all factors at once.
+
+    Trivial-`B_dependencies` specialization of the `forward` message in
+    :func:`pymdp.algos.get_mmp_messages` (with all transitions valid),
+    evaluated as a single einsum over factor-stacked, state-padded tensors.
+    Unlike the VMP variant, the contraction happens in probability space with
+    the log applied afterwards, the prior is prepended as the `t = 0` forward
+    message, and every timestep except the last is half-weighted (each valid
+    transition contributes via both the forward and backward term, so each
+    edge is counted once overall).
+
+    Parameters
+    ----------
+    B_prep_padded: ArrayLike
+        Action-conditioned, state-padded transitions (probability space), shape
+        `(num_factors, T, max_state_dim, max_state_dim)`.
+    qs_padded: ArrayLike
+        State-padded posteriors, shape `(num_factors, T + 1, max_state_dim)`.
+    ln_prior_padded: ArrayLike
+        State-padded log-priors, shape `(num_factors, max_state_dim)`.
+    T: int
+        Number of transitions (i.e. number of observed timesteps minus one).
+
+    Returns
+    -------
+    ArrayLike
+        Forward messages of shape `(num_factors, T + 1, max_state_dim)`.
+    """
+    fw_msgs_padded = log_stable(jnp.einsum('btxy,bty->btx', B_prep_padded, qs_padded[:, :-1]))
+    fw_msgs_padded = jnp.concatenate([jnp.expand_dims(ln_prior_padded, 1), fw_msgs_padded], axis=1)
+    fw_msgs_padded = fw_msgs_padded * jnp.concatenate([0.5 * jnp.ones((1, T, 1)), jnp.ones((1, 1, 1))], axis=1)
+    return fw_msgs_padded
+
+def get_mmp_bw_msgs_padded(B_prep_padded: ArrayLike, qs_padded: ArrayLike) -> ArrayLike:
+    """Compute padded backward (future-to-past) MMP messages for all factors at once.
+
+    Trivial-`B_dependencies` specialization of the `backward` message in
+    :func:`pymdp.algos.get_mmp_messages` (with all transitions valid). The
+    transitions are row-normalized before the contraction, the log is applied
+    afterwards with the complementary half-weight to the forward pass, and the
+    last timestep receives a zero message. The normalization guard (`+ 1e-16`
+    in the denominator) follows the research implementation and matches the
+    reference for well-formed transition tensors.
+
+    Parameters
+    ----------
+    B_prep_padded: ArrayLike
+        Action-conditioned, state-padded transitions (probability space), shape
+        `(num_factors, T, max_state_dim, max_state_dim)`.
+    qs_padded: ArrayLike
+        State-padded posteriors, shape `(num_factors, T + 1, max_state_dim)`.
+
+    Returns
+    -------
+    ArrayLike
+        Backward messages of shape `(num_factors, T + 1, max_state_dim)`.
+    """
+    B_prep_padded_norm = B_prep_padded / (jnp.sum(B_prep_padded, axis=-1)[:, :, :, None] + 1e-16)
+    bw_msgs_padded = 0.5 * log_stable(jnp.einsum('btxy,btx->bty', B_prep_padded_norm, qs_padded[:, 1:]))
+    dim0, _, dim2 = bw_msgs_padded.shape
+    bw_msgs_padded = jnp.concatenate([bw_msgs_padded, jnp.zeros((dim0, 1, dim2))], axis=1)
+    return bw_msgs_padded
+
+
+# Infer states VMP optimized: per-cluster log-likelihood computation
+
+def compute_log_likelihoods_per_cluster(obs_clusters: list[ArrayLike], A_clusters: list[ArrayLike]) -> list[ArrayLike]:
+    """Apply :func:`compute_log_likelihoods_padded` separately within each cluster.
+
+    Parameters
+    ----------
+    obs_clusters: list[ArrayLike]
+        Padded observation batches, one per cluster.
+    A_clusters: list[ArrayLike]
+        Padded likelihood batches, one per cluster.
+
+    Returns
+    -------
+    list[ArrayLike]
+        Padded log-likelihoods, one tensor per cluster.
+    """
+    return tree_util.tree_map(compute_log_likelihoods_padded, obs_clusters, A_clusters)
+
+def deconstruct_log_likelihoods_per_cluster(
+    ll_clusters: list[ArrayLike],
+    A_shapes: Sequence[tuple[int, ...]],
+    c2o_mapping: list[list[int]],
+    has_time_axis: bool = False,
+) -> list[ArrayLike]:
+    """Split per-cluster padded likelihood tensors into per-modality tensors.
+
+    Per-cluster counterpart of :func:`deconstruct_lls`; outputs are re-ordered
+    to the original modality indexing.
+
+    Parameters
+    ----------
+    ll_clusters: list[ArrayLike]
+        Padded log-likelihoods, one tensor per cluster.
+    A_shapes: Sequence[tuple[int, ...]]
+        Original unpadded `A` shapes per modality.
+    c2o_mapping: list[list[int]]
+        Cluster-to-modality mapping from :func:`pymdp.utils.get_A_dep_clusters`.
+    has_time_axis: bool, default=False
+        Set to `True` when the likelihoods carry a time axis directly after the
+        batch axis (sequence-based inference such as VMP/MMP).
+
+    Returns
+    -------
+    list[ArrayLike]
+        One tensor per modality.
+    """
+
+    batch_size = ll_clusters[0].shape[0] // len(c2o_mapping[0])
+    lls = [None for i in range(len(A_shapes))]
+
+    for ll_cluster, o_ids in zip(ll_clusters, c2o_mapping):
+
+        for i, o_id in enumerate(o_ids):
+
+            ll = ll_cluster[i*batch_size : (i+1)*batch_size]
+
+            idx = [
+                slice(0, batch_size)
+            ] + (
+                [slice(None)] if has_time_axis else []  # keep the time axis in full
+            ) + [
+                slice(0, dim) for dim in A_shapes[o_id][2:]
+            ] + [
+                0 for _ in range(ll.ndim - len(A_shapes[o_id]) + 1 - int(has_time_axis))
+            ]
+
+            lls[o_id] = ll[tuple(idx)]
+
+    return lls
+
+def compute_log_likelihoods_end2end_per_cluster(
+    obs_clusters: list[ArrayLike], A_clusters: list[ArrayLike], sparsity: str
+) -> list[ArrayLike]:
+    """Apply :func:`compute_log_likelihood_per_modality_end2end_padded` within each cluster.
+
+    Parameters
+    ----------
+    obs_clusters: list[ArrayLike]
+        End-to-end padded observation batches, one per cluster.
+    A_clusters: list[ArrayLike]
+        End-to-end padded likelihood batches, one per cluster.
+    sparsity: str
+        Forwarded to :func:`compute_log_likelihood_per_modality_end2end_padded`.
+
+    Returns
+    -------
+    list[ArrayLike]
+        Padded log-likelihoods, one tensor per cluster.
+    """
+    return tree_util.tree_map(
+        lambda o, a: compute_log_likelihood_per_modality_end2end_padded(o, a, sparsity),
+        obs_clusters,
+        A_clusters,
+    )
+
+def compute_log_likelihoods_block_diag_clustered(
+    A_groups: list[ArrayLike],
+    obs_groups: list[ArrayLike],
+    shape_groups: Sequence[Sequence[tuple[int, ...]]],
+    cut_groups: Sequence[Sequence[int]],
+    group_mapping: list[list[int]],
+    num_modalities: int,
+) -> list[ArrayLike]:
+    """Compute log-likelihoods with one block-diagonal system per modality group.
+
+    Clustered counterpart of :func:`compute_log_likelihoods_block_diag`;
+    outputs are re-ordered to the original modality indexing.
+
+    Parameters
+    ----------
+    A_groups: list[ArrayLike]
+        Block-diagonal likelihood matrices, one per group.
+    obs_groups: list[ArrayLike]
+        Concatenated block observations, one per group.
+    shape_groups: Sequence[Sequence[tuple[int, ...]]]
+        Per-group state shapes as returned by :func:`pymdp.utils.build_block_diag_A`.
+    cut_groups: Sequence[Sequence[int]]
+        Per-group cut indices as returned by :func:`pymdp.utils.build_block_diag_A`.
+    group_mapping: list[list[int]]
+        Group-to-modality mapping (e.g. from :func:`pymdp.utils.prep_clustered_block_data`).
+    num_modalities: int
+        Total number of modalities.
+
+    Returns
+    -------
+    list[ArrayLike]
+        Per-modality log-likelihood tensors.
+    """
+    out = [None for _ in range(num_modalities)]
+    for A_big, obs_big, state_shapes, cuts, ids in zip(A_groups, obs_groups, shape_groups, cut_groups, group_mapping):
+        ll_flat = vmap(compute_log_likelihoods_flat_block_diag)(A_big, obs_big)
+        for i, out_group in zip(ids, deconstruct_log_likelihoods_block_diag(ll_flat, state_shapes, cuts)):
+            out[i] = out_group
+    return out
 
 if __name__ == "__main__":
     obs = [0, 1, 2]
