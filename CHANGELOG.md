@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.5](https://github.com/infer-actively/pymdp/compare/v1.0.4...v1.0.5) (2026-09-20)
+
+
+### Bug Fixes
+
+* squeeze only axis 0 in dot_likelihood to prevent shape mismatch ([#405](https://github.com/infer-actively/pymdp/issues/405)) ([057841d](https://github.com/infer-actively/pymdp/commit/057841d79e3c37effadf219ed4eadef4f3992bc4)), closes [#171](https://github.com/infer-actively/pymdp/issues/171)
+* warn when flattened B action dependencies conflict with sampling_mode ([#451](https://github.com/infer-actively/pymdp/issues/451)) ([0f95fcc](https://github.com/infer-actively/pymdp/commit/0f95fcc1e296cb1fee5e4a77f4e4ab2a700ecbbc))
+
 ## [1.0.4](https://github.com/infer-actively/pymdp/compare/v1.0.3...v1.0.4) (2026-08-21)
 
 
