@@ -882,7 +882,7 @@ class TestRolloutFunction(unittest.TestCase):
         toggle_B = [np.zeros((num_states[0], num_states[0], num_controls[0]), dtype=np.float32)]
         toggle_B[0][:, :, 0] = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float32)
         initial_state = [np.array([1.0, 0.0], dtype=np.float32)]
-        prior_pB = [np.ones_like(toggle_B[0])]
+        prior_pB = [np.where(toggle_B[0] > 0, 1.0, 0.0)]
 
         def _broadcast(arr_list):
             return [
@@ -920,7 +920,7 @@ class TestRolloutFunction(unittest.TestCase):
         self.assertEqual(qs.shape[1], num_steps + 1)
 
         counts = jnp.einsum("bti,btj->ij", qs[:, 1:, :], qs[:, :-1, :])
-        expected_pB = prior_pB[0] + counts[..., None]
+        expected_pB = prior_pB[0] + np.where(toggle_B[0] > 0, counts[..., None], 0.0)
         expected_B = expected_pB / expected_pB.sum(axis=0, keepdims=True)
 
         learned_pB = last["agent"].pB[0][0]
