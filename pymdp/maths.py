@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 
 from functools import partial
-from typing import Optional, Tuple, Sequence
+from typing import Any, Optional, Tuple, Sequence
 from jax import tree_util, nn, jit, vmap, lax
 from jax.scipy.special import xlogy, digamma, gammaln
 from opt_einsum import contract
@@ -136,8 +136,8 @@ def factor_dot(
 def spm_dot_sparse(
     X: JAXSparse,
     x: list[ArrayLike],
-    dims: Optional[list[tuple[int]]],
-    keep_dims: Optional[list[tuple[int]]],
+    dims: Optional[Sequence[Any]] = None,
+    keep_dims: Optional[Sequence[Any]] = None,
 ) -> ArrayLike:
     """Sparse contraction helper used by :func:`factor_dot`.
 
@@ -147,9 +147,9 @@ def spm_dot_sparse(
         Sparse tensor to contract.
     x: list[ArrayLike]
         Factors to contract against `X`.
-    dims: list[tuple[int]] | None
+    dims: Sequence | None
         Input axes in `X` aligned to each entry in `x`.
-    keep_dims: list[tuple[int]] | None
+    keep_dims: Sequence | None
         Axes preserved in the output.
 
     Returns
@@ -158,22 +158,23 @@ def spm_dot_sparse(
         Contraction result.
     """
     if dims is None:
-        dims = (jnp.arange(0, len(x)) + X.ndim - len(x)).astype(int)
-    dims = jnp.array(dims).flatten()
+        dim_indices = tuple(range(X.ndim - len(x), X.ndim))
+    else:
+        dim_indices = tuple(int(d[0]) if isinstance(d, (tuple, list)) else int(d) for d in dims)
 
+    keep_set = set()
     if keep_dims is not None:
-        for d in keep_dims:
-            if d in dims:
-                dims = jnp.delete(dims, jnp.argwhere(dims == d))
+        keep_set = set(int(d[0]) if isinstance(d, (tuple, list)) else int(d) for d in keep_dims)
+
+    contract_dims = tuple(d for d in dim_indices if d not in keep_set)
 
     for d in range(len(x)):
-        s = jnp.ones(jnp.ndim(X), dtype=int)
-        s = s.at[dims[d]].set(jnp.shape(x[d])[0])
+        s = [1] * X.ndim
+        s[dim_indices[d]] = int(jnp.shape(x[d])[0])
         X = X * x[d].reshape(tuple(s))
 
     sparse_sum = sparse.sparsify(jnp.sum)
-    Y = sparse_sum(X, axis=tuple(dims))
-    return Y
+    return sparse_sum(X, axis=contract_dims)
 
 
 @partial(jit, static_argnames=["dims", "keep_dims"])

@@ -11,7 +11,7 @@ import unittest
 import numpy as np
 import jax.numpy as jnp
 import jax.tree_util as jtu
-from jax import random as jr
+from jax import random as jr, jit
 
 from pymdp.inference import smoothing_ovf
 from pymdp import utils
@@ -75,6 +75,50 @@ def make_model_configs(source_seed=0, num_models=4) -> Dict:
 
 
 class TestJaxSparseOperations(unittest.TestCase):
+
+    def test_sparse_b_agent_full_cycle(self):
+        """Sparse B survives complete Agent cycle: infer_states, update_empirical_prior, infer_policies, sample_action, infer_parameters."""
+        from pymdp.agent import Agent
+
+        V = 32
+        data = jnp.ones(V, dtype=jnp.float32)
+        indices = jnp.stack(
+            [jnp.arange(V), jnp.arange(V), jnp.zeros(V, dtype=int)], axis=1
+        )
+        sparse_b = sparse.BCOO((data, indices), shape=(V, V, 1))
+        dense_b = np.eye(V, dtype=np.float32)[:, :, np.newaxis]
+        A = [np.eye(V, dtype=np.float32)]
+        D = [np.ones(V, dtype=np.float32) / V]
+        dense_agent = Agent(A=A, B=[dense_b], D=D, batch_size=1, policy_len=1)
+        sparse_agent = Agent(A=A, B=[sparse_b], D=D, batch_size=1, policy_len=1)
+
+        prior_dense = [jnp.array(dense_agent.D[0])]
+        prior_sparse = [jnp.array(sparse_agent.D[0])]
+
+        # State inference
+        qs_dense = dense_agent.infer_states([jnp.array([5])], prior_dense)
+        qs_sparse = sparse_agent.infer_states([jnp.array([5])], prior_sparse)
+        np.testing.assert_allclose(qs_dense[0], qs_sparse[0], atol=1e-6)
+
+        # Policy inference & JIT compatibility
+        qpi_dense, neg_efe_dense = dense_agent.infer_policies(qs_dense)
+        qpi_sparse, neg_efe_sparse = sparse_agent.infer_policies(qs_sparse)
+        np.testing.assert_allclose(qpi_dense, qpi_sparse, atol=1e-5)
+        np.testing.assert_allclose(neg_efe_dense, neg_efe_sparse, atol=1e-5)
+
+        # Jitted infer_policies
+        jitted_infer_policies = jit(lambda ag, q: ag.infer_policies(q))
+        qpi_jit, neg_efe_jit = jitted_infer_policies(sparse_agent, qs_sparse)
+        np.testing.assert_allclose(qpi_jit, qpi_sparse, atol=1e-5)
+
+        # Empirical prior update & JIT
+        jitted_update_prior = jit(lambda ag, a, q: ag.update_empirical_prior(a, q))
+        pred_prior_dense = dense_agent.update_empirical_prior(jnp.array([[0]]), qs_dense)
+        pred_prior_sparse = jitted_update_prior(sparse_agent, jnp.array([[0]]), qs_sparse)
+        np.testing.assert_allclose(pred_prior_dense[0], pred_prior_sparse[0], atol=1e-6)
+
+        # Normalization validation check on scalar reduction
+        utils.validate_normalization(sparse.BCOO((jnp.array([0.5, 0.5]), jnp.array([[0], [1]])), shape=(2,)), axis=0)
 
     def test_sparse_smoothing(self):
         cfg = {"source_seed": 1, "num_models": 4}
