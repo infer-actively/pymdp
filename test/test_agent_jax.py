@@ -1138,6 +1138,26 @@ class TestPoliciesTupleAgentEquivalence(unittest.TestCase):
 
         self.assertEqual(f(policies), policies.num_policies)
 
+    def test_empty_b_action_dependencies(self):
+        """Test constructing an Agent with a mix of controlled and uncontrolled factors in B_action_dependencies."""
+        A = [jnp.ones((2, 2, 2)) / 2.0]
+        B = [
+            jnp.stack([jnp.eye(2)] * 2, -1),   # factor 0: 2 actions, shape (2, 2, 2)
+            jnp.stack([jnp.eye(2)] * 1, -1),   # factor 1: uncontrolled, shape (2, 2, 1)
+        ]
+
+        agent = Agent(
+            A=A,
+            B=B,
+            A_dependencies=[[0, 1]],
+            B_dependencies=[[0], [1]],
+            num_controls=[2, 1],
+            B_action_dependencies=[[0], []],
+        )
+        self.assertIsNotNone(agent)
+        self.assertEqual(agent.B[0].shape, (1, 2, 2, 2))
+        self.assertEqual(agent.B[1].shape, (1, 2, 2, 1))
+
 
 if __name__ == "__main__":
     unittest.main()
