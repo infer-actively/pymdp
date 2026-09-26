@@ -1119,9 +1119,9 @@ class Agent(Module):
         pB_flat = []
         for i, (B_f, action_dependency) in enumerate(zip(B, B_action_dependencies)):
             if action_dependency == []:
-                B_flat.append(jnp.expand_dims(B_f, axis=-1))
+                B_flat.append(B_f)
                 if pB is not None:
-                    pB_flat.append(jnp.expand_dims(pB[i], axis=-1))
+                    pB_flat.append(pB[i])
                 action_maps.append(
                     {"multi_dependency": [], "multi_dims": [], "flat_dependency": [i], "flat_dims": [1]}
                 )
