@@ -1158,6 +1158,25 @@ class TestPoliciesTupleAgentEquivalence(unittest.TestCase):
         self.assertEqual(agent.B[0].shape, (1, 2, 2, 2))
         self.assertEqual(agent.B[1].shape, (1, 2, 2, 1))
 
+    def test_empty_b_action_dependencies_without_action_axis(self):
+        """An uncontrolled factor given without a trailing action axis still gets one."""
+        A = [jnp.ones((2, 2, 2)) / 2.0]
+        B = [
+            jnp.stack([jnp.eye(2)] * 2, -1),   # factor 0: 2 actions, shape (2, 2, 2)
+            jnp.eye(2),                        # factor 1: uncontrolled, no action axis, shape (2, 2)
+        ]
+
+        agent = Agent(
+            A=A,
+            B=B,
+            A_dependencies=[[0, 1]],
+            B_dependencies=[[0], [1]],
+            num_controls=[2, 1],
+            B_action_dependencies=[[0], []],
+        )
+        self.assertEqual(agent.B[0].shape, (1, 2, 2, 2))
+        self.assertEqual(agent.B[1].shape, (1, 2, 2, 1))
+
 
 if __name__ == "__main__":
     unittest.main()
