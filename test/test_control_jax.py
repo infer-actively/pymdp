@@ -291,6 +291,57 @@ class TestControlJax(unittest.TestCase):
                 use_inductive=False,
             )
 
+    def test_stochastic_sample_action_draws_factors_independently(self):
+        """Identical factor marginals must not be locked to the same action.
+
+        Stochastic sampling used one PRNG key for every control factor
+        (issue #430). Matching logits then always emit the same index.
+        """
+        policies = jnp.array([
+            [[0, 0]],
+            [[0, 1]],
+            [[1, 0]],
+            [[1, 1]],
+        ])
+        q_pi = jnp.ones(4) / 4.0
+        num_controls = [2, 2]
+        differed = False
+        for seed in range(32):
+            action = ctl_jax.sample_action(
+                policies,
+                num_controls,
+                q_pi,
+                action_selection="stochastic",
+                alpha=1.0,
+                rng_key=jr.PRNGKey(seed),
+            )
+            self.assertEqual(tuple(action.shape), (2,))
+            if int(action[0]) != int(action[1]):
+                differed = True
+                break
+        self.assertTrue(differed)
+
+        batched = jax.vmap(
+            lambda key: ctl_jax.sample_action(
+                policies,
+                num_controls,
+                q_pi,
+                action_selection="stochastic",
+                alpha=1.0,
+                rng_key=key,
+            )
+        )(jr.split(jr.PRNGKey(0), 4))
+        self.assertEqual(tuple(batched.shape), (4, 2))
+
+        with self.assertRaisesRegex(ValueError, "rng_key is required"):
+            ctl_jax.sample_action(
+                policies,
+                num_controls,
+                q_pi,
+                action_selection="stochastic",
+                alpha=1.0,
+            )
+
 def _reference_construct_policies_array(num_states, num_controls=None, policy_len=1, control_fac_idx=None):
     """
     Independent array-based reference for policy construction, deliberately not sharing
