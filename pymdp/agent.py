@@ -217,7 +217,9 @@ class Agent(Module):
                 policy_len,
                 control_fac_idx,
             )
-            B, pB, self.action_maps = self._flatten_B_action_dims(B, pB, self.B_action_dependencies)
+            B, pB, self.action_maps = self._flatten_B_action_dims(
+                B, pB, self.B_action_dependencies, self.B_dependencies
+            )
             policies = self._construct_flattend_policies_tuple(policies_multi_tup, self.action_maps)
             # Flattening the action dimensions collapses the control factors into a
             # single joint action space. That is the space `sampling_mode="full"`
@@ -1112,6 +1114,7 @@ class Agent(Module):
         B: list[Array],
         pB: list[Array] | None,
         B_action_dependencies: list[list[int]],
+        B_dependencies: list[list[int]] | None = None,
     ) -> tuple[list[Array], list[Array] | None, list[dict[str, Any]]]:
         assert hasattr(B[0], "shape"), "Elements of B must be tensors and have attribute shape"
         action_maps = []  # mapping from multi action dependencies to flat action dependencies for each B
@@ -1119,9 +1122,17 @@ class Agent(Module):
         pB_flat = []
         for i, (B_f, action_dependency) in enumerate(zip(B, B_action_dependencies)):
             if action_dependency == []:
-                B_flat.append(jnp.expand_dims(B_f, axis=-1))
+                # An uncontrolled factor may be given with or without its trailing
+                # size-1 action axis (``utils.random_B_array`` omits it). Add the axis
+                # only when it is missing: B_f is (*batch, next_state, *lagging_states[, 1]).
+                has_action_axis = (
+                    B_dependencies is not None
+                    and B_f.ndim >= len(B_dependencies[i]) + 2
+                    and B_f.shape[-1] == 1
+                )
+                B_flat.append(B_f if has_action_axis else jnp.expand_dims(B_f, axis=-1))
                 if pB is not None:
-                    pB_flat.append(jnp.expand_dims(pB[i], axis=-1))
+                    pB_flat.append(pB[i] if has_action_axis else jnp.expand_dims(pB[i], axis=-1))
                 action_maps.append(
                     {"multi_dependency": [], "multi_dims": [], "flat_dependency": [i], "flat_dims": [1]}
                 )
