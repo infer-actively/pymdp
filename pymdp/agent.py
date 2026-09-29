@@ -934,19 +934,20 @@ class Agent(Module):
         Parameters
         ----------
         q_pi: Array
-            Posterior beliefs over policies for one batch element.
+            Posterior beliefs over policies with shape
+            `(batch_size, num_policies)`.
 
         Returns
         ----------
         Array
-            Probability vector over unique multi-actions.
+            Probabilities over unique multi-actions with shape
+            `(batch_size, num_multiactions)`.
         """
 
         if self.sampling_mode == "marginal":
             get_marginals = partial(control.get_marginals, policies=self.policies.policy_arr, num_controls=self.num_controls)
-            marginals = get_marginals(q_pi)
             outer = lambda a, b: jnp.outer(a, b).reshape(-1)
-            marginals = jtu.tree_reduce(outer, marginals)
+            marginals = vmap(lambda x: jtu.tree_reduce(outer, get_marginals(x)))(q_pi)
 
         elif self.sampling_mode == "full":
             locs = jnp.all(
