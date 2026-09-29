@@ -11,13 +11,14 @@ import jax.numpy as jnp
 
 
 def _preserve_structural_zeros(expected: Array, support: Array) -> Array:
-    """Keep entries that are zero in ``support`` at zero, then renormalize.
+    """Keep exact zeros of a Dirichlet parameter at zero, then renormalize.
 
     ``dirichlet_expected_value`` clips concentrations up to ``MINVAL`` before
     normalizing, so a structurally impossible cell comes back positive. Callers
     feed that matrix in as the next model, and the fake mass then accumulates.
-    The mask is the matrix passed into this update, not the value just
-    computed, so a zero stays a zero across repeated online updates.
+    ``support`` is the concentration from before this update. A zero in the
+    current point estimate is not enough: a deterministic ``B`` can be 0 where
+    its Dirichlet prior is positive, and that cell still has to learn.
     """
     mask = support != 0
     masked = jnp.where(mask, expected, 0.0)
@@ -66,9 +67,12 @@ def update_obs_likelihood_dirichlet_m(
     relevant_factors = tree_map(lambda f_idx: qs[f_idx], dependencies_m)
 
     dfda = vmap(multidimensional_outer)([obs_m] + relevant_factors).sum(axis=0)
+    # Counts must not land on a structural zero, or the next update sees a
+    # positive concentration and treats the cell as possible.
+    dfda = jnp.where(pA_m != 0, dfda, 0.0)
 
     new_pA_m = pA_m + lr * dfda
-    A_m = dirichlet_expected_value(new_pA_m)
+    A_m = _preserve_structural_zeros(dirichlet_expected_value(new_pA_m), pA_m)
 
     return new_pA_m, A_m
     
@@ -130,7 +134,7 @@ def update_obs_likelihood_dirichlet(
             E_qA.append(A[i])
         else:
             qA.append(r[0])
-            E_qA.append(_preserve_structural_zeros(r[1], A[i]))
+            E_qA.append(r[1])
 
     return qA, E_qA
 
@@ -170,9 +174,10 @@ def update_state_transition_dirichlet_f(
 
     joint_qs_f = [joint_qs_f] if isinstance(joint_qs_f, Array) else joint_qs_f
     dfdb = vmap(multidimensional_outer)(joint_qs_f + [actions_f]).sum(axis=0)
+    dfdb = jnp.where(pB_f != 0, dfdb, 0.0)
     qB_f = pB_f + lr * dfdb
 
-    return qB_f, dirichlet_expected_value(qB_f)
+    return qB_f, _preserve_structural_zeros(dirichlet_expected_value(qB_f), pB_f)
 
 def update_state_transition_dirichlet(
     pB: list[Array],
@@ -223,10 +228,9 @@ def update_state_transition_dirichlet(
        to create the appropriate one-hot representation of the action corresponding to the the f-th control factor and perform the update. Otherwise, do not perform the update
        """
        def _updated() -> tuple[Array, Array]:
-           qB_f, E_qB_f = update_state_transition_dirichlet_f(
+           return update_state_transition_dirichlet_f(
                pB_f, actions_onehot_fn(f, na), joint_qs_f, lr=lr
            )
-           return qB_f, _preserve_structural_zeros(E_qB_f, B_f)
 
        # A skipped factor must return the B it was given. Recomputing the
        # expected value here replaces structural zeros with MINVAL, and the
