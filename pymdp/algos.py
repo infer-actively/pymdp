@@ -97,6 +97,9 @@ def run_factorized_fpi(
     Run the fixed point iteration algorithm with sparse dependencies between factors and observations (stored in `A_dependencies`)
     """
 
+    if A_dependencies is None:
+        A_dependencies = [list(range(len(prior))) for _ in range(len(A))]
+
     # Exact one-pass update for single-factor models.
     if len(prior) == 1:
         log_likelihood = compute_log_likelihood(obs, A, distr_obs=distr_obs)

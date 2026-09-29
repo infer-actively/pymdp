@@ -21,6 +21,7 @@ from pymdp.algos import (
     hmm_smoother_from_filtered_colstoch,
 )
 from pymdp.maths import calc_vfe
+from pymdp import utils
 from jax import tree_util as jtu, lax
 from jax.experimental.sparse._base import JAXSparse
 from jax.experimental import sparse
@@ -180,6 +181,9 @@ def _run_one_step_inference(
 ) -> tuple[list[Array], list[Array] | Array]:
     curr_obs = _select_current_obs(obs, distr_obs)
     fpi_num_iter = 1 if method == EXACT_METHOD else num_iter
+    A_dependencies = utils.resolve_a_dependencies(
+        len(prior), len(A), A_dependencies
+    )
     qs = run_factorized_fpi(
         A,
         curr_obs,
@@ -412,6 +416,17 @@ def update_posterior_states(
 
     if return_info and prior is None:
         raise ValueError("`prior` must be provided when `return_info=True`")
+
+    # Resolve default dependencies early so all methods and sequence inference receive complete mappings
+    num_factors = len(B) if B is not None else (len(prior) if prior is not None else 1)
+    num_modalities = len(A)
+    A_dependencies = utils.resolve_a_dependencies(
+        num_factors, num_modalities, A_dependencies
+    )
+    if B is not None:
+        B_dependencies = utils.resolve_b_dependencies(
+            num_factors, B_dependencies
+        )
 
     if method in SEQUENCE_METHODS:
         obs, past_actions = _truncate_for_horizon(obs, past_actions, inference_horizon)
