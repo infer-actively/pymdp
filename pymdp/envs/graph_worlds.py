@@ -176,13 +176,31 @@ class GraphEnv(PymdpEnv):
             batch_size: integer specifying the number of batch elements. If None but object_locations and agent_locations are provided, batch_size is inferred from their length.
         returns:
             env_params: dictionary containing batched environmental parameters
+        raises:
+            ValueError: if exactly one location list is given while batch_size is omitted, or if the two lists differ in length or do not match batch_size.
         """
-        if batch_size is None:
-            if object_locations is not None and agent_locations is not None:
+        one_list = (object_locations is None) != (agent_locations is None)
+        if batch_size is None and one_list:
+            raise ValueError(
+                "object_locations and agent_locations must both be provided when batch_size is omitted"
+            )
+
+        if object_locations is not None and agent_locations is not None:
+            if len(object_locations) != len(agent_locations):
+                raise ValueError(
+                    "object_locations and agent_locations must have the same length, "
+                    f"got {len(object_locations)} and {len(agent_locations)}"
+                )
+            if batch_size is None:
                 batch_size = len(object_locations)
-            else:
-                warnings.warn("Neither `batch_size` nor `object_locations` nor `agent_locations` are provided, so just returning the unbatched env params")
-                return super().generate_env_params(key=key, batch_size=batch_size)
+            elif len(object_locations) != batch_size:
+                raise ValueError(
+                    "object_locations and agent_locations must have length batch_size "
+                    f"({batch_size}), got {len(object_locations)}"
+                )
+        elif batch_size is None:
+            warnings.warn("Neither `batch_size` nor `object_locations` nor `agent_locations` are provided, so just returning the unbatched env params")
+            return super().generate_env_params(key=key, batch_size=batch_size)
 
         num_locations = len(graph.nodes)
         num_object_locations = num_locations + 1
