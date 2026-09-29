@@ -7,6 +7,24 @@ from pymdp.maths import multidimensional_outer, dirichlet_expected_value
 from jax.tree_util import tree_map
 from jaxtyping import Array
 from jax import vmap, nn, lax
+import jax.numpy as jnp
+
+
+def _preserve_structural_zeros(expected: Array, support: Array) -> Array:
+    """Keep entries that are zero in ``support`` at zero, then renormalize.
+
+    ``dirichlet_expected_value`` clips concentrations up to ``MINVAL`` before
+    normalizing, so a structurally impossible cell comes back positive. Callers
+    feed that matrix in as the next model, and the fake mass then accumulates.
+    The mask is the matrix passed into this update, not the value just
+    computed, so a zero stays a zero across repeated online updates.
+    """
+    mask = support != 0
+    masked = jnp.where(mask, expected, 0.0)
+    totals = masked.sum(axis=0, keepdims=True)
+    safe = jnp.where(totals > 0, totals, 1.0)
+    renormalized = masked / safe
+    return jnp.where(totals > 0, renormalized, masked)
 
 def update_obs_likelihood_dirichlet_m(
     pA_m: Array, obs_m: Array, qs: list[Array], dependencies_m: list[int], lr: float = 1.0
@@ -112,7 +130,7 @@ def update_obs_likelihood_dirichlet(
             E_qA.append(A[i])
         else:
             qA.append(r[0])
-            E_qA.append(r[1])
+            E_qA.append(_preserve_structural_zeros(r[1], A[i]))
 
     return qA, E_qA
 
@@ -198,16 +216,25 @@ def update_state_transition_dirichlet(
 
     actions_onehot_fn = lambda f, dim: nn.one_hot(actions[..., f], dim, axis=-1)
 
-    def update_B_f_fn(pB_f: Array, joint_qs_f: Array, f: int, na: int) -> tuple[Array, Array]:
+    def update_B_f_fn(pB_f: Array, B_f: Array, joint_qs_f: Array, f: int, na: int) -> tuple[Array, Array]:
        """ 
        Conditionally-update the Dirichlet posterior over a given single factor's B parameters
        Updating is conditional upon the value of `f`: if the factor index (f) is greater than -1, then use the value of f as the factor index
        to create the appropriate one-hot representation of the action corresponding to the the f-th control factor and perform the update. Otherwise, do not perform the update
        """
+       def _updated() -> tuple[Array, Array]:
+           qB_f, E_qB_f = update_state_transition_dirichlet_f(
+               pB_f, actions_onehot_fn(f, na), joint_qs_f, lr=lr
+           )
+           return qB_f, _preserve_structural_zeros(E_qB_f, B_f)
+
+       # A skipped factor must return the B it was given. Recomputing the
+       # expected value here replaces structural zeros with MINVAL, and the
+       # next update that does touch the factor treats those cells as real.
        qB_f, E_qB_f = lax.cond(
                 f>-1,
-                lambda: update_state_transition_dirichlet_f(pB_f, actions_onehot_fn(f, na), joint_qs_f, lr=lr),
-                lambda: (pB_f, dirichlet_expected_value(pB_f)),
+                _updated,
+                lambda: (pB_f, B_f),
             )
        return qB_f, E_qB_f
 
@@ -221,7 +248,7 @@ def update_state_transition_dirichlet(
 
     result = tree_map(
         update_B_f_fn,
-        pB, joint_beliefs, factors_to_update_sorted, num_controls,
+        pB, B, joint_beliefs, factors_to_update_sorted, num_controls,
     )
 
     qB = []

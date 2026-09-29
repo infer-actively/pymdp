@@ -386,6 +386,65 @@ class TestLearningJax(unittest.TestCase):
             self.assertTrue(pB_np.shape == pB_jax.shape)
             self.assertTrue(np.allclose(pB_np, pB_jax))
 
+    def test_structural_zeros_stay_zero_across_repeated_A_updates(self):
+        """Forbidden A cells must not be re-enabled by MINVAL clipping (#453)."""
+        A = [jnp.eye(2)]
+        pA = [jnp.eye(2)]
+        obs = [jnp.array([1.0, 0.0])[None]]
+        qs = [jnp.array([0.6, 0.4])[None]]
+
+        for _ in range(3):
+            pA, A = update_pA_jax(
+                pA,
+                A,
+                obs,
+                qs,
+                A_dependencies=[[0]],
+                num_obs=[2],
+                categorical_obs=True,
+                lr=1.0,
+            )
+            learned = np.asarray(A[0])
+            self.assertEqual(float(learned[0, 1]), 0.0)
+            self.assertEqual(float(learned[1, 0]), 0.0)
+            self.assertAlmostEqual(float(learned.sum(axis=0)[0]), 1.0)
+            self.assertAlmostEqual(float(learned.sum(axis=0)[1]), 1.0)
+
+    def test_skipped_B_factor_does_not_reenable_structural_zeros(self):
+        """A factor left out of factors_to_update must keep exact zeros (#453)."""
+        B = [jnp.eye(2)[:, :, None], jnp.eye(2)[:, :, None]]
+        pB = [jnp.eye(2)[:, :, None], jnp.eye(2)[:, :, None]]
+        belief = jnp.array([[0.6, 0.4]])
+        joints = [[belief, belief], [belief, belief]]
+        actions = jnp.array([[0, 0]])
+        num_controls = [1, 1]
+
+        pB, B = update_pB_jax(
+            pB,
+            B,
+            joints,
+            actions,
+            num_controls=num_controls,
+            lr=1.0,
+            factors_to_update=[0],
+        )
+        skipped = np.asarray(B[1])
+        self.assertEqual(float(skipped[0, 1, 0]), 0.0)
+        self.assertEqual(float(skipped[1, 0, 0]), 0.0)
+
+        _, B = update_pB_jax(
+            pB,
+            B,
+            joints,
+            actions,
+            num_controls=num_controls,
+            lr=1.0,
+            factors_to_update=[1],
+        )
+        learned = np.asarray(B[1])
+        self.assertEqual(float(learned[0, 1, 0]), 0.0)
+        self.assertEqual(float(learned[1, 0, 0]), 0.0)
+
     def test_update_state_likelihood_single_factor_sequence_joints(self):
         """
         Ensure B-learning accepts sequence-form pairwise joints, as produced by exact smoothing
