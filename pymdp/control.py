@@ -152,8 +152,16 @@ def sample_action(
     if action_selection == 'deterministic':
         selected_policy = jtu.tree_map(lambda x: jnp.argmax(x, -1), marginal)
     elif action_selection == 'stochastic':
+        if rng_key is None:
+            raise ValueError("rng_key is required for stochastic action selection")
         logits = lambda x: alpha * log_stable(x)
-        selected_policy = jtu.tree_map(lambda x: jr.categorical(rng_key, logits(x)), marginal)
+        # One key per control factor. Reusing rng_key makes the draws perfectly
+        # dependent, so identical marginals always return the same action.
+        keys = jr.split(rng_key, len(marginal))
+        selected_policy = [
+            jr.categorical(keys[i], logits(factor_marginal))
+            for i, factor_marginal in enumerate(marginal)
+        ]
     else:
         raise NotImplementedError
 
