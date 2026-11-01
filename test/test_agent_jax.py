@@ -534,6 +534,45 @@ class TestAgentJax(unittest.TestCase):
         self.assertTrue(jnp.allclose(q_pi, q_pi_from_neg_efe, atol=1e-6))
         self.assertTrue(jnp.allclose(q_pi, q_pi_from_efe, atol=1e-6))
     
+    def test_multiaction_probabilities_marginal_mode_is_batched(self):
+        """In marginal mode each batch element gets the outer product of its own action marginals."""
+
+        num_states = [2, 3]
+        num_controls = [2, 3]
+        batch_size = 2
+        A = [jnp.broadcast_to(jnp.eye(n), (batch_size, n, n)) for n in num_states]
+        B = [
+            jnp.broadcast_to(jnp.stack([jnp.eye(n)] * c, -1), (batch_size, n, n, c))
+            for n, c in zip(num_states, num_controls)
+        ]
+        agent = Agent(
+            A=A,
+            B=B,
+            A_dependencies=[[0], [1]],
+            num_controls=num_controls,
+            batch_size=batch_size,
+            sampling_mode="marginal",
+        )
+        self.assertEqual(
+            agent.policies.policy_arr[:, 0].tolist(),
+            [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2]],
+        )
+
+        q_pi = jnp.array([
+            [0.05, 0.10, 0.15, 0.20, 0.25, 0.25],
+            [0.40, 0.00, 0.10, 0.30, 0.20, 0.00],
+        ])
+        # row 0: factor marginals [0.3, 0.7] and [0.25, 0.35, 0.4]
+        # row 1: factor marginals [0.5, 0.5] and [0.7, 0.2, 0.1]
+        expected = jnp.array([
+            [0.075, 0.105, 0.12, 0.175, 0.245, 0.28],
+            [0.35, 0.10, 0.05, 0.35, 0.10, 0.05],
+        ])
+
+        probs = agent.multiaction_probabilities(q_pi)
+        self.assertEqual(probs.shape, (batch_size, 6))
+        self.assertTrue(jnp.allclose(probs, expected, atol=1e-6))
+
     def test_agent_validate_normalization_ok(self):
         """
         Agent should construct without errors when A and B are normalized
