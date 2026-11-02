@@ -176,16 +176,45 @@ class GraphEnv(PymdpEnv):
             batch_size: integer specifying the number of batch elements. If None but object_locations and agent_locations are provided, batch_size is inferred from their length.
         returns:
             env_params: dictionary containing batched environmental parameters
+        raises:
+            ValueError: if exactly one location list is given while batch_size is omitted, if the two lists differ in length,
+                if any provided list does not match batch_size, or if a location is out of range
+                (agent locations must be in [0, num_locations), object locations in [0, num_locations + 1)).
         """
-        if batch_size is None:
-            if object_locations is not None and agent_locations is not None:
+        one_list = (object_locations is None) != (agent_locations is None)
+        if batch_size is None and one_list:
+            raise ValueError(
+                "object_locations and agent_locations must both be provided when batch_size is omitted"
+            )
+
+        if object_locations is not None and agent_locations is not None:
+            if len(object_locations) != len(agent_locations):
+                raise ValueError(
+                    "object_locations and agent_locations must have the same length, "
+                    f"got {len(object_locations)} and {len(agent_locations)}"
+                )
+            if batch_size is None:
                 batch_size = len(object_locations)
-            else:
-                warnings.warn("Neither `batch_size` nor `object_locations` nor `agent_locations` are provided, so just returning the unbatched env params")
-                return super().generate_env_params(key=key, batch_size=batch_size)
+        elif batch_size is None:
+            warnings.warn("Neither `batch_size` nor `object_locations` nor `agent_locations` are provided, so just returning the unbatched env params")
+            return super().generate_env_params(key=key, batch_size=batch_size)
 
         num_locations = len(graph.nodes)
         num_object_locations = num_locations + 1
+
+        for name, locations, upper in (
+            ("object_locations", object_locations, num_object_locations),
+            ("agent_locations", agent_locations, num_locations),
+        ):
+            if locations is None:
+                continue
+            if len(locations) != batch_size:
+                raise ValueError(
+                    f"{name} must have length batch_size ({batch_size}), got {len(locations)}"
+                )
+            bad = [int(loc) for loc in jnp.asarray(locations).reshape(-1) if not 0 <= int(loc) < upper]
+            if bad:
+                raise ValueError(f"{name} values must be in [0, {upper}), got {bad}")
 
         if object_locations is None or agent_locations is None:
             if key is None:
