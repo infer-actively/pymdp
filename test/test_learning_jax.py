@@ -410,7 +410,39 @@ class TestLearningJax(unittest.TestCase):
             self.assertAlmostEqual(float(learned.sum(axis=0)[0]), 1.0)
             self.assertAlmostEqual(float(learned.sum(axis=0)[1]), 1.0)
 
+    def test_all_zero_pA_column_is_unconstrained(self):
+        """An unvisited all-zero pA column must stay a distribution (#458 review)."""
+        A = [jnp.eye(2)]
+        pA = [jnp.array([[1.0, 0.0], [0.0, 0.0]])]
+        obs = [jnp.array([0.0, 1.0])[None]]
+        qs = [jnp.array([0.0, 1.0])[None]]
+
+        # Before any update, renormalization alone must not emit a zero column.
+        from pymdp.learning import _preserve_structural_zeros
+        from pymdp.maths import dirichlet_expected_value
+        expected = _preserve_structural_zeros(dirichlet_expected_value(pA[0]), pA[0])
+        self.assertAlmostEqual(float(np.asarray(expected).sum(axis=0)[1]), 1.0)
+        self.assertTrue(np.allclose(np.asarray(expected)[:, 1], 0.5))
+
+        pA, A = update_pA_jax(
+            pA,
+            A,
+            obs,
+            qs,
+            A_dependencies=[[0]],
+            num_obs=[2],
+            categorical_obs=True,
+            lr=1.0,
+        )
+        learned = np.asarray(A[0])
+        # Structural zero in column 0 stays zero; column 1 learned and sums to 1.
+        self.assertEqual(float(learned[1, 0]), 0.0)
+        self.assertAlmostEqual(float(learned.sum(axis=0)[0]), 1.0)
+        self.assertAlmostEqual(float(learned.sum(axis=0)[1]), 1.0)
+        self.assertGreater(float(learned[1, 1]), 0.0)
+
     def test_skipped_B_factor_does_not_reenable_structural_zeros(self):
+
         """A factor left out of factors_to_update must keep exact zeros (#453)."""
         B = [jnp.eye(2)[:, :, None], jnp.eye(2)[:, :, None]]
         pB = [jnp.eye(2)[:, :, None], jnp.eye(2)[:, :, None]]

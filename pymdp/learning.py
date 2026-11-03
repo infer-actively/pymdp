@@ -10,6 +10,18 @@ from jax import vmap, nn, lax
 import jax.numpy as jnp
 
 
+def _mask_counts_to_support(counts: Array, support: Array) -> Array:
+    """Zero counts on structural zeros; leave all-zero columns unconstrained.
+
+    An all-zero column of ``support`` is a malformed / unvisited prior, not a
+    structural ban. Counts may land there so the column can become a proper
+    distribution on the next update.
+    """
+    cell_ok = support != 0
+    column_has_support = cell_ok.any(axis=0, keepdims=True)
+    return jnp.where(cell_ok | ~column_has_support, counts, 0.0)
+
+
 def _preserve_structural_zeros(expected: Array, support: Array) -> Array:
     """Keep exact zeros of a Dirichlet parameter at zero, then renormalize.
 
@@ -19,9 +31,15 @@ def _preserve_structural_zeros(expected: Array, support: Array) -> Array:
     ``support`` is the concentration from before this update. A zero in the
     current point estimate is not enough: a deterministic ``B`` can be 0 where
     its Dirichlet prior is positive, and that cell still has to learn.
+
+    A column with no concentration at all is unconstrained: keep the Dirichlet
+    expectation (uniform after ``MINVAL`` clipping) instead of an all-zero
+    non-distribution.
     """
     mask = support != 0
-    masked = jnp.where(mask, expected, 0.0)
+    column_has_support = mask.any(axis=0, keepdims=True)
+    effective_mask = jnp.where(column_has_support, mask, True)
+    masked = jnp.where(effective_mask, expected, 0.0)
     totals = masked.sum(axis=0, keepdims=True)
     safe = jnp.where(totals > 0, totals, 1.0)
     renormalized = masked / safe
@@ -69,7 +87,7 @@ def update_obs_likelihood_dirichlet_m(
     dfda = vmap(multidimensional_outer)([obs_m] + relevant_factors).sum(axis=0)
     # Counts must not land on a structural zero, or the next update sees a
     # positive concentration and treats the cell as possible.
-    dfda = jnp.where(pA_m != 0, dfda, 0.0)
+    dfda = _mask_counts_to_support(dfda, pA_m)
 
     new_pA_m = pA_m + lr * dfda
     A_m = _preserve_structural_zeros(dirichlet_expected_value(new_pA_m), pA_m)
@@ -174,7 +192,7 @@ def update_state_transition_dirichlet_f(
 
     joint_qs_f = [joint_qs_f] if isinstance(joint_qs_f, Array) else joint_qs_f
     dfdb = vmap(multidimensional_outer)(joint_qs_f + [actions_f]).sum(axis=0)
-    dfdb = jnp.where(pB_f != 0, dfdb, 0.0)
+    dfdb = _mask_counts_to_support(dfdb, pB_f)
     qB_f = pB_f + lr * dfdb
 
     return qB_f, _preserve_structural_zeros(dirichlet_expected_value(qB_f), pB_f)
