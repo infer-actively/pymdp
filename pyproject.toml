@@ -24,12 +24,8 @@ classifiers=[
 requires-python = ">=3.10"
 dependencies = [
     'numpy>=1.19.5',
-    # jax/jaxlib upper-bounded until numpyro supports jax 0.11.1, which moves
-    # closed-over constants from jaxpr.constvars into jaxpr.invars. numpyro's
-    # eval_provenance zips jaxpr.invars against the explicit kwargs only, so it
-    # trips a length assertion. Reached via pybefit -> numpyro. See issue #447.
-    'jax>=0.3.4,<0.11.1',
-    'jaxlib>=0.3.4,<0.11.1',
+    'jax>=0.3.4',
+    'jaxlib>=0.3.4',
     'equinox>=0.9',
     'multimethod>=1.11',
     'matplotlib>=3.1.3',
@@ -66,7 +62,7 @@ test = [
 
 [project.optional-dependencies]
 gpu = [
-    'jax[cuda12]>=0.3.4,<0.11.1',
+    'jax[cuda12]>=0.3.4',
 ]
 docs = [
     "mkdocs>=1.6.1,<2",
@@ -83,6 +79,10 @@ nb = [
 
 modelfit = [
     "pybefit",
+    # numpyro < 0.22 trips a length assertion in eval_provenance on jax >= 0.11.1
+    # (issue #447). The marker keeps uv's lock solvable for Python 3.10, which
+    # numpyro 0.22 doesn't support (and jax >= 0.11.1 isn't installable there).
+    "numpyro>=0.22; python_version >= '3.11'",
 ]
 
 [project.urls]
