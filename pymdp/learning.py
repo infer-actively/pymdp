@@ -11,15 +11,15 @@ import jax.numpy as jnp
 
 
 def _mask_counts_to_support(counts: Array, support: Array) -> Array:
-    """Zero counts on structural zeros; leave all-zero columns unconstrained.
+    """Zero counts on structural zeros, including entire all-zero columns.
 
-    An all-zero column of ``support`` is a malformed / unvisited prior, not a
-    structural ban. Counts may land there so the column can become a proper
-    distribution on the next update.
+    SPM-style masking (``counts * (support > 0)``): counts only land where the
+    prior concentration is positive, so an all-zero column never receives
+    counts. Its posterior stays all zero under learning, and the learned model
+    column stays uniform through ``_preserve_structural_zeros``; a learnable
+    column needs a positive prior.
     """
-    cell_ok = support != 0
-    column_has_support = cell_ok.any(axis=0, keepdims=True)
-    return jnp.where(cell_ok | ~column_has_support, counts, 0.0)
+    return jnp.where(support != 0, counts, 0.0)
 
 
 def _preserve_structural_zeros(expected: Array, support: Array) -> Array:
@@ -32,7 +32,7 @@ def _preserve_structural_zeros(expected: Array, support: Array) -> Array:
     current point estimate is not enough: a deterministic ``B`` can be 0 where
     its Dirichlet prior is positive, and that cell still has to learn.
 
-    A column with no concentration at all is unconstrained: keep the Dirichlet
+    A column with no concentration at all never learns: keep the Dirichlet
     expectation (uniform after ``MINVAL`` clipping) instead of an all-zero
     non-distribution.
     """

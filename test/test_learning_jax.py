@@ -410,8 +410,8 @@ class TestLearningJax(unittest.TestCase):
             self.assertAlmostEqual(float(learned.sum(axis=0)[0]), 1.0)
             self.assertAlmostEqual(float(learned.sum(axis=0)[1]), 1.0)
 
-    def test_all_zero_pA_column_is_unconstrained(self):
-        """An unvisited all-zero pA column must stay a distribution (#458 review)."""
+    def test_all_zero_pA_column_stays_uniform(self):
+        """An all-zero pA column never receives counts and stays uniform (#458 review)."""
         A = [jnp.eye(2)]
         pA = [jnp.array([[1.0, 0.0], [0.0, 0.0]])]
         obs = [jnp.array([0.0, 1.0])[None]]
@@ -439,10 +439,25 @@ class TestLearningJax(unittest.TestCase):
         self.assertEqual(float(learned[1, 0]), 0.0)
         self.assertAlmostEqual(float(learned.sum(axis=0)[0]), 1.0)
         self.assertAlmostEqual(float(learned.sum(axis=0)[1]), 1.0)
-        self.assertGreater(float(learned[1, 1]), 0.0)
+
+        # Repeated updates: the never-visited column stays all-zero in the
+        # Dirichlet posterior, so its expectation stays uniform.
+        for _ in range(2):
+            pA, A = update_pA_jax(
+                pA,
+                A,
+                obs,
+                qs,
+                A_dependencies=[[0]],
+                num_obs=[2],
+                categorical_obs=True,
+                lr=1.0,
+            )
+        self.assertEqual(float(np.asarray(A[0]).sum(axis=0)[1]), 1.0)
+        self.assertTrue(np.allclose(np.asarray(A[0])[:, 1], 0.5))
+        self.assertEqual(float(np.asarray(pA[0]).sum(axis=0)[1]), 0.0)
 
     def test_skipped_B_factor_does_not_reenable_structural_zeros(self):
-
         """A factor left out of factors_to_update must keep exact zeros (#453)."""
         B = [jnp.eye(2)[:, :, None], jnp.eye(2)[:, :, None]]
         pB = [jnp.eye(2)[:, :, None], jnp.eye(2)[:, :, None]]
