@@ -15,6 +15,7 @@ from itertools import chain
 from opt_einsum import contract
 
 EPS_VAL = 1e-16 # global constant for use in spm_log() function
+PROB_CUTOFF = np.exp(-16) # global constant for use in spm_MDP_G() function
 
 def spm_dot(X, x, dims_to_omit=None):
     """ Dot product of a multidimensional array with `x`. The dimensions in `dims_to_omit` 
@@ -544,8 +545,7 @@ def spm_MDP_G(A, x):
     qx = spm_cross(x)
     G = 0
     qo = 0
-    cutoff = np.exp(-16)
-    idx = zip(*np.where(qx > cutoff))
+    idx = zip(*np.where(qx > PROB_CUTOFF))
     likelihoods = A if utils.is_obj_array(A) else (A,)
     # Keep the float64 seed: it also promotes float32 likelihoods.
     seed = np.ones(1)
@@ -584,7 +584,7 @@ def spm_MDP_G(A, x):
         po = po.ravel()
         probability = qx[state]
         qo += probability * po
-        G += probability * po.dot(log(po + cutoff))
+        G += probability * po.dot(log(po + PROB_CUTOFF))
    
     # Subtract negative entropy of expectations: i.e., E_{Q(o)}[lnQ(o)]
     G = G - qo.dot(spm_log_single(qo))  # type: ignore
