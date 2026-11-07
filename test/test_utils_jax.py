@@ -16,6 +16,22 @@ from jax import random as jr
 from pymdp import utils as jax_utils
 from pymdp.legacy import utils as legacy_utils
 
+
+class TestNormDistZeroMass(unittest.TestCase):
+    def test_zero_mass_columns_become_uniform(self):
+        result = jax_utils.norm_dist(jnp.array([[0.0, 1.0], [0.0, 0.0]]))
+        self.assertTrue(np.allclose(result, jnp.array([[0.5, 1.0], [0.5, 0.0]])))
+
+    def test_nonzero_columns_remain_normalized(self):
+        result = jax_utils.norm_dist(jnp.array([[1.0, 2.0], [3.0, 2.0]]))
+        self.assertTrue(np.allclose(result.sum(axis=0), jnp.ones(2)))
+
+    def test_numpy_array_input_preserves_type(self):
+        arr = np.array([[0.0, 1.0], [0.0, 0.0]])
+        result = jax_utils.norm_dist(arr)
+        self.assertIsInstance(result, np.ndarray)
+        np.testing.assert_allclose(result, np.array([[0.5, 1.0], [0.5, 0.0]]))
+
 class TestUtils(unittest.TestCase):
 
     def test_random_factorized_categorical(self):

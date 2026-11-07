@@ -226,7 +226,7 @@ class Distribution:
         self._data[self._index(slices, pointwise=False)] = value
 
     def normalize(self) -> None:
-        self.data = norm_dist(self.data)
+        self.data = np.asarray(norm_dist(self.data))
 
     def __repr__(self) -> str:
         return f"Distribution({self.event}, {self.batch})\n {self.data}"
