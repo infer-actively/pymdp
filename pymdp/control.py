@@ -467,7 +467,12 @@ def compute_expected_obs(
 def compute_info_gain(
     qs: list[Array], qo: list[Array], A: list[Array], A_dependencies: list[list[int]]
 ) -> Array:
-    """Compute expected state-information gain term of expected free energy.
+    """Sum expected state information gain across observation modalities.
+
+    Each term is the mutual information between one modality and the hidden
+    states under the predicted beliefs. If the predictive observations are
+    correlated, for example when sensors share a hidden-state factor, this sum
+    can differ from joint information gain and can rank policies differently.
 
     Parameters
     ----------
