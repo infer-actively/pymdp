@@ -28,7 +28,9 @@
 ### Advanced
 - [Working with complex action dependencies](examples/advanced/complex_action_dependency.ipynb)
 - [Using `pymdp` with a neural encoder](examples/advanced/pymdp_with_neural_encoder.ipynb)
-- [Testing optimized inference methods](examples/advanced/infer_states_optimization/methods_test.ipynb)
+- [Testing optimized inference methods (FPI)](examples/advanced/infer_states_optimization/methods_test_fpi.ipynb)
+- [Testing optimized inference methods (VMP)](examples/advanced/infer_states_optimization/methods_test_vmp.ipynb)
+- [Testing optimized inference methods (MMP)](examples/advanced/infer_states_optimization/methods_test_mmp.ipynb)
 - [Sparse Array Benchmarking](examples/sparse/sparse_benchmark.ipynb)
 - [Sophisticated inference with Monte Carlo Tree Search on TMaze with Distractors](examples/experimental/sophisticated_inference/mcts_generalized_tmaze.ipynb)
 - [Sophisticated inference with Monte Carlo Tree Search on Graph World](examples/experimental/sophisticated_inference/mcts_graph_world.ipynb)

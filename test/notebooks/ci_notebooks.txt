@@ -1,5 +1,7 @@
 examples/advanced/complex_action_dependency.ipynb
-examples/advanced/infer_states_optimization/methods_test.ipynb
+examples/advanced/infer_states_optimization/methods_test_fpi.ipynb
+examples/advanced/infer_states_optimization/methods_test_vmp.ipynb
+examples/advanced/infer_states_optimization/methods_test_mmp.ipynb
 examples/api/model_construction_tutorial.ipynb
 examples/envs/cue_chaining_demo.ipynb
 examples/envs/generalized_tmaze_demo.ipynb

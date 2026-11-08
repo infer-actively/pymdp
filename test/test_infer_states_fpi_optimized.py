@@ -3,9 +3,12 @@ Unit tests to compare outputs of different state inference methods.
 
 This module tests that the following methods produce identical results:
 - Original method
-- End2End padded method
 - Hybrid method
+- Clustered Hybrid method
 - Hybrid block method
+- Clustered Hybrid Block method
+- End2End padded method
+- Clustered End2End method
 
 """
 
@@ -26,7 +29,12 @@ from pymdp.utils import (
     preprocess_A_for_block_diag,
     concatenate_observations_block_diag,
     apply_A_end2end_padding_batched,
-    apply_obs_end2end_padding_batched
+    apply_obs_end2end_padding_batched,
+    get_A_dep_clusters,
+    apply_padding_per_cluster,
+    prep_clustered_block_data,
+    apply_A_end2end_padding_per_cluster,
+    apply_obs_end2end_padding_per_cluster
 )
 
 # Import math functions
@@ -34,19 +42,24 @@ from pymdp.maths import (
     compute_log_likelihoods_padded,
     deconstruct_lls,
     compute_log_likelihoods_block_diag,
-    compute_log_likelihood_per_modality_end2end2_padded
+    compute_log_likelihood_per_modality_end2end_padded,
+    compute_log_likelihoods_per_cluster,
+    deconstruct_log_likelihoods_per_cluster,
+    compute_log_likelihoods_block_diag_clustered,
+    compute_log_likelihoods_end2end_per_cluster
 )
 
 # Import algorithms
 from pymdp.algos import (
     run_factorized_fpi_hybrid,
-    run_factorized_fpi_end2end_padded
+    run_factorized_fpi_end2end_padded,
+    run_factorized_fpi_clustered_end2end
 )
 
 # Import original inference method
 from pymdp.inference import update_posterior_states
 
-class TestInferStatesComparison(unittest.TestCase):
+class TestInferStatesFpiComparison(unittest.TestCase):
     """Test that all inference methods produce identical results."""
 
     # Default test parameters
@@ -257,7 +270,7 @@ class TestInferStatesComparison(unittest.TestCase):
 
         # === End2End padded method ===
         def infer_states_end2end_padded(A_padded, obs_padded, D, A_dependencies, max_obs_dim, max_state_dim, num_iter, sparsity=None):
-            lls_padded = compute_log_likelihood_per_modality_end2end2_padded(obs_padded, A_padded, sparsity=sparsity)
+            lls_padded = compute_log_likelihood_per_modality_end2end_padded(obs_padded, A_padded, sparsity=sparsity)
             return run_factorized_fpi_end2end_padded(lls_padded, D, A_dependencies, max_obs_dim, max_state_dim, num_iter)
 
         A_padded_e2e = apply_A_end2end_padding_batched(A)
@@ -270,13 +283,64 @@ class TestInferStatesComparison(unittest.TestCase):
         infer_states_e2e_jit = jit(partial(infer_states_end2end_padded, A_dependencies=A_dependencies, max_obs_dim=max_obs_dim, max_state_dim=max_state_dim, num_iter=self.NUM_ITER, sparsity='ll_only' if use_sparsity else None))
         qs_end2end = infer_states_e2e_jit(A_padded_e2e, obs_padded_e2e, D)
 
+        # === Clustered Hybrid method ===
+        def infer_states_clustered_hybrid(obs_clusters, A_clusters, D, c2o_mapping, A_shapes, A_dependencies, num_iter):
+            ll_clusters = compute_log_likelihoods_per_cluster(obs_clusters, A_clusters)
+            log_likelihoods = deconstruct_log_likelihoods_per_cluster(ll_clusters, A_shapes, c2o_mapping)
+            return vmap(partial(run_factorized_fpi_hybrid, A_dependencies=A_dependencies, num_iter=num_iter))(log_likelihoods, D)
+
+        c2o_mapping = get_A_dep_clusters(A_dependencies)
+        A_clusters_hybrid = apply_padding_per_cluster(A, c2o_mapping)
+        if use_sparsity:
+            A_clusters_hybrid = [jsparse.BCOO.fromdense(a, n_batch=1) for a in A_clusters_hybrid]
+        obs_clusters_hybrid = apply_padding_per_cluster(obs_tmp, c2o_mapping)
+
+        infer_states_clustered_hybrid_jit = jit(partial(infer_states_clustered_hybrid, c2o_mapping=c2o_mapping, A_shapes=A_shapes, A_dependencies=A_dependencies, num_iter=self.NUM_ITER))
+        qs_clustered_hybrid = infer_states_clustered_hybrid_jit(obs_clusters_hybrid, A_clusters_hybrid, D)
+
+        # === Clustered Hybrid Block method ===
+        def infer_states_clustered_hybrid_block(A_groups, obs_groups, D, shape_groups, cut_groups, group_mapping, A_dependencies, num_iter):
+            num_modalities = len(A_dependencies)
+            log_likelihoods = compute_log_likelihoods_block_diag_clustered(A_groups, obs_groups, shape_groups, cut_groups, group_mapping, num_modalities)
+            return vmap(partial(run_factorized_fpi_hybrid, A_dependencies=A_dependencies, num_iter=num_iter))(log_likelihoods, D)
+
+        # Cluster modalities (host-side preprocessing) and build one block-diagonal system per group
+        A_block, obs_block, state_shapes_block, cuts_block, group_mapping = prep_clustered_block_data(A, obs_tmp)
+        if use_sparsity:
+            A_block = [jsparse.BCOO.fromdense(a, n_batch=1) for a in A_block]
+
+        infer_states_clustered_hybrid_block_jit = jit(partial(infer_states_clustered_hybrid_block, shape_groups=state_shapes_block, cut_groups=cuts_block, group_mapping=group_mapping, A_dependencies=A_dependencies, num_iter=self.NUM_ITER))
+        qs_clustered_hybrid_block = infer_states_clustered_hybrid_block_jit(A_block, obs_block, D)
+
+        # === Clustered End2End method ===
+        def infer_states_clustered_end2end(obs_clusters, A_clusters, D, c2o_mapping, c2s_mapping, max_state_dims, A_dependencies, num_iter, sparsity=None):
+            ll_clusters = compute_log_likelihoods_end2end_per_cluster(obs_clusters, A_clusters, sparsity)
+            return run_factorized_fpi_clustered_end2end(ll_clusters, D, c2o_mapping, c2s_mapping, max_state_dims, A_dependencies, num_iter)
+
+        A_clusters_e2e = apply_A_end2end_padding_per_cluster(A, c2o_mapping)
+        max_obs_dims = [a.shape[2] for a in A_clusters_e2e]
+        max_state_dims = [a.shape[-1] for a in A_clusters_e2e]
+        obs_clusters_e2e = apply_obs_end2end_padding_per_cluster(obs_tmp, c2o_mapping, max_obs_dims)
+        c2s_mapping = [[s for o in o_list for s in A_dependencies[o]] for o_list in c2o_mapping]
+        if use_sparsity:
+            A_clusters_e2e = [jsparse.BCOO.fromdense(a) for a in A_clusters_e2e]
+
+        infer_states_clustered_e2e_jit = jit(partial(infer_states_clustered_end2end, c2o_mapping=c2o_mapping, c2s_mapping=c2s_mapping, max_state_dims=max_state_dims, A_dependencies=A_dependencies, num_iter=self.NUM_ITER, sparsity='ll_only' if use_sparsity else None))
+        qs_clustered_end2end = infer_states_clustered_e2e_jit(obs_clusters_e2e, A_clusters_e2e, D)
+
         # Compare all methods
         self._compare_results(qs_original, qs_hybrid,
                              "Original", "Hybrid", spec_name)
+        self._compare_results(qs_original, qs_clustered_hybrid,
+                             "Original", "Clustered Hybrid", spec_name)
         self._compare_results(qs_original, qs_hybrid_block,
                              "Original", "Hybrid Block", spec_name)
+        self._compare_results(qs_original, qs_clustered_hybrid_block,
+                             "Original", "Clustered Hybrid Block", spec_name)
         self._compare_results(qs_original, qs_end2end,
                              "Original", "End2End Padded", spec_name)
+        self._compare_results(qs_original, qs_clustered_end2end,
+                             "Original", "Clustered End2End", spec_name)
 
     # Test methods for different subsets of specs
     def test_first_spec_with_batch(self):
