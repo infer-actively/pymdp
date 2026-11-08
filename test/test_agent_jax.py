@@ -506,6 +506,23 @@ class TestAgentJax(unittest.TestCase):
         action, action_multi, action_reconstruct, agent = construct_and_run_agent(a_key, b_key, obs_key, action_key)
         self.assertTrue(jnp.allclose(action, action_reconstruct))
 
+    def test_vmp_single_observation_without_actions_keeps_prior(self):
+        prior = jnp.array([0.95, 0.05])
+        agent = Agent(
+            [jnp.full((2, 2), 0.5)],
+            [jnp.eye(2)[..., None]],
+            D=[prior],
+            inference_algo="vmp",
+        )
+        obs = [jnp.array([[0]])]
+        empty_actions = jnp.zeros((1, 0, 1), dtype=jnp.int32)
+
+        implicit = agent.infer_states(obs, agent.D)[0]
+        explicit = agent.infer_states(obs, agent.D, past_actions=empty_actions)[0]
+
+        np.testing.assert_allclose(implicit, prior[None, None, :])
+        np.testing.assert_allclose(implicit, explicit)
+
     def test_infer_policies_neg_efe_sign_convention(self):
         """Policy posterior should be computed from neg_efe (= -EFE)."""
 
