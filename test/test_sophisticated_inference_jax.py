@@ -4,14 +4,17 @@
 """Unit tests for sophisticated inference planning (JAX)."""
 
 import unittest
+from itertools import product
 
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
+import numpy as np
+from jax import jit
 
 from pymdp import control, utils
 from pymdp.agent import Agent
-from pymdp.planning.si import si_policy_search
+from pymdp.planning.si import _observation_combinations, si_policy_search
 
 
 def _build_single_cue_model():
@@ -114,6 +117,46 @@ def _build_dual_cue_model():
 
 
 class TestSophisticatedInferenceJax(unittest.TestCase):
+    def test_observation_budget_matches_exhaustive_products(self):
+        indices = [jnp.array([2, 0, 1]), jnp.array([1, 2, 0]), jnp.array([1, 0])]
+        probabilities = [
+            jnp.array([0.54, 0.31, 0.15]),
+            jnp.array([0.66, 0.27, 0.07]),
+            jnp.array([0.76, 0.24]),
+        ]
+        exhaustive = [
+            (tuple(int(index[m]) for index, m in zip(indices, offsets)),
+             np.prod([float(p[m]) for p, m in zip(probabilities, offsets)]))
+            for offsets in product(range(3), range(3), range(2))
+        ]
+
+        for budget in (4, 18, 20):
+            with self.subTest(budget=budget):
+                expected = exhaustive
+                if len(exhaustive) > budget:
+                    expected = sorted(exhaustive, key=lambda pair: pair[1], reverse=True)[:budget]
+                observations, weights = _observation_combinations(
+                    (3, 3, 2), indices, probabilities, budget
+                )
+                np.testing.assert_array_equal(observations, [pair[0] for pair in expected])
+                np.testing.assert_allclose(weights, [pair[1] for pair in expected], rtol=1e-6)
+
+    def test_observation_budget_bounds_large_cartesian_space_under_jit(self):
+        budget = 128
+        shapes = (100,) * 4
+        indices = [jnp.arange(size) for size in shapes]
+        probabilities = [jnp.linspace(1.0, 0.01, size) for size in shapes]
+        probabilities = [p / p.sum() for p in probabilities]
+
+        combine = jit(lambda ix, p: _observation_combinations(shapes, ix, p, budget))
+        observations, weights = combine(indices, probabilities)
+
+        self.assertEqual(observations.shape, (budget, len(shapes)))
+        self.assertEqual(weights.shape, (budget,))
+        np.testing.assert_array_equal(observations[0], [0] * len(shapes))
+        self.assertEqual(len(np.unique(observations, axis=0)), budget)
+        self.assertTrue(bool(jnp.all(weights[:-1] >= weights[1:])))
+
     def _run_si_search(self, agent, horizon):
         qs = jtu.tree_map(lambda x: jnp.expand_dims(x, -2), agent.D)
         search_fn = si_policy_search(
