@@ -16,7 +16,7 @@ import json
 import io
 import matplotlib.pyplot as plt
 
-from jaxtyping import Array, ArrayLike
+from jaxtyping import Array
 
 from typing import (
     Any,
@@ -32,30 +32,13 @@ def to_nested_tuple(x):
 
 
 def norm_dist(dist: Array | np.ndarray) -> Array | np.ndarray:
-    """Normalizes a Categorical probability distribution.
-
-    Parameters
-    ----------
-    dist: Array
-        Unnormalized Categorical distribution.
-
-    Returns
-    -------
-    Array
-        Normalized distribution.
-    """
-    if isinstance(dist, np.ndarray):
-        denominator = dist.sum(0)
-        safe_denominator = np.where(denominator == 0, 1.0, denominator)
-        normalized = dist / safe_denominator
-        uniform = np.ones_like(dist) / dist.shape[0]
-        return np.where(denominator == 0, uniform, normalized)
-
+    """Normalize along axis 0, using a uniform distribution for zero-mass columns."""
+    xp = np if isinstance(dist, np.ndarray) else jnp
     denominator = dist.sum(0)
-    safe_denominator = jnp.where(denominator == 0, 1.0, denominator)
-    normalized = dist / safe_denominator
-    uniform = jnp.ones_like(dist) / dist.shape[0]
-    return jnp.where(denominator == 0, uniform, normalized)
+    zero_mass = denominator == 0
+    normalized = dist / xp.where(zero_mass, 1, denominator)
+    uniform = xp.ones_like(dist) / dist.shape[0]
+    return xp.where(zero_mass, uniform, normalized)
 
 def list_array_norm_dist(dist_list: list[Array]) -> list[Array]:
     """Normalizes a list of Categorical probability distributions.

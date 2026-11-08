@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import partial
 from typing import Any, Callable
-from jax import vmap, nn, random as jr, tree_util as jtu, lax
+from jax import vmap, nn, random as jr, tree_util as jtu
 from pymdp.control import (
     compute_expected_state,
     compute_expected_obs,
@@ -48,6 +48,13 @@ def mcts_policy_search(
     Callable[[Any, list[jnp.ndarray], jnp.ndarray], tuple[jnp.ndarray, Any]]
         Function with signature `(agent, beliefs, rng_key) -> (q_pi, info)`
         returning policy weights and raw search output.
+
+    Notes
+    -----
+    To run MCTS in the agent-environment loop, pass the returned callable to
+    `pymdp.envs.rollout.rollout` as `policy_search`, e.g.
+    `rollout(agent, env, num_timesteps, rng_key,
+    policy_search=mcts_policy_search(...), env_params=env_params)`.
     """
 
     if search_algo is None:
@@ -195,91 +202,3 @@ def make_aif_recurrent_fn() -> Callable[[Any, jnp.ndarray, jnp.ndarray, Any], tu
         return recurrent_fn_output, qs_next_posterior
 
     return recurrent_fn
-
-
-# custom rollout function for mcts
-def rollout(
-    policy_search: Callable,
-    agent: Any,
-    env: Any,
-    num_timesteps: int,
-    rng_key: jnp.ndarray,
-) -> tuple[dict[str, Any], dict[str, Any], Any]:
-    """Run a policy-search rollout loop for MCTS-based planning.
-
-    Parameters
-    ----------
-    policy_search : Callable
-        Planning callable that maps `(rng_key, agent, qs)` to policy weights.
-    agent : Any
-        Active inference agent.
-    env : Any
-        Environment exposing `step(...)` for batched transitions.
-    num_timesteps : int
-        Number of rollout steps.
-    rng_key : jnp.ndarray
-        Root JAX PRNG key.
-
-    Returns
-    -------
-    tuple[dict[str, Any], dict[str, Any], Any]
-        Final carry dictionary, per-step rollout traces, and final environment.
-    """
-    # get the batch_size of the agent
-    batch_size = agent.batch_size
-
-    def step_fn(carry: dict[str, Any], x: jnp.ndarray) -> tuple[dict[str, Any], dict[str, Any]]:
-        observation_t = carry["observation_t"]
-        prior = carry["empirical_prior"]
-        env = carry["env"]
-        rng_key = carry["rng_key"]
-
-        # We infer the posterior using FPI
-        # so we don't need past actions or qs_hist
-        qs = agent.infer_states(observation_t, prior)
-        rng_key, key = jr.split(rng_key)
-        qpi, _ = policy_search(key, agent, qs)
-
-        keys = jr.split(rng_key, batch_size + 1)
-        rng_key = keys[0]
-        action_t = agent.sample_action(qpi, rng_key=keys[1:])
-
-        keys = jr.split(rng_key, batch_size + 1)
-        rng_key = keys[0]
-        observation_t, env = env.step(rng_key=keys[1:], actions=action_t)
-
-        prior, _ = agent.infer_empirical_prior(action_t, qs)
-
-        carry = {
-            "observation_t": observation_t,
-            "empirical_prior": prior,
-            "env": env,
-            "rng_key": rng_key,
-        }
-        info = {
-            "qpi": qpi,
-            "qs": jtu.tree_map(lambda x: x[:, 0], qs),
-            "env": env,
-            "observation": observation_t,
-            "action": action_t,
-        }
-
-        return carry, info
-
-    # generate initial observation
-    keys = jr.split(rng_key, batch_size + 1)
-    rng_key = keys[0]
-    observation_0, env = env.step(keys[1:])
-
-    initial_carry = {
-        "observation_t": observation_0,
-        "empirical_prior": agent.D,
-        "env": env,
-        "rng_key": rng_key,
-    }
-
-    # Scan over time dimension (axis 1)
-    last, info = lax.scan(step_fn, initial_carry, jnp.arange(num_timesteps))
-
-    info = jtu.tree_map(lambda x: jnp.swapaxes(x, 0, 1), info)
-    return last, info, env

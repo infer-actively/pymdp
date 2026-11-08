@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.0.5](https://github.com/infer-actively/pymdp/compare/v1.0.4...v1.0.5) (2026-11-07)
+
+
+### Bug Fixes
+
+* **agent:** preserve action axis without extra expansion for empty B_action_dependencies ([#455](https://github.com/infer-actively/pymdp/issues/455)) ([fb214bf](https://github.com/infer-actively/pymdp/commit/fb214bf089fc3eba63c157349209f3fa217739a4))
+* batch multiaction_probabilities in marginal sampling mode ([#456](https://github.com/infer-actively/pymdp/issues/456)) ([3a6dcf2](https://github.com/infer-actively/pymdp/commit/3a6dcf2bc6aced4a1b1b9ae5f4a4557bbb95935a))
+* **control:** draw each stochastic control factor with its own key ([#460](https://github.com/infer-actively/pymdp/issues/460)) ([fe26f83](https://github.com/infer-actively/pymdp/commit/fe26f8393976afdec07f4d72631954b7f52179df)), closes [#430](https://github.com/infer-actively/pymdp/issues/430)
+* **graph_worlds:** reject partial or mismatched batch locations ([#459](https://github.com/infer-actively/pymdp/issues/459)) ([c8be101](https://github.com/infer-actively/pymdp/commit/c8be101c75b9531813de5e6b1b7141ea633a29e7))
+* **learning:** keep structural zeros out of Dirichlet expectations ([#458](https://github.com/infer-actively/pymdp/issues/458)) ([9e35af2](https://github.com/infer-actively/pymdp/commit/9e35af2b33b95c4b1e734ea88cf4a26a1db66612))
+* **planning:** remove the broken standalone rollout from planning/mcts.py ([#457](https://github.com/infer-actively/pymdp/issues/457)) ([b838758](https://github.com/infer-actively/pymdp/commit/b838758ef4ed45f161b59fe98a7fd06a8f7cfb2d))
+* squeeze only axis 0 in dot_likelihood to prevent shape mismatch ([#405](https://github.com/infer-actively/pymdp/issues/405)) ([057841d](https://github.com/infer-actively/pymdp/commit/057841d79e3c37effadf219ed4eadef4f3992bc4)), closes [#171](https://github.com/infer-actively/pymdp/issues/171)
+* warn when flattened B action dependencies conflict with sampling_mode ([#451](https://github.com/infer-actively/pymdp/issues/451)) ([0f95fcc](https://github.com/infer-actively/pymdp/commit/0f95fcc1e296cb1fee5e4a77f4e4ab2a700ecbbc))
+
+
+### Dependencies
+
+* drop the jax/jaxlib &lt;0.11.1 upper bound ([#461](https://github.com/infer-actively/pymdp/issues/461)) ([423ea4d](https://github.com/infer-actively/pymdp/commit/423ea4defe164f9f2855383fc59ee06566bb37c8))
+
+## [1.0.4](https://github.com/infer-actively/pymdp/compare/v1.0.3...v1.0.4) (2026-08-21)
+
+
+### Bug Fixes
+
+* **agent:** back Policies with a hashable tuple ([#416](https://github.com/infer-actively/pymdp/issues/416)) ([e690426](https://github.com/infer-actively/pymdp/commit/e690426181e10ab5b6713ba3114906e45146b477))
+* **maths:** eliminate cancellation error in exact parameter info-gain weight ([#415](https://github.com/infer-actively/pymdp/issues/415)) ([dec6c83](https://github.com/infer-actively/pymdp/commit/dec6c83de85eda1054489e4967e86489aadc06c9))
+* label lists on multiple axes select blocks instead of diagonals ([#442](https://github.com/infer-actively/pymdp/issues/442)) ([4579c9b](https://github.com/infer-actively/pymdp/commit/4579c9b09bc11230431f415747fde0efb3ed39d9))
+
+
+### Dependencies
+
+* fix ruff version and make local dev setup match CI ([#441](https://github.com/infer-actively/pymdp/issues/441)) ([c19fa9e](https://github.com/infer-actively/pymdp/commit/c19fa9e2607a5138ebd8987fb31e8ee07b6d878a))
+* pin jax/jaxlib &lt;0.11.1 pending numpyro fix ([#448](https://github.com/infer-actively/pymdp/issues/448)) ([d16daf6](https://github.com/infer-actively/pymdp/commit/d16daf6c25cfbc25c5d54393099215132a8a15de))
+
 ## [1.0.3](https://github.com/infer-actively/pymdp/compare/v1.0.2...v1.0.3) (2026-06-08)
 
 

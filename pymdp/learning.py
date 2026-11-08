@@ -6,26 +6,47 @@
 from pymdp.maths import multidimensional_outer, dirichlet_expected_value
 from jax.tree_util import tree_map
 from jaxtyping import Array
-from jax import vmap, nn, lax, numpy as jnp
+from jax import vmap, nn, lax
+import jax.numpy as jnp
 
-def _mask_support(arr: Array, support_mask: Array | None, event_dim: int = 0) -> Array:
-    """Zero out unsupported entries and renormalize over event_dim."""
-    if support_mask is None:
-        return arr
-    is_supported = support_mask > 0
-    masked = jnp.where(is_supported, arr, 0.0)
-    denom = masked.sum(axis=event_dim, keepdims=True)
-    safe_denom = jnp.where(denom == 0, 1.0, denom)
-    return jnp.asarray(masked / safe_denom)
 
+def _mask_counts_to_support(counts: Array, support: Array) -> Array:
+    """Zero counts on structural zeros, including entire all-zero columns.
+
+    SPM-style masking (``counts * (support > 0)``): counts only land where the
+    prior concentration is positive, so an all-zero column never receives
+    counts. Its posterior stays all zero under learning, and the learned model
+    column stays uniform through ``_preserve_structural_zeros``; a learnable
+    column needs a positive prior.
+    """
+    return jnp.where(support != 0, counts, 0.0)
+
+
+def _preserve_structural_zeros(expected: Array, support: Array) -> Array:
+    """Keep exact zeros of a Dirichlet parameter at zero, then renormalize.
+
+    ``dirichlet_expected_value`` clips concentrations up to ``MINVAL`` before
+    normalizing, so a structurally impossible cell comes back positive. Callers
+    feed that matrix in as the next model, and the fake mass then accumulates.
+    ``support`` is the concentration from before this update. A zero in the
+    current point estimate is not enough: a deterministic ``B`` can be 0 where
+    its Dirichlet prior is positive, and that cell still has to learn.
+
+    A column with no concentration at all never learns: keep the Dirichlet
+    expectation (uniform after ``MINVAL`` clipping) instead of an all-zero
+    non-distribution.
+    """
+    mask = support != 0
+    column_has_support = mask.any(axis=0, keepdims=True)
+    effective_mask = jnp.where(column_has_support, mask, True)
+    masked = jnp.where(effective_mask, expected, 0.0)
+    totals = masked.sum(axis=0, keepdims=True)
+    safe = jnp.where(totals > 0, totals, 1.0)
+    renormalized = masked / safe
+    return jnp.where(totals > 0, renormalized, masked)
 
 def update_obs_likelihood_dirichlet_m(
-    pA_m: Array,
-    obs_m: Array,
-    qs: list[Array],
-    dependencies_m: list[int],
-    lr: float = 1.0,
-    support_mask: Array | None = None,
+    pA_m: Array, obs_m: Array, qs: list[Array], dependencies_m: list[int], lr: float = 1.0
 ) -> tuple[Array, Array]:
     """Update one modality's Dirichlet parameters for the observation model.
 
@@ -64,15 +85,12 @@ def update_obs_likelihood_dirichlet_m(
     relevant_factors = tree_map(lambda f_idx: qs[f_idx], dependencies_m)
 
     dfda = vmap(multidimensional_outer)([obs_m] + relevant_factors).sum(axis=0)
-    if support_mask is not None:
-        dfda = dfda * (support_mask > 0)
+    # Counts must not land on a structural zero, or the next update sees a
+    # positive concentration and treats the cell as possible.
+    dfda = _mask_counts_to_support(dfda, pA_m)
 
     new_pA_m = pA_m + lr * dfda
-    if support_mask is not None:
-        new_pA_m = jnp.where(support_mask > 0, new_pA_m, 0.0)
-    A_m = jnp.asarray(dirichlet_expected_value(new_pA_m))
-    if support_mask is not None:
-        A_m = _mask_support(A_m, support_mask, event_dim=0)
+    A_m = _preserve_structural_zeros(dirichlet_expected_value(new_pA_m), pA_m)
 
     return new_pA_m, A_m
     
@@ -121,26 +139,11 @@ def update_obs_likelihood_dirichlet(
 
     obs_m = lambda o, dim: nn.one_hot(o, dim) if not categorical_obs else o
     update_A_fn = (
-        lambda pA_m, a_m, o_m, dim, dependencies_m: None
+        lambda pA_m, o_m, dim, dependencies_m: None
         if pA_m is None
-        else update_obs_likelihood_dirichlet_m(
-            pA_m,
-            obs_m(o_m, dim),
-            qs,
-            dependencies_m,
-            lr=lr,
-            support_mask=a_m,
-        )
+        else update_obs_likelihood_dirichlet_m(pA_m, obs_m(o_m, dim), qs, dependencies_m, lr=lr)
     )
-    result = tree_map(
-        update_A_fn,
-        pA,
-        A,
-        obs,
-        num_obs,
-        A_dependencies,
-        is_leaf=lambda x: x is None,
-    )
+    result = tree_map(update_A_fn, pA, obs, num_obs, A_dependencies, is_leaf=lambda x: x is None)
     qA = []
     E_qA = []
     for i, r in enumerate(result):
@@ -154,11 +157,7 @@ def update_obs_likelihood_dirichlet(
     return qA, E_qA
 
 def update_state_transition_dirichlet_f(
-    pB_f: Array,
-    actions_f: Array,
-    joint_qs_f: Array | list[Array],
-    lr: float = 1.0,
-    support_mask: Array | None = None,
+    pB_f: Array, actions_f: Array, joint_qs_f: Array | list[Array], lr: float = 1.0
 ) -> tuple[Array, Array]:
     """Update one factor's Dirichlet parameters for the transition model.
 
@@ -193,17 +192,10 @@ def update_state_transition_dirichlet_f(
 
     joint_qs_f = [joint_qs_f] if isinstance(joint_qs_f, Array) else joint_qs_f
     dfdb = vmap(multidimensional_outer)(joint_qs_f + [actions_f]).sum(axis=0)
-    if support_mask is not None:
-        dfdb = dfdb * (support_mask > 0)
+    dfdb = _mask_counts_to_support(dfdb, pB_f)
     qB_f = pB_f + lr * dfdb
-    if support_mask is not None:
-        qB_f = jnp.where(support_mask > 0, qB_f, 0.0)
 
-    E_qB_f = jnp.asarray(dirichlet_expected_value(qB_f))
-    if support_mask is not None:
-        E_qB_f = _mask_support(E_qB_f, support_mask, event_dim=0)
-
-    return qB_f, E_qB_f
+    return qB_f, _preserve_structural_zeros(dirichlet_expected_value(qB_f), pB_f)
 
 def update_state_transition_dirichlet(
     pB: list[Array],
@@ -247,28 +239,24 @@ def update_state_transition_dirichlet(
 
     actions_onehot_fn = lambda f, dim: nn.one_hot(actions[..., f], dim, axis=-1)
 
-    def update_B_f_fn(
-        pB_f: Array,
-        B_f: Array,
-        joint_qs_f: Array,
-        f: int,
-        na: int,
-    ) -> tuple[Array, Array]:
+    def update_B_f_fn(pB_f: Array, B_f: Array, joint_qs_f: Array, f: int, na: int) -> tuple[Array, Array]:
        """ 
        Conditionally-update the Dirichlet posterior over a given single factor's B parameters
        Updating is conditional upon the value of `f`: if the factor index (f) is greater than -1, then use the value of f as the factor index
        to create the appropriate one-hot representation of the action corresponding to the the f-th control factor and perform the update. Otherwise, do not perform the update
        """
+       def _updated() -> tuple[Array, Array]:
+           return update_state_transition_dirichlet_f(
+               pB_f, actions_onehot_fn(f, na), joint_qs_f, lr=lr
+           )
+
+       # A skipped factor must return the B it was given. Recomputing the
+       # expected value here replaces structural zeros with MINVAL, and the
+       # next update that does touch the factor treats those cells as real.
        qB_f, E_qB_f = lax.cond(
                 f>-1,
-                lambda: update_state_transition_dirichlet_f(
-                    pB_f,
-                    actions_onehot_fn(f, na),
-                    joint_qs_f,
-                    lr=lr,
-                    support_mask=B_f,
-                ),
-                lambda: (pB_f, dirichlet_expected_value(pB_f)),
+                _updated,
+                lambda: (pB_f, B_f),
             )
        return qB_f, E_qB_f
 

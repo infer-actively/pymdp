@@ -167,29 +167,18 @@ class Agent(Module):
         learn_D: bool = False,
         learn_E: bool = False,
     ) -> None:
-        if action_selection not in {"deterministic", "stochastic"}:
-            raise ValueError(
-                "`action_selection` must be either 'deterministic' or 'stochastic'"
-            )
-        if sampling_mode not in {"full", "marginal"}:
-            raise ValueError("`sampling_mode` must be either 'full' or 'marginal'")
+        if action_selection not in ("deterministic", "stochastic"):
+            raise ValueError("`action_selection` must be 'deterministic' or 'stochastic'")
+        if sampling_mode not in ("full", "marginal"):
+            raise ValueError("`sampling_mode` must be 'full' or 'marginal'")
+        if learn_C or learn_D or learn_E:
+            raise NotImplementedError("Modern Agent learning supports only learn_A and learn_B")
 
         if B_action_dependencies is not None:
-            is_canonical = B_action_dependencies == [[f] for f in range(len(B))]
-            if not is_canonical:
-                assert num_controls is not None, "Please specify num_controls if you're also using complex action dependencies"
-                if sampling_mode != "full":
-                    raise ValueError(
-                        "Complex B action dependencies require sampling_mode='full'"
-                    )
+            assert num_controls is not None, "Please specify num_controls if you're also using complex action dependencies"
 
         if learn_A:
             assert pA is not None, "pA is required for A learning"
-
-        if learn_C or learn_D or learn_E:
-            raise NotImplementedError(
-                "Modern Agent learning currently supports only learn_A and learn_B"
-            )
 
         # extract high level variables
         self.num_modalities = len(A)
@@ -226,20 +215,39 @@ class Agent(Module):
 
         # flatten B action dims for multiple action dependencies
         self.action_maps = None
-        # canonical or empty dependencies don't require flattening
-        is_canonical = self.B_action_dependencies == [[f] for f in range(self.num_factors)]
         if (
-            policies is None and self.B_action_dependencies is not None and not is_canonical
-        ):
+            policies is None and B_action_dependencies is not None
+        ):  # note, this only works when B_action_dependencies is not the trivial case of [[0], [1], ...., [num_factors-1]]
             policies_multi_tup = control._construct_policies_tuple(
                 self.num_controls_multi,
                 self.num_controls_multi,
                 policy_len,
                 control_fac_idx,
             )
-            B, pB, self.action_maps = self._flatten_B_action_dims(B, pB, self.B_action_dependencies)
+            B, pB, self.action_maps = self._flatten_B_action_dims(
+                B, pB, self.B_action_dependencies, self.B_dependencies
+            )
             policies = self._construct_flattend_policies_tuple(policies_multi_tup, self.action_maps)
-            self.sampling_mode = "full"
+            # Flattening the action dimensions collapses the control factors into a
+            # single joint action space. That is the space `sampling_mode="full"`
+            # indexes against (`unique_multiactions`), whereas `"marginal"` reasons
+            # about the un-flattened factors, so the two modes no longer describe the
+            # same action space here.
+            #
+            # This branch used to assign `self.sampling_mode = "full"`, but that
+            # assignment was dead: the constructor parameter is written to
+            # `self.sampling_mode` below and always won, so the request was honoured
+            # and the deliberate override never took effect. Warn instead of
+            # overriding, so the conflict is visible without changing which mode is
+            # used. See issue #434.
+            if sampling_mode != "full":
+                warnings.warn(
+                    "`B_action_dependencies` flattens the control factors into a single "
+                    "joint action space, which `sampling_mode='full'` is designed for; got "
+                    f"sampling_mode={sampling_mode!r}. Action selection will follow the "
+                    "requested mode. Pass sampling_mode='full' to silence this warning.",
+                    stacklevel=2,
+                )
         
         # extract shapes from A and B
         self.num_states = self._get_num_states_from_B(B, self.B_dependencies)
@@ -809,9 +817,11 @@ class Agent(Module):
                 f"`empirical_prior` has {len(empirical_prior)} factor(s), expected {self.num_factors}"
             )
 
-        # Masking is per-call state, so never replace entries in self.A.
-        A = list(self.A)
+        A = self.A
         if mask is not None:
+            # Masking only replaces entries, so shallow copies preserve both inputs.
+            A = list(A)
+            o_vec = list(o_vec)
             for i, m in enumerate(mask):
                 o_vec[i] = m * o_vec[i] + (1 - m) * jnp.ones_like(o_vec[i]) / self.num_obs[i]
                 A[i] = m * A[i] + (1 - m) * jnp.ones_like(A[i]) / self.num_obs[i]
@@ -936,19 +946,20 @@ class Agent(Module):
         Parameters
         ----------
         q_pi: Array
-            Posterior beliefs over policies for one batch element.
+            Posterior beliefs over policies with shape
+            `(batch_size, num_policies)`.
 
         Returns
         ----------
         Array
-            Probability vector over unique multi-actions.
+            Probabilities over unique multi-actions with shape
+            `(batch_size, num_multiactions)`.
         """
 
         if self.sampling_mode == "marginal":
             get_marginals = partial(control.get_marginals, policies=self.policies.policy_arr, num_controls=self.num_controls)
-            marginals = get_marginals(q_pi)
             outer = lambda a, b: jnp.outer(a, b).reshape(-1)
-            marginals = jtu.tree_reduce(outer, marginals)
+            marginals = vmap(lambda x: jtu.tree_reduce(outer, get_marginals(x)))(q_pi)
 
         elif self.sampling_mode == "full":
             locs = jnp.all(
@@ -1114,6 +1125,7 @@ class Agent(Module):
         B: list[Array],
         pB: list[Array] | None,
         B_action_dependencies: list[list[int]],
+        B_dependencies: list[list[int]] | None = None,
     ) -> tuple[list[Array], list[Array] | None, list[dict[str, Any]]]:
         assert hasattr(B[0], "shape"), "Elements of B must be tensors and have attribute shape"
         action_maps = []  # mapping from multi action dependencies to flat action dependencies for each B
@@ -1121,9 +1133,17 @@ class Agent(Module):
         pB_flat = []
         for i, (B_f, action_dependency) in enumerate(zip(B, B_action_dependencies)):
             if action_dependency == []:
-                B_flat.append(jnp.expand_dims(B_f, axis=-1))
+                # An uncontrolled factor may be given with or without its trailing
+                # size-1 action axis (``utils.random_B_array`` omits it). Add the axis
+                # only when it is missing: B_f is (*batch, next_state, *lagging_states[, 1]).
+                has_action_axis = (
+                    B_dependencies is not None
+                    and B_f.ndim >= len(B_dependencies[i]) + 2
+                    and B_f.shape[-1] == 1
+                )
+                B_flat.append(B_f if has_action_axis else jnp.expand_dims(B_f, axis=-1))
                 if pB is not None:
-                    pB_flat.append(jnp.expand_dims(pB[i], axis=-1))
+                    pB_flat.append(pB[i] if has_action_axis else jnp.expand_dims(pB[i], axis=-1))
                 action_maps.append(
                     {"multi_dependency": [], "multi_dims": [], "flat_dependency": [i], "flat_dims": [1]}
                 )

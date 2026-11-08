@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "inferactively-pymdp"
-version = "1.0.3"
+version = "1.0.5"
 description = "A Python package for solving Markov Decision Processes with Active Inference"
 authors = [
     { name = "Conor Heins", email="conor.heins@gmail.com"},
@@ -79,6 +79,10 @@ nb = [
 
 modelfit = [
     "pybefit",
+    # numpyro < 0.22 trips a length assertion in eval_provenance on jax >= 0.11.1
+    # (issue #447). The marker keeps uv's lock solvable for Python 3.10, which
+    # numpyro 0.22 doesn't support (and jax >= 0.11.1 isn't installable there).
+    "numpyro>=0.22; python_version >= '3.11'",
 ]
 
 [project.urls]

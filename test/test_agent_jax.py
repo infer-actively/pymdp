@@ -6,6 +6,7 @@ __author__: Dimitrije Markovic, Conor Heins
 """
 
 import unittest
+import warnings
 from functools import partial
 from types import SimpleNamespace
 
@@ -23,66 +24,33 @@ from equinox import Module, EquinoxRuntimeError
 
 class TestAgentJax(unittest.TestCase):
 
-    def test_masked_inference_does_not_mutate_A(self):
-        A = [jnp.eye(2)]
-        B = [jnp.stack([jnp.eye(2), jnp.eye(2)], axis=-1)]
-        agent = Agent(A, B, categorical_obs=True)
-        before = agent.A[0].copy()
+    def test_masked_inference_preserves_likelihood_and_caller_observations(self):
+        agent = Agent([jnp.eye(2)], [jnp.eye(2)[..., None]], categorical_obs=True)
+        observations = [jnp.array([[1.0, 0.0]])]
+        likelihood_before = agent.A[0]
+        observation_before = observations[0]
+        baseline = agent.infer_states(observations, agent.D)[0]
 
-        agent.infer_states(
-            [jnp.array([[1.0, 0.0]])],
-            agent.D,
-            mask=[jnp.array([0.0])],
-        )
+        masked = agent.infer_states(observations, agent.D, mask=[jnp.array([0.0])])[0]
 
-        np.testing.assert_allclose(agent.A[0], before)
+        np.testing.assert_allclose(masked, [[[0.5, 0.5]]])
+        np.testing.assert_array_equal(agent.A[0], likelihood_before)
+        np.testing.assert_array_equal(observations[0], observation_before)
+        np.testing.assert_allclose(agent.infer_states(observations, agent.D)[0], baseline)
 
     def test_agent_rejects_invalid_sampling_configuration(self):
         A = [jnp.eye(2)]
-        B = [jnp.stack([jnp.eye(2), jnp.eye(2)], axis=-1)]
-
-        with self.assertRaises(ValueError):
-            Agent(A, B, sampling_mode="invalid")
-        with self.assertRaises(ValueError):
-            Agent(A, B, action_selection="invalid")
-
-    def test_agent_accepts_canonical_action_dependencies_with_marginal_sampling(self):
-        A = [jnp.eye(2)]
-        B = [jnp.stack([jnp.eye(2), jnp.eye(2)], axis=-1)]
-
-        agent = Agent(
-            A,
-            B,
-            B_action_dependencies=[[0]],
-            num_controls=[2],
-            sampling_mode="marginal",
-        )
-        self.assertEqual(agent.sampling_mode, "marginal")
-
-    def test_agent_rejects_marginal_sampling_with_complex_actions(self):
-        A = [jnp.eye(2), jnp.eye(2)]
-        B = [
-            jnp.zeros((2, 2, 2, 2)),
-            jnp.zeros((2, 2, 2)),
-        ]
-        # Factor 0 depends on actions from factors 0 and 1
-        B_action_dependencies = [[0, 1], [1]]
-
-        with self.assertRaisesRegex(ValueError, "sampling_mode='full'"):
-            Agent(
-                A,
-                B,
-                B_action_dependencies=B_action_dependencies,
-                num_controls=[2, 2],
-                sampling_mode="marginal",
-            )
+        B = [jnp.eye(2)[..., None]]
+        for option in ("sampling_mode", "action_selection"):
+            with self.subTest(option=option), self.assertRaisesRegex(ValueError, option):
+                Agent(A, B, **{option: "invalid"})
 
     def test_agent_rejects_unimplemented_learning_flags(self):
         A = [jnp.eye(2)]
-        B = [jnp.stack([jnp.eye(2), jnp.eye(2)], axis=-1)]
-
-        with self.assertRaises(NotImplementedError):
-            Agent(A, B, learn_D=True)
+        B = [jnp.eye(2)[..., None]]
+        for option in ("learn_C", "learn_D", "learn_E"):
+            with self.subTest(option=option), self.assertRaisesRegex(NotImplementedError, "learn_A and learn_B"):
+                Agent(A, B, **{option: True})
 
     def test_no_desired_batch_no_batched_input_construction(self):
         """
@@ -164,6 +132,61 @@ class TestAgentJax(unittest.TestCase):
         self.assertTrue(agent.num_controls == num_controls_flattened)
 
             
+    def test_flattened_action_dependencies_warn_on_incompatible_sampling_mode(self):
+        """
+        `B_action_dependencies` flatten the control factors into a single joint action
+        space, which is the space `sampling_mode="full"` indexes against; `"marginal"`
+        reasons about the un-flattened factors instead. The flattening branch used to
+        try to force `"full"` by assigning `self.sampling_mode`, but that assignment was
+        dead -- the constructor parameter is written to `self.sampling_mode` afterwards
+        and always won -- so a conflicting request was honoured with no indication.
+        It should now warn, without changing which mode is used.
+        """
+        num_obs = [2, 3]
+        num_states = [4, 5, 2]
+        num_controls = [2, 3, 2]
+        A_dependencies = [[0, 1], [1]]
+        B_dependencies = [[0], [0, 1, 2], [2]]
+        B_action_dependencies = [[], [0, 1], [0, 2]]
+
+        a_key, b_key = jr.PRNGKey(0), jr.PRNGKey(1)
+
+        def build(sampling_mode):
+            A = utils.random_A_array(
+                a_key, num_obs, num_states, A_dependencies=A_dependencies
+            )
+            B = utils.random_B_array(
+                b_key,
+                num_states,
+                num_controls,
+                B_dependencies=B_dependencies,
+                B_action_dependencies=B_action_dependencies,
+            )
+            return Agent(
+                A,
+                B,
+                A_dependencies=A_dependencies,
+                B_dependencies=B_dependencies,
+                B_action_dependencies=B_action_dependencies,
+                num_controls=num_controls,
+                sampling_mode=sampling_mode,
+            )
+
+        # an incompatible request is reported ...
+        with self.assertWarns(UserWarning):
+            agent_marginal = build("marginal")
+        # ... and is still the mode that ends up in effect
+        self.assertEqual(agent_marginal.sampling_mode, "marginal")
+
+        # `"full"` is the mode the flattened action space is built for: no warning
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            agent_full = build("full")
+        self.assertEqual(
+            [w for w in caught if issubclass(w.category, UserWarning)], []
+        )
+        self.assertEqual(agent_full.sampling_mode, "full")
+
     def test_desired_batch_no_batched_input_construction(self):
         """
         Tests for the case where the user wants > 1 batch size, and they pass in tensors with no batch size
@@ -539,6 +562,45 @@ class TestAgentJax(unittest.TestCase):
         self.assertTrue(jnp.allclose(q_pi, q_pi_from_neg_efe, atol=1e-6))
         self.assertTrue(jnp.allclose(q_pi, q_pi_from_efe, atol=1e-6))
     
+    def test_multiaction_probabilities_marginal_mode_is_batched(self):
+        """In marginal mode each batch element gets the outer product of its own action marginals."""
+
+        num_states = [2, 3]
+        num_controls = [2, 3]
+        batch_size = 2
+        A = [jnp.broadcast_to(jnp.eye(n), (batch_size, n, n)) for n in num_states]
+        B = [
+            jnp.broadcast_to(jnp.stack([jnp.eye(n)] * c, -1), (batch_size, n, n, c))
+            for n, c in zip(num_states, num_controls)
+        ]
+        agent = Agent(
+            A=A,
+            B=B,
+            A_dependencies=[[0], [1]],
+            num_controls=num_controls,
+            batch_size=batch_size,
+            sampling_mode="marginal",
+        )
+        self.assertEqual(
+            agent.policies.policy_arr[:, 0].tolist(),
+            [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2]],
+        )
+
+        q_pi = jnp.array([
+            [0.05, 0.10, 0.15, 0.20, 0.25, 0.25],
+            [0.40, 0.00, 0.10, 0.30, 0.20, 0.00],
+        ])
+        # row 0: factor marginals [0.3, 0.7] and [0.25, 0.35, 0.4]
+        # row 1: factor marginals [0.5, 0.5] and [0.7, 0.2, 0.1]
+        expected = jnp.array([
+            [0.075, 0.105, 0.12, 0.175, 0.245, 0.28],
+            [0.35, 0.10, 0.05, 0.35, 0.10, 0.05],
+        ])
+
+        probs = agent.multiaction_probabilities(q_pi)
+        self.assertEqual(probs.shape, (batch_size, 6))
+        self.assertTrue(jnp.allclose(probs, expected, atol=1e-6))
+
     def test_agent_validate_normalization_ok(self):
         """
         Agent should construct without errors when A and B are normalized
@@ -1142,6 +1204,45 @@ class TestPoliciesTupleAgentEquivalence(unittest.TestCase):
             return pol.num_policies
 
         self.assertEqual(f(policies), policies.num_policies)
+
+    def test_empty_b_action_dependencies(self):
+        """Test constructing an Agent with a mix of controlled and uncontrolled factors in B_action_dependencies."""
+        A = [jnp.ones((2, 2, 2)) / 2.0]
+        B = [
+            jnp.stack([jnp.eye(2)] * 2, -1),   # factor 0: 2 actions, shape (2, 2, 2)
+            jnp.stack([jnp.eye(2)] * 1, -1),   # factor 1: uncontrolled, shape (2, 2, 1)
+        ]
+
+        agent = Agent(
+            A=A,
+            B=B,
+            A_dependencies=[[0, 1]],
+            B_dependencies=[[0], [1]],
+            num_controls=[2, 1],
+            B_action_dependencies=[[0], []],
+        )
+        self.assertIsNotNone(agent)
+        self.assertEqual(agent.B[0].shape, (1, 2, 2, 2))
+        self.assertEqual(agent.B[1].shape, (1, 2, 2, 1))
+
+    def test_empty_b_action_dependencies_without_action_axis(self):
+        """An uncontrolled factor given without a trailing action axis still gets one."""
+        A = [jnp.ones((2, 2, 2)) / 2.0]
+        B = [
+            jnp.stack([jnp.eye(2)] * 2, -1),   # factor 0: 2 actions, shape (2, 2, 2)
+            jnp.eye(2),                        # factor 1: uncontrolled, no action axis, shape (2, 2)
+        ]
+
+        agent = Agent(
+            A=A,
+            B=B,
+            A_dependencies=[[0, 1]],
+            B_dependencies=[[0], [1]],
+            num_controls=[2, 1],
+            B_action_dependencies=[[0], []],
+        )
+        self.assertEqual(agent.B[0].shape, (1, 2, 2, 2))
+        self.assertEqual(agent.B[1].shape, (1, 2, 2, 1))
 
 
 if __name__ == "__main__":

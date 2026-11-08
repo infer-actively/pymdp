@@ -76,8 +76,9 @@ class TestMessagePassing(unittest.TestCase):
             A_np = utils.obj_array_from_list(A_jax)
 
             obs = utils.obj_array(len(num_obs))
+            obs_keys = jr.split(keys_per_element[2], len(num_obs))
             for m, obs_dim in enumerate(num_obs):
-                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim) # TODO: replace with sampling using keys_per_element[2]
+                obs[m] = utils.onehot(int(jr.randint(obs_keys[m], (), 0, obs_dim)), obs_dim)
 
             qs_numpy = fpi_numpy(A_np, obs, num_obs, num_states, prior=prior, num_iter=16, dF=1.0, dF_tol=-1.0) # set dF_tol to negative number so numpy version of FPI never stops early due to convergence
 
@@ -105,8 +106,9 @@ class TestMessagePassing(unittest.TestCase):
             A = random_A_array(keys_per_element[1], num_obs, num_states)
 
             obs = utils.obj_array(len(num_obs))
+            obs_keys = jr.split(keys_per_element[2], len(num_obs))
             for m, obs_dim in enumerate(num_obs):
-                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim) # TODO: replace with sampling using keys_per_element[2]
+                obs[m] = utils.onehot(int(jr.randint(obs_keys[m], (), 0, obs_dim)), obs_dim)
 
             obs = [jnp.array(o_m) for o_m in obs]
             factor_lists = len(num_obs) * [list(range(len(num_states)))]
@@ -135,8 +137,9 @@ class TestMessagePassing(unittest.TestCase):
             prior = random_factorized_categorical(keys_per_element[0], num_states)
 
             obs = utils.obj_array(len(num_obs))
+            obs_keys = jr.split(keys_per_element[2], len(num_obs))
             for m, obs_dim in enumerate(num_obs):
-                obs[m] = utils.onehot(np.random.randint(obs_dim), obs_dim) # TODO: replace with sampling using keys_per_element[1]
+                obs[m] = utils.onehot(int(jr.randint(obs_keys[m], (), 0, obs_dim)), obs_dim)
 
             A_reduced = random_A_array(keys_per_element[1], num_obs, num_states, A_dependencies=a_deps_i)
             A_full = make_A_full(A_reduced, a_deps_i, num_obs, num_states) # create the full A matrix, where all hidden state factors are represented in the lagging dimensions of each sub-A array

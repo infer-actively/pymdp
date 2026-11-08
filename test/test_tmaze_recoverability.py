@@ -1,14 +1,13 @@
 """Smoke tests for the fast TMaze recoverability diagnostics."""
 
 import math
+
 import pytest
 
-pytest.importorskip(
-    "pybefit",
-    reason="pybefit model-fitting integration is optional; install the modelfit extra",
-)
+pytest.importorskip("numpyro", reason="Install the modelfit extra for NumPyro integration")
+pytest.importorskip("pybefit", reason="Install the modelfit extra for pybefit integration")
 
-from examples.model_fitting.tmaze_recoverability import RecoverabilityConfig, run_recoverability
+from examples.model_fitting.tmaze_recoverability import RecoverabilityConfig, run_recoverability  # noqa: E402
 
 
 def _small_cfg(parameterization: str) -> RecoverabilityConfig:
