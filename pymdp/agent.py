@@ -16,6 +16,49 @@ from jaxtyping import Array
 from functools import partial
 from jax import lax
 
+
+def _broadcast_batch_axis(x: Array, event_ndim: int, batch_size: int, name: str) -> Array:
+    """Give `x` a leading `(batch_size,)` axis, judged from its own rank.
+
+    An array with `event_ndim` dimensions is shared across the batch; one with an
+    extra leading axis of size 1 is broadcast; one whose leading axis already
+    equals `batch_size` is kept.
+    """
+    if x.ndim == event_ndim:
+        return jnp.broadcast_to(x, (batch_size,) + x.shape)
+    if x.ndim == event_ndim + 1:
+        if x.shape[0] == batch_size:
+            return x
+        if x.shape[0] == 1:
+            return jnp.broadcast_to(x, (batch_size,) + x.shape[1:])
+        raise ValueError(
+            f"Batch size {batch_size} does not match the first dimension of {name} with shape {x.shape}"
+        )
+    raise ValueError(
+        f"{name} has shape {x.shape}; expected {event_ndim} dimensions, "
+        f"or {event_ndim + 1} with a leading batch axis"
+    )
+
+
+def _preference_event_ndim(c_m: Array, batch_size: int, policy_len: int, A_given_batched: bool) -> int:
+    """Number of non-batch axes of one modality's preferences `C[m]`.
+
+    `C[m]` is `(num_obs,)` or time-indexed `(policy_len, num_obs)`, optionally with
+    a leading batch axis. Only a 2-D `C[m]` is ambiguous: it is unbatched and
+    time-indexed when its leading size can't be a batch size (not 1 or
+    `batch_size`) or batched otherwise, unless that size also equals `policy_len`.
+    Then it follows how `A[m]` was given, as before.
+    """
+    if c_m.ndim != 2:
+        return 1 if c_m.ndim <= 1 else 2
+    lead = c_m.shape[0]
+    if lead not in (1, batch_size):
+        return 2
+    if lead != policy_len:
+        return 1
+    return 1 if A_given_batched else 2
+
+
 class Agent(Module):
     """
     The Agent class, the highest-level API that wraps together processes for action, perception, and learning under active inference.
@@ -247,45 +290,56 @@ class Agent(Module):
         self.num_controls = [b_f.shape[-1] for b_f in B] # dimensions of control states for each hidden state factor
 
         # check that batch_size is consistent with shapes of given A and B
+        A_given_batched = []
         for m, a_m in enumerate(A):
             a_m_state_factors = tuple([self.num_states[f] for f in self.A_dependencies[m]])
+            A_given_batched.append(a_m.ndim > (len(a_m_state_factors) + 1))
             if a_m.ndim > (len(a_m_state_factors) + 1): # this indicates there's a leading batch dimension
                 if a_m.shape[0] == 1 and batch_size > 1:
                     A[m] = jnp.broadcast_to(a_m, (batch_size,) + a_m.shape[1:])
-                    if pA is not None:
-                        pA[m] = jnp.broadcast_to(pA[m], (batch_size,) + a_m.shape[1:])
-                    if C is not None:
-                        C[m] = jnp.broadcast_to(C[m], (batch_size,) + C[m].shape[1:])
                 elif a_m.shape[0] != batch_size:
                     raise ValueError(
                         f"Batch size {batch_size} does not match the first dimension of A[{m}] with shape {a_m.shape}"
                     )
             elif a_m.ndim == (len(a_m_state_factors) + 1):  # this indicates no leading batch dimension
                 A[m] = jnp.broadcast_to(a_m, (batch_size,) + a_m.shape)
-                if pA is not None:
-                    pA[m] = jnp.broadcast_to(pA[m], (batch_size,) + a_m.shape)
-                if C is not None:
-                    C[m] = jnp.broadcast_to(C[m], (batch_size,) + C[m].shape)
-        
+
         for f, b_f in enumerate(B):
             b_f_state_factors = tuple([self.num_states[f] for f in self.B_dependencies[f]])
             if b_f.ndim > (len(b_f_state_factors) + 2):  # this indicates there's a leading batch dimension
                 if b_f.shape[0] == 1 and batch_size > 1:
                     B[f] = jnp.broadcast_to(b_f, (batch_size,) + b_f.shape[1:])
-                    if pB is not None:
-                        pB[f] = jnp.broadcast_to(pB[f], (batch_size,) + b_f.shape[1:])
-                    if D is not None:
-                        D[f] = jnp.broadcast_to(D[f], (batch_size,) + D[f].shape[1:])
                 elif b_f.shape[0] != batch_size:
                     raise ValueError(
                         f"Batch size {batch_size} does not match the first dimension of B[{f}] with shape {b_f.shape}"
                     )
             elif b_f.ndim == (len(b_f_state_factors) + 2):  # this indicates no leading batch dimension
                 B[f] = jnp.broadcast_to(b_f, (batch_size,) + b_f.shape)
-                if pB is not None:
-                    pB[f] = jnp.broadcast_to(pB[f], (batch_size,) + b_f.shape)
-                if D is not None:
-                    D[f] = jnp.broadcast_to(D[f], (batch_size,) + D[f].shape)
+
+        # pA, pB, C and D are batched according to their own shapes, so e.g. a single
+        # shared C or D can be combined with batched A/B (and vice versa).
+        if pA is not None:
+            pA = [
+                _broadcast_batch_axis(pa_m, len(self.A_dependencies[m]) + 1, batch_size, f"pA[{m}]")
+                for m, pa_m in enumerate(pA)
+            ]
+        if pB is not None:
+            pB = [
+                _broadcast_batch_axis(pb_f, len(self.B_dependencies[f]) + 2, batch_size, f"pB[{f}]")
+                for f, pb_f in enumerate(pB)
+            ]
+        if C is not None:
+            C = [
+                _broadcast_batch_axis(
+                    c_m,
+                    _preference_event_ndim(c_m, batch_size, policy_len, A_given_batched[m]),
+                    batch_size,
+                    f"C[{m}]",
+                )
+                for m, c_m in enumerate(C)
+            ]
+        if D is not None:
+            D = [_broadcast_batch_axis(d_f, 1, batch_size, f"D[{f}]") for f, d_f in enumerate(D)]
 
         # now that shapes of A/B have been made consistent and have (batch_size,)-sized leading dimension applied, we can infer num_obs from the first dimension of A
         self.num_obs = [a_m.shape[1] for a_m in A] # dimensions of observations for each modality
