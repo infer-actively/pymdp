@@ -15,6 +15,7 @@ from itertools import chain
 from opt_einsum import contract
 
 EPS_VAL = 1e-16 # global constant for use in spm_log() function
+PROB_CUTOFF = np.exp(-16) # global constant for use in spm_MDP_G() function
 
 def spm_dot(X, x, dims_to_omit=None):
     """ Dot product of a multidimensional array with `x`. The dimensions in `dims_to_omit` 
@@ -544,28 +545,46 @@ def spm_MDP_G(A, x):
     qx = spm_cross(x)
     G = 0
     qo = 0
-    idx = np.array(np.where(qx > np.exp(-16))).T
+    idx = zip(*np.where(qx > PROB_CUTOFF))
+    likelihoods = A if utils.is_obj_array(A) else (A,)
+    # Keep the float64 seed: it also promotes float32 likelihoods.
+    seed = np.ones(1)
+    cross = spm_cross
+    if type(A) is np.ndarray:
+        if A.dtype != object or (A.ndim == 1 and all(
+            type(A_m) is np.ndarray and A_m.dtype != object and A_m.ndim > 0 for A_m in A
+        )):
+            cross = np.multiply.outer
+            # Prepare broadcast views once, preserving each modality's order.
+            if (len(likelihoods) + qx.ndim < 32
+                    and all(A_m.shape[1:] == qx.shape for A_m in likelihoods)):
+                count = len(likelihoods)
+                likelihoods = tuple(
+                    A_m.reshape((1,) * m + (A_m.shape[0],)
+                                + (1,) * (count - m - 1) + A_m.shape[1:])
+                    for m, A_m in enumerate(likelihoods)
+                )
+                seed = seed.reshape((1,) * count)
+                cross = np.multiply
 
-    if utils.is_obj_array(A):
-        # Accumulate expectation of entropy: i.e., E_{Q(o, x)}[lnP(o|x)] = E_{P(o|x)Q(x)}[lnP(o|x)] = E_{Q(x)}[P(o|x)lnP(o|x)] = E_{Q(x)}[H[P(o|x)]]
-        for i in idx:
-            # Probability over outcomes for this combination of causes
-            po = np.ones(1)
-            for modality_idx, A_m in enumerate(A):
-                index_vector = [slice(0, A_m.shape[0])] + list(i)
-                po = spm_cross(po, A_m[tuple(index_vector)])
-            
-            po = po.ravel()
-            qo += qx[tuple(i)] * po
-            G += qx[tuple(i)] * po.dot(np.log(po + np.exp(-16)))
-    else:
-        for i in idx:
-            po = np.ones(1)
-            index_vector = [slice(0, A.shape[0])] + list(i)
-            po = spm_cross(po, A[tuple(index_vector)])
-            po = po.ravel()
-            qo += qx[tuple(i)] * po
-            G += qx[tuple(i)] * po.dot(np.log(po + np.exp(-16)))
+    log = np.log
+    generic_cross = cross is spm_cross
+    outcome_index = (slice(None),) * (len(likelihoods) if cross is np.multiply else 1)
+
+    # Accumulate the expected log likelihood in state and modality order.
+    for state in idx:
+        index = outcome_index + state
+        po = seed
+        for A_m in likelihoods:
+            if generic_cross:
+                index = (slice(0, A_m.shape[0]),) + state
+            likelihood = A_m[index]
+            po = cross(po, likelihood)
+
+        po = po.ravel()
+        probability = qx[state]
+        qo += probability * po
+        G += probability * po.dot(log(po + PROB_CUTOFF))
    
     # Subtract negative entropy of expectations: i.e., E_{Q(o)}[lnQ(o)]
     G = G - qo.dot(spm_log_single(qo))  # type: ignore
