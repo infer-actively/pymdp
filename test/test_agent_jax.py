@@ -789,6 +789,40 @@ class TestAgentJax(unittest.TestCase):
         for f in range(agent.num_factors):
             self.assertTrue(jnp.array_equal(agent.I[f], expected_I[f]))
 
+    def test_user_supplied_I_is_batched_like_H(self):
+        """Passing `I` directly gives the same agent as passing the `H` it was generated from."""
+        A = utils.random_A_array(jr.PRNGKey(0), [3], [3])
+        B = [jnp.stack([jnp.eye(3), jnp.roll(jnp.eye(3), 1, 0)], -1)]
+        H = [jnp.array([0.0, 0.0, 1.0])]
+        I = control.generate_I_matrix(H, B, 0.1, 2)  # unbatched: each I[f] is (depth, num_states[f])
+
+        for batch_size in (1, 2):
+            reference = Agent(A, B, H=H, use_inductive=True, inductive_depth=2, batch_size=batch_size)
+            qs = reference.infer_states([jnp.zeros(batch_size, dtype=jnp.int32)], reference.D)
+            q_pi_reference, _ = reference.infer_policies(qs)
+            layouts = {
+                "unbatched": I,
+                "leading axis of 1": [i_f[None] for i_f in I],
+                "batched": [jnp.broadcast_to(i_f, (batch_size,) + i_f.shape) for i_f in I],
+            }
+            for layout, I_given in layouts.items():
+                with self.subTest(batch_size=batch_size, layout=layout):
+                    agent = Agent(A, B, I=I_given, use_inductive=True, inductive_depth=2, batch_size=batch_size)
+                    self.assertEqual(agent.I[0].shape, reference.I[0].shape)
+                    q_pi, _ = agent.infer_policies(qs)
+                    self.assertTrue(jnp.allclose(q_pi, q_pi_reference))
+
+        with self.assertRaisesRegex(ValueError, r"I\[0\]"):
+            Agent(A, B, I=[jnp.broadcast_to(I[0], (3,) + I[0].shape)], use_inductive=True, batch_size=2)
+
+    def test_use_inductive_requires_H_or_I(self):
+        """`use_inductive=True` with neither `H` nor `I` would add no inductive value, so it is rejected."""
+        A = utils.random_A_array(jr.PRNGKey(0), [3], [3])
+        B = utils.random_B_array(jr.PRNGKey(1), [3], [2])
+
+        with self.assertRaisesRegex(ValueError, "use_inductive"):
+            Agent(A, B, use_inductive=True)
+
     def test_valid_gradients_one_step_ahead(self):
         """
         This unit test checks that gradients can be computed through a single time step of

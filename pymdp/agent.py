@@ -300,6 +300,11 @@ class Agent(Module):
             raise ValueError("`inference_horizon` must be >= 1 when provided")
         if use_inductive and self.inductive_depth < 1:
             raise ValueError("`inductive_depth` must be >= 1 when `use_inductive` is True")
+        if use_inductive and H is None and I is None:
+            raise ValueError(
+                "`use_inductive=True` needs `H` (goal states) or `I` (reachability matrices); "
+                "without either, the inductive term is zero for every policy"
+            )
 
         # policy parameters
         self.policy_len = policy_len
@@ -400,7 +405,18 @@ class Agent(Module):
                 )
             )(H, B, self.inductive_threshold)
         elif self.use_inductive and I is not None:
-            I = I
+            # each I[f] is (depth, num_states[f]), optionally with a leading batch axis, as H is batched above
+            I = list(I)
+            for f, i_f in enumerate(I):
+                if i_f.ndim > 2:
+                    if i_f.shape[0] == 1 and batch_size > 1:
+                        I[f] = jnp.broadcast_to(i_f, (batch_size,) + i_f.shape[1:])
+                    elif i_f.shape[0] != batch_size:
+                        raise ValueError(
+                            f"Batch size {batch_size} does not match the first dimension of I[{f}] with shape {i_f.shape}"
+                        )
+                elif i_f.ndim == 2:
+                    I[f] = jnp.broadcast_to(i_f, (self.batch_size,) + i_f.shape)
         else:
             I = jtu.tree_map(lambda x: jnp.expand_dims(jnp.zeros_like(x), 1), D)
         self.I = I
