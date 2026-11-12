@@ -12,6 +12,7 @@ import unittest
 
 import jax.numpy as jnp
 import jax.random as jr
+import jax.tree_util as jtu
 import numpy as np
 
 from pymdp import utils
@@ -88,6 +89,38 @@ class TestMCTSPolicySearchRollout(unittest.TestCase):
         self.assertEqual(qpi.shape[-1], agent.E.shape[-1])
         self.assertTrue(np.all(np.isfinite(qpi)))
         np.testing.assert_allclose(qpi.sum(axis=-1), 1.0, atol=1e-5)
+
+
+class TestMCTSSequenceBeliefs(unittest.TestCase):
+    def test_mcts_plans_from_latest_belief_in_window(self):
+        # Ring of 3 locations, fully observed; actions 0=left, 1=stay, 2=right.
+        # The agent walked 0 -> 1 -> 2 and prefers location 2, so it should stay.
+        num_states = 3
+        eye = jnp.eye(num_states)
+        B = jnp.stack([jnp.roll(eye, -1, 0), eye, jnp.roll(eye, 1, 0)], axis=-1)
+        agent = Agent(
+            [eye],
+            [B],
+            C=[jnp.array([0.0, 0.0, 4.0])],
+            inference_algo="mmp",
+            inference_horizon=3,
+            gamma=4.0,
+        )
+        qs = agent.infer_states(
+            [jnp.array([[0, 1, 2]])],
+            empirical_prior=agent.D,
+            past_actions=jnp.array([[[2], [2]]]),
+        )
+        self.assertEqual(qs[0].shape, (1, 3, num_states))
+
+        search = mcts_policy_search(max_depth=1, num_simulations=16)
+        q_window, _ = search(agent, qs, jr.PRNGKey(0))
+        q_latest, _ = search(agent, jtu.tree_map(lambda x: x[:, -1:], qs), jr.PRNGKey(0))
+        q_default, _ = agent.infer_policies(qs)
+
+        np.testing.assert_allclose(q_window, q_latest)
+        self.assertEqual(int(jnp.argmax(q_default[0])), 1)
+        self.assertEqual(int(jnp.argmax(q_window[0])), 1)
 
 
 if __name__ == "__main__":

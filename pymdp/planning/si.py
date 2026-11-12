@@ -38,6 +38,12 @@ def predict_fn(agent: Any, qs: list[jnp.ndarray]) -> tuple[list[jnp.ndarray], li
         policy scores (`neg_efe = -EFE`) for each policy.
     """
     policies = agent.policies.policy_arr
+    if policies.shape[1] != 1:
+        raise ValueError(
+            "Sophisticated inference expands one action per tree level and needs an "
+            f"agent built with policy_len=1, got policies of length {policies.shape[1]}. "
+            "Set the planning depth with `si_policy_search(horizon=...)` instead."
+        )
 
     def _step(
         q: list[jnp.ndarray], policy: jnp.ndarray
@@ -159,6 +165,9 @@ def si_policy_search(
         batch_size = agent.A[0].shape[0]
 
         if tree is None:
+            # plan from the latest belief, as `Agent.infer_policies` does; sequence
+            # methods (e.g. mmp) pass a window of beliefs `(batch, T, num_states)`
+            qs = jtu.tree_map(lambda x: x[:, -1:] if x.ndim == 3 else x, qs)
             tree = Tree(
                 qs, agent.num_factors, agent.num_modalities, max_nodes, max_branching, batch_size=batch_size
             )

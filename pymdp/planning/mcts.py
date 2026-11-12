@@ -63,8 +63,9 @@ def mcts_policy_search(
 
     def si_policy(agent: Any, beliefs: list[jnp.ndarray], rng_key: jnp.ndarray) -> tuple[jnp.ndarray, Any]:
 
-        # remove time dimension
-        embedding = jtu.tree_map(lambda x: x[:, 0], beliefs)
+        # plan from the latest belief, as `Agent.infer_policies` does; sequence
+        # methods (e.g. mmp) pass a window of beliefs `(batch, T, num_states)`
+        embedding = jtu.tree_map(lambda x: x[:, -1], beliefs)
         root = mctx.RootFnOutput(
             prior_logits=jnp.log(agent.E),
             value=jnp.zeros((agent.batch_size)),

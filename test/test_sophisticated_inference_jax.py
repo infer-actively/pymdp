@@ -8,6 +8,7 @@ import unittest
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
+import numpy as np
 
 from pymdp import control, utils
 from pymdp.agent import Agent
@@ -249,6 +250,45 @@ class TestSophisticatedInferenceJax(unittest.TestCase):
         cue_a_prob = float(action_marginals_vanilla[0][1])
         cue_b_prob = float(action_marginals_vanilla[0][2])
         self.assertAlmostEqual(cue_a_prob, cue_b_prob, places=6)
+
+    def test_si_plans_from_latest_belief_in_window(self):
+        # Ring of 3 locations, fully observed; actions 0=left, 1=stay, 2=right.
+        # The agent walked 0 -> 1 -> 2 and prefers location 2, so it should stay.
+        num_states = 3
+        eye = jnp.eye(num_states)
+        B = jnp.stack([jnp.roll(eye, -1, 0), eye, jnp.roll(eye, 1, 0)], axis=-1)
+        agent = Agent(
+            [eye],
+            [B],
+            C=[jnp.array([0.0, 0.0, 4.0])],
+            inference_algo="mmp",
+            inference_horizon=3,
+        )
+        qs = agent.infer_states(
+            [jnp.array([[0, 1, 2]])],
+            empirical_prior=agent.D,
+            past_actions=jnp.array([[[2], [2]]]),
+        )
+        self.assertEqual(qs[0].shape, (1, 3, num_states))
+
+        search_fn = si_policy_search(horizon=1, max_nodes=64, max_branching=8)
+        q_window, _ = search_fn(agent, qs=qs, rng_key=jr.PRNGKey(0))
+        q_latest, _ = search_fn(
+            agent, qs=jtu.tree_map(lambda x: x[:, -1:], qs), rng_key=jr.PRNGKey(0)
+        )
+
+        np.testing.assert_allclose(q_window, q_latest)
+        self.assertEqual(int(jnp.argmax(q_window[0])), 1)
+
+    def test_si_requires_single_step_policies(self):
+        A = [jnp.eye(3)]
+        B = [utils.create_controllable_B(3, 3)[0]]
+        agent = Agent(A, B, C=[jnp.array([0.0, 0.0, 4.0])], policy_len=2)
+        qs = jtu.tree_map(lambda x: jnp.expand_dims(x, -2), agent.D)
+        search_fn = si_policy_search(horizon=2, max_nodes=64, max_branching=16)
+
+        with self.assertRaisesRegex(ValueError, "policy_len=1"):
+            search_fn(agent, qs=qs, rng_key=jr.PRNGKey(0))
 
 
 if __name__ == "__main__":
