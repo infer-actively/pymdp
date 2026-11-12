@@ -674,6 +674,50 @@ class TestAgentJax(unittest.TestCase):
         with self.assertRaises(AssertionError):
             Agent(A=A, B=B, learn_A=True)
 
+    def test_agent_with_B_learning_requires_pB(self):
+        """learn_B=True without pB is rejected when the agent is built, not during learning."""
+        A = utils.random_A_array(jr.PRNGKey(0), [3], [3])
+        B = utils.random_B_array(jr.PRNGKey(1), [3], [2])
+
+        with self.assertRaisesRegex(ValueError, "pB is required for B learning"):
+            Agent(A=A, B=B, learn_B=True)
+
+    def test_custom_policies_are_checked_against_num_controls(self):
+        """Custom policies need one action per factor and timestep, each within that factor's num_controls."""
+        A = [jnp.eye(3)]
+        B = [jnp.stack([jnp.eye(3), jnp.roll(jnp.eye(3), 1, 0)], -1)]  # one factor with 2 actions
+
+        bad_policies = {
+            "action out of range": jnp.array([[[0]], [[1]], [[7]]]),
+            "negative action": jnp.array([[[0]], [[-1]]]),
+            "too many factors": jnp.array([[[0, 0]], [[1, 0]]]),
+            "no timestep axis": jnp.array([[0], [1]]),
+        }
+        for name, policies in bad_policies.items():
+            with self.subTest(name), self.assertRaisesRegex(ValueError, "policies"):
+                Agent(A, B, policies=policies)
+
+        agent = Agent(A, B, policies=jnp.array([[[0]], [[1]]]))
+        self.assertEqual(agent.policies.num_policies, 2)
+
+        # the check only reads static shapes, so building under jit still works
+        policies_tup = (((0,),), ((1,),))
+        agent = jit(lambda A, B: Agent(A, B, policies=policies_tup))(A, B)
+        self.assertEqual(agent.policies.num_policies, 2)
+
+    def test_b_action_dependencies_are_checked_against_num_controls(self):
+        """B's action axes must match num_controls for the factors in B_action_dependencies."""
+        A = utils.random_A_array(jr.PRNGKey(0), [3], [3])
+        # trailing action axes (3, 2): control factor 0 has 3 levels, control factor 1 has 2
+        B = utils.random_B_array(jr.PRNGKey(1), [3], [3, 2], B_action_dependencies=[[0, 1]])
+
+        for num_controls in ([2, 3], [2, 2]):
+            with self.subTest(num_controls=num_controls), self.assertRaisesRegex(ValueError, r"B\[0\]"):
+                Agent(A, B, B_action_dependencies=[[0, 1]], num_controls=num_controls)
+
+        agent = Agent(A, B, B_action_dependencies=[[0, 1]], num_controls=[3, 2])
+        self.assertEqual(agent.num_controls, [6])
+
     def test_agent_construction_jittable(self):
         """
         Test that the constructor call of the Agent class is jittable
