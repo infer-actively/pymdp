@@ -145,6 +145,13 @@ class GraphEnv(PymdpEnv):
         num_locations = len(graph.nodes)
         num_object_locations = num_locations + 1
 
+        for name, location, upper in (
+            ("agent_location", agent_location, num_locations),
+            ("object_location", object_location, num_object_locations),
+        ):
+            if not 0 <= int(location) < upper:
+                raise ValueError(f"{name} must be in [0, {upper}), got {int(location)}")
+
         states = [num_locations, num_object_locations]
         D = [jnp.zeros(s) for s in states]
 

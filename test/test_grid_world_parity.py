@@ -181,5 +181,20 @@ class TestGridWorldParity(unittest.TestCase):
             np.testing.assert_array_equal(jax_obs_flat, legacy_states)
 
 
+class TestGridWorldInitialPosition(unittest.TestCase):
+    def test_out_of_range_initial_position_raises(self):
+        for position in (9, -1, (3, 0), (0, -1)):
+            with self.subTest(position=position):
+                with self.assertRaisesRegex(ValueError, "outside"):
+                    GridWorld(shape=(3, 3), initial_position=position)
+
+    def test_initial_position_accepts_row_col_sequence(self):
+        for position in ((1, 2), [1, 2], np.array([1, 2])):
+            with self.subTest(position=position):
+                env = GridWorld(shape=(3, 3), initial_position=position)
+                self.assertEqual(float(env.D[0][5]), 1.0)
+                self.assertEqual(float(env.D[0].sum()), 1.0)
+
+
 if __name__ == "__main__":
     unittest.main()
