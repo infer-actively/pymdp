@@ -27,7 +27,8 @@ def predict_fn(agent: Any, qs: list[jnp.ndarray]) -> tuple[list[jnp.ndarray], li
     ----------
     agent : Any
         Active inference agent containing `A`, `B`, `C`, dependencies, and
-        policy definitions.
+        policy definitions. Its `use_utility` and `use_states_info_gain`
+        flags are respected when present (both default to `True`).
     qs : list[jnp.ndarray]
         Current posterior beliefs over hidden-state factors.
 
@@ -38,14 +39,20 @@ def predict_fn(agent: Any, qs: list[jnp.ndarray]) -> tuple[list[jnp.ndarray], li
         policy scores (`neg_efe = -EFE`) for each policy.
     """
     policies = agent.policies.policy_arr
+    use_utility = getattr(agent, "use_utility", True)
+    use_states_info_gain = getattr(agent, "use_states_info_gain", True)
 
     def _step(
         q: list[jnp.ndarray], policy: jnp.ndarray
     ) -> tuple[list[jnp.ndarray], list[jnp.ndarray], jnp.ndarray, jnp.ndarray]:
         qs = compute_expected_state(q, agent.B, policy, agent.B_dependencies)
         qo = compute_expected_obs(qs, agent.A, agent.A_dependencies)
-        u = compute_expected_utility(qo, agent.C)
-        ig = compute_info_gain(qs, qo, agent.A, agent.A_dependencies)
+        u = compute_expected_utility(qo, agent.C) if use_utility else 0.0
+        ig = (
+            compute_info_gain(qs, qo, agent.A, agent.A_dependencies)
+            if use_states_info_gain
+            else 0.0
+        )
         return qs, qo, u, ig
 
     qs, qo, u, ig = jax.vmap(

@@ -8,6 +8,7 @@ import unittest
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
+import numpy as np
 
 from pymdp import control, utils
 from pymdp.agent import Agent
@@ -249,6 +250,45 @@ class TestSophisticatedInferenceJax(unittest.TestCase):
         cue_a_prob = float(action_marginals_vanilla[0][1])
         cue_b_prob = float(action_marginals_vanilla[0][2])
         self.assertAlmostEqual(cue_a_prob, cue_b_prob, places=6)
+
+    def test_si_respects_agent_efe_flags(self):
+        # Three locations; each model has one EFE term that would favour a
+        # location, and the agent switches that term off. Policies should then
+        # be scored equally, as `Agent.infer_policies` does.
+        B_loc = utils.create_controllable_B(3, 3)[0]
+        D_loc = jnp.array([1.0, 0.0, 0.0])
+
+        # utility only: location 2 is preferred, all states are observed directly
+        utility_agent = Agent(
+            [jnp.eye(3)],
+            [B_loc],
+            C=[jnp.array([0.0, 0.0, 8.0])],
+            D=[D_loc],
+            use_utility=False,
+        )
+
+        # information gain only: a context factor is revealed at location 1
+        uninformative = jnp.full((2, 2), 0.5)
+        A_context = jnp.stack([uninformative, jnp.eye(2), uninformative], axis=1)
+        info_gain_agent = Agent(
+            [A_context],
+            [B_loc, jnp.eye(2).reshape(2, 2, 1)],
+            C=[jnp.zeros(2)],
+            D=[D_loc, jnp.array([0.5, 0.5])],
+            A_dependencies=[[0, 1]],
+            num_controls=[3, 1],
+            use_states_info_gain=False,
+        )
+
+        for name, agent in [
+            ("use_utility=False", utility_agent),
+            ("use_states_info_gain=False", info_gain_agent),
+        ]:
+            with self.subTest(name):
+                q_pi, _ = self._run_si_search(agent, horizon=1)
+                q_pi_vanilla = self._run_vanilla_search(agent)
+                np.testing.assert_allclose(q_pi_vanilla[0], jnp.full(3, 1 / 3), atol=1e-6)
+                np.testing.assert_allclose(q_pi, q_pi_vanilla, atol=1e-6)
 
 
 if __name__ == "__main__":
