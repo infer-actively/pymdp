@@ -5,12 +5,16 @@
 
 import unittest
 
+import numpy as np
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
 from jax import vmap
 
+from pymdp.agent import Agent
+from pymdp.distribution import compile_model
 from pymdp.envs.env import PymdpEnv, make
+from pymdp.envs.rollout import rollout
 
 
 def _stack_params(params_list):
@@ -47,6 +51,40 @@ def _make_stochastic_params():
     ]
     D = [jnp.array([0.5, 0.5], dtype=jnp.float32)]
     return {"A": A, "B": B, "D": D}
+
+
+def _compile_multi_control_model():
+    """Model with a factor moved by two controls and an uncontrolled factor.
+
+    `pos` moves 0, 1 or 2 steps around a ring of 3 locations depending on
+    `move` and `boost`; `clock` flips every step with no control.
+    """
+    model = compile_model(
+        {
+            "observations": {"o": {"elements": ["a", "b", "c"], "depends_on": ["pos"]}},
+            "controls": {
+                "move": {"elements": ["stay", "fwd"]},
+                "boost": {"elements": ["off", "on"]},
+            },
+            "states": {
+                "pos": {
+                    "elements": ["a", "b", "c"],
+                    "depends_on": ["pos"],
+                    "controlled_by": ["move", "boost"],
+                },
+                "clock": {"elements": ["t0", "t1"], "depends_on": ["clock"], "controlled_by": []},
+            },
+        }
+    )
+    model.A["o"].data = np.eye(3)
+    for s in range(3):
+        model.B["pos"][s, s, "stay", :] = 1.0
+        model.B["pos"][(s + 1) % 3, s, "fwd", "off"] = 1.0
+        model.B["pos"][(s + 2) % 3, s, "fwd", "on"] = 1.0
+    model.B["clock"].data = np.array([[0.0, 1.0], [1.0, 0.0]])
+    model.D["pos"].data = np.array([1.0, 0.0, 0.0])
+    model.D["clock"].data = np.array([1.0, 0.0])
+    return model
 
 
 class TestPymdpEnv(unittest.TestCase):
@@ -324,6 +362,50 @@ class TestPymdpEnv(unittest.TestCase):
         self.assertEqual(env.A[0].shape[0], batch_size)
         self.assertEqual(env.B[0].shape[0], batch_size)
         self.assertEqual(env.D[0].shape[0], batch_size)
+
+
+    def test_B_action_dependencies_flattened_like_agent(self):
+        """Control axes in B should be flattened exactly as the Agent does."""
+        model = _compile_multi_control_model()
+        env = PymdpEnv(**model)
+        agent = Agent(**model)
+
+        self.assertEqual([b.shape for b in env.B], [(3, 3, 4), (2, 2, 1)])
+        for env_b, agent_b in zip(env.B, agent.B):
+            self.assertTrue(bool(jnp.array_equal(env_b, agent_b[0])))
+
+        # Flat action 3 is (move="fwd", boost="on"): two steps from "a" to "c".
+        state = [jnp.array(0.0), jnp.array(0.0)]
+        _, next_state = env.step(jr.PRNGKey(1), state, jnp.array([3, 0]))
+        self.assertEqual(next_state[0].shape, ())
+        self.assertEqual(float(next_state[0]), 2.0)
+        self.assertEqual(float(next_state[1]), 1.0)
+
+    def test_make_env_params_use_flattened_B(self):
+        """make() should return env_params["B"] in the same layout as env.B."""
+        model = _compile_multi_control_model()
+        env, env_params = make(**model, make_env_params=True)
+
+        self.assertEqual([b.shape for b in env_params["B"]], [(3, 3, 4), (2, 2, 1)])
+        for env_b, param_b in zip(env.B, env_params["B"]):
+            self.assertTrue(bool(jnp.array_equal(env_b, param_b)))
+
+    def test_rollout_with_B_action_dependencies(self):
+        """rollout() should run on a compiled model with multi-control and uncontrolled factors."""
+        model = _compile_multi_control_model()
+        env = PymdpEnv(**model)
+        agent = Agent(**model, action_selection="stochastic")
+
+        num_timesteps = 4
+        _, info = rollout(agent, env, num_timesteps=num_timesteps, rng_key=jr.PRNGKey(0))
+
+        pos = np.asarray(info["env_state"][0][0])
+        clock = np.asarray(info["env_state"][1][0])
+        actions = np.asarray(info["action"][0, :, 0])
+        steps_per_action = np.array([0, 0, 1, 2])  # flat index of (move, boost) in C order
+        for t in range(num_timesteps):
+            self.assertEqual(pos[t + 1], (pos[t] + steps_per_action[actions[t]]) % 3)
+            self.assertEqual(clock[t + 1], 1 - clock[t])
 
 
 if __name__ == "__main__":

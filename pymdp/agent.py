@@ -1122,28 +1122,23 @@ class Agent(Module):
         B_flat = []
         pB_flat = []
         for i, (B_f, action_dependency) in enumerate(zip(B, B_action_dependencies)):
+            flatten = partial(
+                utils.flatten_B_action_dims,
+                action_dependency=action_dependency,
+                num_controls=self.num_controls_multi,
+                B_dependency=None if B_dependencies is None else B_dependencies[i],
+            )
+            B_flat.append(flatten(B_f))
+            if pB is not None:
+                pB_flat.append(flatten(pB[i]))
+
             if action_dependency == []:
-                # An uncontrolled factor may be given with or without its trailing
-                # size-1 action axis (``utils.random_B_array`` omits it). Add the axis
-                # only when it is missing: B_f is (*batch, next_state, *lagging_states[, 1]).
-                has_action_axis = (
-                    B_dependencies is not None
-                    and B_f.ndim >= len(B_dependencies[i]) + 2
-                    and B_f.shape[-1] == 1
-                )
-                B_flat.append(B_f if has_action_axis else jnp.expand_dims(B_f, axis=-1))
-                if pB is not None:
-                    pB_flat.append(pB[i] if has_action_axis else jnp.expand_dims(pB[i], axis=-1))
                 action_maps.append(
                     {"multi_dependency": [], "multi_dims": [], "flat_dependency": [i], "flat_dims": [1]}
                 )
                 continue
 
             dims = [self.num_controls_multi[d] for d in action_dependency]
-            target_shape = list(B_f.shape)[: -len(action_dependency)] + [pymath.prod(dims)]
-            B_flat.append(B_f.reshape(target_shape))
-            if pB is not None:
-                pB_flat.append(pB[i].reshape(target_shape))
             action_maps.append(
                 {
                     "multi_dependency": action_dependency,
