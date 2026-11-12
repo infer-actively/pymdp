@@ -121,9 +121,11 @@ def update_posterior_policies_full(
         
         if use_param_info_gain:
             if pA is not None:
-                G[p_idx] += calc_pA_info_gain(pA, qo_seq_pi[p_idx], qs_seq_pi[p_idx])
+                G[p_idx] += calc_pA_info_gain(pA, qo_seq_pi[p_idx], qs_seq_pi[p_idx]).item()
             if pB is not None:
-                G[p_idx] += calc_pB_info_gain(pB, qs_seq_pi[p_idx], prior, policy)
+                # the policy's actions lead to the last `n_steps` beliefs, starting from the belief before them
+                n_steps = policy.shape[0]
+                G[p_idx] += calc_pB_info_gain(pB, qs_seq_pi[p_idx][-n_steps:], qs_seq_pi[p_idx][-n_steps - 1], policy).item()
         
         if I is not None:
             G[p_idx] += calc_inductive_cost(qs_bma, qs_seq_pi[p_idx], I)
@@ -251,9 +253,11 @@ def update_posterior_policies_full_factorized(
         
         if use_param_info_gain:
             if pA is not None:
-                G[p_idx] += calc_pA_info_gain_factorized(pA, qo_seq_pi[p_idx], qs_seq_pi[p_idx], A_factor_list)
+                G[p_idx] += calc_pA_info_gain_factorized(pA, qo_seq_pi[p_idx], qs_seq_pi[p_idx], A_factor_list).item()
             if pB is not None:
-                G[p_idx] += calc_pB_info_gain_interactions(pB, qs_seq_pi[p_idx], qs_seq_pi[p_idx], B_factor_list, policy)
+                # the policy's actions lead to the last `n_steps` beliefs, starting from the belief before them
+                n_steps = policy.shape[0]
+                G[p_idx] += calc_pB_info_gain_interactions(pB, qs_seq_pi[p_idx][-n_steps:], qs_seq_pi[p_idx][-n_steps - 1], B_factor_list, policy).item()
         
         if I is not None:
             G[p_idx] += calc_inductive_cost(qs_bma, qs_seq_pi[p_idx], I)
