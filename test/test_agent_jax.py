@@ -1217,6 +1217,70 @@ class TestPoliciesTupleAgentEquivalence(unittest.TestCase):
         self.assertEqual(agent.B[1].shape, (1, 2, 2, 1))
 
 
+class TestAgentParameterBatching(unittest.TestCase):
+    """`C`, `D`, `pA` and `pB` are batched by their own shapes, not by how `A`/`B` were given."""
+
+    batch_size = 3
+
+    def setUp(self):
+        bs = self.batch_size
+        self.A = utils.random_A_array(jr.PRNGKey(0), [4], [2])
+        self.B = utils.random_B_array(jr.PRNGKey(1), [2], [2])
+        self.C = [jnp.arange(4.0)]
+        self.D = [jnp.array([0.9, 0.1])]
+        self.pA = [a * 10 + 1 for a in self.A]
+        self.pB = [b * 10 + 1 for b in self.B]
+        self.batched = lambda xs: [jnp.broadcast_to(x, (bs,) + x.shape) for x in xs]
+        self.batch_one = lambda xs: [x[None] for x in xs]
+        self.obs = [jnp.zeros((bs, 1), dtype=jnp.int32)]
+
+    def _q_pi(self, agent):
+        qs = agent.infer_states(self.obs, agent.D)
+        return agent.infer_policies(qs)[0]
+
+    def test_mixed_batching_matches_fully_batched_agent(self):
+        b = self.batched
+        reference = Agent(
+            b(self.A), b(self.B), C=b(self.C), D=b(self.D), pA=b(self.pA), pB=b(self.pB),
+            batch_size=self.batch_size,
+        )
+        variants = {
+            "A/B unbatched, C/D/pA/pB batched": dict(
+                A=self.A, B=self.B, C=b(self.C), D=b(self.D), pA=b(self.pA), pB=b(self.pB)
+            ),
+            "A/B with batch axis of 1, C/D/pA/pB unbatched": dict(
+                A=self.batch_one(self.A), B=self.batch_one(self.B),
+                C=self.C, D=self.D, pA=self.pA, pB=self.pB,
+            ),
+            "A/B batched, C/D/pA/pB unbatched": dict(
+                A=b(self.A), B=b(self.B), C=self.C, D=self.D, pA=self.pA, pB=self.pB
+            ),
+        }
+        for name, kwargs in variants.items():
+            with self.subTest(name):
+                agent = Agent(batch_size=self.batch_size, **kwargs)
+                for field in ("A", "B", "C", "D", "pA", "pB"):
+                    self.assertEqual(
+                        [x.shape for x in getattr(agent, field)],
+                        [x.shape for x in getattr(reference, field)],
+                        field,
+                    )
+                self.assertTrue(jnp.allclose(self._q_pi(agent), self._q_pi(reference)))
+
+    def test_time_indexed_preferences_with_batched_A(self):
+        """An unbatched `(policy_len, num_obs)` C stays time-indexed next to batched A."""
+        C_t = [jnp.stack([jnp.arange(4.0), -jnp.arange(4.0)])]
+        b = self.batched
+        unbatched_A = Agent(self.A, self.B, C=C_t, batch_size=self.batch_size, policy_len=2)
+        batched_A = Agent(b(self.A), b(self.B), C=C_t, batch_size=self.batch_size, policy_len=2)
+        self.assertEqual(batched_A.C[0].shape, (self.batch_size, 2, 4))
+        self.assertTrue(jnp.allclose(self._q_pi(batched_A), self._q_pi(unbatched_A)))
+
+    def test_batch_size_mismatch_in_C_is_reported(self):
+        with self.assertRaisesRegex(ValueError, r"C\[0\]"):
+            Agent(self.A, self.B, C=[jnp.ones((2, 2, 4))], batch_size=self.batch_size)
+
+
 if __name__ == "__main__":
     unittest.main()
 
