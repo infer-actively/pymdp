@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.6](https://github.com/infer-actively/pymdp/compare/v1.0.5...v1.0.6) (2026-11-12)
+
+
+### Performance
+
+* **maths:** speed up spm_MDP_G -- 49.9% faster policy evaluation ([#462](https://github.com/infer-actively/pymdp/issues/462)) ([16e8ded](https://github.com/infer-actively/pymdp/commit/16e8dedcef5b1e2333c26375e526c595241f675d))
+
 ## [1.0.5](https://github.com/infer-actively/pymdp/compare/v1.0.4...v1.0.5) (2026-11-07)
 
 
