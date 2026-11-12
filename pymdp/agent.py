@@ -22,32 +22,49 @@ class Agent(Module):
 
     Examples
     --------
-    A single timestep of active inference:
+    A single timestep of active inference, against a `PymdpEnv` built from the same `A`, `B` and `D`.
+    Observations, beliefs and actions carry a leading `batch_size` axis (1 by default), so the unbatched
+    environment is `vmap`-ed over it:
 
-        from jax import random as jr
+        from jax import random as jr, vmap
+        from pymdp import utils
+        from pymdp.agent import Agent
+        from pymdp.envs.env import make
 
-        my_agent = Agent(A=A, B=B, C=C, <more_params>)
-        observation = env.step(initial_action)
+        key_A, key_B, key_reset, key_action, key_step = jr.split(jr.PRNGKey(0), 5)
+        A = utils.random_A_array(key_A, [3], [2])
+        B = utils.random_B_array(key_B, [2], [2])
+        D = utils.list_array_uniform([[2]])
+
+        my_agent = Agent(A=A, B=B, D=D)
+        env, _ = make(A=A, B=B, D=D)
+
+        observation, env_state = vmap(env.reset)(jr.split(key_reset, my_agent.batch_size))
         qs = my_agent.infer_states(observation, empirical_prior=my_agent.D)
         q_pi, neg_efe = my_agent.infer_policies(qs)
-        keys = jr.split(rng_key, my_agent.batch_size + 1)
+        keys = jr.split(key_action, my_agent.batch_size + 1)
         next_action = my_agent.sample_action(q_pi, rng_key=keys[1:])
-        next_observation = env.step(next_action)
+        step_keys = jr.split(key_step, my_agent.batch_size)
+        next_observation, env_state = vmap(env.step)(step_keys, env_state, next_action)
 
-    This represents one timestep of an active inference process. Wrapping this step in a loop with an `Env()` class that returns
-    observations and takes actions as inputs, would entail a dynamic agent-environment interaction.
+    This represents one timestep of an active inference process. `pymdp.envs.rollout.rollout` repeats this step
+    in a compiled loop for a full agent-environment interaction.
 
     Observation Formats
     -------------------
     Observations can be provided in two formats:
 
     1. **Discrete observations** (default, categorical_obs=False):
-       Each `observations[m]` is an integer observation index for modality `m`.
+       Each `observations[m]` is an integer array of shape `(batch_size,)`
+       holding one observation index per batch element for modality `m`.
        These are converted to one-hot vectors internally.
 
     2. **Categorical observations** (categorical_obs=True):
-       Each `observations[m]` is a probability vector over observations for
-       modality `m`.
+       Each `observations[m]` is an array of shape `(batch_size, num_obs[m])`
+       holding one probability vector over observations per batch element.
+
+    Either format may also carry a time axis after the batch axis, e.g.
+    `(batch_size, T)` for a history of discrete observations.
 
     Advanced preprocessing
     ----------------------
@@ -463,7 +480,8 @@ class Agent(Module):
             shaped `(batch, T, num_factors)`.
         beliefs_B: list[Array] | None, optional
             Optional sequence of beliefs used for transition updates. If `None`,
-            transition updates are skipped.
+            `beliefs_A` is used for them as well. Whether `B` is updated is set
+            by `learn_B`.
         lr_pA: float, default=1.0
             Learning-rate multiplier for `A` updates.
         lr_pB: float, default=1.0
@@ -645,20 +663,21 @@ class Agent(Module):
 
         return agent
 
-    def process_obs(self, observations: list[Array] | list[int]) -> list[Array]:
+    def process_obs(self, observations: list[Array]) -> list[Array]:
         """
         Preprocess observations into the distributional format expected by the inference routines.
 
         Parameters
         ----------
-        observations: list[Array] or list[int]
+        observations: list[Array]
             The observation input. Format depends on the default preprocessing:
 
             - If `self.categorical_obs=False` (default): Each entry `observations[m]` is an integer
-              index representing the discrete observation for modality `m`.
+              array of shape `(batch_size,)` (or `(batch_size, T)`) of observation indices for modality `m`.
 
-            - If `self.categorical_obs=True`: Each entry `observations[m]` is a 1D array representing
-              a probability distribution over observations for modality `m`.
+            - If `self.categorical_obs=True`: Each entry `observations[m]` is an array of shape
+              `(batch_size, num_obs[m])` (or `(batch_size, T, num_obs[m])`) of probability
+              distributions over observations for modality `m`.
 
         Returns
         -------
@@ -682,14 +701,15 @@ class Agent(Module):
 
         return self.make_categorical(observations)
 
-    def make_categorical(self, observations: list[Array] | list[int]) -> list[Array]:
+    def make_categorical(self, observations: list[Array]) -> list[Array]:
         """
         Convert discrete index observations into one-hot categorical distributions.
 
         Parameters
         ----------
-        observations: list[Array] or list[int]
-            Each entry `observations[m]` is an integer index for modality `m`.
+        observations: list[Array]
+            Each entry `observations[m]` is an integer array of observation indices for modality `m`,
+            usually of shape `(batch_size,)`.
 
         Returns
         -------
@@ -700,7 +720,7 @@ class Agent(Module):
 
     def infer_states(
         self,
-        observations: list[Array] | list[int],
+        observations: list[Array],
         empirical_prior: list[Array],
         *,
         past_actions: Array | None = None,
@@ -715,13 +735,15 @@ class Agent(Module):
 
         Parameters
         ----------
-        observations: list[Array] | list[int]
-            Observation input in one of two formats:
+        observations: list[Array]
+            Observation input in one of two formats, with a leading batch axis:
 
             - Discrete observations (default): each `observations[m]` is an
-              integer index for modality `m`.
-            - Categorical observations: each `observations[m]` is a probability
-              vector over observations for modality `m`.
+              integer array of shape `(batch_size,)` holding the observation
+              index for modality `m`, or `(batch_size, T)` for a history.
+            - Categorical observations: each `observations[m]` is an array of
+              shape `(batch_size, num_obs[m])` holding a probability vector over
+              observations for modality `m`, or `(batch_size, T, num_obs[m])`.
 
             If `preprocess_fn` is provided, it should map the raw input to
             categorical observations and takes precedence over default handling.
@@ -732,9 +754,8 @@ class Agent(Module):
             of additional dimensions to encode extra conditioning variables like timepoint and policy.
 
         past_actions: Array, optional
-            Action history aligned to time. For single-batch sequence inference
-            this should be shaped `(T-1, num_factors)`. For batched calls it
-            should be shaped `(batch, T-1, num_factors)`.
+            Action history aligned to time, shaped `(batch_size, T-1, num_factors)`
+            (also when `batch_size=1`).
 
         qs_hist: list[Array] or tuple[Array], optional
             History of posterior beliefs over hidden states.
@@ -781,19 +802,28 @@ class Agent(Module):
 
         Examples
         --------
+        With two modalities (3 and 2 possible observations) and the default
+        `batch_size=1`:
+
+        >>> from jax import numpy as jnp, random as jr
+        >>> from pymdp import utils
+        >>> A = utils.random_A_array(jr.PRNGKey(0), [3, 2], [2])
+        >>> B = utils.random_B_array(jr.PRNGKey(1), [2], [2])
+
         Discrete observations:
 
-        >>> obs = [0, 1]  # Modality 0 observed observation 0, modality 1 observed observation 1
-        >>> qs = agent.infer_states(obs, prior)
+        >>> agent = Agent(A, B)
+        >>> obs = [jnp.array([0]), jnp.array([1])]  # modality 0 observed index 0, modality 1 observed index 1
+        >>> qs = agent.infer_states(obs, agent.D)
 
         Categorical observations:
 
+        >>> agent_cat = Agent(A, B, categorical_obs=True)
         >>> obs = [
-        ...     jnp.array([0.7, 0.2, 0.1]),  # Peaked belief distribution for observation 0
-        ...     jnp.array([0.5, 0.5])        # Flat belief distribution for observation 1
+        ...     jnp.array([[0.7, 0.2, 0.1]]),  # peaked distribution over modality 0's observations
+        ...     jnp.array([[0.5, 0.5]]),       # flat distribution over modality 1's observations
         ... ]
-        >>> agent_cat = Agent(..., categorical_obs=True)
-        >>> qs = agent_cat.infer_states(obs, prior)
+        >>> qs = agent_cat.infer_states(obs, agent_cat.D)
         """
 
         if preprocess_fn is None:
@@ -809,6 +839,24 @@ class Agent(Module):
             raise ValueError(
                 f"`empirical_prior` has {len(empirical_prior)} factor(s), expected {self.num_factors}"
             )
+
+        # Observations need the same leading batch axis as `A` for the `vmap` below. Only static shapes are
+        # read, so this is safe under `jit`.
+        if isinstance(o_vec, (list, tuple)):
+            for m, (o_m, A_m) in enumerate(zip(o_vec, self.A)):
+                batch = A_m.shape[0]
+                if jnp.ndim(o_m) >= 2 and jnp.shape(o_m)[0] == batch:
+                    continue
+                if preprocess_fn is not None or self.preprocess_fn is not None:
+                    name, shape, expected = f"`preprocess_fn` output {m}", jnp.shape(o_m), (batch, self.num_obs[m])
+                elif self.categorical_obs:
+                    name, shape, expected = f"`observations[{m}]`", jnp.shape(o_m), (batch, self.num_obs[m])
+                else:
+                    name, shape, expected = f"`observations[{m}]`", jnp.shape(observations[m]), (batch,)
+                raise ValueError(
+                    f"{name} has shape {shape}, expected {expected}: observations need a leading batch axis of "
+                    f"size {batch} (the agent's batch_size, 1 by default), optionally followed by a time axis"
+                )
 
         A = self.A
         if mask is not None:

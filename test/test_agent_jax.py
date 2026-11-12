@@ -426,6 +426,34 @@ class TestAgentJax(unittest.TestCase):
             validation_qs = nn.softmax(compute_log_likelihood_single_modality(all_obs[id_to_check], all_A[id_to_check]))
             self.assertTrue(jnp.allclose(validation_qs, all_qs[id_to_check]))
 
+    def test_infer_states_requires_batch_axis_on_observations(self):
+        """Observations without the leading batch axis get an error naming the modality and the expected shape."""
+        A = utils.random_A_array(jr.PRNGKey(0), [3, 2], [2])
+        B = utils.random_B_array(jr.PRNGKey(1), [2], [2])
+        agent = Agent(A, B)
+        agent_cat = Agent(A, B, categorical_obs=True)
+
+        # the documented formats, with the batch axis (and optionally a time axis)
+        for obs in ([jnp.array([0]), jnp.array([1])], [jnp.array([[2, 0]]), jnp.array([[1, 1]])]):
+            self.assertEqual(agent.infer_states(obs, agent.D)[0].shape, (1, 1, 2))
+        for obs in (
+            [jnp.array([[0.7, 0.2, 0.1]]), jnp.array([[0.5, 0.5]])],
+            [jnp.array([[[0.7, 0.2, 0.1]]]), jnp.array([[[0.5, 0.5]]])],
+        ):
+            self.assertEqual(agent_cat.infer_states(obs, agent_cat.D)[0].shape, (1, 1, 2))
+
+        with self.assertRaisesRegex(ValueError, r"observations\[0\]` has shape \(\), expected \(1,\)"):
+            agent.infer_states([0, 1], agent.D)
+        with self.assertRaisesRegex(ValueError, r"observations\[1\]` has shape \(2,\), expected \(1,\)"):
+            agent.infer_states([jnp.array([0]), jnp.array([1, 0])], agent.D)
+        with self.assertRaisesRegex(ValueError, r"observations\[0\]` has shape \(3,\), expected \(1, 3\)"):
+            agent_cat.infer_states([jnp.array([0.7, 0.2, 0.1]), jnp.array([0.5, 0.5])], agent_cat.D)
+
+        # a batch size equal to num_obs[0] must not let an unbatched categorical vector through
+        agent_cat3 = Agent(A, B, batch_size=3, categorical_obs=True)
+        with self.assertRaisesRegex(ValueError, r"observations\[0\]` has shape \(3,\), expected \(3, 3\)"):
+            agent_cat3.infer_states([jnp.array([0.7, 0.2, 0.1]), jnp.array([0.5, 0.5])], agent_cat3.D)
+
     def test_agent_complex_action(self):
         """
         Test that an instance of the `Agent` class can be initialized and run with complex action dependency

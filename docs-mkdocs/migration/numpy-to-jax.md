@@ -161,7 +161,7 @@ action = agent.sample_action()
 
 ```python
 # JAX
-from jax import random as jr
+from jax import numpy as jnp, random as jr
 from pymdp.agent import Agent
 from pymdp import utils
 
@@ -170,7 +170,7 @@ keys = jr.split(key, 3)
 A = utils.random_A_array(keys[0], [3], [2])
 B = utils.random_B_array(keys[1], [2], [2])
 agent = Agent(A=A, B=B)
-obs = [1]
+obs = [jnp.array([1])]  # one array per modality, with a leading batch axis: shape (batch_size,)
 qs = agent.infer_states(obs, empirical_prior=agent.D)
 q_pi, neg_efe = agent.infer_policies(qs)
 action_keys = jr.split(keys[2], agent.batch_size + 1)
@@ -184,7 +184,7 @@ action = agent.sample_action(q_pi, rng_key=action_keys[1:])
 3. Missing `rng_key`/`key` in stochastic calls (for example `sample_action`,
    random model constructors, `rollout`, or stochastic `env.reset`/`env.step`).
 4. Mixing `numpy.ndarray` into JAX-only paths.
-5. Forgetting sequence action-history shape `(T-1, num_factors)`.
+5. Forgetting sequence action-history shape `(batch_size, T-1, num_factors)`.
 
 ## Migration done checklist
 
