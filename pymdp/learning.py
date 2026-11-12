@@ -7,6 +7,7 @@ from pymdp.maths import multidimensional_outer, dirichlet_expected_value
 from jax.tree_util import tree_map
 from jaxtyping import Array
 from jax import vmap, nn, lax
+import jax
 import jax.numpy as jnp
 
 
@@ -253,10 +254,17 @@ def update_state_transition_dirichlet(
        # A skipped factor must return the B it was given. Recomputing the
        # expected value here replaces structural zeros with MINVAL, and the
        # next update that does touch the factor treats those cells as real.
+       # `lax.cond` needs both branches to agree on dtype, and the update can
+       # promote (e.g. float32 `B` with float64 `pB` or beliefs under x64), so
+       # cast the pass-through values to the update branch's output dtypes.
+       updated_types = jax.eval_shape(_updated)
        qB_f, E_qB_f = lax.cond(
                 f>-1,
                 _updated,
-                lambda: (pB_f, B_f),
+                lambda: (
+                    pB_f.astype(updated_types[0].dtype),
+                    B_f.astype(updated_types[1].dtype),
+                ),
             )
        return qB_f, E_qB_f
 

@@ -5,6 +5,9 @@
 __author__: Dimitrije Markovic, Conor Heins
 """
 
+import subprocess
+import sys
+import textwrap
 import unittest
 
 import numpy as np
@@ -527,6 +530,42 @@ class TestLearningJax(unittest.TestCase):
         expected_qB = pB_jax[0] + l_rate * expected_dfdb
 
         self.assertTrue(np.allclose(np.array(qB_jax[0]), np.array(expected_qB), atol=1e-6))
+
+
+    def test_update_state_transition_dirichlet_mixed_dtypes_under_x64(self):
+        """Skipped and updated factors must agree on dtype inside `lax.cond`.
+
+        With float32 `B` and float64 `pB` (x64), the update promotes to float64
+        while the skip branch returned the float32 `B` it was given.
+        """
+        script = textwrap.dedent(
+            """
+            import jax
+            jax.config.update("jax_enable_x64", True)
+            import jax.numpy as jnp
+            from pymdp.learning import update_state_transition_dirichlet
+
+            B = [jnp.stack([jnp.eye(3)] * 2, -1).astype(jnp.float32)] * 2
+            pB = [jnp.ones((3, 3, 2), dtype=jnp.float64)] * 2
+            q = jnp.ones((4, 3)) / 3
+            joint = [jnp.einsum("ti,tj->tij", q[1:], q[:-1])] * 2
+            actions = jnp.zeros((3, 2), dtype=jnp.int64)
+            for factors in ("all", [0]):
+                qB, E_qB = update_state_transition_dirichlet(
+                    pB, B, joint, actions, num_controls=[2, 2], lr=1.0,
+                    factors_to_update=factors,
+                )
+            # factor 1 was skipped: its expected B is the one passed in
+            assert jnp.allclose(E_qB[1], B[1]) and jnp.allclose(qB[1], pB[1])
+            assert not jnp.allclose(qB[0], pB[0])
+            print("OK")
+            """
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script], capture_output=True, text=True, timeout=300,
+        )
+        self.assertEqual(result.returncode, 0, f"stdout: {result.stdout}\nstderr: {result.stderr}")
+        self.assertIn("OK", result.stdout)
 
 
 if __name__ == "__main__":

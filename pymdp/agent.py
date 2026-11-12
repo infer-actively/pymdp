@@ -16,6 +16,27 @@ from jaxtyping import Array
 from functools import partial
 from jax import lax
 
+
+def _match_stored_dtypes(
+    updated: list[Array | None], stored: list[Array | None] | None
+) -> list[Array | None]:
+    """Cast learned parameters back to the floating dtypes the Agent stores.
+
+    Learning updates can promote, e.g. float32 `A`/`B` (as built by
+    `CueChainingEnv`) combined with float64 beliefs or Dirichlet counts under
+    `jax_enable_x64`. The Agent is carried through `lax.cond` and `lax.scan`
+    (see `rollout`), both of which need its leaves to keep their types. Integer
+    or missing stored values are left alone so counts are never truncated.
+    """
+    if stored is None:
+        return updated
+    return [
+        new if (new is None or old is None or not jnp.issubdtype(old.dtype, jnp.inexact))
+        else new.astype(old.dtype)
+        for new, old in zip(updated, stored)
+    ]
+
+
 class Agent(Module):
     """
     The Agent class, the highest-level API that wraps together processes for action, perception, and learning under active inference.
@@ -609,8 +630,10 @@ class Agent(Module):
                 lr=lr,
             )
             
+            E_qA = _match_stored_dtypes(E_qA, self.A)
+            qA = _match_stored_dtypes(qA, self.pA)
             agent = tree_at(lambda x: (x.A, x.pA), agent, (E_qA, qA))
-            
+
         if self.learn_B:
             update_B = partial(learning.update_state_transition_dirichlet, num_controls=self.num_controls)
             lrB = jnp.broadcast_to(lr_pB, (self.batch_size,))
@@ -623,7 +646,8 @@ class Agent(Module):
                     actions_Tm1,   # time-aligned actions
                     lr=lrB
                 )
-                return qB, E_qB
+                # Must match `skip_B_step`'s dtypes for `lax.cond`.
+                return _match_stored_dtypes(qB, self.pB), _match_stored_dtypes(E_qB, self.B)
 
             def skip_B_step(_: Any) -> tuple[list[Array], list[Array]]:
                 return self.pB, self.B
