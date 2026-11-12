@@ -12,6 +12,7 @@ import jax
 from jax import numpy as jnp, random as jr
 
 from pymdp.algos import run_vanilla_fpi as fpi_jax
+from pymdp.inference import update_posterior_states
 from pymdp.utils import random_factorized_categorical, random_A_array
 
 from pymdp.legacy.algos import run_vanilla_fpi as fpi_numpy
@@ -38,6 +39,34 @@ def _fpi_jax_float64(A, obs, prior, **kwargs):
         return fpi_jax([as64(a) for a in A], obs, [as64(p) for p in prior], **kwargs)
 
 class TestInferenceJax(unittest.TestCase):
+
+    def test_default_dependencies_match_explicit_mappings(self):
+        # Both observation modalities depend on both factors. The transitions
+        # are factor-local and the selected controls differ between factors.
+        a0 = jnp.array([[0.8, 0.6], [0.3, 0.1]])
+        a1 = jnp.array([[0.2, 0.7], [0.4, 0.9]])
+        A = [jnp.stack([a, 1 - a]) for a in (a0, a1)]
+        b0 = jnp.array([[0.9, 0.4], [0.2, 0.5]])
+        b1 = jnp.array([[0.8, 0.6], [0.3, 0.2]])
+        B = [jnp.stack([b, 1 - b]) for b in (b0, b1)]
+        obs = [jnp.eye(2), jnp.eye(2)[::-1]]
+        actions = jnp.array([[0, 1]])
+        prior = [jnp.array([0.75, 0.25]), jnp.array([0.30, 0.70])]
+
+        for method in ("fpi", "mmp", "vmp"):
+            with self.subTest(method=method):
+                transition_model = None if method == "fpi" else B
+                history = None if method == "fpi" else actions
+                expected = update_posterior_states(
+                    A, transition_model, obs, history, prior=prior, method=method,
+                    A_dependencies=[[0, 1], [0, 1]], B_dependencies=[[0], [1]],
+                )
+                actual = update_posterior_states(
+                    A, transition_model, obs, history, prior=prior, method=method,
+                )
+                self.assertEqual(len(actual), len(prior))
+                for actual_factor, expected_factor in zip(actual, expected):
+                    np.testing.assert_allclose(actual_factor, expected_factor, equal_nan=False)
 
     def test_fixed_point_iteration_singlestate_singleobs(self):
         """

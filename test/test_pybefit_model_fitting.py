@@ -10,7 +10,8 @@ from pymdp.agent import Agent
 from pymdp.envs import TMaze
 
 
-pybefit = pytest.importorskip("pybefit")
+pytest.importorskip("numpyro", reason="Install the modelfit extra for NumPyro integration")
+pytest.importorskip("pybefit", reason="Install the modelfit extra for pybefit integration")
 from pybefit.inference import Normal, NumpyroModel  # noqa: E402
 from pybefit.inference.numpyro.likelihoods import pymdp_likelihood  # noqa: E402
 from numpyro.infer import Predictive  # noqa: E402

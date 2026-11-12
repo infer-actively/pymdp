@@ -386,18 +386,30 @@ class TestDists(unittest.TestCase):
         }
         model = distribution.compile_model(model_example)
         self.assertEqual(len(model.B), 2)
+        self.assertIsNotNone(model.A)
         self.assertEqual(len(model.A), 2)
         self.assertEqual(model.B[0].data.shape, (3, 3, 2, 2, 2))
         self.assertEqual(model.B[1].data.shape, (2, 2, 2))
         self.assertEqual(model.A[0].data.shape, (10, 3))
         self.assertEqual(model.A[1].data.shape, (2, 3))
-        self.assertIsNotNone
         self.assertIsNotNone(model.A[0][:, "II"])
         self.assertIsNotNone(model.A[1][1, :])
         self.assertIsNotNone(model.B_action_dependencies)
         self.assertIsNotNone(model.num_controls)
         self.assertEqual(model.B_action_dependencies, [[0, 1], [1]])
         self.assertEqual(model.num_controls, [2, 2])
+
+    def test_normalize_preserves_numpy_mutation(self):
+        locations = ["here", "there"]
+        labels = {"location": locations}
+        dist = distribution.Distribution(labels, labels, np.array([[0.0, 2.0], [0.0, 2.0]]))
+
+        dist.normalize()
+
+        self.assertIsInstance(dist.data, np.ndarray)
+        np.testing.assert_allclose(dist.data, [[0.5, 0.5], [0.5, 0.5]])
+        dist["here", "here"] = 0.8
+        self.assertAlmostEqual(float(dist["here", "here"]), 0.8)
 
     def test_tensor_shape_change_protection(self):
         """

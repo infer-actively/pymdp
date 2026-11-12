@@ -31,20 +31,14 @@ def to_nested_tuple(x):
     return x
 
 
-def norm_dist(dist: Array) -> Array:
-    """Normalizes a Categorical probability distribution.
-
-    Parameters
-    ----------
-    dist: Array
-        Unnormalized Categorical distribution.
-
-    Returns
-    -------
-    Array
-        Normalized distribution.
-    """
-    return dist / dist.sum(0)
+def norm_dist(dist: Array | np.ndarray) -> Array | np.ndarray:
+    """Normalize along axis 0, using a uniform distribution for zero-mass columns."""
+    xp = np if isinstance(dist, np.ndarray) else jnp
+    denominator = dist.sum(0)
+    zero_mass = denominator == 0
+    normalized = dist / xp.where(zero_mass, 1, denominator)
+    uniform = xp.ones_like(dist) / dist.shape[0]
+    return xp.where(zero_mass, uniform, normalized)
 
 def list_array_norm_dist(dist_list: list[Array]) -> list[Array]:
     """Normalizes a list of Categorical probability distributions.

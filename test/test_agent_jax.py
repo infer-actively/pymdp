@@ -24,6 +24,34 @@ from equinox import Module, EquinoxRuntimeError
 
 class TestAgentJax(unittest.TestCase):
 
+    def test_masked_inference_preserves_likelihood_and_caller_observations(self):
+        agent = Agent([jnp.eye(2)], [jnp.eye(2)[..., None]], categorical_obs=True)
+        observations = [jnp.array([[1.0, 0.0]])]
+        likelihood_before = agent.A[0]
+        observation_before = observations[0]
+        baseline = agent.infer_states(observations, agent.D)[0]
+
+        masked = agent.infer_states(observations, agent.D, mask=[jnp.array([0.0])])[0]
+
+        np.testing.assert_allclose(masked, [[[0.5, 0.5]]])
+        np.testing.assert_array_equal(agent.A[0], likelihood_before)
+        np.testing.assert_array_equal(observations[0], observation_before)
+        np.testing.assert_allclose(agent.infer_states(observations, agent.D)[0], baseline)
+
+    def test_agent_rejects_invalid_sampling_configuration(self):
+        A = [jnp.eye(2)]
+        B = [jnp.eye(2)[..., None]]
+        for option in ("sampling_mode", "action_selection"):
+            with self.subTest(option=option), self.assertRaisesRegex(ValueError, option):
+                Agent(A, B, **{option: "invalid"})
+
+    def test_agent_rejects_unimplemented_learning_flags(self):
+        A = [jnp.eye(2)]
+        B = [jnp.eye(2)[..., None]]
+        for option in ("learn_C", "learn_D", "learn_E"):
+            with self.subTest(option=option), self.assertRaisesRegex(NotImplementedError, "learn_A and learn_B"):
+                Agent(A, B, **{option: True})
+
     def test_no_desired_batch_no_batched_input_construction(self):
         """
         Tests for the case where the user wants no batch size, and they pass in tensors with no batch size

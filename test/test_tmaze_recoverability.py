@@ -2,7 +2,12 @@
 
 import math
 
-from examples.model_fitting.tmaze_recoverability import RecoverabilityConfig, run_recoverability
+import pytest
+
+pytest.importorskip("numpyro", reason="Install the modelfit extra for NumPyro integration")
+pytest.importorskip("pybefit", reason="Install the modelfit extra for pybefit integration")
+
+from examples.model_fitting.tmaze_recoverability import RecoverabilityConfig, run_recoverability  # noqa: E402
 
 
 def _small_cfg(parameterization: str) -> RecoverabilityConfig:

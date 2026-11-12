@@ -18,6 +18,14 @@ from pymdp.legacy import utils as legacy_utils
 
 class TestUtils(unittest.TestCase):
 
+    def test_norm_dist_zero_mass_and_nonzero_columns(self):
+        values = [[0.0, 1.0], [0.0, 3.0]]
+        for dist in (np.array(values), jnp.array(values)):
+            with self.subTest(array_type=type(dist)):
+                normalized = jax_utils.norm_dist(dist)
+                self.assertEqual(isinstance(normalized, np.ndarray), isinstance(dist, np.ndarray))
+                np.testing.assert_allclose(normalized, [[0.5, 0.25], [0.5, 0.75]])
+
     def test_random_factorized_categorical(self):
         """
         Test `random_factorized_categorical`

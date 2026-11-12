@@ -21,6 +21,7 @@ from pymdp.algos import (
     hmm_smoother_from_filtered_colstoch,
 )
 from pymdp.maths import calc_vfe
+from pymdp.utils import resolve_a_dependencies, resolve_b_dependencies
 from jax import tree_util as jtu, lax
 from jax.experimental.sparse._base import JAXSparse
 from jax.experimental import sparse
@@ -374,9 +375,11 @@ def update_posterior_states(
         Existing posterior history buffer. If provided, one-step updates append
         to this history.
     A_dependencies : list[list[int]], optional
-        Sparse modality-to-factor dependency mapping.
+        Sparse modality-to-factor dependency mapping. Defaults to every
+        modality depending on every hidden-state factor.
     B_dependencies : list[list[int]], optional
-        Sparse transition-factor dependency mapping.
+        Sparse transition-factor dependency mapping. Defaults to each
+        transition depending only on its own previous factor.
     num_iter : int, default=16
         Number of variational update iterations.
     method : {"fpi", "ovf", "mmp", "vmp", "exact"}, default="fpi"
@@ -412,6 +415,11 @@ def update_posterior_states(
 
     if return_info and prior is None:
         raise ValueError("`prior` must be provided when `return_info=True`")
+
+    if prior is not None:
+        A_dependencies = resolve_a_dependencies(len(prior), len(A), A_dependencies)
+    if B is not None:
+        B_dependencies = resolve_b_dependencies(len(B), B_dependencies)
 
     if method in SEQUENCE_METHODS:
         obs, past_actions = _truncate_for_horizon(obs, past_actions, inference_horizon)
