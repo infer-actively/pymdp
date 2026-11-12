@@ -173,6 +173,9 @@ class Agent(Module):
         if learn_A:
             assert pA is not None, "pA is required for A learning"
 
+        if learn_B and pB is None:
+            raise ValueError("pB is required for B learning")
+
         # extract high level variables
         self.num_modalities = len(A)
         self.num_factors = len(B)
@@ -205,6 +208,9 @@ class Agent(Module):
             pB = [jnp.array(pb) for pb in pB]
 
         self.batch_size = batch_size
+
+        # policies built below from `num_controls` are valid by construction; user-supplied ones are checked
+        custom_policies = policies is not None
 
         # flatten B action dims for multiple action dependencies
         self.action_maps = None
@@ -418,6 +424,8 @@ class Agent(Module):
 
         # validate model
         self._validate()
+        if custom_policies:
+            self._validate_policies()
 
     @property
     def unique_multiactions(self) -> Array:
@@ -1140,6 +1148,12 @@ class Agent(Module):
                 continue
 
             dims = [self.num_controls_multi[d] for d in action_dependency]
+            action_axes = tuple(B_f.shape[-len(action_dependency):])
+            if action_axes != tuple(dims):
+                raise ValueError(
+                    f"B[{i}] has trailing action axes {action_axes}, but B_action_dependencies[{i}]="
+                    f"{action_dependency} with num_controls={self.num_controls_multi} implies {tuple(dims)}"
+                )
             target_shape = list(B_f.shape)[: -len(action_dependency)] + [pymath.prod(dims)]
             B_flat.append(B_f.reshape(target_shape))
             if pB is not None:
@@ -1230,6 +1244,25 @@ class Agent(Module):
             raise NotImplementedError("CV is not implemented")
 
         return default_params
+
+    def _validate_policies(self) -> None:
+        """Check user-supplied policies against the number of factors and `num_controls`.
+
+        Only reads the static policy tuple, so it is safe while `__init__` is traced under `jit`.
+        """
+        for p_idx, policy in enumerate(self.policies._policy_tup):
+            if not all(isinstance(step, tuple) and len(step) == self.num_factors for step in policy):
+                raise ValueError(
+                    "`policies` must have shape (num_policies, policy_len, num_factors) with "
+                    f"num_factors={self.num_factors}; policy {p_idx} is {policy}"
+                )
+            for t, step in enumerate(policy):
+                for f, u in enumerate(step):
+                    if not 0 <= u < self.num_controls[f]:
+                        raise ValueError(
+                            f"`policies` selects action {u} for factor {f} (policy {p_idx}, timestep {t}), "
+                            f"but that factor has {self.num_controls[f]} actions (num_controls={self.num_controls})"
+                        )
 
     def _validate(self) -> None:
         for m in range(self.num_modalities):
