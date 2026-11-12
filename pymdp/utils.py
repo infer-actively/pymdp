@@ -31,6 +31,19 @@ def to_nested_tuple(x):
     return x
 
 
+def index_to_onehot(index: Array | int, num_classes: int) -> Array:
+    """One-hot encode discrete indices, accepting integer or float index arrays.
+
+    `PymdpEnv` samples indices as floats (see `pymdp.envs.env.cat_sample`), but
+    `jax.nn.one_hot` has deprecated non-integer input, so cast before encoding.
+    Negative indices (the `-1` padding used by `rollout`) still encode to zeros.
+    """
+    index = jnp.asarray(index)
+    if not jnp.issubdtype(index.dtype, jnp.integer):
+        index = index.astype(jnp.int32)
+    return nn.one_hot(index, num_classes)
+
+
 def norm_dist(dist: Array) -> Array:
     """Normalizes a Categorical probability distribution.
 
@@ -1014,7 +1027,7 @@ def prepare_obs_for_block_diag(obs: list[Array], num_obs: Sequence[int]) -> list
         One-hot encoded observation arrays prepared for block-diagonal use.
     """
     # Convert to one-hot if needed
-    o_vec = [nn.one_hot(o, num_obs[m]) for m, o in enumerate(obs)]
+    o_vec = [index_to_onehot(o, num_obs[m]) for m, o in enumerate(obs)]
     obs_tmp = jtu.tree_map(lambda x: x[-1], o_vec)
     return obs_tmp
 

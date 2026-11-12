@@ -696,7 +696,7 @@ class Agent(Module):
         o_vec: list
             One-hot categorical distributions for each modality.
         """
-        return [nn.one_hot(o, self.num_obs[m]) for m, o in enumerate(observations)]
+        return [utils.index_to_onehot(o, self.num_obs[m]) for m, o in enumerate(observations)]
 
     def infer_states(
         self,

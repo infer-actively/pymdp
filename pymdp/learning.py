@@ -4,6 +4,7 @@
 """Dirichlet-parameter learning updates for modern JAX pymdp models."""
 
 from pymdp.maths import multidimensional_outer, dirichlet_expected_value
+from pymdp.utils import index_to_onehot
 from jax.tree_util import tree_map
 from jaxtyping import Array
 from jax import vmap, nn, lax
@@ -137,7 +138,7 @@ def update_obs_likelihood_dirichlet(
         Expected values (updated A matrices)
     """
 
-    obs_m = lambda o, dim: nn.one_hot(o, dim) if not categorical_obs else o
+    obs_m = lambda o, dim: index_to_onehot(o, dim) if not categorical_obs else o
     update_A_fn = (
         lambda pA_m, o_m, dim, dependencies_m: None
         if pA_m is None

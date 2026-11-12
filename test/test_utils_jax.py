@@ -259,5 +259,14 @@ class TestUtils(unittest.TestCase):
                 self.assertTrue(np.allclose(marginal, np.ones_like(marginal)))
 
 
+    def test_index_to_onehot_accepts_float_indices(self):
+        """Float indices (as emitted by `PymdpEnv`) encode like integer ones,
+        and the `-1` padding used by `rollout` still encodes to zeros."""
+        ints = jnp.array([0, 2, -1])
+        expected = jnp.array([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]])
+        self.assertTrue(jnp.array_equal(jax_utils.index_to_onehot(ints, 3), expected))
+        self.assertTrue(jnp.array_equal(jax_utils.index_to_onehot(ints.astype(jnp.float32), 3), expected))
+
+
 if __name__ == "__main__":
     unittest.main()
