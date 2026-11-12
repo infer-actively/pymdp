@@ -39,7 +39,8 @@ class GridWorld(PymdpEnv):
         Invalid attempts to enter a wall result in staying put.
     initial_position : Optional[Tuple[int, int] | int]
         If provided, sets the initial position deterministically (one-hot D).
-        Accepts (row, col) or linear index (0..rows*cols-1).
+        Accepts (row, col) (any length-2 sequence) or linear index (0..rows*cols-1).
+        Positions outside the grid raise ``ValueError``.
         If None, D is uniform over all *free* cells.
     include_stay : bool
         If True (default), include a "STAY" action as the 5th action.
@@ -233,10 +234,17 @@ def _generate_D(
         # Handle the (rare) degenerate case of all walls (avoid div by zero)
         D = jnp.where(mass > 0, mask / jnp.clip(mass, 1e-16), jnp.ones(n_states) / n_states)
     else:
-        if isinstance(initial_position, tuple):
-            start_idx = int(jnp.ravel_multi_index(jnp.array(initial_position), jnp.array(shape)))
-        else:
+        if np.ndim(initial_position) == 0:
             start_idx = int(initial_position)
+            in_bounds = 0 <= start_idx < n_states
+        else:
+            if len(initial_position) != 2:
+                raise ValueError(f"initial_position must be a linear index or (row, col), got {initial_position!r}.")
+            row, col = (int(x) for x in initial_position)
+            in_bounds = 0 <= row < rows and 0 <= col < cols
+            start_idx = row * cols + col
+        if not in_bounds:
+            raise ValueError(f"initial_position {initial_position!r} is outside the {rows}x{cols} grid.")
         assert start_idx not in walls_flat, "initial_position cannot be a wall."
         D = jnp.zeros(n_states)
         D = D.at[start_idx].set(1.0)

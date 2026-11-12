@@ -151,3 +151,10 @@ class TestTMazeVariants(unittest.TestCase):
 
         self.assertIsNotNone(discrete_img)
         self.assertIsNotNone(categorical_img)
+
+    def test_reward_condition_out_of_range_raises(self):
+        for env_cls in (TMaze, SimplifiedTMaze):
+            for reward_condition in (-1, 2):
+                with self.subTest(env=env_cls.__name__, reward_condition=reward_condition):
+                    with self.assertRaisesRegex(ValueError, "reward_condition"):
+                        env_cls(reward_condition=reward_condition)

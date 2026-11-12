@@ -91,6 +91,9 @@ class BaseTMaze(PymdpEnv):
             Size of the location observation modality. Required for embedded cue
             mode when overriding the default.
         """
+        if reward_condition is not None and not (0 <= reward_condition < 2):
+            raise ValueError(f"`reward_condition` must be 0 (left), 1 (right) or None, got {reward_condition}.")
+
         self.reward_probability = reward_probability
         self.punishment_probability = punishment_probability
         self.cue_validity = cue_validity

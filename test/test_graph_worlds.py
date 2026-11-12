@@ -71,6 +71,15 @@ class TestGraphEnvBatchLocations(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "object_locations values"):
             env.generate_env_params(graph, object_locations=[0, 4], agent_locations=[0, 1])
 
+    def test_out_of_range_initial_locations_raise(self):
+        graph = nx.path_graph(3)
+        for agent_location in (3, -1):
+            with self.assertRaisesRegex(ValueError, "agent_location"):
+                GraphEnv(graph, object_location=0, agent_location=agent_location)
+        for object_location in (4, -1):
+            with self.assertRaisesRegex(ValueError, "object_location"):
+                GraphEnv(graph, object_location=object_location, agent_location=0)
+
     def test_single_list_with_batch_size_samples_the_other(self):
         env, graph = _env()
         params = env.generate_env_params(
