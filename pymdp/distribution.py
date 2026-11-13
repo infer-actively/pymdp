@@ -47,8 +47,8 @@ class Distribution:
         Lists on several axes select the block they describe. pointwise=True
         zips them into single points instead, as described on set.
         """
-        event_slices = self._get_slices(event, self.event_indices, self.event)
-        batch_slices = self._get_slices(batch, self.batch_indices, self.batch)
+        event_slices = self._get_slices(event, self.event_indices, self.event, "event")
+        batch_slices = self._get_slices(batch, self.batch_indices, self.batch, "batch")
 
         slices = event_slices + batch_slices
         return self._data[self._index(slices, pointwise)]
@@ -78,8 +78,8 @@ class Distribution:
         pointwise=True to keep that meaning: the lists are then zipped into
         4 points and values is matched against those points instead.
         """
-        event_slices = self._get_slices(event, self.event_indices, self.event)
-        batch_slices = self._get_slices(batch, self.batch_indices, self.batch)
+        event_slices = self._get_slices(event, self.event_indices, self.event, "event")
+        batch_slices = self._get_slices(batch, self.batch_indices, self.batch, "batch")
 
         slices = event_slices + batch_slices
         self._data[self._index(slices, pointwise)] = values
@@ -154,10 +154,20 @@ class Distribution:
         """
         return _PointwiseView(self)
 
-    def _get_slices(self, keys: dict | None, indices: dict, full_indices: dict) -> list[Any]:
+    def _get_slices(
+        self, keys: dict | None, indices: dict, full_indices: dict, kind: str
+    ) -> list[Any]:
         slices = []
         if keys is None:
             return [slice(None)] * len(full_indices)
+        # a key that is not an axis would otherwise leave its intended axis
+        # whole, so a typo or swapped batch/event selects too much
+        unknown = [key for key in keys if key not in full_indices]
+        if unknown:
+            raise KeyError(
+                f"{kind} keys {unknown} are not {kind} axes of this Distribution; "
+                f"event axes are {list(self.event)}, batch axes are {list(self.batch)}"
+            )
         for key in full_indices:
             if key in keys:
                 if isinstance(keys[key], list):

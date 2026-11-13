@@ -71,6 +71,30 @@ class TestDists(unittest.TestCase):
             np.all(transition.get({"location": "A"}, {"location": "B"}) == 1.0)
         )
 
+    def test_get_set_reject_keys_that_name_no_axis(self):
+        """A key that is not an axis raises instead of selecting the whole axis."""
+        locations = ["A", "B", "C"]
+        transition = distribution.Distribution(
+            {"location": locations},
+            {"location": locations, "control": ["up", "down"]},
+        )
+
+        with self.assertRaisesRegex(KeyError, r"\['locaton'\].*\['location', 'control'\]"):
+            transition.set(
+                batch={"locaton": "A", "control": "up"}, event={"location": "B"}, values=1.0
+            )
+        with self.assertRaisesRegex(KeyError, "colour"):
+            transition.get(batch={"colour": "red"})
+        with self.assertRaisesRegex(KeyError, "control"):
+            transition.get(event={"control": "up"})
+        self.assertEqual(transition.data.sum(), 0.0)
+
+        # batch and event given in the wrong order
+        likelihood = distribution.Distribution({"obs": ["x", "y"]}, {"location": locations})
+        with self.assertRaises(KeyError):
+            likelihood.set({"obs": "x"}, {"location": "A"}, 1.0)
+        self.assertEqual(likelihood.data.sum(), 0.0)
+
     def test_get_set_block_with_lists_on_two_axes(self):
         """Lists on two axes select the block they name, in declared axis order."""
         likelihood = distribution.Distribution(
