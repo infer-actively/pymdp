@@ -313,7 +313,12 @@ def _init_windowed_carry(
     action_history_len: int,
     is_sequence_method: bool,
 ) -> dict[str, Any]:
-    action_0 = -jnp.ones((agent.batch_size, agent.policies.policy_arr.shape[-1]), dtype=jnp.int32)
+    # Match the policy table's integer dtype (int64 under `jax_enable_x64`), which is
+    # what `agent.sample_action` returns, so the scan carry keeps a stable type.
+    action_0 = -jnp.ones(
+        (agent.batch_size, agent.policies.policy_arr.shape[-1]),
+        dtype=agent.policies.policy_arr.dtype,
+    )
 
     # Initialize windowed beliefs with D across all slots. Left padded slots are
     # intentionally prior-filled (not neutral-padded): sequence inference/learning
@@ -333,7 +338,7 @@ def _init_windowed_carry(
     )
     action_hist_0 = -jnp.ones(
         (agent.batch_size, action_history_len, agent.policies.policy_arr.shape[-1]),
-        dtype=jnp.int32,
+        dtype=agent.policies.policy_arr.dtype,
     )
 
     carry = {
@@ -355,7 +360,12 @@ def _init_windowed_carry(
 def _init_non_windowed_carry(
     agent: Agent, observation_0: list[Array], env_state: Any, rng_key: Array
 ) -> dict[str, Any]:
-    action_0 = -jnp.ones((agent.batch_size, agent.policies.policy_arr.shape[-1]), dtype=jnp.int32)
+    # Match the policy table's integer dtype (int64 under `jax_enable_x64`), which is
+    # what `agent.sample_action` returns, so the scan carry keeps a stable type.
+    action_0 = -jnp.ones(
+        (agent.batch_size, agent.policies.policy_arr.shape[-1]),
+        dtype=agent.policies.policy_arr.dtype,
+    )
     qs_0 = jtu.tree_map(lambda x: jnp.expand_dims(x, -2), agent.D)
     return {
         "qs": qs_0,

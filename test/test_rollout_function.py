@@ -3,6 +3,9 @@
 
 """Unit tests for the jittable rollout loop."""
 
+import subprocess
+import sys
+import textwrap
 import unittest
 import warnings
 
@@ -928,6 +931,54 @@ class TestRolloutFunction(unittest.TestCase):
 
         self.assertTrue(jnp.allclose(learned_pB, expected_pB, atol=1e-5))
         self.assertTrue(jnp.allclose(learned_B, expected_B, atol=1e-5))
+
+
+    def test_rollout_runs_under_x64_with_learning(self):
+        """`rollout` keeps a type-stable carry when `jax_enable_x64` is on.
+
+        Under x64 the policy table is int64, but the initial action carry was
+        hardcoded int32, so every rollout failed in `lax.scan`. Learning also
+        promoted the float32 tensors built by `CueChainingEnv` to float64, which
+        broke `lax.cond` in B-learning and the scan carry in A-learning.
+
+        Runs in a fresh subprocess since x64 is process-global config.
+        """
+        script = textwrap.dedent(
+            """
+            import jax
+            jax.config.update("jax_enable_x64", True)
+            import jax.numpy as jnp, jax.random as jr
+            from pymdp.agent import Agent
+            from pymdp.envs import rollout, TMaze
+            from pymdp.envs.cue_chaining import CueChainingEnv
+
+            env = TMaze()
+            agent = Agent(env.A, env.B, A_dependencies=env.A_dependencies,
+                          B_dependencies=env.B_dependencies)
+            rollout(agent, env, num_timesteps=3, rng_key=jr.PRNGKey(0))
+
+            env = CueChainingEnv()
+            assert env.B[0].dtype == jnp.float32
+            agent = Agent(
+                env.A, env.B,
+                A_dependencies=env.A_dependencies, B_dependencies=env.B_dependencies,
+                pA=[jnp.ones(a.shape) for a in env.A],  # float64 under x64
+                pB=[b * 10 + 1 for b in env.B],          # float32
+                learn_A=True, learn_B=True,
+            )
+            last, _ = rollout(agent, env, num_timesteps=3, rng_key=jr.PRNGKey(0))
+            learned = last["agent"]
+            assert learned.A[0].dtype == jnp.float32 and learned.B[0].dtype == jnp.float32
+            assert learned.pA[0].dtype == jnp.float64 and learned.pB[0].dtype == jnp.float32
+            assert not jnp.allclose(learned.pB[0], agent.pB[0])
+            print("OK")
+            """
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script], capture_output=True, text=True, timeout=300,
+        )
+        self.assertEqual(result.returncode, 0, f"stdout: {result.stdout}\nstderr: {result.stderr}")
+        self.assertIn("OK", result.stdout)
 
 
 if __name__ == "__main__":
