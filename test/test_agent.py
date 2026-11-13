@@ -199,6 +199,34 @@ class TestAgent(unittest.TestCase):
         self.assertEqual(len(agent.prev_obs), T)
         self.assertEqual(len(agent.prev_actions), T)
 
+    def test_mmp_active_inference_with_param_info_gain(self):
+        """
+        Tests that the MMP active inference loop works with information gain about pA and pB
+        (with various past and future inference/policy horizons).
+        """
+
+        num_obs = [3, 2]
+        num_states = [4, 3]
+        num_controls = [1, 3]
+        A = utils.random_A_matrix(num_obs, num_states)
+        B = utils.random_B_matrix(num_states, num_controls)
+        pA = utils.dirichlet_like(A)
+        pB = utils.dirichlet_like(B)
+
+        for policy_len, inference_horizon in [(1, 2), (2, 3)]:
+            for params in [dict(pA=pA), dict(pB=pB), dict(pA=pA, pB=pB)]:
+                agent = Agent(A=A, B=B, control_fac_idx=[1], inference_algo="MMP", policy_len=policy_len,
+                              inference_horizon=inference_horizon, use_param_info_gain=True, **params)
+
+                for t in range(4):
+                    o = [np.random.randint(num_ob) for num_ob in num_obs]
+                    agent.infer_states(o)
+                    _, G = agent.infer_policies()
+                    agent.sample_action()
+
+                    self.assertEqual(G.shape, (len(agent.policies),))
+                    self.assertTrue(np.all(np.isfinite(G)))
+
     def test_agent_with_A_learning_vanilla(self):
         """ Unit test for updating prior Dirichlet parameters over likelihood model (pA) with the ``Agent`` class,
         in the case that you're using "vanilla" inference mode.

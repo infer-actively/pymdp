@@ -1360,6 +1360,63 @@ class TestControl(unittest.TestCase):
         self.assertTrue(np.allclose(efe, efe_valid))
         self.assertTrue(np.allclose(q_pi, q_pi_valid))
     
+    def test_update_posterior_policies_full_param_infogain(self):
+        """
+        Tests the parameter information gain of the `_full` variants used with MMP. For each policy they
+        receive the current belief followed by the `policy_len` beliefs the policy predicts, so their pB term
+        must match the one-step variants, and their pA term must match them plus the current timestep.
+        """
+
+        num_obs = [3, 2]
+        num_states = [3, 2]
+        num_controls = [3, 2]
+
+        qs = utils.random_single_categorical(num_states)
+        A = utils.random_A_matrix(num_obs, num_states)
+        C = utils.obj_array_zeros(num_obs)
+        pA = utils.dirichlet_like(A)
+        policies = control.construct_policies(num_states, num_controls, policy_len=2)
+        param_info_gain_only = dict(use_utility=False, use_states_info_gain=False, use_param_info_gain=True)
+        pA_current_step = control.calc_pA_info_gain(pA, control.get_expected_obs([qs], A), [qs]).item()
+
+        '''Test `update_posterior_policies_full`'''
+
+        B = utils.random_B_matrix(num_states, num_controls)
+        pB = utils.dirichlet_like(B)
+        qs_seq_pi = [[qs] + control.get_expected_states(qs, B, policy) for policy in policies]
+
+        _, efe = control.update_posterior_policies_full(qs_seq_pi, A, B, C, policies, pB=pB, **param_info_gain_only)
+        _, efe_valid = control.update_posterior_policies(qs, A, B, C, policies, pB=pB, **param_info_gain_only)
+        self.assertTrue(np.allclose(efe, efe_valid))
+
+        _, efe = control.update_posterior_policies_full(qs_seq_pi, A, B, C, policies, pA=pA, **param_info_gain_only)
+        _, efe_valid = control.update_posterior_policies(qs, A, B, C, policies, pA=pA, **param_info_gain_only)
+        self.assertTrue(np.allclose(efe, efe_valid + pA_current_step))
+
+        '''Test `update_posterior_policies_full_factorized`, with interactions in B'''
+
+        A_factor_list = [[0, 1], [0, 1]]
+        B_factor_list = [[0], [0, 1]]
+        B = utils.random_B_matrix(num_states, num_controls, B_factor_list=B_factor_list)
+        pB = utils.dirichlet_like(B)
+        qs_seq_pi = [[qs] + control.get_expected_states_interactions(qs, B, B_factor_list, policy) for policy in policies]
+
+        _, efe = control.update_posterior_policies_full_factorized(
+            qs_seq_pi, A, B, C, A_factor_list, B_factor_list, policies, pB=pB, **param_info_gain_only
+        )
+        _, efe_valid = control.update_posterior_policies_factorized(
+            qs, A, B, C, A_factor_list, B_factor_list, policies, pB=pB, **param_info_gain_only
+        )
+        self.assertTrue(np.allclose(efe, efe_valid))
+
+        _, efe = control.update_posterior_policies_full_factorized(
+            qs_seq_pi, A, B, C, A_factor_list, B_factor_list, policies, pA=pA, **param_info_gain_only
+        )
+        _, efe_valid = control.update_posterior_policies_factorized(
+            qs, A, B, C, A_factor_list, B_factor_list, policies, pA=pA, **param_info_gain_only
+        )
+        self.assertTrue(np.allclose(efe, efe_valid + pA_current_step))
+
     def test_update_posterior_policies_factorized(self):
         """ 
         Test new update_posterior_policies_factorized function, just to make sure it runs through and outputs correct shapes
