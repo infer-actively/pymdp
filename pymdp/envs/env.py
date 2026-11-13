@@ -14,6 +14,7 @@ import jax.numpy as jnp
 from jax import jit, nn, random as jr, tree_util as jtu, vmap
 from jaxtyping import Array
 
+from pymdp import utils
 from pymdp.distribution import Distribution, get_dependencies
 
 
@@ -142,7 +143,9 @@ def make(
             return None
         return [jnp.array(p.data) if isinstance(p, Distribution) else p for p in params]
 
-    env_params = {"A": _to_arrays(A), "B": _to_arrays(B), "D": _to_arrays(D)}
+    # Read back from `env` so that `env_params["B"]` has the same (flattened)
+    # action axes as `env.B`.
+    env_params = {"A": _to_arrays(env.A), "B": _to_arrays(env.B), "D": _to_arrays(env.D)}
 
     return env, env_params
 
@@ -241,6 +244,8 @@ class PymdpEnv(Env):
         A_dependencies: list[list[int]] | None = None,
         B_dependencies: list[list[int]] | None = None,
         categorical_obs: bool = False,
+        B_action_dependencies: list[list[int]] | None = None,
+        num_controls: list[int] | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize `PymdpEnv`.
@@ -250,7 +255,9 @@ class PymdpEnv(Env):
         A : sequence[Array] | sequence[Distribution] | None, optional
             Observation likelihood tensors.
         B : sequence[Array] | sequence[Distribution] | None, optional
-            Transition tensors.
+            Transition tensors. If `B_action_dependencies` is given, the control
+            axes of each `B[f]` are merged into one action axis, as `Agent`
+            does, so `step()` takes the Agent's flattened action indices.
         D : sequence[Array] | sequence[Distribution] | None, optional
             Initial-state priors.
         A_dependencies : list[list[int]] | None, optional
@@ -261,6 +268,14 @@ class PymdpEnv(Env):
             If `True`, emit one-hot categorical observation vectors with shape
             `(1, num_obs)` per modality. Otherwise emit discrete indices with
             shape `(1,)`.
+        B_action_dependencies : list[list[int]] | None, optional
+            Control factors each `B[f]` depends on, one trailing axis per
+            control (for example from `compile_model`). `[]` marks an
+            uncontrolled factor. If `None`, each `B[f]` must already have a
+            single trailing action axis.
+        num_controls : list[int] | None, optional
+            Number of actions per control factor. Required with
+            `B_action_dependencies`.
         **kwargs : Any
             Accepted for forward compatibility.
         """
@@ -294,6 +309,15 @@ class PymdpEnv(Env):
 
         if B is not None:
             self.B = [jnp.array(b.data) if isinstance(b, Distribution) else b for b in B]
+            if B_action_dependencies is not None:
+                if num_controls is None:
+                    raise ValueError("num_controls is required when B_action_dependencies is given")
+                self.B = [
+                    utils.flatten_B_action_dims(b, action_dependency, num_controls, B_dependency)
+                    for b, action_dependency, B_dependency in zip(
+                        self.B, B_action_dependencies, self.B_dependencies
+                    )
+                ]
         else:
             self.B = None
 

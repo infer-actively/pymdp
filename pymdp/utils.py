@@ -92,6 +92,36 @@ def resolve_b_action_dependencies(
         return [[f] for f in range(num_factors)]
     return B_action_dependencies
 
+
+def flatten_B_action_dims(
+    B_f: Array,
+    action_dependency: Sequence[int],
+    num_controls: Sequence[int],
+    B_dependency: Sequence[int] | None = None,
+) -> Array:
+    """Merge the control axes of one transition tensor into a single action axis.
+
+    `B_f` has shape `(*batch, next_state, *previous_states, *controls)`, with one
+    trailing control axis per entry of `action_dependency`. These axes are merged
+    in C order, so the flat action index matches `get_combination_index` over
+    `[num_controls[d] for d in action_dependency]`. A factor with no action
+    dependency gets a trailing size-1 action axis if it does not have one.
+    """
+    if len(action_dependency) == 0:
+        # An uncontrolled factor may be given with or without its trailing
+        # size-1 action axis (``random_B_array`` omits it). Add the axis
+        # only when it is missing: B_f is (*batch, next_state, *lagging_states[, 1]).
+        has_action_axis = (
+            B_dependency is not None
+            and B_f.ndim >= len(B_dependency) + 2
+            and B_f.shape[-1] == 1
+        )
+        return B_f if has_action_axis else jnp.expand_dims(B_f, axis=-1)
+
+    dims = [num_controls[d] for d in action_dependency]
+    target_shape = list(B_f.shape)[: -len(action_dependency)] + [math.prod(dims)]
+    return B_f.reshape(target_shape)
+
 def validate_normalization(tensor: Array, axis: int = 1, tensor_name: str = "tensor") -> None:
     """
     Validate that a probability tensor has normalized distributions along a given axis.
