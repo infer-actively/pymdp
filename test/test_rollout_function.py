@@ -930,5 +930,25 @@ class TestRolloutFunction(unittest.TestCase):
         self.assertTrue(jnp.allclose(learned_B, expected_B, atol=1e-5))
 
 
+    def test_rollout_does_not_pass_float_indices_to_one_hot(self):
+        """`PymdpEnv` samples indices as floats; JAX has deprecated float input
+        to `jax.nn.one_hot`, so pymdp must cast before encoding observations
+        (state inference and A-learning both encode them)."""
+        env = TMaze()
+        self.assertFalse(jnp.issubdtype(env.reset(jr.PRNGKey(0))[0][0].dtype, jnp.integer))
+        agent = Agent(
+            env.A, env.B,
+            A_dependencies=env.A_dependencies, B_dependencies=env.B_dependencies,
+            pA=[a * 10 + 1 for a in env.A], learn_A=True,
+        )
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "error",
+                message="jax.nn.one_hot input should be integer-typed",
+                category=DeprecationWarning,
+            )
+            rollout(agent, env, num_timesteps=3, rng_key=jr.PRNGKey(1))
+
+
 if __name__ == "__main__":
     unittest.main()
