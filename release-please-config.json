@@ -8,12 +8,6 @@
     ".": {
       "package-name": "inferactively-pymdp",
       "changelog-path": "CHANGELOG.md",
-      "extra-files": [
-        {
-          "type": "generic",
-          "path": "setup.cfg"
-        }
-      ],
       "changelog-sections": [
         { "type": "feat", "section": "Features" },
         { "type": "fix", "section": "Bug Fixes" },
