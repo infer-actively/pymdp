@@ -41,11 +41,15 @@ class GraphEnv(PymdpEnv):
         Parameters
         ----------
         graph : nx.Graph
-            Connectivity graph for agent movement.
+            Connectivity graph for agent movement. Locations are indexed
+            ``0..N-1``. If the nodes are not exactly these integers (e.g.
+            ``nx.grid_2d_graph``), location ``i`` is the ``i``-th node of
+            ``graph.nodes``.
         object_location : int | None, optional
-            Fixed initial object location. If ``None``, sampled randomly.
+            Fixed initial object location index (``N`` means "not here"). If
+            ``None``, sampled randomly.
         agent_location : int | None, optional
-            Fixed initial agent location. If ``None``, sampled randomly.
+            Fixed initial agent location index. If ``None``, sampled randomly.
         key : PRNGKeyArray | None, optional
             Random key used when initial locations are sampled.
         categorical_obs : bool, default=False
@@ -58,14 +62,12 @@ class GraphEnv(PymdpEnv):
         A, A_dependencies = self.generate_A(graph)
         B, B_dependencies = self.generate_B(graph)
 
+        key = jr.PRNGKey(0) if key is None else key
+        agent_key, object_key = jr.split(key)
         if object_location is None:
-            key = jr.PRNGKey(0) if key is None else key
-            _, _key = jr.split(key)
-            object_location = jr.randint(_key, shape=(), minval=0, maxval=len(graph.nodes) + 1)  # +1 for "not here"
+            object_location = jr.randint(object_key, shape=(), minval=0, maxval=len(graph.nodes) + 1)  # +1 for "not here"
         if agent_location is None:
-            key = jr.PRNGKey(1) if key is None else key
-            _, _key = jr.split(key)
-            agent_location = jr.randint(_key, shape=(), minval=0, maxval=len(graph.nodes))
+            agent_location = jr.randint(agent_key, shape=(), minval=0, maxval=len(graph.nodes))
 
         D = self.generate_D(graph, object_location, agent_location)
 
@@ -116,6 +118,10 @@ class GraphEnv(PymdpEnv):
 
         num_locations = len(graph.nodes)
         num_object_locations = num_locations + 1
+
+        # locations are indexed 0..N-1; other node labels are numbered in graph.nodes order
+        if set(graph.nodes) != set(range(num_locations)):
+            graph = nx.convert_node_labels_to_integers(graph)
 
         # agent location transitions, based on graph connectivity
         B.append(jnp.zeros((num_locations, num_locations, num_locations)))

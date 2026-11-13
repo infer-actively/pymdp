@@ -113,5 +113,51 @@ class TestGraphEnvBatchLocations(unittest.TestCase):
         self.assertTrue(bool(jnp.allclose(params["D"][1].sum(axis=-1), 1.0)))
 
 
+def _moves(env):
+    """Moves (from, to) between different locations that B[0] allows."""
+    B = env.B[0]  # (to, from, action)
+    n = B.shape[0]
+    return {(f, t) for f in range(n) for t in range(n) if f != t and float(B[t, f, t]) == 1.0}
+
+
+def _expected_moves(graph):
+    index = {node: i for i, node in enumerate(graph.nodes)}
+    return {(index[u], index[v]) for u, v in graph.edges} | {(index[v], index[u]) for u, v in graph.edges}
+
+
+class TestGraphEnvConstruction(unittest.TestCase):
+    def test_non_integer_node_labels_follow_node_order(self):
+        """Location i should be the i-th node of graph.nodes if nodes are not 0..N-1."""
+        graphs = {
+            "tuples": nx.grid_2d_graph(2, 2),
+            "strings": nx.relabel_nodes(nx.path_graph(4), lambda i: f"room{i}"),
+            "one-indexed": nx.relabel_nodes(nx.path_graph(4), lambda i: i + 1),
+        }
+        for name, graph in graphs.items():
+            with self.subTest(graph=name):
+                env = GraphEnv(graph, object_location=0, agent_location=0)
+                self.assertEqual(_moves(env), _expected_moves(graph))
+
+    def test_integer_node_labels_keep_their_index(self):
+        """Nodes 0..N-1 should keep their label as index, whatever their order."""
+        graph = nx.Graph([(2, 3), (0, 1), (1, 2)])
+        env = GraphEnv(graph, object_location=0, agent_location=0)
+        self.assertEqual(_moves(env), {(0, 1), (1, 0), (1, 2), (2, 1), (2, 3), (3, 2)})
+
+    def test_sampled_locations_use_separate_keys(self):
+        """Fixing one initial location should not change the other sampled one."""
+        graph = nx.path_graph(5)
+        for seed in (None, 3):
+            key = None if seed is None else jr.PRNGKey(seed)
+            with self.subTest(seed=seed):
+                sampled = GraphEnv(graph, key=key)
+                agent_loc = int(jnp.argmax(sampled.D[0]))
+                object_loc = int(jnp.argmax(sampled.D[1]))
+                with_object = GraphEnv(graph, object_location=object_loc, key=key)
+                with_agent = GraphEnv(graph, agent_location=agent_loc, key=key)
+                self.assertEqual(int(jnp.argmax(with_object.D[0])), agent_loc)
+                self.assertEqual(int(jnp.argmax(with_agent.D[1])), object_loc)
+
+
 if __name__ == "__main__":
     unittest.main()
