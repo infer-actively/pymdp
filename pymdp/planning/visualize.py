@@ -14,8 +14,6 @@ from matplotlib.colors import to_rgba
 from matplotlib.patches import Patch
 from matplotlib.animation import FuncAnimation
 
-from IPython.display import display, HTML
-
 
 # default function to convert actions to string representation
 # can be overridden by passing a custom function to the `plot_tree` function
@@ -382,6 +380,15 @@ def visualize_env(
     save_as_gif: bool = False,
     gif_filename: str = "rollout.gif",
 ) -> None:
+    # IPython is optional: only this function needs it, to show the animation
+    try:
+        from IPython.display import display, HTML
+    except ImportError as e:
+        raise ImportError(
+            "`visualize_env` displays its animation with IPython, which is not "
+            "installed. Install it (e.g. `pip install ipython`) or run in Jupyter."
+        ) from e
+
     try:
         batch_size = info["env"].num_agents
     except (AttributeError, KeyError):
