@@ -37,6 +37,8 @@ Most of the low-level mathematical operations are [NumPy](https://github.com/num
 [![Documentation Status](https://readthedocs.org/projects/pymdp-rtd/badge/?version=latest)](https://pymdp-rtd.readthedocs.io/en/latest/)
 [![DOI](https://joss.theoj.org/papers/10.21105/joss.04098/status.svg)](https://doi.org/10.21105/joss.04098)
 
+> **Note on the NumPy backend:** since 1.0.0, JAX is the main backend. The original NumPy implementation still ships as `pymdp.legacy` so older code keeps running, but it is no longer actively developed or maintained: new features land only in the JAX backend, and legacy bugs may not get fixed. See the [NumPy/legacy to JAX migration guide](https://pymdp-rtd.readthedocs.io/en/latest/migration/numpy-to-jax/) for moving existing code over.
+
 
 # ``pymdp`` in action
 
