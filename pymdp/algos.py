@@ -355,8 +355,14 @@ def get_vmp_messages(
             factors,
         )
     else:
-        lnB_future = jtu.tree_map(lambda x: 0., qs)
         lnB_past = jtu.tree_map(lambda x: 0., qs)
+        # An omitted transition history for one observation is equivalent to
+        # an empty history: the initial prior is the only forward message.
+        lnB_future = (
+            jtu.tree_map(lambda x: jnp.expand_dims(x, 0), ln_prior)
+            if T == 1
+            else lnB_past
+        )
     
     return lnB_future, lnB_past 
 
