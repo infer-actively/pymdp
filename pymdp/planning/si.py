@@ -8,6 +8,7 @@ import jax.nn as nn
 import equinox as eqx
 
 from functools import partial
+from math import prod
 from typing import Any, Callable, List
 
 import pymdp
@@ -606,6 +607,43 @@ def _generate_observations(
     return combinations
 
 
+def _observation_combinations(
+    shapes: tuple[int, ...],
+    topk_indices: list[jnp.ndarray],
+    topk_probs: list[jnp.ndarray],
+    budget: int,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """Keep the highest joint observation probabilities within the budget."""
+    size = prod(len(indices) for indices in topk_indices)
+    if size <= budget:
+        return (
+            _generate_observations(shapes, size, topk_indices),
+            _calculate_probabilities(size, topk_probs),
+        )
+
+    observations = topk_indices[0][:, None]
+    probabilities = topk_probs[0]
+    for indices, marginal in zip(topk_indices[1:], topk_probs[1:]):
+        # Both inputs are sorted descending. The product at (i, j) has at
+        # least (i + 1) * (j + 1) entries >= it, including itself. Only
+        # score the first budget // (i + 1) entries per row, at most
+        # budget times the harmonic sum of the row count.
+        rows = np.arange(probabilities.shape[0], dtype=np.int32)
+        widths = np.minimum(budget // (rows + 1), marginal.shape[0])
+        starts = widths.cumsum(dtype=np.int32) - widths
+        left = jnp.asarray(np.repeat(rows, widths))
+        right = jnp.asarray(
+            np.arange(int(widths.sum()), dtype=np.int32) - np.repeat(starts, widths)
+        )
+
+        count = min(budget, probabilities.shape[0] * marginal.shape[0])
+        probabilities, selected = lax.top_k(probabilities[left] * marginal[right], count)
+        observations = jnp.concatenate(
+            (observations[left[selected]], indices[right[selected], None]), axis=1
+        )
+    return observations, probabilities
+
+
 def optimized_tree_search(
     agent: Any,
     tree: Tree,
@@ -707,13 +745,9 @@ def optimized_tree_search(
             topk_indices = [data[0] for data in topk_data]
             topk_probs = [data[1] for data in topk_data]
             
-            # Calculate actual number of combinations based on effective k values
-            k_effective_per_modality = [len(indices) for indices in topk_indices]
-            num_combinations = int(np.prod(k_effective_per_modality))
-            
-            # Generate combinations using refactored helper functions
-            observations = _generate_observations(tuple(shapes), num_combinations, topk_indices)
-            probabilities = _calculate_probabilities(num_combinations, topk_probs)
+            observations, probabilities = _observation_combinations(
+                tuple(shapes), topk_indices, topk_probs, k
+            )
 
             def add_observation_node(
                 tree: Tree, data: tuple[jnp.ndarray, jnp.ndarray]
