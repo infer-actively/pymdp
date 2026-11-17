@@ -167,6 +167,21 @@ def update_parameters_online(
     )
 
 
+def _latest_learning_observations(
+    observations: list[Array], categorical_obs: bool
+) -> list[Array]:
+    # Keep time axes aligned with the beliefs, but only count the newest datum.
+    # Zero categorical vectors and negative indices encode no observation.
+    def mask_earlier(obs: Array) -> Array:
+        if categorical_obs:
+            return obs.at[:, :-1].set(0)
+        if jnp.issubdtype(obs.dtype, jnp.unsignedinteger) or obs.dtype == jnp.bool_:
+            obs = obs.astype(jnp.int32)
+        return obs.at[:, :-1].set(-1)
+
+    return jtu.tree_map(mask_earlier, observations)
+
+
 def _compute_sequence_empirical_prior_next(
     updated_agent: Agent,
     qs_window: list[Array],
@@ -213,8 +228,10 @@ def _run_sequence_fixed_window_step(
         policy_search=policy_search,
         past_actions=action_hist,
         empirical_prior=empirical_prior,
-        learning_observations=observation_hist,
-        learning_actions=action_hist,
+        learning_observations=_latest_learning_observations(
+            observation_hist, agent.categorical_obs
+        ),
+        learning_actions=action_hist.at[:, :-1].set(-1),
         valid_steps=valid_steps,
     )
     qs_carry = qs
@@ -247,8 +264,10 @@ def _run_smoothing_fixed_window_step(
         action_prev,
         rng_key,
         policy_search=policy_search,
-        learning_observations=observation_hist,
-        learning_actions=action_hist,
+        learning_observations=_latest_learning_observations(
+            observation_hist, agent.categorical_obs
+        ),
+        learning_actions=action_hist.at[:, :-1].set(-1),
         learning_beliefs=qs_prev,
     )
     qs_carry = jtu.tree_map(_append_to_window, qs_prev, qs)

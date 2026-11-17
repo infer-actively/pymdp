@@ -158,6 +158,19 @@ class TestRolloutFunction(unittest.TestCase):
             qs_prev_k = jtu.tree_map(lambda x: x[:, history_len - k :, ...], qs)
             actions_k = action_hist[:, history_len - k : history_len - 1, :]
 
+            # Give inference the complete unpadded history, while each new
+            # observation/transition contributes to the concentrations once.
+            fill = 0 if agent.categorical_obs else -1
+            learning_obs_k = jtu.tree_map(
+                lambda x: jnp.concatenate(
+                    (jnp.full_like(x[:, :-1], fill), x[:, -1:]), axis=1
+                ),
+                obs_k,
+            )
+            learning_actions_k = jnp.concatenate(
+                (jnp.full_like(actions_k[:, :-1], -1), actions_k[:, -1:]), axis=1
+            )
+
             if is_sequence_method:
                 past_actions_k = actions_k if k > 1 else None
                 updated_agent, action_next, qs_k, xtra = infer_and_plan(
@@ -169,8 +182,8 @@ class TestRolloutFunction(unittest.TestCase):
                     policy_search=default_policy_search,
                     past_actions=past_actions_k,
                     empirical_prior=empirical_prior,
-                    learning_observations=obs_k,
-                    learning_actions=past_actions_k,
+                    learning_observations=learning_obs_k,
+                    learning_actions=learning_actions_k if k > 1 else None,
                 )
                 qs = jtu.tree_map(
                     lambda prev, new: prev.at[:, history_len - k :, ...].set(new),
@@ -200,8 +213,8 @@ class TestRolloutFunction(unittest.TestCase):
                     action,
                     keys[1],
                     policy_search=default_policy_search,
-                    learning_observations=obs_k,
-                    learning_actions=actions_k,
+                    learning_observations=learning_obs_k,
+                    learning_actions=learning_actions_k,
                     learning_beliefs=qs_prev_k,
                 )
                 qs_latest = jtu.tree_map(lambda x: x[:, -1, ...], qs_k)
@@ -395,6 +408,43 @@ class TestRolloutFunction(unittest.TestCase):
 
         final_pB = np.asarray(last["agent"].pB[0])
         self.assertFalse(np.allclose(final_pB, initial["pB"][0]))
+
+    def test_windowed_online_learning_counts_each_observation_and_transition_once(self):
+        num_steps = 5
+        for algo, categorical_obs in (
+            ("mmp", False), ("vmp", True), ("ovf", True), ("exact", False)
+        ):
+            with self.subTest(inference_algo=algo, categorical_obs=categorical_obs):
+                agent = Agent(
+                    A=[jnp.full((2, 1), 0.5)],
+                    B=[jnp.ones((1, 1, 1))],
+                    pA=[jnp.ones((2, 1))],
+                    pB=[jnp.ones((1, 1, 1))],
+                    learn_A=True,
+                    learn_B=True,
+                    inference_algo=algo,
+                    inference_horizon=3,
+                    categorical_obs=categorical_obs,
+                )
+                env = PymdpEnv(
+                    A_dependencies=[[0]],
+                    B_dependencies=[[0]],
+                    categorical_obs=categorical_obs,
+                )
+                env_params = {
+                    "A": [jnp.array([[[1.0], [0.0]]])],
+                    "B": [jnp.ones((1, 1, 1, 1))],
+                    "D": [jnp.ones((1, 1))],
+                }
+
+                _, info = rollout(agent, env, num_steps, jr.PRNGKey(0), env_params=env_params)
+
+                # The single state and action give a unit sufficient statistic
+                # per observed transition, and the first frame has no predecessor.
+                steps = np.arange(num_steps + 1)
+                np.testing.assert_array_equal(info["pA"][0][0, :, 0, 0], 2 + steps)
+                np.testing.assert_array_equal(info["pA"][0][0, :, 1, 0], np.ones_like(steps))
+                np.testing.assert_array_equal(info["pB"][0][0, :, 0, 0, 0], 1 + steps)
 
     def test_online_learning_updates_B_for_sequence_inference(self):
         num_steps = 4
