@@ -398,6 +398,44 @@ class TestAssociativeScanHMM(unittest.TestCase):
         self._assert_close(xi_row, xi_col)
         self._assert_close(cond_row, cond_col)
 
+    def test_smoothers_keep_mass_when_high_likelihood_state_is_unreachable(self):
+        T = 8
+        initial = jnp.array([1.0, 0.0])
+        transitions = jnp.eye(2)
+        likelihoods = jnp.array([1e-12, 0.5])
+        log_likelihoods = jnp.broadcast_to(jnp.log(likelihoods), (T, 2))
+        expected_states = jnp.broadcast_to(initial, (T, 2))
+        expected_joints = jnp.broadcast_to(jnp.diag(initial), (T - 1, 2, 2))
+
+        row = hmm_smoother_scan_rowstoch(initial, transitions, log_likelihoods)
+        col = hmm_smoother_scan_colstoch(
+            initial, transitions.T, log_likelihoods, return_trans_probs=True
+        )
+        for orientation, result in (("row", row), ("column", col)):
+            with self.subTest(orientation=orientation):
+                mll, filtered, predicted, smoothed, joints, conditionals = result
+                self._assert_all_finite_tree(result)
+                self._assert_close(mll, T * jnp.log(likelihoods[0]))
+                for states in (filtered, predicted, smoothed):
+                    self.assertTrue(bool(jnp.array_equal(states, expected_states)))
+                for transitions_out in (joints, conditionals):
+                    self.assertTrue(bool(jnp.array_equal(transitions_out, expected_joints)))
+
+    def test_smoother_joint_stays_normalized_after_rare_reachable_transition(self):
+        initial = jnp.array([1.0, 0.0])
+        tiny = 1e-20
+        transitions = jnp.array([[1 - tiny, tiny], [0.0, 1.0]])
+        log_likelihoods = jnp.array([[0.0, 0.0], [-120.0, 0.0]])
+
+        mll, _, _, smoothed, joints, conditionals = hmm_smoother_scan_rowstoch(
+            initial, transitions, log_likelihoods
+        )
+
+        self._assert_close(mll, jnp.log(tiny))
+        self._assert_close(smoothed, jnp.eye(2))
+        self._assert_close(joints, jnp.array([[[0.0, 1.0], [0.0, 0.0]]]))
+        self._assert_close(conditionals[0, 1], initial)
+
     @pytest.mark.nightly
     def test_smoother_scan_colstoch_stability_shifted_ll(self):
         key = jr.PRNGKey(6)

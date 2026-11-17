@@ -7,7 +7,7 @@ sequences, and exact single-factor scan-based HMM smoothing.
 
 import jax.numpy as jnp
 import jax.tree_util as jtu
-from typing import Any, Callable, NamedTuple, Tuple
+from typing import Any, Callable, NamedTuple
 from jax import jit, vmap, grad, lax, nn
 from jaxtyping import Array
 # from jax.config import config
@@ -693,57 +693,27 @@ class FilterMessage(NamedTuple):
     log_b: Array  # (..., K)
 
 
-def _normalize_preserve_zeros(u: Array,
-                              axis: int = -1,
-                              eps: float = 1e-15) -> Tuple[Array, Array]:
-    """
-    Normalize along `axis` while preserving exact structural zeros and flooring tiny
-    positive values to improve gradient stability in near-degenerate regimes.
-
-    Returns normalized tensor and the (safe) normalization factor with `axis` squeezed.
-    """
-    eps = jnp.asarray(eps, dtype=u.dtype)
-    u_safe = jnp.where(u == 0, 0, jnp.where(u < eps, eps, u))
-    c = jnp.sum(u_safe, axis=axis, keepdims=True)
-    c_safe = jnp.where(c == 0, jnp.ones_like(c), c)
-    return u_safe / c_safe, jnp.squeeze(c_safe, axis=axis)
+def _log_with_structural_zeros(probs: Array) -> Array:
+    """Map zeros to -inf without differentiating through log(0)."""
+    zero = probs == 0
+    return jnp.where(zero, -jnp.inf, jnp.log(jnp.where(zero, 1.0, probs)))
 
 
-def _log_predictive_normalizer(predicted_probs: Array,
-                               log_likelihoods: Array) -> Array:
-    """
-    Compute log c_t = log p(x_t | x_{1:t-1}) in a stable way for each timestep.
-    """
-    ll_max = jnp.max(log_likelihoods, axis=-1, keepdims=True)
-    stable_weights = jnp.exp(log_likelihoods - ll_max)
-    return log_stable(jnp.sum(predicted_probs * stable_weights, axis=-1)) + ll_max.squeeze(-1)
-
-def _condition_on(A: Array,
-                  ll: Array,
-                  axis: int = -1) -> Tuple[Array, Array]:
-    """
-    Condition a transition-like object A on log-likelihood ll in a numerically stable way.
-
-    Works for:
-      - A shape (K,) with ll shape (K,)   (initial probs)
-      - A shape (K,K) with ll shape (K,)  (transition rows/cols)
-      - and batched versions via broadcasting when ll is 1D.
-    """
+def _condition_on(A: Array, ll: Array, axis: int = -1) -> tuple[Array, Array]:
+    """Condition each distribution of A on the log weights in ll."""
     ll = jnp.asarray(ll)
-    ll_max = jnp.max(ll, axis=-1)
-    w = jnp.exp(ll - ll_max)
-
-    if A.ndim == 1:
-        A_cond, norm = _normalize_preserve_zeros(A * w, axis=0)
-        return A_cond, log_stable(norm) + ll_max
-
-    axis = axis if axis >= 0 else A.ndim + axis
     shape = [1] * A.ndim
-    shape[axis] = w.shape[-1]
-    w_b = w.reshape(shape)
-
-    A_cond, norm = _normalize_preserve_zeros(A * w_b, axis=axis)
-    return A_cond, log_stable(norm) + ll_max
+    shape[axis] = ll.shape[-1]
+    log_weights = _log_with_structural_zeros(A) + ll.reshape(shape)
+    center = jnp.max(log_weights, axis=axis, keepdims=True)
+    # Only reachable states can set the scale. A row with no support has zero
+    # probability and log normalizer -inf.
+    center = jnp.where(jnp.isneginf(center), 0.0, center)
+    weights = jnp.exp(log_weights - center)
+    norm = weights.sum(axis=axis, keepdims=True)
+    safe_norm = jnp.where(norm == 0, 1.0, norm)
+    log_norm = jnp.where(norm == 0, -jnp.inf, center + jnp.log(safe_norm))
+    return weights / safe_norm, log_norm.squeeze(axis)
 
 
 def _hmm_filter_scan_row_oriented(
@@ -856,48 +826,15 @@ def _hmm_smoother_scan_row_oriented(
     - pairwise transition posteriors `p(s_t, s_{t+1} | o_{1:T})`
     - `p(s_t | s_{t+1}, o_{1:T})` in pymdp-style conditional orientation
     """
-    T, K = log_likelihoods.shape
     marginal_loglik, filtered, predicted = _hmm_filter_scan_row_oriented(
         initial_probs, transition_mats, log_likelihoods
     )
-
-    # log-normaliser c_t = p(o_t | o_{1:t-1}), used to stabilize backward factors.
-    log_c = _log_predictive_normalizer(predicted, log_likelihoods)
-    if T == 1:
-        beta = jnp.ones((1, K))
-    else:
-        # Build backward matrices M_t = A_t * diag(exp(ll_{t+1} - c_{t+1}))
-        # that propagate the vector beta_{t+1} -> beta_t.
-        col_scale = jnp.exp(log_likelihoods[1:] - log_c[1:][:, None])
-        M = transition_mats * col_scale[:, None, :]
-
-        def op(x: Array, y: Array) -> Array:
-            # batched matmul works; associative_scan may call this with leading batch dims
-            return _matmul_high_precision(y, x)
-
-        # suffix-style associative scan via reverse + reverse-back
-        beta = lax.associative_scan(op, M[::-1])[::-1]
-        beta = vmap(lambda P_t: _matmul_high_precision(P_t, jnp.ones((K,))))(beta)
-        beta = jnp.concatenate([beta, jnp.ones((1, K))], axis=0)
-
-    # p(s_t | o_{1:T}) = p(s_t | o_{1:t}) * beta_t
-    smoothed = filtered * beta
-    smoothed = smoothed / jnp.clip(jnp.sum(smoothed, axis=-1, keepdims=True), min=MINVAL)
-
-    if T == 1:
-        trans_probs = jnp.zeros((0, K, K))
-        cond_probs = jnp.zeros((0, K, K))
-    else:
-        xi = (
-            filtered[:-1, :, None] *
-            transition_mats *
-            col_scale[:, None, :] *
-            beta[1:, None, :]
-        )
-        xi = xi / jnp.clip(jnp.sum(xi, axis=(1, 2), keepdims=True), min=MINVAL)
-        trans_probs = xi
-        cond_probs = xi.transpose(0, 2, 1) / jnp.clip(smoothed[1:, :, None], min=MINVAL)
-
+    smoothed, _, cond_probs, trans_probs = hmm_smoother_from_filtered_colstoch(
+        filtered, jnp.swapaxes(transition_mats, -1, -2), return_trans_probs=True
+    )
+    # The row-oriented API returns zero conditionals for next states with no
+    # smoothed posterior mass.
+    cond_probs = jnp.where(smoothed[1:, :, None] > 0, cond_probs, 0.0)
     return marginal_loglik, filtered, predicted, smoothed, trans_probs, cond_probs
 
 
@@ -1072,11 +1009,8 @@ def hmm_smoother_from_filtered_colstoch(
             return smoothed, joint_next_curr, cond_probs, trans_probs
         return smoothed, joint_next_curr, cond_probs
 
-    predicted_next = vmap(_matmul_high_precision)(B_mats, filtered_probs[:-1])  # (T-1, K_next)
-
-    cond_probs = (
-        B_mats * filtered_probs[:-1][:, None, :]
-    ) / jnp.clip(predicted_next[:, :, None], min=MINVAL)  # (T-1, K_next, K_curr)
+    log_filtered = _log_with_structural_zeros(filtered_probs[:-1])
+    cond_probs, _ = vmap(_condition_on)(B_mats, log_filtered)
 
     # smoothed_t = cond_t^T @ smoothed_{t+1}
     M = cond_probs.transpose(0, 2, 1)  # (T-1, K_curr, K_next)
