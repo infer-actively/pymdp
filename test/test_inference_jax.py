@@ -12,6 +12,7 @@ import jax
 from jax import numpy as jnp, random as jr
 
 from pymdp.algos import run_vanilla_fpi as fpi_jax
+from pymdp.algos import variational_filtering_step
 from pymdp.utils import random_factorized_categorical, random_A_array
 
 from pymdp.legacy.algos import run_vanilla_fpi as fpi_numpy
@@ -38,6 +39,16 @@ def _fpi_jax_float64(A, obs, prior, **kwargs):
         return fpi_jax([as64(a) for a in A], obs, [as64(p) for p in prior], **kwargs)
 
 class TestInferenceJax(unittest.TestCase):
+
+    def test_variational_filtering_unreachable_reverse_row_is_zero(self):
+        prior = [jnp.array([0.25, 0.75])]
+        transition = [jnp.array([[1.0, 1.0], [0.0, 0.0]])]
+        _, predicted, reverse = variational_filtering_step(
+            prior, transition, [jnp.zeros(2)], [[0]]
+        )
+
+        np.testing.assert_array_equal(predicted[0], [1.0, 0.0])
+        np.testing.assert_allclose(reverse[0], [[0.25, 0.75], [0.0, 0.0]])
 
     def test_fixed_point_iteration_singlestate_singleobs(self):
         """

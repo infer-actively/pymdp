@@ -230,12 +230,15 @@ def variational_filtering_step(
             lambda x, y: jnp.sum(x * jnp.expand_dims(y, -2), -1), Bs, post
         )
     
-    # compute reverse conditional distribution q(z_t|z_{t+1})
+    # Unreachable next states have zero joint mass, so their reverse rows stay zero.
     cond = jtu.tree_map(
-        lambda x, y, z: x * jnp.expand_dims(y, -2) / jnp.expand_dims(z, -1),
+        lambda transition, current, predicted: (
+            transition * jnp.expand_dims(current, -2)
+            / jnp.expand_dims(jnp.where(predicted == 0, 1, predicted), -1)
+        ),
         Bs,
-        post, 
-        pred
+        post,
+        pred,
     )
 
     return post, pred, cond
