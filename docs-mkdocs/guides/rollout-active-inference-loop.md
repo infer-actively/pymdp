@@ -49,6 +49,20 @@ last, info = rollout_jit(
 )
 ```
 
+## Planning with factorized predictions
+
+The default policy search adds the expected information gain of each observation
+modality. When predicted observations are correlated, such as when two sensors
+observe the same hidden-state factor, this sum can rank policies differently from
+the information gain of their joint observation.
+
+State predictions propagate one marginal per hidden-state factor. With a
+factorized input, the one-step contraction uses all declared transition
+dependencies and computes the exact next-state marginals. Cross-factor
+transitions can correlate the predicted factors. Later planning steps propagate
+the product of the marginals, so those steps can differ from propagation of the
+joint state distribution.
+
 ## Reproducible key flow
 
 `rollout()` internally splits keys per step and per batch. For deterministic re-runs:
