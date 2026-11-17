@@ -178,6 +178,9 @@ def _run_one_step_inference(
     num_iter: int,
     distr_obs: bool,
 ) -> tuple[list[Array], list[Array] | Array]:
+    if method == EXACT_METHOD and prior is not None and len(prior) != 1:
+        raise ValueError("`exact` inference currently supports only a single hidden-state factor")
+
     curr_obs = _select_current_obs(obs, distr_obs)
     fpi_num_iter = 1 if method == EXACT_METHOD else num_iter
     qs = run_factorized_fpi(

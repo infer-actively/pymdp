@@ -852,6 +852,20 @@ class TestAssociativeScanHMM(unittest.TestCase):
         self.assertEqual(qs[0].shape, (1, 1, K))
         self.assertTrue(bool(jnp.allclose(qs[0].sum(-1), 1.0, atol=1e-5)))
 
+    def test_direct_exact_inference_rejects_multiple_factors(self):
+        likelihood = jnp.array([[0.9, 0.1], [0.1, 0.1]])
+        with self.assertRaisesRegex(ValueError, "single hidden-state factor"):
+            inference.update_posterior_states(
+                [jnp.stack([likelihood, 1.0 - likelihood])],
+                None,
+                [jnp.array([0])],
+                None,
+                prior=[jnp.full(2, 0.5), jnp.full(2, 0.5)],
+                A_dependencies=[[0, 1]],
+                method="exact",
+                distr_obs=False,
+            )
+
     def test_exact_inference_rejects_multi_factor_models(self):
         key = jr.PRNGKey(206)
         k1, k2, k3 = jr.split(key, 3)
