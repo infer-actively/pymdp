@@ -502,26 +502,14 @@ class Agent(Module):
         else:
             actions_Tm1 = actions  # None or already time-matched
 
-        if actions_Tm1 is not None:
-            valid_transition_mask = jnp.all(actions_Tm1 >= 0, axis=-1)
-        else:
-            valid_transition_mask = None
-        
-        # A handy predicate: can we (meaningfully) apply sequence-based smoothing or
-        # B-joint construction for this update window?
-        # We need at least one valid transition.
-        can_update_Beliefs = (
-            actions_Tm1 is not None
-            and (T > 1)
-            and (actions_Tm1.shape[1] == (T - 1))
-            and jnp.any(valid_transition_mask)
+        # Keep unavailable histories out of lax.cond, which traces both branches.
+        has_action_history = (
+            actions_Tm1 is not None and T > 1 and actions_Tm1.shape[1] == T - 1
         )
-
-        # Full B-parameter update additionally requires `self.learn_B`.
-        can_update_B = (
-            self.learn_B
-            and can_update_Beliefs
+        valid_transition_mask = (
+            jnp.all(actions_Tm1 >= 0, axis=-1) if has_action_history else None
         )
+        learn_transitions = self.learn_B and has_action_history
 
         def _apply_transition_mask(joint_beliefs: list[Array] | None) -> list[Array] | None:
             if valid_transition_mask is None:
@@ -575,22 +563,25 @@ class Agent(Module):
                 return marginal_beliefs, joint_beliefs
 
             return lax.cond(
-                can_update_Beliefs,
+                jnp.any(valid_transition_mask),
                 update_with_smoothing,
                 use_filtered_beliefs,
                 operand=None
             )
 
+        joint_beliefs = None
         if self.inference_algo in inference.SMOOTHING_METHODS:
-            smoothing_fn = inference.smoothing_ovf
-            if self.inference_algo == inference.EXACT_METHOD:
-                # Exact backward smoothing from online filtering history for single-factor HMMs.
-                smoothing_fn = inference.smoothing_exact
-            marginal_beliefs, joint_beliefs = _smooth_or_fallback(smoothing_fn)
+            marginal_beliefs = seq_beliefs
+            if has_action_history:
+                smoothing_fn = inference.smoothing_ovf
+                if self.inference_algo == inference.EXACT_METHOD:
+                    # Exact backward smoothing from online filtering history for single-factor HMMs.
+                    smoothing_fn = inference.smoothing_exact
+                marginal_beliefs, joint_beliefs = _smooth_or_fallback(smoothing_fn)
         else:
-            # Non-OVF: keep existing behavior (use filtered marginals and build joints from t and t-1)
             marginal_beliefs = beliefs_A
-            joint_beliefs = _apply_transition_mask(_build_outer_product_joints()) if self.learn_B else None
+            if learn_transitions:
+                joint_beliefs = _apply_transition_mask(_build_outer_product_joints())
 
         if self.learn_A:
             update_A = partial(
@@ -611,7 +602,8 @@ class Agent(Module):
             
             agent = tree_at(lambda x: (x.A, x.pA), agent, (E_qA, qA))
             
-        if self.learn_B:
+        if learn_transitions:
+            can_update_B = jnp.any(valid_transition_mask)
             update_B = partial(learning.update_state_transition_dirichlet, num_controls=self.num_controls)
             lrB = jnp.broadcast_to(lr_pB, (self.batch_size,))
 

@@ -789,6 +789,42 @@ class TestAgentJax(unittest.TestCase):
         for f in range(agent.num_factors):
             self.assertTrue(jnp.array_equal(agent.I[f], expected_I[f]))
 
+    def test_infer_parameters_without_usable_actions(self):
+        A = [jnp.array([[0.85, 0.15], [0.15, 0.85]])]
+        B = [jnp.full((2, 2, 1), 0.5)]
+        observations = [jnp.array([[0, 1]])]
+        beliefs = [jnp.array([[[0.8, 0.2], [0.3, 0.7]]])]
+        unavailable_actions = (
+            None,
+            jnp.empty((1, 0, 1), dtype=jnp.int32),
+            jnp.full((1, 1, 1), -1, dtype=jnp.int32),
+        )
+
+        for method, learn_B in (("fpi", True), ("ovf", False), ("exact", False)):
+            agent = Agent(
+                A, B, pA=[2 * A[0]], pB=[2 * B[0]], learn_A=True,
+                learn_B=learn_B, inference_algo=method,
+            )
+
+            for actions in unavailable_actions:
+                with self.subTest(method=method, actions=actions):
+                    updated = agent.infer_parameters(beliefs, observations, actions)
+                    np.testing.assert_allclose(updated.pA[0], agent.pA[0] + beliefs[0])
+                    np.testing.assert_array_equal(updated.pB[0], agent.pB[0])
+                    np.testing.assert_array_equal(updated.B[0], agent.B[0])
+
+            with self.subTest(method=method, actions="valid"):
+                actions = jnp.zeros((1, 1, 1), dtype=jnp.int32)
+                updated = agent.infer_parameters(beliefs, observations, actions)
+                np.testing.assert_allclose((updated.pA[0] - agent.pA[0]).sum(), 2.0)
+                if learn_B:
+                    expected_counts = jnp.outer(beliefs[0][0, 1], beliefs[0][0, 0])
+                    np.testing.assert_allclose(
+                        updated.pB[0], agent.pB[0] + expected_counts[..., None]
+                    )
+                else:
+                    np.testing.assert_array_equal(updated.pB[0], agent.pB[0])
+
     def test_valid_gradients_one_step_ahead(self):
         """
         This unit test checks that gradients can be computed through a single time step of
